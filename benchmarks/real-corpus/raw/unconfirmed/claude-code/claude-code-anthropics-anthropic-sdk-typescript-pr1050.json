@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1050",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1050,
+    "headSha": "b2892cc2048f7c33b6c91cb30d794efb60ccae55",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02",
+    "title": "fix(client): default redirect to manual to avoid forwarding non-standard auth headers on cross-origin hops",
+    "body": "### Problem\n\n`fetchWithTimeout` at `src/client.ts:1141-1156` builds the final `RequestInit` without setting `redirect`. The runtime default is `follow`. When the server responds with a `3xx Location`, the platform fetch automatically reissues the request to the redirect target with all custom headers from the original request still attached. The WHATWG fetch spec strips `Authorization` on cross-origin redirects, but `X-Api-Key` (the header the SDK uses to carry the secret per `src/client.ts:158`) is not standard-protected and survives the hop.\n\nA consumer who configured a custom `baseURL` (proxy, gateway, self-hosted shim) can have that proxy reply `302 Location: https://attacker.example/...`. The SDK then sends the API key to the attacker host without the caller having any chance to see or veto the URL change.\n\n### Change\n\nOne change in `src/client.ts:1141-1156`. Set `redirect: 'manual'` in the fetch options the SDK passes by default. A comment explains the reason. Callers who want the old behavior can pass `redirect: 'follow'` in their own `fetchOptions`, which still overrides the SDK default thanks to the existing spread order.\n\n### Impact\n\n- Misconfigured or compromised proxy can no longer silently redirect API-key-bearing requests to a third-party host.\n- A 3xx response now surfaces to the caller as a Response with `status` 3xx rather than being transparently followed. The SDK's existing error-handling path treats non-2xx as an error, which is the safe outcome.\n- No standard Anthropic endpoint serves 3xx, so production traffic against `api.anthropic.com` is unaffected.\n\n### Backwards compatibility\n\n- Public API unchanged.\n- Default behavior of the SDK against the official Anthropic endpoint: unchanged (no 3xx in the normal response set).\n- Self-hosted proxies that depend on 3xx Location chasing: now need to either resolve the redirect on the proxy side or opt back in via `fetchOptions.redirect = 'follow'`. This is the trade-off the change makes deliberately.\n\n### Tests\n\n- `pnpm prettier --check src/client.ts`: clean.\n- `pnpm eslint src/client.ts`: clean.\n- `pnpm tsc --noEmit`: clean.\n- `pnpm jest tests/index.test.ts tests/path.test.ts tests/buildHeaders.test.ts`: 193 pass.\n\nFull `pnpm test` requires the Stainless mock server (steady on port 4010) which is not available on the contributor side. The change does not touch request shape or response parsing, so no existing test fixture should be affected.\n\n### Why this is a hardening contribution\n\nI was reading the request pipeline and noticed the default redirect mode was implicit. The X-Api-Key header is custom enough that the standard cross-origin protection does not apply to it, which makes the default `follow` mode an unsafe choice for an auth-bearing SDK. The change closes that gap without breaking any documented use case.\n",
+    "author": "ibondarenko1",
+    "headRef": "hardening/fetch-default-redirect-manual",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "b2892cc2048f7c33b6c91cb30d794efb60ccae55",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1050.diff",
+  "vendoredAt": "2026-05-24T03:16:21.923Z",
+  "collectedAt": "2026-05-24T03:16:21.924Z"
+}

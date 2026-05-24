@@ -1,0 +1,26 @@
+{
+  "id": "cursor-hyperlocalise-hyperlocalise-pr694",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 694,
+    "headSha": "07a916df34a0fcb5cbc2348641019e148e7342d4",
+    "baseSha": "2060f91c82fccc692d9a9e339778466a819d14a7",
+    "title": "feat(web): complete provider comment write-back UX (HL-375)",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Summary\n\nCompletes the provider comment write-back experience for HL-375 by closing gaps between the existing backend pipeline and the review findings UI.\n\nThe write-back pipeline (select findings → `leave_provider_comment` → `comment_only` agent run → provider pushers for Smartling/Crowdin/Lokalise) was already implemented. This change finishes the user-facing acceptance criteria around capability gating, duplicate prevention feedback, and write-back status visibility.\n\n## Changes\n\n- **Provider action availability:** `leave_provider_comment` now checks `getProviderCommentPusher()` in addition to TMS capability metadata, so providers without a runtime pusher (e.g. Phrase) show a visible, disabled action with a clear reason instead of failing at queue time.\n- **Write-back status indexing:** Added helpers to index `provider_comment` entries from succeeded/failed `comment_only` agent runs by finding ID, preserving external comment IDs and provider URLs.\n- **Review findings UI:**\n  - Badges for posted / already-in-TMS / failed write-back states\n  - Disabled checkboxes for findings that already have provider comments\n  - \"Comment on selected\" only sends commentable findings\n  - Link to view posted provider comments when a URL is available\n\n## Acceptance criteria\n\n- [x] User can select findings and write them to the provider (existing flow; UI now filters already-written findings)\n- [x] Existing external comment IDs prevent duplicate writes (backend dedupe preserved; UI now surfaces posted/skipped state)\n- [x] Unsupported providers show a clear disabled state (Phrase and unknown providers without pushers)\n\n## Testing\n\n- `./node_modules/.bin/vp test` on updated unit tests (22 passed)\n- `./node_modules/.bin/vp check --fix` (format, lint, types clean)\n\nResolves HL-375\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\nLinear Issue: [HL-375](https://linear.app/hyperlocalise/issue/HL-375/implement-provider-comment-write-back-action)\n\n<div><a href=\"https://cursor.com/agents/bc-246e9469-fe51-47bf-970c-2a1cfee7a47d\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-246e9469-fe51-47bf-970c-2a1cfee7a47d\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "cungminh2710",
+    "headRef": "cursor/provider-comment-writeback-hl375-a47d",
+    "repository": "hyperlocalise/hyperlocalise"
+  },
+  "diffRef": {
+    "repository": "hyperlocalise/hyperlocalise",
+    "headSha": "07a916df34a0fcb5cbc2348641019e148e7342d4",
+    "baseSha": "2060f91c82fccc692d9a9e339778466a819d14a7"
+  },
+  "vendoredDiffPath": "cursor/cursor-hyperlocalise-hyperlocalise-pr694.diff",
+  "vendoredAt": "2026-05-24T03:12:18.463Z",
+  "collectedAt": "2026-05-24T03:12:18.463Z"
+}

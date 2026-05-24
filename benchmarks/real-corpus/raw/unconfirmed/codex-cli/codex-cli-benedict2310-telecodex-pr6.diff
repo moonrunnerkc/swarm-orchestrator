@@ -1,0 +1,138 @@
+diff --git a/.env.example b/.env.example
+index 98a159a..a29d4b9 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1,6 +1,7 @@
+ TELEGRAM_BOT_TOKEN=
+ TELEGRAM_ALLOWED_USER_IDS=
+ CODEX_API_KEY=
++CODEX_BIN=
+ CODEX_MODEL=
+ MAX_FILE_SIZE=20971520
+ CODEX_SANDBOX_MODE=workspace-write
+diff --git a/README.md b/README.md
+index 7597fc6..853fd65 100644
+--- a/README.md
++++ b/README.md
+@@ -30,6 +30,7 @@ TeleCodex is a Telegram bridge for the OpenAI Codex CLI SDK. It keeps a Codex th
+ - The Codex CLI installed and authenticated on the host:
+   - API key auth: set `CODEX_API_KEY`
+   - ChatGPT login: `codex login` on the machine, or use `/login` from Telegram
++  - Custom Codex builds: set `CODEX_BIN` to the executable path
+ - *(Optional)* `ffmpeg` — required for local voice transcription via parakeet-coreml
+ - *(Optional)* `OPENAI_API_KEY` — enables OpenAI Whisper as a voice transcription fallback
+ 
+@@ -52,6 +53,7 @@ TeleCodex is a Telegram bridge for the OpenAI Codex CLI SDK. It keeps a Codex th
+    | `TELEGRAM_BOT_TOKEN` | ✅ | Bot token from @BotFather |
+    | `TELEGRAM_ALLOWED_USER_IDS` | ✅ | Comma-separated Telegram user IDs |
+    | `CODEX_API_KEY` | — | API key for Codex (alternative to ChatGPT login) |
++   | `CODEX_BIN` | — | Path to a custom Codex CLI executable; leave unset to use the SDK default |
+    | `CODEX_MODEL` | — | Default model, e.g. `gpt-5.4`, `o3` |
+    | `CODEX_SANDBOX_MODE` | — | `read-only`, `workspace-write` *(default)*, `danger-full-access` |
+    | `CODEX_APPROVAL_POLICY` | — | `never` *(default)*, `on-request`, `on-failure`, `untrusted` |
+diff --git a/src/codex-session.ts b/src/codex-session.ts
+index e767b4d..99c2e60 100644
+--- a/src/codex-session.ts
++++ b/src/codex-session.ts
+@@ -471,6 +471,7 @@ export class CodexSessionService {
+         approval_policy: this.currentLaunchProfile.approvalPolicy,
+       },
+       env: buildCodexEnv(this.config.codexApiKey),
++      codexPathOverride: this.config.codexBin,
+     });
+   }
+ }
+diff --git a/src/config.ts b/src/config.ts
+index d57cece..de8fde6 100644
+--- a/src/config.ts
++++ b/src/config.ts
+@@ -22,6 +22,7 @@ export interface TeleCodexConfig {
+   workspace: string;
+   maxFileSize: number;
+   codexApiKey?: string;
++  codexBin?: string;
+   codexModel?: string;
+   codexSandboxMode: CodexSandboxMode;
+   codexApprovalPolicy: CodexApprovalPolicy;
+@@ -42,6 +43,7 @@ export function loadConfig(): TeleCodexConfig {
+   const workspace = resolveWorkspace();
+   const maxFileSize = parseMaxFileSize(optionalString(process.env.MAX_FILE_SIZE));
+   const codexApiKey = optionalString(process.env.CODEX_API_KEY);
++  const codexBin = optionalString(process.env.CODEX_BIN);
+   const codexModel = optionalString(process.env.CODEX_MODEL);
+   const codexSandboxMode = parseSandboxMode(optionalString(process.env.CODEX_SANDBOX_MODE));
+   const codexApprovalPolicy = parseApprovalPolicy(optionalString(process.env.CODEX_APPROVAL_POLICY));
+@@ -74,6 +76,7 @@ export function loadConfig(): TeleCodexConfig {
+     workspace,
+     maxFileSize,
+     codexApiKey,
++    codexBin,
+     codexModel,
+     codexSandboxMode,
+     codexApprovalPolicy,
+diff --git a/test/codex-session.test.ts b/test/codex-session.test.ts
+index a71229b..f355a15 100644
+--- a/test/codex-session.test.ts
++++ b/test/codex-session.test.ts
+@@ -178,6 +178,16 @@ describe("CodexSessionService", () => {
+     });
+   });
+ 
++  it("passes the configured Codex binary override to the SDK", async () => {
++    await CodexSessionService.create(createConfig({ codexBin: "/opt/codex-custom/bin/codex" }));
++
++    expect(mockState.createdCodexOptions[0]).toEqual(
++      expect.objectContaining({
++        codexPathOverride: "/opt/codex-custom/bin/codex",
++      }),
++    );
++  });
++
+   it("create accepts overrides for workspace, model, reasoning effort, launch profile, and resumeThreadId", async () => {
+     const service = await CodexSessionService.create(createConfig(), {
+       workspace: "/workspace/resumed",
+diff --git a/test/config.test.ts b/test/config.test.ts
+index dc188ec..358389d 100644
+--- a/test/config.test.ts
++++ b/test/config.test.ts
+@@ -16,6 +16,7 @@ describe("loadConfig", () => {
+     delete process.env.TELEGRAM_BOT_TOKEN;
+     delete process.env.TELEGRAM_ALLOWED_USER_IDS;
+     delete process.env.CODEX_API_KEY;
++    delete process.env.CODEX_BIN;
+     delete process.env.CODEX_MODEL;
+     delete process.env.CODEX_SANDBOX_MODE;
+     delete process.env.CODEX_APPROVAL_POLICY;
+@@ -69,6 +70,7 @@ describe("loadConfig", () => {
+       workspace: process.cwd(),
+       maxFileSize: 20 * 1024 * 1024,
+       codexApiKey: "secret-key",
++      codexBin: undefined,
+       codexModel: "o3",
+       codexSandboxMode: "danger-full-access",
+       codexApprovalPolicy: "on-request",
+@@ -111,6 +113,7 @@ describe("loadConfig", () => {
+     const config = loadConfig();
+ 
+     expect(config.codexApiKey).toBeUndefined();
++    expect(config.codexBin).toBeUndefined();
+     expect(config.codexModel).toBeUndefined();
+     expect(config.maxFileSize).toBe(20 * 1024 * 1024);
+     expect(config.codexSandboxMode).toBe("workspace-write");
+@@ -233,6 +236,16 @@ describe("loadConfig", () => {
+     expect(config.maxFileSize).toBe(5 * 1024 * 1024);
+   });
+ 
++  it("parses CODEX_BIN when configured", () => {
++    process.env.TELEGRAM_BOT_TOKEN = "bot-token";
++    process.env.TELEGRAM_ALLOWED_USER_IDS = "123";
++    process.env.CODEX_BIN = "  /opt/codex-custom/bin/codex  ";
++
++    const config = loadConfig();
++
++    expect(config.codexBin).toBe("/opt/codex-custom/bin/codex");
++  });
++
+   it("parses ENABLE_TELEGRAM_LOGIN boolean values", () => {
+     process.env.TELEGRAM_BOT_TOKEN = "bot-token";
+     process.env.TELEGRAM_ALLOWED_USER_IDS = "123";

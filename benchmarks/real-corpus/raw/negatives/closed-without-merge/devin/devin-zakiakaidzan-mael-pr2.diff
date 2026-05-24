@@ -1,0 +1,2605 @@
+diff --git a/public/index.html b/public/index.html
+new file mode 100644
+index 0000000..217cd0d
+--- /dev/null
++++ b/public/index.html
+@@ -0,0 +1,2599 @@
++<!DOCTYPE html>
++<html lang="id">
++<head>
++  <meta charset="UTF-8" />
++  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++  <title>Admin Dashboard FSPP Kuluwut</title>
++  <link rel="preconnect" href="https://fonts.googleapis.com">
++  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
++  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
++  <script src="https://cdn.tailwindcss.com"></script>
++  <script src="https://unpkg.com/lucide@latest"></script>
++  <script>
++    tailwind.config = {
++      theme: {
++        extend: {
++          colors: {
++            primary: '#33691E',
++            'primary-dark': '#264F15',
++            'primary-soft': '#E8F5E9',
++            'bg-app': '#F8FAF7',
++            'card': '#FFFFFF',
++            'text-main': '#1F2937',
++            'text-muted': '#6B7280',
++            'border-soft': '#E5E7EB',
++            'danger': '#DC2626',
++            'success': '#16A34A',
++            'warning': '#F59E0B',
++          },
++          fontFamily: { sans: ['Nunito', 'system-ui', 'sans-serif'] },
++          boxShadow: {
++            'soft': '0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.04)',
++            'card': '0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04)',
++            'pop': '0 10px 30px -10px rgba(51, 105, 30, 0.25)',
++          }
++        }
++      }
++    }
++  </script>
++  <style>
++    html, body { font-family: 'Nunito', system-ui, sans-serif; }
++    body { background: #F8FAF7; color: #1F2937; -webkit-font-smoothing: antialiased; }
++    ::-webkit-scrollbar { width: 8px; height: 8px; }
++    ::-webkit-scrollbar-track { background: transparent; }
++    ::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 999px; }
++    ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
++
++    .fade-in { animation: fadeIn .25s ease-out; }
++    .pop-in { animation: popIn .2s ease-out; }
++    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px);} to {opacity:1; transform:translateY(0);} }
++    @keyframes popIn { from { opacity: 0; transform: scale(.96);} to {opacity:1; transform:scale(1);} }
++
++    .nav-item { transition: all .2s ease; }
++    .nav-item.active { background: #E8F5E9; color: #33691E; }
++    .nav-item.active .nav-icon { color: #33691E; }
++    .nav-item:not(.active):hover { background: #F3F4F6; color: #1F2937; }
++
++    .btn-primary { background: #33691E; color: #fff; }
++    .btn-primary:hover { background: #264F15; }
++    .btn-primary:disabled { opacity:.6; cursor:not-allowed; }
++
++    .skeleton { background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 50%, #f1f5f9 100%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; border-radius: 12px; }
++    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
++
++    .truncate-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
++    .truncate-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
++
++    [data-screen] { display: none; }
++    [data-screen].active { display: block; }
++
++    .toast-enter { animation: toastIn .25s ease-out; }
++    @keyframes toastIn { from { opacity:0; transform: translateX(20px);} to { opacity:1; transform: translateX(0);} }
++
++    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
++
++    input[type="file"]::-webkit-file-upload-button { display: none; }
++    input[type="file"] { color: transparent; }
++    
++    @media (max-width: 768px) {
++      .desktop-only { display: none !important; }
++    }
++    @media (min-width: 769px) {
++      .mobile-only { display: none !important; }
++    }
++  </style>
++</head>
++<body>
++
++  <!-- ====================================================== LOGIN SCREEN ====================================================== -->
++  <div data-screen="login" class="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-primary-soft via-white to-primary-soft">
++    <div class="w-full max-w-md">
++      <div class="flex flex-col items-center mb-8">
++        <div class="w-16 h-16 rounded-2xl bg-primary text-white flex items-center justify-center shadow-pop">
++          <i data-lucide="leaf" class="w-8 h-8"></i>
++        </div>
++        <h1 class="mt-4 text-2xl font-extrabold text-text-main">FSPP Kuluwut</h1>
++        <p class="text-sm text-text-muted">Dashboard Administrator</p>
++      </div>
++      <div class="bg-white rounded-3xl shadow-card border border-border-soft p-8">
++        <h2 class="text-xl font-extrabold mb-1 text-text-main">Selamat Datang</h2>
++        <p class="text-sm text-text-muted mb-6">Silakan login dengan akun admin Anda.</p>
++        <form id="form-login" class="space-y-4">
++          <div>
++            <label class="block text-sm font-semibold mb-1.5">Email</label>
++            <div class="relative">
++              <i data-lucide="mail" class="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-text-muted"></i>
++              <input id="login-email" type="email" required value="admin@fspp.local" autocomplete="username"
++                class="w-full pl-11 pr-4 py-3 rounded-xl border border-border-soft focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition" />
++            </div>
++          </div>
++          <div>
++            <label class="block text-sm font-semibold mb-1.5">Password</label>
++            <div class="relative">
++              <i data-lucide="lock" class="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-text-muted"></i>
++              <input id="login-password" type="password" required value="admin123" autocomplete="current-password"
++                class="w-full pl-11 pr-12 py-3 rounded-xl border border-border-soft focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition" />
++              <button type="button" id="toggle-password"
++                class="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main p-1 rounded-lg">
++                <i data-lucide="eye" class="w-4 h-4"></i>
++              </button>
++            </div>
++          </div>
++          <button id="btn-login" type="submit"
++            class="w-full btn-primary font-bold py-3 rounded-xl shadow-soft transition active:scale-[0.98] flex items-center justify-center gap-2">
++            <span id="btn-login-label">Masuk</span>
++            <i data-lucide="loader" id="btn-login-spinner" class="w-4 h-4 animate-spin hidden"></i>
++          </button>
++        </form>
++        <div id="login-error" class="hidden mt-4 p-3 bg-danger/10 border border-danger/20 text-danger text-sm rounded-xl"></div>
++      </div>
++      <p class="text-center mt-6 text-xs text-text-muted">© 2026 FSPP Kuluwut · Forum Silaturahmi Pondok Pesantren</p>
++    </div>
++  </div>
++
++  <!-- ====================================================== APP SHELL ====================================================== -->
++  <div data-screen="app">
++
++    <!-- Mobile drawer overlay -->
++    <div id="drawer-overlay" class="hidden md:hidden fixed inset-0 bg-black/40 z-40"></div>
++
++    <!-- Sidebar -->
++    <aside id="sidebar"
++      class="hidden md:flex fixed inset-y-0 left-0 w-64 bg-white border-r border-border-soft flex-col z-50">
++      <div class="p-5 border-b border-border-soft flex items-center gap-3">
++        <div class="w-11 h-11 rounded-xl bg-primary text-white flex items-center justify-center shadow-soft">
++          <i data-lucide="leaf" class="w-6 h-6"></i>
++        </div>
++        <div class="min-w-0">
++          <h1 class="font-extrabold text-text-main leading-tight truncate">FSPP Kuluwut</h1>
++          <p class="text-xs text-text-muted truncate">Admin Panel</p>
++        </div>
++        <button id="btn-close-drawer" class="ml-auto md:hidden p-2 rounded-lg hover:bg-gray-100">
++          <i data-lucide="x" class="w-5 h-5"></i>
++        </button>
++      </div>
++
++      <nav id="sidebar-nav" class="flex-1 overflow-y-auto p-3 space-y-1"></nav>
++
++      <div class="p-3 border-t border-border-soft">
++        <div class="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50 cursor-pointer" onclick="navigate('settings')">
++          <div id="sidebar-avatar" class="w-10 h-10 rounded-full bg-primary-soft text-primary font-bold flex items-center justify-center">AF</div>
++          <div class="min-w-0 flex-1">
++            <p id="sidebar-name" class="text-sm font-semibold truncate">Admin FSPP</p>
++            <p id="sidebar-email" class="text-xs text-text-muted truncate">admin@fspp.local</p>
++          </div>
++          <button onclick="event.stopPropagation(); logout();" class="p-2 rounded-lg hover:bg-danger/10 text-text-muted hover:text-danger" title="Logout">
++            <i data-lucide="log-out" class="w-4 h-4"></i>
++          </button>
++        </div>
++      </div>
++    </aside>
++
++    <!-- Main area -->
++    <div class="md:ml-64 min-h-screen flex flex-col">
++      <!-- Topbar -->
++      <header class="sticky top-0 z-30 bg-white/85 backdrop-blur border-b border-border-soft">
++        <div class="flex items-center gap-3 px-4 md:px-8 py-4">
++          <button id="btn-open-drawer" class="md:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100">
++            <i data-lucide="menu" class="w-5 h-5"></i>
++          </button>
++          <div class="flex-1 min-w-0">
++            <h2 id="page-title" class="text-lg md:text-xl font-extrabold text-text-main truncate">Dashboard</h2>
++            <p id="page-subtitle" class="text-xs md:text-sm text-text-muted truncate hidden md:block">Selamat datang kembali</p>
++          </div>
++          <div class="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl border border-border-soft bg-white w-72">
++            <i data-lucide="search" class="w-4 h-4 text-text-muted"></i>
++            <input id="global-search" type="text" placeholder="Cari di halaman ini..."
++              class="bg-transparent outline-none text-sm flex-1" />
++          </div>
++          <button class="relative p-2 rounded-xl hover:bg-gray-100" onclick="navigate('notifikasi')">
++            <i data-lucide="bell" class="w-5 h-5 text-text-main"></i>
++            <span id="badge-unread" class="hidden absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-danger text-white text-[10px] font-bold rounded-full flex items-center justify-center">0</span>
++          </button>
++          <button class="md:hidden p-2 rounded-xl hover:bg-gray-100" onclick="navigate('settings')">
++            <div id="topbar-avatar" class="w-7 h-7 rounded-full bg-primary-soft text-primary text-xs font-bold flex items-center justify-center">AF</div>
++          </button>
++        </div>
++      </header>
++
++      <!-- Main content -->
++      <main id="main-content" class="flex-1 p-4 md:p-8 pb-28 md:pb-8 fade-in"></main>
++    </div>
++
++    <!-- Mobile bottom nav -->
++    <nav id="bottom-nav" class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-border-soft px-2 py-2">
++      <div class="flex items-center justify-between gap-1">
++        <button data-view="dashboard" class="bn flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl">
++          <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
++          <span class="text-[10px] font-semibold">Home</span>
++        </button>
++        <button data-view="berita" class="bn flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl">
++          <i data-lucide="newspaper" class="w-5 h-5"></i>
++          <span class="text-[10px] font-semibold">Berita</span>
++        </button>
++        <button data-view="agenda" class="bn flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl">
++          <i data-lucide="calendar" class="w-5 h-5"></i>
++          <span class="text-[10px] font-semibold">Agenda</span>
++        </button>
++        <button data-view="donasi" class="bn flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl">
++          <i data-lucide="hand-coins" class="w-5 h-5"></i>
++          <span class="text-[10px] font-semibold">Donasi</span>
++        </button>
++        <button id="btn-more-menu" class="bn flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl">
++          <i data-lucide="grid-2x2" class="w-5 h-5"></i>
++          <span class="text-[10px] font-semibold">Menu</span>
++        </button>
++      </div>
++    </nav>
++  </div>
++
++  <!-- ====================================================== MODAL ====================================================== -->
++  <div id="modal-root" class="fixed inset-0 z-[70] hidden">
++    <div class="absolute inset-0 bg-black/50" onclick="closeModal()"></div>
++    <div class="absolute inset-0 flex items-end md:items-center justify-center p-0 md:p-6 overflow-y-auto">
++      <div class="bg-white w-full md:max-w-2xl md:rounded-3xl rounded-t-3xl shadow-pop pop-in flex flex-col max-h-[90vh]">
++        <div class="flex items-center gap-3 p-5 border-b border-border-soft">
++          <h3 id="modal-title" class="text-base md:text-lg font-extrabold flex-1 truncate">Modal</h3>
++          <button onclick="closeModal()" class="p-2 rounded-xl hover:bg-gray-100">
++            <i data-lucide="x" class="w-5 h-5"></i>
++          </button>
++        </div>
++        <div id="modal-body" class="p-5 overflow-y-auto flex-1"></div>
++      </div>
++    </div>
++  </div>
++
++  <!-- ====================================================== CONFIRM ====================================================== -->
++  <div id="confirm-root" class="fixed inset-0 z-[80] hidden">
++    <div class="absolute inset-0 bg-black/50"></div>
++    <div class="absolute inset-0 flex items-center justify-center p-4">
++      <div class="bg-white w-full max-w-sm rounded-2xl shadow-pop pop-in p-6">
++        <div class="w-12 h-12 rounded-full bg-danger/10 text-danger flex items-center justify-center mx-auto mb-3">
++          <i data-lucide="alert-triangle" class="w-6 h-6"></i>
++        </div>
++        <h3 id="confirm-title" class="text-lg font-extrabold text-center">Hapus data ini?</h3>
++        <p id="confirm-message" class="text-sm text-text-muted text-center mt-1">Tindakan ini tidak dapat dibatalkan.</p>
++        <div class="flex gap-3 mt-5">
++          <button id="confirm-cancel" class="flex-1 py-2.5 rounded-xl border border-border-soft font-semibold hover:bg-gray-50">Batal</button>
++          <button id="confirm-ok" class="flex-1 py-2.5 rounded-xl bg-danger text-white font-bold hover:bg-danger/90">Hapus</button>
++        </div>
++      </div>
++    </div>
++  </div>
++
++  <!-- ====================================================== TOAST ====================================================== -->
++  <div id="toast-root" class="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-sm"></div>
++
++  <script>
++  /* =========================================================
++   *  CONFIG & STATE
++   * ========================================================= */
++  const API_BASE = 'https://api.fsppkuluwut.workers.dev';
++  const FALLBACK_IMG = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120" viewBox="0 0 160 120"><rect width="160" height="120" fill="%23E8F5E9"/><g fill="%2333691E" opacity=".5"><path d="M40 80l20-24 16 18 12-12 32 38H40z"/><circle cx="58" cy="48" r="8"/></g></svg>';
++
++  const STATE = {
++    token: null,
++    admin: null,
++    currentView: 'dashboard',
++    cache: {},
++    search: '',
++  };
++
++  const MENU = [
++    { key: 'dashboard',    label: 'Dashboard',              icon: 'layout-dashboard', subtitle: 'Ringkasan data FSPP' },
++    { key: 'berita',       label: 'Berita',                 icon: 'newspaper',        subtitle: 'Kelola berita resmi' },
++    { key: 'dakwah',       label: 'Dakwah',                 icon: 'book-open',        subtitle: 'Materi dakwah & ceramah' },
++    { key: 'agenda',       label: 'Agenda',                 icon: 'calendar',         subtitle: 'Jadwal kegiatan FSPP' },
++    { key: 'pesantren',    label: 'Data Pesantren',         icon: 'school',           subtitle: 'Daftar pondok pesantren' },
++    { key: 'pengurus',     label: 'Pengurus',               icon: 'users',            subtitle: 'Susunan pengurus FSPP' },
++    { key: 'donasi',       label: 'Donasi / Infak',         icon: 'hand-coins',       subtitle: 'Program donasi & infak' },
++    { key: 'transparansi', label: 'Transparansi Keuangan',  icon: 'wallet',           subtitle: 'Pemasukan & pengeluaran' },
++    { key: 'gallery',      label: 'Gallery Foto',           icon: 'image',            subtitle: 'Koleksi foto kegiatan' },
++    { key: 'notifikasi',   label: 'Notifikasi',             icon: 'bell',             subtitle: 'Pemberitahuan sistem' },
++    { key: 'settings',     label: 'Settings',               icon: 'settings',         subtitle: 'Pengaturan website FSPP' },
++  ];
++
++  /* =========================================================
++   *  TINY DOM HELPERS
++   * ========================================================= */
++  const $ = (sel, ctx=document) => ctx.querySelector(sel);
++  const $$ = (sel, ctx=document) => Array.from(ctx.querySelectorAll(sel));
++  const escapeHtml = (str) => String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
++  const refreshIcons = () => { try { if (window.lucide) lucide.createIcons(); } catch(e){} };
++
++  /* =========================================================
++   *  HELPERS REQUIRED BY SPEC
++   * ========================================================= */
++  function getInitials(name) {
++    if (!name) return 'AF';
++    const parts = String(name).trim().split(/\s+/).slice(0, 2);
++    return parts.map(p => p[0] || '').join('').toUpperCase() || 'AF';
++  }
++
++  function sanitizeInput(value) {
++    if (value === null || value === undefined) return '';
++    return String(value).replace(/[\u0000-\u001F\u007F]/g, '').trim();
++  }
++
++  function formatRupiah(number) {
++    const n = Number(number);
++    if (!isFinite(n)) return 'Rp 0';
++    return 'Rp ' + n.toLocaleString('id-ID', { maximumFractionDigits: 0 });
++  }
++
++  function formatDate(date) {
++    if (!date) return '-';
++    const d = new Date(date);
++    if (isNaN(d)) return String(date);
++    return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
++  }
++
++  function formatDateTime(date) {
++    if (!date) return '-';
++    const d = new Date(date);
++    if (isNaN(d)) return String(date);
++    return d.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
++  }
++
++  function relativeTime(date) {
++    if (!date) return '';
++    const d = new Date(date);
++    if (isNaN(d)) return '';
++    const diff = (Date.now() - d.getTime()) / 1000;
++    if (diff < 60) return 'baru saja';
++    if (diff < 3600) return Math.floor(diff/60) + ' menit lalu';
++    if (diff < 86400) return Math.floor(diff/3600) + ' jam lalu';
++    if (diff < 604800) return Math.floor(diff/86400) + ' hari lalu';
++    return formatDate(date);
++  }
++
++  function showToast(message, type='info') {
++    const root = $('#toast-root');
++    if (!root) return;
++    const map = {
++      success: { cls: 'bg-success text-white', icon: 'check-circle' },
++      error:   { cls: 'bg-danger text-white',  icon: 'alert-circle' },
++      warning: { cls: 'bg-warning text-white', icon: 'alert-triangle' },
++      info:    { cls: 'bg-text-main text-white', icon: 'info' },
++    };
++    const m = map[type] || map.info;
++    const el = document.createElement('div');
++    el.className = `${m.cls} px-4 py-3 rounded-xl shadow-pop flex items-center gap-3 toast-enter`;
++    el.innerHTML = `<i data-lucide="${m.icon}" class="w-5 h-5 shrink-0"></i><span class="text-sm font-semibold">${escapeHtml(message)}</span>`;
++    root.appendChild(el);
++    refreshIcons();
++    setTimeout(() => {
++      el.style.transition = 'opacity .3s, transform .3s';
++      el.style.opacity = '0';
++      el.style.transform = 'translateX(20px)';
++      setTimeout(() => el.remove(), 300);
++    }, 3000);
++  }
++
++  function showLoading(target) {
++    const html = `
++      <div class="space-y-3">
++        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
++          ${Array(4).fill('<div class="skeleton h-24"></div>').join('')}
++        </div>
++        <div class="skeleton h-64"></div>
++      </div>`;
++    if (target instanceof HTMLElement) target.innerHTML = html;
++    else if (typeof target === 'string') { const el = $(target); if (el) el.innerHTML = html; }
++    else $('#main-content').innerHTML = html;
++  }
++
++  function hideLoading(target) {
++    if (target instanceof HTMLElement) { target.innerHTML = ''; return; }
++    if (typeof target === 'string') { const el = $(target); if (el) el.innerHTML = ''; return; }
++  }
++
++  function showEmptyState(message, opts={}) {
++    const icon = opts.icon || 'inbox';
++    const action = opts.action ? `<button class="mt-4 btn-primary px-5 py-2 rounded-xl font-bold text-sm" onclick="${opts.action.onclick}">${escapeHtml(opts.action.label)}</button>` : '';
++    return `
++      <div class="bg-white border border-border-soft rounded-3xl p-10 flex flex-col items-center text-center">
++        <div class="w-16 h-16 rounded-2xl bg-primary-soft text-primary flex items-center justify-center mb-4">
++          <i data-lucide="${icon}" class="w-8 h-8"></i>
++        </div>
++        <p class="text-text-main font-bold">${escapeHtml(message || 'Belum ada data')}</p>
++        <p class="text-text-muted text-sm mt-1">${escapeHtml(opts.hint || 'Data akan muncul di sini ketika tersedia.')}</p>
++        ${action}
++      </div>`;
++  }
++
++  function openModal(title, content) {
++    $('#modal-title').textContent = title || '';
++    $('#modal-body').innerHTML = content || '';
++    $('#modal-root').classList.remove('hidden');
++    document.body.style.overflow = 'hidden';
++    refreshIcons();
++  }
++
++  function closeModal() {
++    $('#modal-root').classList.add('hidden');
++    $('#modal-body').innerHTML = '';
++    document.body.style.overflow = '';
++  }
++
++  function confirmDelete(callback, opts={}) {
++    const root = $('#confirm-root');
++    $('#confirm-title').textContent = opts.title || 'Hapus data ini?';
++    $('#confirm-message').textContent = opts.message || 'Tindakan ini tidak dapat dibatalkan.';
++    $('#confirm-ok').textContent = opts.confirmLabel || 'Hapus';
++    root.classList.remove('hidden');
++    refreshIcons();
++    const onCancel = () => { root.classList.add('hidden'); cleanup(); };
++    const onOk = () => { root.classList.add('hidden'); cleanup(); try { callback(); } catch(e) { console.error(e); } };
++    function cleanup() {
++      $('#confirm-cancel').removeEventListener('click', onCancel);
++      $('#confirm-ok').removeEventListener('click', onOk);
++    }
++    $('#confirm-cancel').addEventListener('click', onCancel);
++    $('#confirm-ok').addEventListener('click', onOk);
++  }
++
++  function fileToBase64(file) {
++    return new Promise((resolve, reject) => {
++      if (!file) return reject(new Error('File tidak ditemukan'));
++      const reader = new FileReader();
++      reader.onload = () => resolve(reader.result);
++      reader.onerror = () => reject(new Error('Gagal membaca file'));
++      reader.readAsDataURL(file);
++    });
++  }
++
++  async function uploadImageToGallery(file, title, category) {
++    if (!file) throw new Error('File tidak boleh kosong');
++    if (!/^image\//.test(file.type)) throw new Error('File harus berupa gambar');
++    if (file.size > 2 * 1024 * 1024) throw new Error('Ukuran file maksimal 2MB');
++    const image_base64 = await fileToBase64(file);
++    const safeName = (file.name || 'foto.jpg').replace(/[^\w.\-]+/g, '-').toLowerCase();
++    const body = {
++      title: sanitizeInput(title) || safeName,
++      description: '',
++      file_name: safeName,
++      image_base64,
++      category: category || 'general',
++      is_public: 1,
++      sort_order: 0,
++    };
++    const res = await apiPost('/api/admin/gallery', body);
++    if (!res || res.success === false || !res.data || !res.data.image_url) {
++      throw new Error((res && res.message) || 'Gagal mengupload foto');
++    }
++    return res.data;
++  }
++
++  /* =========================================================
++   *  API CLIENT
++   * ========================================================= */
++  async function apiRequest(method, endpoint, body) {
++    const url = endpoint.startsWith('http') ? endpoint : API_BASE + endpoint;
++    const headers = { 'Content-Type': 'application/json' };
++    if (STATE.token) headers['Authorization'] = 'Bearer ' + STATE.token;
++    let resp, json;
++    try {
++      resp = await fetch(url, {
++        method,
++        headers,
++        body: body !== undefined ? JSON.stringify(body) : undefined,
++      });
++    } catch (e) {
++      throw new Error('Tidak dapat terhubung ke server. Periksa koneksi internet.');
++    }
++    if (resp.status === 401) {
++      handleUnauthorized();
++      throw new Error('Sesi habis');
++    }
++    try { json = await resp.json(); }
++    catch(e) { json = { success: resp.ok, message: 'Respon server tidak valid' }; }
++    if (!resp.ok && (!json || json.success !== true)) {
++      const msg = (json && json.message) || `HTTP ${resp.status}`;
++      const err = new Error(msg);
++      err.payload = json;
++      throw err;
++    }
++    return json;
++  }
++  const apiGet    = (e)    => apiRequest('GET', e);
++  const apiPost   = (e, b) => apiRequest('POST', e, b);
++  const apiPut    = (e, b) => apiRequest('PUT', e, b);
++  const apiDelete = (e)    => apiRequest('DELETE', e);
++
++  function handleUnauthorized() {
++    localStorage.removeItem('fspp_token');
++    localStorage.removeItem('fspp_admin');
++    STATE.token = null;
++    STATE.admin = null;
++    showScreen('login');
++    showToast('Sesi habis, silakan login kembali', 'warning');
++  }
++
++  /* =========================================================
++   *  SCREEN / NAV
++   * ========================================================= */
++  function showScreen(name) {
++    $$('[data-screen]').forEach(el => el.classList.toggle('active', el.dataset.screen === name));
++  }
++
++  function renderSidebar() {
++    const nav = $('#sidebar-nav');
++    nav.innerHTML = MENU.map(m => `
++      <button type="button" data-view="${m.key}"
++        class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-text-muted">
++        <i data-lucide="${m.icon}" class="nav-icon w-[18px] h-[18px] text-text-muted"></i>
++        <span class="flex-1 text-left">${m.label}</span>
++      </button>
++    `).join('');
++    nav.querySelectorAll('[data-view]').forEach(btn => {
++      btn.addEventListener('click', () => {
++        navigate(btn.dataset.view);
++        closeDrawer();
++      });
++    });
++    updateActiveNav();
++    refreshIcons();
++  }
++
++  function updateActiveNav() {
++    $$('#sidebar-nav [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === STATE.currentView));
++    $$('#bottom-nav .bn').forEach(b => {
++      const isActive = b.dataset.view === STATE.currentView;
++      b.classList.toggle('text-primary', isActive);
++      b.classList.toggle('bg-primary-soft', isActive);
++      b.classList.toggle('text-text-muted', !isActive);
++    });
++  }
++
++  function navigate(view) {
++    const def = MENU.find(m => m.key === view) || MENU[0];
++    STATE.currentView = def.key;
++    STATE.search = '';
++    $('#page-title').textContent = def.label;
++    $('#page-subtitle').textContent = def.subtitle;
++    $('#global-search').value = '';
++    updateActiveNav();
++    const fn = {
++      dashboard: renderDashboard,
++      berita: renderBerita,
++      dakwah: renderDakwah,
++      agenda: renderAgenda,
++      pesantren: renderPesantren,
++      pengurus: renderPengurus,
++      donasi: renderDonasi,
++      transparansi: renderTransparansi,
++      gallery: renderGallery,
++      notifikasi: renderNotifikasi,
++      settings: renderSettings,
++    }[def.key];
++    if (fn) fn();
++  }
++
++  function openDrawer() {
++    $('#sidebar').classList.remove('hidden');
++    $('#sidebar').classList.add('flex');
++    $('#drawer-overlay').classList.remove('hidden');
++  }
++  function closeDrawer() {
++    if (window.matchMedia('(max-width: 767px)').matches) {
++      $('#sidebar').classList.add('hidden');
++      $('#sidebar').classList.remove('flex');
++      $('#drawer-overlay').classList.add('hidden');
++    }
++  }
++
++  /* =========================================================
++   *  AUTH
++   * ========================================================= */
++  async function handleLogin(e) {
++    e.preventDefault();
++    const email = sanitizeInput($('#login-email').value);
++    const password = $('#login-password').value;
++    const btn = $('#btn-login');
++    const label = $('#btn-login-label');
++    const spin = $('#btn-login-spinner');
++    const errBox = $('#login-error');
++    errBox.classList.add('hidden');
++    btn.disabled = true;
++    label.textContent = 'Memproses...';
++    spin.classList.remove('hidden');
++    try {
++      const res = await apiRequest('POST', '/api/admin/login', { email, password });
++      if (!res || res.success !== true || !res.token) {
++        throw new Error((res && res.message) || 'Login gagal');
++      }
++      localStorage.setItem('fspp_token', res.token);
++      localStorage.setItem('fspp_admin', JSON.stringify(res.admin || {}));
++      STATE.token = res.token;
++      STATE.admin = res.admin || { name: 'Admin FSPP', email };
++      showToast('Login berhasil', 'success');
++      enterApp();
++    } catch (err) {
++      errBox.textContent = err.message || 'Login gagal';
++      errBox.classList.remove('hidden');
++      showToast(err.message || 'Login gagal', 'error');
++    } finally {
++      btn.disabled = false;
++      label.textContent = 'Masuk';
++      spin.classList.add('hidden');
++    }
++  }
++
++  function logout() {
++    confirmDelete(() => {
++      localStorage.removeItem('fspp_token');
++      localStorage.removeItem('fspp_admin');
++      STATE.token = null;
++      STATE.admin = null;
++      showScreen('login');
++      showToast('Berhasil keluar', 'success');
++    }, { title: 'Keluar dari akun?', message: 'Anda akan diarahkan ke halaman login.', confirmLabel: 'Logout' });
++  }
++
++  function enterApp() {
++    refreshAdminProfileUI();
++    renderSidebar();
++    showScreen('app');
++    navigate('dashboard');
++  }
++
++  function refreshAdminProfileUI() {
++    const a = STATE.admin || {};
++    $('#sidebar-name').textContent = a.name || 'Admin FSPP';
++    $('#sidebar-email').textContent = a.email || 'admin@fspp.local';
++    $('#sidebar-avatar').textContent = getInitials(a.name);
++    $('#topbar-avatar').textContent = getInitials(a.name);
++  }
++
++  /* =========================================================
++   *  UI BUILDERS
++   * ========================================================= */
++  function pageHeader(opts={}) {
++    return `
++      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5">
++        <div class="min-w-0">
++          <h3 class="text-base md:text-lg font-extrabold text-text-main truncate">${escapeHtml(opts.title || '')}</h3>
++          <p class="text-xs md:text-sm text-text-muted truncate">${escapeHtml(opts.subtitle || '')}</p>
++        </div>
++        <div class="flex flex-wrap items-center gap-2">
++          ${opts.filters || ''}
++          ${opts.actionLabel ? `
++            <button onclick="${opts.actionOnClick}" class="btn-primary inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm shadow-soft">
++              <i data-lucide="plus" class="w-4 h-4"></i>${escapeHtml(opts.actionLabel)}
++            </button>` : ''}
++        </div>
++      </div>`;
++  }
++
++  function statCard(label, value, icon, accent='bg-primary-soft text-primary', sub='') {
++    return `
++      <div class="bg-white border border-border-soft rounded-2xl p-4 md:p-5 flex items-start gap-3 shadow-soft">
++        <div class="w-11 h-11 rounded-xl flex items-center justify-center ${accent}">
++          <i data-lucide="${icon}" class="w-5 h-5"></i>
++        </div>
++        <div class="min-w-0 flex-1">
++          <p class="text-xs text-text-muted font-semibold uppercase tracking-wide">${escapeHtml(label)}</p>
++          <p class="text-lg md:text-2xl font-extrabold text-text-main truncate">${value}</p>
++          ${sub ? `<p class="text-xs text-text-muted truncate">${escapeHtml(sub)}</p>` : ''}
++        </div>
++      </div>`;
++  }
++
++  function badge(text, variant='soft') {
++    const map = {
++      soft:     'bg-gray-100 text-gray-700',
++      primary:  'bg-primary-soft text-primary',
++      success:  'bg-success/10 text-success',
++      danger:   'bg-danger/10 text-danger',
++      warning:  'bg-warning/10 text-warning',
++      info:     'bg-blue-50 text-blue-600',
++    };
++    return `<span class="badge ${map[variant] || map.soft}">${escapeHtml(text)}</span>`;
++  }
++
++  function statusBadge(status) {
++    const s = String(status || '').toLowerCase();
++    if (s === 'published' || s === 'approved' || s === 'active' || s === 'done' || s === '1') return badge(status, 'success');
++    if (s === 'draft' || s === 'upcoming' || s === 'pending') return badge(status, 'warning');
++    if (s === 'cancelled' || s === 'rejected' || s === 'inactive' || s === '0') return badge(status, 'danger');
++    return badge(status || '-', 'soft');
++  }
++
++  function imageBox(url, alt='', cls='w-14 h-14 rounded-xl object-cover bg-primary-soft') {
++    const safe = url ? escapeHtml(url) : FALLBACK_IMG;
++    return `<img src="${safe}" alt="${escapeHtml(alt)}" class="${cls}" onerror="this.src='${FALLBACK_IMG}'" loading="lazy" />`;
++  }
++
++  function emptyTable(cols, msg) {
++    return `<tr><td colspan="${cols}" class="p-8"><div class="text-center text-text-muted">${escapeHtml(msg || 'Belum ada data')}</div></td></tr>`;
++  }
++
++  /* =========================================================
++   *  MODULE: DASHBOARD
++   * ========================================================= */
++  async function renderDashboard() {
++    const root = $('#main-content');
++    showLoading(root);
++    const endpoints = [
++      ['news', '/api/admin/news'],
++      ['dakwah', '/api/admin/dakwah'],
++      ['agendas', '/api/admin/agendas'],
++      ['pesantren', '/api/admin/pesantren'],
++      ['board', '/api/admin/board-members'],
++      ['donations', '/api/admin/donations'],
++      ['finance', '/api/admin/finance'],
++      ['gallery', '/api/admin/gallery'],
++      ['notifications', '/api/admin/notifications'],
++    ];
++    const results = await Promise.all(endpoints.map(async ([k, ep]) => {
++      try { const r = await apiGet(ep); return [k, Array.isArray(r?.data) ? r.data : []]; }
++      catch(e) { return [k, []]; }
++    }));
++    const data = Object.fromEntries(results);
++
++    const finance = data.finance || [];
++    const incomes = finance.filter(f => String(f.type).toLowerCase() === 'income' && String(f.status).toLowerCase() === 'approved');
++    const expenses = finance.filter(f => String(f.type).toLowerCase() === 'expense' && String(f.status).toLowerCase() === 'approved');
++    const totalPemasukan = incomes.reduce((s, f) => s + Number(f.amount || 0), 0);
++    const totalPengeluaran = expenses.reduce((s, f) => s + Number(f.amount || 0), 0);
++    const saldo = totalPemasukan - totalPengeluaran;
++    const totalDonatur = incomes.length;
++    const unreadNotif = (data.notifications || []).filter(n => Number(n.is_read) === 0).length;
++
++    $('#badge-unread').textContent = unreadNotif;
++    $('#badge-unread').classList.toggle('hidden', unreadNotif === 0);
++
++    const stats = [
++      statCard('Total Berita', data.news.length, 'newspaper', 'bg-blue-50 text-blue-600'),
++      statCard('Total Dakwah', data.dakwah.length, 'book-open', 'bg-amber-50 text-amber-600'),
++      statCard('Total Agenda', data.agendas.length, 'calendar', 'bg-purple-50 text-purple-600'),
++      statCard('Total Pesantren', data.pesantren.length, 'school', 'bg-primary-soft text-primary'),
++      statCard('Total Pengurus', data.board.length, 'users', 'bg-pink-50 text-pink-600'),
++      statCard('Program Donasi', data.donations.length, 'hand-coins', 'bg-emerald-50 text-emerald-600'),
++      statCard('Foto Gallery', data.gallery.length, 'image', 'bg-cyan-50 text-cyan-600'),
++      statCard('Total Donatur', totalDonatur, 'heart-handshake', 'bg-rose-50 text-rose-600'),
++    ].join('');
++
++    const financeCards = `
++      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
++        ${statCard('Total Pemasukan', formatRupiah(totalPemasukan), 'trending-up', 'bg-success/10 text-success')}
++        ${statCard('Total Pengeluaran', formatRupiah(totalPengeluaran), 'trending-down', 'bg-danger/10 text-danger')}
++        ${statCard('Saldo Transparansi', formatRupiah(saldo), 'wallet', saldo >= 0 ? 'bg-primary-soft text-primary' : 'bg-danger/10 text-danger')}
++      </div>
++      <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
++        ${statCard('Notifikasi Belum Dibaca', unreadNotif, 'bell', 'bg-warning/10 text-warning')}
++        ${statCard('Selamat Datang', STATE.admin?.name || 'Admin', 'sparkles', 'bg-primary-soft text-primary', new Date().toLocaleDateString('id-ID', { weekday:'long', day:'2-digit', month:'long', year:'numeric'}))}
++      </div>`;
++
++    const recentDonasi = (data.donations || []).slice(0, 5);
++    const recentDonatur = incomes.slice().sort((a,b) => new Date(b.transaction_date || b.created_at || 0) - new Date(a.transaction_date || a.created_at || 0)).slice(0, 5);
++    const recentAgenda = (data.agendas || []).slice().sort((a,b) => new Date(b.event_date || b.created_at || 0) - new Date(a.event_date || a.created_at || 0)).slice(0, 5);
++    const recentNotif = (data.notifications || []).slice(0, 5);
++
++    const listCard = (title, icon, items, renderer, emptyMsg) => `
++      <div class="bg-white border border-border-soft rounded-2xl shadow-soft">
++        <div class="p-4 md:p-5 flex items-center gap-3 border-b border-border-soft">
++          <div class="w-9 h-9 rounded-lg bg-primary-soft text-primary flex items-center justify-center">
++            <i data-lucide="${icon}" class="w-4 h-4"></i>
++          </div>
++          <h4 class="font-extrabold text-text-main">${title}</h4>
++        </div>
++        <div class="divide-y divide-border-soft">
++          ${items.length ? items.map(renderer).join('') : `<div class="p-6 text-center text-sm text-text-muted">${emptyMsg}</div>`}
++        </div>
++      </div>`;
++
++    root.innerHTML = `
++      <div class="fade-in space-y-5">
++        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${stats}</div>
++        ${financeCards}
++        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
++          ${listCard('Donasi Terbaru', 'hand-coins', recentDonasi, (d) => `
++            <div class="p-4 flex items-center gap-3">
++              ${imageBox(d.image_url, d.title || 'donasi', 'w-12 h-12 rounded-xl object-cover')}
++              <div class="flex-1 min-w-0">
++                <p class="font-semibold text-text-main truncate">${escapeHtml(d.title || '-')}</p>
++                <p class="text-xs text-text-muted truncate">Target: ${formatRupiah(d.target_amount || 0)}</p>
++              </div>
++              ${statusBadge(d.status)}
++            </div>
++          `, 'Belum ada program donasi.')}
++
++          ${listCard('Donatur Terbaru', 'heart-handshake', recentDonatur, (f) => {
++            const dn = Number(f.show_donor_name)===0 ? 'Hamba Allah' : (f.donor_name || f.title || 'Donatur');
++            return `
++            <div class="p-4 flex items-center gap-3">
++              <div class="w-10 h-10 rounded-full bg-primary-soft text-primary font-bold flex items-center justify-center">${escapeHtml(getInitials(dn))}</div>
++              <div class="flex-1 min-w-0">
++                <p class="font-semibold text-text-main truncate">${escapeHtml(dn)}</p>
++                <p class="text-xs text-text-muted truncate">${formatDate(f.transaction_date || f.created_at)}</p>
++              </div>
++              <p class="text-success font-extrabold whitespace-nowrap">${formatRupiah(f.amount)}</p>
++            </div>
++          `;}, 'Belum ada donatur tercatat.')}
++
++          ${listCard('Agenda Terbaru', 'calendar', recentAgenda, (a) => `
++            <div class="p-4 flex items-center gap-3">
++              <div class="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex flex-col items-center justify-center text-[10px] font-bold leading-none">
++                <span>${(new Date(a.event_date || Date.now()).toLocaleString('id-ID', {month:'short'}) || '').toUpperCase()}</span>
++                <span class="text-base mt-0.5">${String(new Date(a.event_date || Date.now()).getDate()).padStart(2,'0')}</span>
++              </div>
++              <div class="flex-1 min-w-0">
++                <p class="font-semibold text-text-main truncate">${escapeHtml(a.title || '-')}</p>
++                <p class="text-xs text-text-muted truncate">${escapeHtml(a.location || '-')} · ${escapeHtml(a.event_time || '')}</p>
++              </div>
++              ${statusBadge(a.status)}
++            </div>
++          `, 'Belum ada agenda.')}
++
++          ${listCard('Notifikasi Terbaru', 'bell', recentNotif, (n) => `
++            <div class="p-4 flex items-center gap-3">
++              <div class="w-9 h-9 rounded-lg ${Number(n.is_read)===0 ? 'bg-warning/15 text-warning' : 'bg-gray-100 text-text-muted'} flex items-center justify-center">
++                <i data-lucide="bell" class="w-4 h-4"></i>
++              </div>
++              <div class="flex-1 min-w-0">
++                <p class="font-semibold text-text-main truncate">${escapeHtml(n.title || '-')}</p>
++                <p class="text-xs text-text-muted truncate">${escapeHtml(n.body || n.message || '')}</p>
++              </div>
++              <span class="text-[11px] text-text-muted whitespace-nowrap">${escapeHtml(relativeTime(n.created_at))}</span>
++            </div>
++          `, 'Belum ada notifikasi.')}
++        </div>
++      </div>
++    `;
++    refreshIcons();
++  }
++
++  /* =========================================================
++   *  GENERIC CRUD HELPERS
++   * ========================================================= */
++  async function fetchList(endpoint) {
++    try {
++      const res = await apiGet(endpoint);
++      if (res && res.success !== false && Array.isArray(res.data)) return res.data;
++      return [];
++    } catch (e) {
++      console.warn('fetchList', endpoint, e.message);
++      throw e;
++    }
++  }
++
++  function bindFormSubmit(formId, handler) {
++    const form = $('#' + formId);
++    if (!form) return;
++    form.addEventListener('submit', async (e) => {
++      e.preventDefault();
++      const btn = form.querySelector('button[type="submit"]');
++      if (btn) { btn.disabled = true; btn.dataset._lbl = btn.textContent; btn.textContent = 'Menyimpan...'; }
++      try {
++        await handler(new FormData(form), form);
++      } catch (err) {
++        showToast(err.message || 'Gagal menyimpan', 'error');
++      } finally {
++        if (btn) { btn.disabled = false; btn.textContent = btn.dataset._lbl || 'Simpan'; }
++      }
++    });
++  }
++
++  function formField(label, html, hint='') {
++    return `
++      <div>
++        <label class="block text-sm font-semibold mb-1.5">${label}</label>
++        ${html}
++        ${hint ? `<p class="text-xs text-text-muted mt-1">${hint}</p>` : ''}
++      </div>`;
++  }
++
++  function textInput(name, value='', opts={}) {
++    return `<input name="${name}" type="${opts.type||'text'}" value="${escapeHtml(value)}" ${opts.required?'required':''} placeholder="${escapeHtml(opts.placeholder||'')}"
++      class="w-full px-4 py-2.5 rounded-xl border border-border-soft focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition" />`;
++  }
++  function textarea(name, value='', opts={}) {
++    return `<textarea name="${name}" rows="${opts.rows||4}" ${opts.required?'required':''} placeholder="${escapeHtml(opts.placeholder||'')}"
++      class="w-full px-4 py-2.5 rounded-xl border border-border-soft focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition resize-none">${escapeHtml(value)}</textarea>`;
++  }
++  function selectInput(name, options, value='') {
++    return `<select name="${name}"
++      class="w-full px-4 py-2.5 rounded-xl border border-border-soft focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition bg-white">
++      ${options.map(o => `<option value="${escapeHtml(o.value)}" ${String(o.value)===String(value)?'selected':''}>${escapeHtml(o.label)}</option>`).join('')}
++    </select>`;
++  }
++
++  /* Image picker: input URL or upload */
++  function imagePicker(name, value='', category='general', idx) {
++    const uid = `img-${name}-${idx ?? 0}-${Math.random().toString(36).slice(2,6)}`;
++    return `
++      <div class="image-picker bg-gray-50 border border-border-soft rounded-xl p-3" data-name="${name}" data-category="${category}">
++        <div class="flex gap-2 mb-2">
++          <button type="button" class="ip-tab-url px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-border-soft">Pakai URL</button>
++          <button type="button" class="ip-tab-upload px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-border-soft">Upload Foto</button>
++        </div>
++        <div class="ip-url">
++          <input type="url" name="${name}" value="${escapeHtml(value)}" placeholder="https://..."
++            class="w-full px-4 py-2.5 rounded-xl border border-border-soft focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition" />
++        </div>
++        <div class="ip-upload hidden">
++          <label for="${uid}" class="block cursor-pointer">
++            <div class="border-2 border-dashed border-border-soft rounded-xl p-4 text-center hover:border-primary hover:bg-primary-soft/30 transition">
++              <i data-lucide="upload-cloud" class="w-7 h-7 mx-auto text-primary mb-1"></i>
++              <p class="text-sm font-semibold">Klik untuk pilih foto</p>
++              <p class="text-[11px] text-text-muted">JPG/PNG, maksimal 2MB</p>
++            </div>
++            <input id="${uid}" type="file" accept="image/*" class="hidden ip-file" />
++          </label>
++        </div>
++        <div class="ip-preview hidden mt-2">
++          <div class="flex items-center gap-3 bg-white rounded-xl p-2 border border-border-soft">
++            <img class="ip-preview-img w-14 h-14 rounded-lg object-cover" />
++            <div class="flex-1 min-w-0">
++              <p class="ip-preview-name text-xs font-semibold truncate">-</p>
++              <p class="ip-preview-status text-[11px] text-text-muted">Siap upload</p>
++            </div>
++            <button type="button" class="ip-remove p-1.5 rounded-lg hover:bg-gray-100 text-text-muted">
++              <i data-lucide="x" class="w-4 h-4"></i>
++            </button>
++          </div>
++        </div>
++      </div>
++    `;
++  }
++
++  function attachImagePickers(rootEl) {
++    rootEl.querySelectorAll('.image-picker').forEach(box => {
++      const name = box.dataset.name;
++      const category = box.dataset.category || 'general';
++      const tabUrl = box.querySelector('.ip-tab-url');
++      const tabUp = box.querySelector('.ip-tab-upload');
++      const paneUrl = box.querySelector('.ip-url');
++      const paneUp = box.querySelector('.ip-upload');
++      const preview = box.querySelector('.ip-preview');
++      const previewImg = box.querySelector('.ip-preview-img');
++      const previewName = box.querySelector('.ip-preview-name');
++      const previewStatus = box.querySelector('.ip-preview-status');
++      const fileInput = box.querySelector('.ip-file');
++      const urlInput = box.querySelector(`input[name="${name}"]`);
++      const removeBtn = box.querySelector('.ip-remove');
++
++      const activate = (mode) => {
++        if (mode === 'url') {
++          paneUrl.classList.remove('hidden'); paneUp.classList.add('hidden');
++          tabUrl.classList.add('bg-primary','text-white'); tabUrl.classList.remove('bg-white','border-border-soft');
++          tabUp.classList.remove('bg-primary','text-white'); tabUp.classList.add('bg-white','border-border-soft');
++        } else {
++          paneUp.classList.remove('hidden'); paneUrl.classList.add('hidden');
++          tabUp.classList.add('bg-primary','text-white'); tabUp.classList.remove('bg-white','border-border-soft');
++          tabUrl.classList.remove('bg-primary','text-white'); tabUrl.classList.add('bg-white','border-border-soft');
++        }
++      };
++      tabUrl.addEventListener('click', () => activate('url'));
++      tabUp.addEventListener('click', () => activate('upload'));
++      activate('url');
++
++      fileInput.addEventListener('change', async (e) => {
++        const file = e.target.files && e.target.files[0];
++        if (!file) return;
++        if (!/^image\//.test(file.type)) { showToast('File harus berupa gambar', 'error'); return; }
++        if (file.size > 2 * 1024 * 1024) { showToast('Ukuran maksimal 2MB', 'error'); return; }
++        const localUrl = URL.createObjectURL(file);
++        previewImg.src = localUrl;
++        previewName.textContent = file.name;
++        previewStatus.textContent = 'Mengupload...';
++        preview.classList.remove('hidden');
++        try {
++          const data = await uploadImageToGallery(file, file.name.replace(/\.[^/.]+$/, ''), category);
++          urlInput.value = data.image_url || '';
++          previewStatus.textContent = 'Berhasil diupload';
++          previewStatus.classList.add('text-success');
++          showToast('Foto berhasil diupload', 'success');
++        } catch (err) {
++          previewStatus.textContent = err.message || 'Gagal upload';
++          previewStatus.classList.add('text-danger');
++          showToast(err.message || 'Gagal upload', 'error');
++        }
++        refreshIcons();
++      });
++
++      removeBtn.addEventListener('click', () => {
++        fileInput.value = '';
++        urlInput.value = '';
++        preview.classList.add('hidden');
++        previewStatus.classList.remove('text-success','text-danger');
++      });
++    });
++    refreshIcons();
++  }
++
++  /* =========================================================
++   *  MODULE: BERITA
++   * ========================================================= */
++  async function renderBerita() {
++    const root = $('#main-content');
++    showLoading(root);
++    let list = [];
++    try { list = await fetchList('/api/admin/news'); }
++    catch (e) { root.innerHTML = renderErrorBlock(e.message, renderBerita); return; }
++    STATE.cache.berita = list;
++    renderBeritaList();
++  }
++  function renderBeritaList() {
++    const root = $('#main-content');
++    const q = (STATE.search || '').toLowerCase();
++    const filterStatus = STATE.filterStatus || '';
++    let list = (STATE.cache.berita || []).slice();
++    if (q) list = list.filter(b => (b.title||'').toLowerCase().includes(q));
++    if (filterStatus) list = list.filter(b => String(b.status).toLowerCase() === filterStatus);
++
++    const filters = `
++      <select onchange="STATE.filterStatus=this.value; renderBeritaList()"
++        class="px-3 py-2 rounded-xl border border-border-soft text-sm font-semibold bg-white">
++        <option value="">Semua Status</option>
++        <option value="published" ${filterStatus==='published'?'selected':''}>Published</option>
++        <option value="draft" ${filterStatus==='draft'?'selected':''}>Draft</option>
++      </select>`;
++
++    root.innerHTML = `
++      <div class="fade-in space-y-4">
++        ${pageHeader({ title:'Berita', subtitle:`${list.length} berita`, filters, actionLabel:'Tambah Berita', actionOnClick:'openBeritaModal()' })}
++        ${list.length ? `
++          <div class="hidden md:block bg-white border border-border-soft rounded-2xl overflow-hidden shadow-soft">
++            <table class="w-full text-sm">
++              <thead class="bg-gray-50 text-text-muted text-xs uppercase tracking-wide">
++                <tr>
++                  <th class="text-left p-4">Berita</th>
++                  <th class="text-left p-4">Penulis</th>
++                  <th class="text-left p-4">Status</th>
++                  <th class="text-left p-4">Tanggal</th>
++                  <th class="text-right p-4">Aksi</th>
++                </tr>
++              </thead>
++              <tbody class="divide-y divide-border-soft">
++                ${list.map(b => `
++                  <tr class="hover:bg-gray-50">
++                    <td class="p-4">
++                      <div class="flex items-center gap-3">
++                        ${imageBox(b.image_url, b.title, 'w-14 h-14 rounded-xl object-cover')}
++                        <div class="min-w-0">
++                          <p class="font-semibold text-text-main truncate max-w-xs">${escapeHtml(b.title||'-')}</p>
++                          <p class="text-xs text-text-muted truncate-2 max-w-xs">${escapeHtml(b.excerpt||'')}</p>
++                        </div>
++                      </div>
++                    </td>
++                    <td class="p-4 text-text-muted">${escapeHtml(b.author_name||'-')}</td>
++                    <td class="p-4">${statusBadge(b.status)}</td>
++                    <td class="p-4 text-text-muted">${escapeHtml(formatDate(b.published_at||b.created_at))}</td>
++                    <td class="p-4 text-right">${actionButtons(`openBeritaModal('${b.id}')`, `deleteBerita('${b.id}')`)}</td>
++                  </tr>`).join('')}
++              </tbody>
++            </table>
++          </div>
++          <div class="md:hidden space-y-3">
++            ${list.map(b => cardItem({
++              image: b.image_url, title: b.title, subtitle: b.excerpt,
++              meta: [escapeHtml(b.author_name||'-'), formatDate(b.published_at||b.created_at)],
++              status: b.status,
++              onEdit: `openBeritaModal('${b.id}')`, onDelete: `deleteBerita('${b.id}')`
++            })).join('')}
++          </div>
++        ` : showEmptyState('Belum ada berita', { icon:'newspaper', hint:'Tambahkan berita pertama Anda.', action: { label:'Tambah Berita', onclick:'openBeritaModal()' } })}
++      </div>
++    `;
++    refreshIcons();
++  }
++
++  window.openBeritaModal = function(id) {
++    const item = id ? (STATE.cache.berita||[]).find(b => String(b.id) === String(id)) : null;
++    const isEdit = !!item;
++    openModal(isEdit ? 'Edit Berita' : 'Tambah Berita', `
++      <form id="form-berita" class="space-y-4">
++        ${formField('Judul Berita', textInput('title', item?.title, { required:true, placeholder:'Judul...' }))}
++        ${formField('Ringkasan', textarea('excerpt', item?.excerpt, { rows:2, placeholder:'Ringkasan singkat...' }))}
++        ${formField('Isi Berita', textarea('content', item?.content, { rows:6, required:true, placeholder:'Isi berita lengkap...' }))}
++        ${formField('Gambar', imagePicker('image_url', item?.image_url || '', 'news'))}
++        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
++          ${formField('Penulis', textInput('author_name', item?.author_name || (STATE.admin?.name || 'Admin FSPP')))}
++          ${formField('Status', selectInput('status', [{value:'published',label:'Published'},{value:'draft',label:'Draft'}], item?.status || 'published'))}
++        </div>
++        ${formField('Tanggal Publikasi', textInput('published_at', toDateTimeLocal(item?.published_at), { type:'datetime-local' }))}
++        ${modalFooter(isEdit)}
++      </form>
++    `);
++    attachImagePickers($('#modal-body'));
++    bindFormSubmit('form-berita', async (fd) => {
++      const body = {
++        title: sanitizeInput(fd.get('title')),
++        excerpt: sanitizeInput(fd.get('excerpt')),
++        content: sanitizeInput(fd.get('content')),
++        image_url: sanitizeInput(fd.get('image_url')),
++        category_id: null,
++        author_name: sanitizeInput(fd.get('author_name')) || (STATE.admin?.name || 'Admin FSPP'),
++        status: fd.get('status') || 'published',
++        published_at: toISOString(fd.get('published_at')),
++      };
++      const res = isEdit
++        ? await apiPut(`/api/admin/news/${item.id}`, body)
++        : await apiPost('/api/admin/news', body);
++      showToast(res.message || (isEdit ? 'Berita diperbarui' : 'Berita ditambahkan'), 'success');
++      closeModal();
++      renderBerita();
++    });
++  };
++  window.deleteBerita = (id) => confirmDelete(async () => {
++    try {
++      const res = await apiDelete(`/api/admin/news/${id}`);
++      showToast(res.message || 'Berita dihapus', 'success');
++      renderBerita();
++    } catch (e) { showToast(e.message || 'Gagal menghapus', 'error'); }
++  });
++
++  /* =========================================================
++   *  MODULE: DAKWAH
++   * ========================================================= */
++  async function renderDakwah() {
++    const root = $('#main-content');
++    showLoading(root);
++    let list = [];
++    try { list = await fetchList('/api/admin/dakwah'); }
++    catch (e) { root.innerHTML = renderErrorBlock(e.message, renderDakwah); return; }
++    STATE.cache.dakwah = list;
++    renderDakwahList();
++  }
++  function renderDakwahList() {
++    const root = $('#main-content');
++    const q = (STATE.search || '').toLowerCase();
++    let list = (STATE.cache.dakwah || []).slice();
++    if (q) list = list.filter(b => (b.title||'').toLowerCase().includes(q) || (b.ustadz_name||'').toLowerCase().includes(q));
++
++    root.innerHTML = `
++      <div class="fade-in space-y-4">
++        ${pageHeader({ title:'Dakwah', subtitle:`${list.length} materi dakwah`, actionLabel:'Tambah Dakwah', actionOnClick:'openDakwahModal()' })}
++        ${list.length ? `
++          <div class="hidden md:grid grid-cols-2 lg:grid-cols-3 gap-4">
++            ${list.map(d => `
++              <div class="bg-white border border-border-soft rounded-2xl overflow-hidden shadow-soft hover:shadow-pop transition group">
++                <div class="relative aspect-video bg-primary-soft">
++                  ${imageBox(d.thumbnail_url, d.title, 'w-full h-full object-cover')}
++                  ${d.video_url ? `<div class="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition">
++                    <a href="${escapeHtml(d.video_url)}" target="_blank" class="w-12 h-12 rounded-full bg-white text-primary flex items-center justify-center shadow-pop">
++                      <i data-lucide="play" class="w-5 h-5"></i>
++                    </a>
++                  </div>`:''}
++                  <div class="absolute top-2 right-2">${statusBadge(d.status)}</div>
++                </div>
++                <div class="p-4">
++                  <h4 class="font-extrabold text-text-main truncate-2 min-h-[2.6rem]">${escapeHtml(d.title || '-')}</h4>
++                  <p class="text-xs text-text-muted mt-1 flex items-center gap-1.5"><i data-lucide="user" class="w-3 h-3"></i>${escapeHtml(d.ustadz_name || '-')}</p>
++                  <p class="text-xs text-text-muted mt-0.5">${escapeHtml(formatDate(d.published_at||d.created_at))}</p>
++                  <div class="flex gap-2 mt-3">
++                    <button onclick="openDakwahModal('${d.id}')" class="flex-1 px-3 py-2 rounded-xl border border-border-soft hover:bg-gray-50 text-xs font-bold inline-flex items-center justify-center gap-1.5">
++                      <i data-lucide="pencil" class="w-3.5 h-3.5"></i>Edit
++                    </button>
++                    <button onclick="deleteDakwah('${d.id}')" class="px-3 py-2 rounded-xl border border-danger/30 text-danger hover:bg-danger/10 text-xs font-bold">
++                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
++                    </button>
++                  </div>
++                </div>
++              </div>
++            `).join('')}
++          </div>
++          <div class="md:hidden space-y-3">
++            ${list.map(d => cardItem({
++              image: d.thumbnail_url, title: d.title, subtitle: d.ustadz_name,
++              meta: [formatDate(d.published_at||d.created_at)],
++              status: d.status,
++              onEdit: `openDakwahModal('${d.id}')`, onDelete: `deleteDakwah('${d.id}')`
++            })).join('')}
++          </div>
++        ` : showEmptyState('Belum ada dakwah', { icon:'book-open', hint:'Tambahkan materi dakwah pertama Anda.', action:{label:'Tambah Dakwah', onclick:'openDakwahModal()'} })}
++      </div>`;
++    refreshIcons();
++  }
++
++  window.openDakwahModal = function(id) {
++    const item = id ? (STATE.cache.dakwah||[]).find(b => String(b.id) === String(id)) : null;
++    const isEdit = !!item;
++    openModal(isEdit ? 'Edit Dakwah' : 'Tambah Dakwah', `
++      <form id="form-dakwah" class="space-y-4">
++        ${formField('Judul', textInput('title', item?.title, { required:true }))}
++        ${formField('Nama Ustadz', textInput('ustadz_name', item?.ustadz_name, { required:true }))}
++        ${formField('Isi / Ringkasan', textarea('content', item?.content, { rows:5 }))}
++        ${formField('Link Video (YouTube/lainnya)', textInput('video_url', item?.video_url, { type:'url', placeholder:'https://youtube.com/...' }))}
++        ${formField('Thumbnail', imagePicker('thumbnail_url', item?.thumbnail_url || '', 'dakwah'))}
++        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
++          ${formField('Status', selectInput('status', [{value:'published',label:'Published'},{value:'draft',label:'Draft'}], item?.status || 'published'))}
++          ${formField('Tanggal Publikasi', textInput('published_at', toDateTimeLocal(item?.published_at), { type:'datetime-local' }))}
++        </div>
++        ${modalFooter(isEdit)}
++      </form>
++    `);
++    attachImagePickers($('#modal-body'));
++    bindFormSubmit('form-dakwah', async (fd) => {
++      const body = {
++        title: sanitizeInput(fd.get('title')),
++        ustadz_name: sanitizeInput(fd.get('ustadz_name')),
++        content: sanitizeInput(fd.get('content')),
++        video_url: sanitizeInput(fd.get('video_url')),
++        thumbnail_url: sanitizeInput(fd.get('thumbnail_url')),
++        category_id: null,
++        status: fd.get('status') || 'published',
++        published_at: toISOString(fd.get('published_at')),
++      };
++      const res = isEdit ? await apiPut(`/api/admin/dakwah/${item.id}`, body) : await apiPost('/api/admin/dakwah', body);
++      showToast(res.message || (isEdit?'Dakwah diperbarui':'Dakwah ditambahkan'), 'success');
++      closeModal(); renderDakwah();
++    });
++  };
++  window.deleteDakwah = (id) => confirmDelete(async () => {
++    try { const res = await apiDelete(`/api/admin/dakwah/${id}`); showToast(res.message || 'Dakwah dihapus', 'success'); renderDakwah(); }
++    catch (e) { showToast(e.message || 'Gagal menghapus', 'error'); }
++  });
++
++  /* =========================================================
++   *  MODULE: AGENDA
++   * ========================================================= */
++  async function renderAgenda() {
++    const root = $('#main-content');
++    showLoading(root);
++    let list = [];
++    try { list = await fetchList('/api/admin/agendas'); }
++    catch (e) { root.innerHTML = renderErrorBlock(e.message, renderAgenda); return; }
++    STATE.cache.agenda = list;
++    renderAgendaList();
++  }
++  function renderAgendaList() {
++    const root = $('#main-content');
++    const q = (STATE.search||'').toLowerCase();
++    let list = (STATE.cache.agenda||[]).slice();
++    if (q) list = list.filter(a => (a.title||'').toLowerCase().includes(q) || (a.location||'').toLowerCase().includes(q));
++    list.sort((a,b) => new Date(a.event_date||0) - new Date(b.event_date||0));
++
++    root.innerHTML = `
++      <div class="fade-in space-y-4">
++        ${pageHeader({ title:'Agenda', subtitle:`${list.length} agenda terjadwal`, actionLabel:'Tambah Agenda', actionOnClick:'openAgendaModal()' })}
++        ${list.length ? `
++          <div class="hidden md:block bg-white border border-border-soft rounded-2xl overflow-hidden shadow-soft">
++            <table class="w-full text-sm">
++              <thead class="bg-gray-50 text-text-muted text-xs uppercase tracking-wide">
++                <tr><th class="text-left p-4">Agenda</th><th class="text-left p-4">Lokasi</th><th class="text-left p-4">Tanggal</th><th class="text-left p-4">Waktu</th><th class="text-left p-4">Status</th><th class="text-right p-4">Aksi</th></tr>
++              </thead>
++              <tbody class="divide-y divide-border-soft">
++                ${list.map(a => `
++                  <tr class="hover:bg-gray-50">
++                    <td class="p-4">
++                      <div class="flex items-center gap-3">
++                        ${imageBox(a.poster_url, a.title, 'w-12 h-12 rounded-xl object-cover')}
++                        <div class="min-w-0">
++                          <p class="font-semibold text-text-main truncate max-w-xs">${escapeHtml(a.title||'-')}</p>
++                          <p class="text-xs text-text-muted truncate-2 max-w-xs">${escapeHtml(a.description||'')}</p>
++                        </div>
++                      </div>
++                    </td>
++                    <td class="p-4 text-text-muted">${escapeHtml(a.location||'-')}</td>
++                    <td class="p-4 text-text-muted">${formatDate(a.event_date)}</td>
++                    <td class="p-4 text-text-muted">${escapeHtml(a.event_time||'-')}</td>
++                    <td class="p-4">${statusBadge(a.status)}</td>
++                    <td class="p-4 text-right">${actionButtons(`openAgendaModal('${a.id}')`, `deleteAgenda('${a.id}')`)}</td>
++                  </tr>`).join('')}
++              </tbody>
++            </table>
++          </div>
++          <div class="md:hidden space-y-3">
++            ${list.map(a => cardItem({
++              image: a.poster_url, title: a.title, subtitle: a.description,
++              meta: [formatDate(a.event_date), a.event_time||'', a.location||''].filter(Boolean),
++              status: a.status,
++              onEdit: `openAgendaModal('${a.id}')`, onDelete: `deleteAgenda('${a.id}')`
++            })).join('')}
++          </div>
++        ` : showEmptyState('Belum ada agenda', { icon:'calendar', hint:'Tambahkan agenda pertama Anda.', action:{label:'Tambah Agenda', onclick:'openAgendaModal()'} })}
++      </div>`;
++    refreshIcons();
++  }
++  window.openAgendaModal = function(id) {
++    const item = id ? (STATE.cache.agenda||[]).find(a => String(a.id)===String(id)) : null;
++    const isEdit = !!item;
++    openModal(isEdit?'Edit Agenda':'Tambah Agenda', `
++      <form id="form-agenda" class="space-y-4">
++        ${formField('Judul Agenda', textInput('title', item?.title, { required:true }))}
++        ${formField('Deskripsi', textarea('description', item?.description, { rows:3 }))}
++        ${formField('Lokasi', textInput('location', item?.location, { placeholder:'Sekretariat FSPP' }))}
++        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
++          ${formField('Tanggal', textInput('event_date', item?.event_date || '', { type:'date', required:true }))}
++          ${formField('Waktu', textInput('event_time', item?.event_time || '', { type:'time' }))}
++        </div>
++        ${formField('Poster', imagePicker('poster_url', item?.poster_url || '', 'agenda'))}
++        ${formField('Status', selectInput('status', [
++          {value:'upcoming',label:'Upcoming'},
++          {value:'done',label:'Done'},
++          {value:'cancelled',label:'Cancelled'},
++        ], item?.status || 'upcoming'))}
++        ${modalFooter(isEdit)}
++      </form>
++    `);
++    attachImagePickers($('#modal-body'));
++    bindFormSubmit('form-agenda', async (fd) => {
++      const body = {
++        title: sanitizeInput(fd.get('title')),
++        description: sanitizeInput(fd.get('description')),
++        location: sanitizeInput(fd.get('location')),
++        poster_url: sanitizeInput(fd.get('poster_url')),
++        event_date: fd.get('event_date') || null,
++        event_time: fd.get('event_time') || null,
++        status: fd.get('status') || 'upcoming',
++      };
++      const res = isEdit ? await apiPut(`/api/admin/agendas/${item.id}`, body) : await apiPost('/api/admin/agendas', body);
++      showToast(res.message || (isEdit?'Agenda diperbarui':'Agenda ditambahkan'), 'success');
++      closeModal(); renderAgenda();
++    });
++  };
++  window.deleteAgenda = (id) => confirmDelete(async () => {
++    try { const res = await apiDelete(`/api/admin/agendas/${id}`); showToast(res.message || 'Agenda dihapus', 'success'); renderAgenda(); }
++    catch (e) { showToast(e.message || 'Gagal menghapus', 'error'); }
++  });
++
++  /* =========================================================
++   *  MODULE: PESANTREN
++   * ========================================================= */
++  async function renderPesantren() {
++    const root = $('#main-content');
++    showLoading(root);
++    let list = [];
++    try { list = await fetchList('/api/admin/pesantren'); }
++    catch (e) { root.innerHTML = renderErrorBlock(e.message, renderPesantren); return; }
++    STATE.cache.pesantren = list;
++    renderPesantrenList();
++  }
++  function renderPesantrenList() {
++    const root = $('#main-content');
++    const q = (STATE.search||'').toLowerCase();
++    let list = (STATE.cache.pesantren||[]).slice();
++    if (q) list = list.filter(p => (p.name||'').toLowerCase().includes(q) || (p.leader_name||'').toLowerCase().includes(q) || (p.city||'').toLowerCase().includes(q));
++
++    root.innerHTML = `
++      <div class="fade-in space-y-4">
++        ${pageHeader({ title:'Data Pesantren', subtitle:`${list.length} pesantren terdaftar`, actionLabel:'Tambah Pesantren', actionOnClick:'openPesantrenModal()' })}
++        ${list.length ? `
++          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
++            ${list.map(p => `
++              <div class="bg-white border border-border-soft rounded-2xl overflow-hidden shadow-soft hover:shadow-pop transition">
++                <div class="aspect-video bg-primary-soft">${imageBox(p.photo_url, p.name, 'w-full h-full object-cover')}</div>
++                <div class="p-4">
++                  <div class="flex items-start gap-2">
++                    <h4 class="font-extrabold text-text-main flex-1 truncate">${escapeHtml(p.name||'-')}</h4>
++                    ${Number(p.is_active) ? badge('Aktif','success') : badge('Nonaktif','danger')}
++                  </div>
++                  <p class="text-xs text-text-muted mt-1 flex items-center gap-1.5"><i data-lucide="user" class="w-3 h-3"></i>${escapeHtml(p.leader_name||'-')}</p>
++                  <p class="text-xs text-text-muted mt-0.5 flex items-center gap-1.5"><i data-lucide="map-pin" class="w-3 h-3"></i>${escapeHtml(p.city||'-')}, ${escapeHtml(p.province||'-')}</p>
++                  <div class="flex items-center gap-4 mt-3 text-xs text-text-muted">
++                    <span class="flex items-center gap-1"><i data-lucide="users" class="w-3 h-3"></i>${Number(p.total_santri||0).toLocaleString('id-ID')} santri</span>
++                    <span class="flex items-center gap-1"><i data-lucide="images" class="w-3 h-3"></i>${(p.photos||[]).length} foto</span>
++                  </div>
++                  <div class="flex gap-2 mt-4">
++                    <button onclick="openPesantrenModal('${p.id}')" class="flex-1 px-3 py-2 rounded-xl border border-border-soft hover:bg-gray-50 text-xs font-bold inline-flex items-center justify-center gap-1.5">
++                      <i data-lucide="pencil" class="w-3.5 h-3.5"></i>Edit
++                    </button>
++                    <button onclick="deletePesantren('${p.id}')" class="px-3 py-2 rounded-xl border border-danger/30 text-danger hover:bg-danger/10 text-xs font-bold">
++                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
++                    </button>
++                  </div>
++                </div>
++              </div>
++            `).join('')}
++          </div>
++        ` : showEmptyState('Belum ada pesantren', { icon:'school', hint:'Tambahkan data pesantren pertama.', action:{label:'Tambah Pesantren', onclick:'openPesantrenModal()'} })}
++      </div>`;
++    refreshIcons();
++  }
++
++  let pesantrenPhotoIndex = 0;
++  function pesantrenPhotoRow(idx, photo={}) {
++    return `
++      <div class="pp-row bg-white border border-border-soft rounded-xl p-3" data-idx="${idx}">
++        <div class="flex items-center justify-between mb-2">
++          <p class="text-xs font-bold text-text-muted">Foto #${idx+1}</p>
++          <button type="button" onclick="this.closest('.pp-row').remove()" class="p-1 rounded-lg hover:bg-gray-100 text-text-muted">
++            <i data-lucide="x" class="w-4 h-4"></i>
++          </button>
++        </div>
++        ${imagePicker(`photos__${idx}__photo_url`, photo.photo_url || '', 'pesantren', idx)}
++        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
++          ${formField('Caption', textInput(`photos__${idx}__caption`, photo.caption || ''))}
++          ${formField('Urutan', textInput(`photos__${idx}__sort_order`, photo.sort_order ?? (idx+1), { type:'number' }))}
++        </div>
++      </div>`;
++  }
++
++  window.addPesantrenPhoto = function() {
++    const container = $('#pp-photos');
++    if (!container) return;
++    const rows = container.querySelectorAll('.pp-row');
++    if (rows.length >= 5) { showToast('Maksimal 5 foto', 'warning'); return; }
++    pesantrenPhotoIndex++;
++    const wrap = document.createElement('div');
++    wrap.innerHTML = pesantrenPhotoRow(rows.length, {});
++    container.appendChild(wrap.firstElementChild);
++    attachImagePickers(container);
++  };
++
++  window.openPesantrenModal = function(id) {
++    const item = id ? (STATE.cache.pesantren||[]).find(p => String(p.id)===String(id)) : null;
++    const isEdit = !!item;
++    const photos = (item?.photos || []).slice(0, 5);
++    if (photos.length === 0) photos.push({});
++    pesantrenPhotoIndex = photos.length;
++
++    openModal(isEdit?'Edit Pesantren':'Tambah Pesantren', `
++      <form id="form-pesantren" class="space-y-5">
++        ${formField('Nama Pesantren', textInput('name', item?.name, { required:true }))}
++        ${formField('Pimpinan (Kyai/Ustadz)', textInput('leader_name', item?.leader_name))}
++        ${formField('Alamat', textarea('address', item?.address, { rows:2 }))}
++        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
++          ${formField('Kecamatan', textInput('district', item?.district))}
++          ${formField('Kota/Kabupaten', textInput('city', item?.city))}
++          ${formField('Provinsi', textInput('province', item?.province))}
++        </div>
++        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
++          ${formField('Nomor HP', textInput('phone', item?.phone, { placeholder:'08123...' }))}
++          ${formField('Total Santri', textInput('total_santri', item?.total_santri ?? '', { type:'number', placeholder:'0' }))}
++        </div>
++        ${formField('Link Google Maps', textInput('map_url', item?.map_url, { type:'url', placeholder:'https://maps.google.com/...' }))}
++        ${formField('Foto Cover (Utama)', imagePicker('photo_url', item?.photo_url || '', 'pesantren'))}
++        ${formField('Status', selectInput('is_active', [{value:'1',label:'Aktif'},{value:'0',label:'Nonaktif'}], item?.is_active ?? 1))}
++        <div>
++          <div class="flex items-center justify-between mb-2">
++            <label class="text-sm font-semibold">Foto Pesantren (1-5)</label>
++            <button type="button" onclick="addPesantrenPhoto()" class="px-3 py-1.5 rounded-lg bg-primary-soft text-primary text-xs font-bold inline-flex items-center gap-1.5">
++              <i data-lucide="plus" class="w-3.5 h-3.5"></i>Tambah Foto
++            </button>
++          </div>
++          <div id="pp-photos" class="space-y-3">
++            ${photos.map((p, i) => pesantrenPhotoRow(i, p)).join('')}
++          </div>
++          <p class="text-xs text-text-muted mt-2">Foto cover di atas adalah foto utama. Tambahkan foto galeri di sini.</p>
++        </div>
++        ${modalFooter(isEdit)}
++      </form>
++    `);
++    attachImagePickers($('#modal-body'));
++
++    bindFormSubmit('form-pesantren', async (fd, form) => {
++      const photos = [];
++      form.querySelectorAll('#pp-photos .pp-row').forEach((row) => {
++        const idx = row.dataset.idx;
++        const url = sanitizeInput(form.querySelector(`[name="photos__${idx}__photo_url"]`)?.value || '');
++        if (!url) return;
++        photos.push({
++          photo_url: url,
++          caption: sanitizeInput(form.querySelector(`[name="photos__${idx}__caption"]`)?.value || ''),
++          sort_order: Number(form.querySelector(`[name="photos__${idx}__sort_order"]`)?.value || (photos.length+1)),
++        });
++      });
++      if (photos.length === 0) { throw new Error('Tambahkan minimal 1 foto pesantren'); }
++      if (photos.length > 5) { throw new Error('Maksimal 5 foto pesantren'); }
++      const body = {
++        name: sanitizeInput(fd.get('name')),
++        address: sanitizeInput(fd.get('address')),
++        district: sanitizeInput(fd.get('district')),
++        city: sanitizeInput(fd.get('city')),
++        province: sanitizeInput(fd.get('province')),
++        leader_name: sanitizeInput(fd.get('leader_name')),
++        phone: sanitizeInput(fd.get('phone')),
++        total_santri: Number(fd.get('total_santri') || 0),
++        map_url: sanitizeInput(fd.get('map_url')),
++        photo_url: sanitizeInput(fd.get('photo_url')) || photos[0]?.photo_url || '',
++        is_active: Number(fd.get('is_active') ?? 1) ? 1 : 0,
++        photos,
++      };
++      const res = isEdit ? await apiPut(`/api/admin/pesantren/${item.id}`, body) : await apiPost('/api/admin/pesantren', body);
++      showToast(res.message || (isEdit?'Pesantren diperbarui':'Pesantren ditambahkan'), 'success');
++      closeModal(); renderPesantren();
++    });
++  };
++  window.deletePesantren = (id) => confirmDelete(async () => {
++    try { const res = await apiDelete(`/api/admin/pesantren/${id}`); showToast(res.message || 'Pesantren dihapus', 'success'); renderPesantren(); }
++    catch (e) { showToast(e.message || 'Gagal menghapus', 'error'); }
++  });
++
++  /* =========================================================
++   *  MODULE: PENGURUS
++   * ========================================================= */
++  async function renderPengurus() {
++    const root = $('#main-content');
++    showLoading(root);
++    let list = [];
++    try { list = await fetchList('/api/admin/board-members'); }
++    catch (e) { root.innerHTML = renderErrorBlock(e.message, renderPengurus); return; }
++    STATE.cache.pengurus = list;
++    renderPengurusList();
++  }
++  function renderPengurusList() {
++    const root = $('#main-content');
++    const q = (STATE.search||'').toLowerCase();
++    let list = (STATE.cache.pengurus||[]).slice();
++    if (q) list = list.filter(p => (p.name||'').toLowerCase().includes(q) || (p.position||'').toLowerCase().includes(q));
++    list.sort((a,b) => (Number(a.sort_order||0) - Number(b.sort_order||0)));
++
++    root.innerHTML = `
++      <div class="fade-in space-y-4">
++        ${pageHeader({ title:'Pengurus', subtitle:`${list.length} pengurus terdaftar`, actionLabel:'Tambah Pengurus', actionOnClick:'openPengurusModal()' })}
++        ${list.length ? `
++          <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
++            ${list.map(p => `
++              <div class="bg-white border border-border-soft rounded-2xl overflow-hidden shadow-soft text-center p-4">
++                <div class="relative mx-auto w-24 h-24 rounded-full overflow-hidden bg-primary-soft mb-3">
++                  ${imageBox(p.photo_url, p.name, 'w-full h-full object-cover')}
++                </div>
++                <h4 class="font-extrabold text-text-main truncate">${escapeHtml(p.name||'-')}</h4>
++                <p class="text-xs text-primary font-semibold truncate">${escapeHtml(p.position||'-')}</p>
++                <p class="text-[11px] text-text-muted mt-1 truncate">${escapeHtml(p.phone||'')}</p>
++                <div class="flex gap-2 mt-3">
++                  <button onclick="openPengurusModal('${p.id}')" class="flex-1 px-2 py-1.5 rounded-lg border border-border-soft hover:bg-gray-50 text-xs font-bold">Edit</button>
++                  <button onclick="deletePengurus('${p.id}')" class="px-2 py-1.5 rounded-lg border border-danger/30 text-danger hover:bg-danger/10 text-xs font-bold"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
++                </div>
++              </div>
++            `).join('')}
++          </div>
++        ` : showEmptyState('Belum ada pengurus', { icon:'users', hint:'Tambahkan pengurus pertama.', action:{label:'Tambah Pengurus', onclick:'openPengurusModal()'} })}
++      </div>`;
++    refreshIcons();
++  }
++  window.openPengurusModal = function(id) {
++    const item = id ? (STATE.cache.pengurus||[]).find(p => String(p.id)===String(id)) : null;
++    const isEdit = !!item;
++    openModal(isEdit?'Edit Pengurus':'Tambah Pengurus', `
++      <form id="form-pengurus" class="space-y-4">
++        ${formField('Nama Lengkap', textInput('name', item?.name, { required:true }))}
++        ${formField('Jabatan', textInput('position', item?.position, { required:true, placeholder:'Ketua, Sekretaris, ...' }))}
++        ${formField('Foto', imagePicker('photo_url', item?.photo_url || '', 'pengurus'))}
++        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
++          ${formField('Nomor HP', textInput('phone', item?.phone))}
++          ${formField('Urutan', textInput('sort_order', item?.sort_order ?? 0, { type:'number' }))}
++        </div>
++        ${formField('Bio Singkat', textarea('bio', item?.bio, { rows:3 }))}
++        ${formField('Status', selectInput('is_active', [{value:'1',label:'Aktif'},{value:'0',label:'Nonaktif'}], item?.is_active ?? 1))}
++        ${modalFooter(isEdit)}
++      </form>
++    `);
++    attachImagePickers($('#modal-body'));
++    bindFormSubmit('form-pengurus', async (fd) => {
++      const body = {
++        name: sanitizeInput(fd.get('name')),
++        position: sanitizeInput(fd.get('position')),
++        photo_url: sanitizeInput(fd.get('photo_url')),
++        phone: sanitizeInput(fd.get('phone')),
++        bio: sanitizeInput(fd.get('bio')),
++        sort_order: Number(fd.get('sort_order') || 0),
++        is_active: Number(fd.get('is_active') ?? 1) ? 1 : 0,
++      };
++      const res = isEdit ? await apiPut(`/api/admin/board-members/${item.id}`, body) : await apiPost('/api/admin/board-members', body);
++      showToast(res.message || (isEdit?'Pengurus diperbarui':'Pengurus ditambahkan'), 'success');
++      closeModal(); renderPengurus();
++    });
++  };
++  window.deletePengurus = (id) => confirmDelete(async () => {
++    try { const res = await apiDelete(`/api/admin/board-members/${id}`); showToast(res.message || 'Pengurus dihapus', 'success'); renderPengurus(); }
++    catch (e) { showToast(e.message || 'Gagal menghapus', 'error'); }
++  });
++
++  /* =========================================================
++   *  MODULE: DONASI / INFAK (Programs)
++   * ========================================================= */
++  async function renderDonasi() {
++    const root = $('#main-content');
++    showLoading(root);
++    let list = [];
++    try { list = await fetchList('/api/admin/donations'); }
++    catch (e) { root.innerHTML = renderErrorBlock(e.message, renderDonasi); return; }
++    STATE.cache.donasi = list;
++    renderDonasiList();
++  }
++  function renderDonasiList() {
++    const root = $('#main-content');
++    const q = (STATE.search||'').toLowerCase();
++    let list = (STATE.cache.donasi||[]).slice();
++    if (q) list = list.filter(p => (p.title||'').toLowerCase().includes(q));
++
++    root.innerHTML = `
++      <div class="fade-in space-y-4">
++        ${pageHeader({ title:'Donasi / Infak', subtitle:`${list.length} program donasi`, actionLabel:'Tambah Program', actionOnClick:'openDonasiModal()' })}
++        ${list.length ? `
++          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
++            ${list.map(d => donasiCard(d)).join('')}
++          </div>
++        ` : showEmptyState('Belum ada program donasi', { icon:'hand-coins', hint:'Tambahkan program donasi pertama.', action:{label:'Tambah Program', onclick:'openDonasiModal()'} })}
++      </div>`;
++    refreshIcons();
++  }
++
++  function donasiCard(d) {
++    const target = Number(d.target_amount||0);
++    const collected = Number(d.collected_amount ?? d.total_income ?? 0);
++    const expense = Number(d.total_expense||0);
++    const balance = Number(d.balance ?? (collected - expense));
++    const pct = target > 0 ? Math.min(100, Math.round(collected/target*100)) : 0;
++    const cover = d.image_url || (Array.isArray(d.photos) && (d.photos.find(p => Number(p.is_cover)) || d.photos[0])?.photo_url) || '';
++    const status = String(d.status||'active').toLowerCase();
++    return `
++      <div class="bg-white border border-border-soft rounded-2xl overflow-hidden shadow-soft hover:shadow-pop transition flex flex-col">
++        <div class="relative aspect-video bg-primary-soft">
++          ${imageBox(cover, d.title, 'w-full h-full object-cover')}
++          <div class="absolute top-3 left-3">${statusBadge(status)}</div>
++          ${d.qris_url ? `<button onclick="previewQris('${encodeURIComponent(d.qris_url)}')" class="absolute bottom-3 right-3 bg-white/95 hover:bg-white text-primary rounded-xl px-3 py-1.5 text-xs font-bold shadow-soft inline-flex items-center gap-1.5"><i data-lucide="qr-code" class="w-3.5 h-3.5"></i>QRIS</button>`:''}
++        </div>
++        <div class="p-5 flex-1 flex flex-col">
++          <h4 class="font-extrabold text-text-main truncate-2 min-h-[2.6rem]">${escapeHtml(d.title||'-')}</h4>
++          <p class="text-xs text-text-muted truncate-2 mt-1">${escapeHtml(d.description||'')}</p>
++          <div class="mt-3">
++            <div class="flex items-baseline justify-between gap-2">
++              <p class="text-primary font-extrabold text-base md:text-lg">${formatRupiah(collected)}</p>
++              <p class="text-[11px] text-text-muted">dari ${formatRupiah(target)}</p>
++            </div>
++            <div class="mt-1.5 h-2 rounded-full bg-gray-100 overflow-hidden">
++              <div class="h-full bg-primary" style="width:${pct}%"></div>
++            </div>
++            <p class="text-[10px] text-text-muted mt-1">${pct}% target tercapai</p>
++          </div>
++          <div class="grid grid-cols-2 gap-2 mt-3 text-xs">
++            <div class="bg-success/5 border border-success/15 rounded-xl p-2">
++              <p class="text-[10px] text-text-muted uppercase font-semibold">Pemasukan</p>
++              <p class="font-bold text-success truncate">${formatRupiah(collected)}</p>
++            </div>
++            <div class="bg-danger/5 border border-danger/15 rounded-xl p-2">
++              <p class="text-[10px] text-text-muted uppercase font-semibold">Pengeluaran</p>
++              <p class="font-bold text-danger truncate">${formatRupiah(expense)}</p>
++            </div>
++            <div class="col-span-2 bg-primary-soft border border-primary/20 rounded-xl p-2">
++              <p class="text-[10px] text-primary uppercase font-semibold">Saldo Program</p>
++              <p class="font-extrabold text-primary truncate">${formatRupiah(balance)}</p>
++            </div>
++          </div>
++          <div class="mt-3 bg-gray-50 border border-border-soft rounded-xl p-3 text-xs space-y-1">
++            <p class="font-bold text-text-main flex items-center gap-1.5"><i data-lucide="landmark" class="w-3.5 h-3.5 text-primary"></i>${escapeHtml(d.bank_name || 'Bank belum diatur')}</p>
++            <p class="font-mono text-text-main">${escapeHtml(d.bank_account_number || '-')}</p>
++            <p class="text-text-muted truncate">a.n. ${escapeHtml(d.bank_account_name || '-')}</p>
++          </div>
++          <div class="flex gap-2 mt-3">
++            <button onclick="openTambahDonatur('${d.id}')" class="flex-1 btn-primary px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5">
++              <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>Tambah Donatur
++            </button>
++            <button onclick="openLihatDonatur('${d.id}')" class="flex-1 px-3 py-2 rounded-xl border border-primary/30 text-primary hover:bg-primary-soft text-xs font-bold inline-flex items-center justify-center gap-1.5">
++              <i data-lucide="users" class="w-3.5 h-3.5"></i>Lihat Donatur
++            </button>
++          </div>
++          <div class="flex gap-2 mt-2">
++            <button onclick="openDonasiModal('${d.id}')" class="flex-1 px-3 py-2 rounded-xl border border-border-soft hover:bg-gray-50 text-xs font-bold inline-flex items-center justify-center gap-1.5">
++              <i data-lucide="pencil" class="w-3.5 h-3.5"></i>Edit
++            </button>
++            <button onclick="deleteDonasi('${d.id}')" class="px-3 py-2 rounded-xl border border-danger/30 text-danger hover:bg-danger/10 text-xs font-bold">
++              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
++            </button>
++          </div>
++        </div>
++      </div>`;
++  }
++
++  let donasiPhotoIndex = 0;
++  function donasiPhotoRow(idx, photo={}) {
++    return `
++      <div class="dp-row bg-white border border-border-soft rounded-xl p-3" data-idx="${idx}">
++        <div class="flex items-center justify-between mb-2">
++          <p class="text-xs font-bold text-text-muted">Foto #${idx+1}</p>
++          <div class="flex items-center gap-2">
++            <label class="inline-flex items-center gap-1.5 text-xs font-bold text-text-main">
++              <input type="checkbox" name="photos__${idx}__is_cover" value="1" ${Number(photo.is_cover)?'checked':''}
++                class="w-4 h-4 rounded border-border-soft text-primary focus:ring-primary/20" onchange="onDonasiCoverToggle(${idx})" />
++              Cover
++            </label>
++            <button type="button" onclick="this.closest('.dp-row').remove()" class="p-1 rounded-lg hover:bg-gray-100 text-text-muted">
++              <i data-lucide="x" class="w-4 h-4"></i>
++            </button>
++          </div>
++        </div>
++        ${imagePicker(`photos__${idx}__photo_url`, photo.photo_url || '', 'donasi', idx)}
++        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
++          ${formField('Caption', textInput(`photos__${idx}__caption`, photo.caption || ''))}
++          ${formField('Urutan', textInput(`photos__${idx}__sort_order`, photo.sort_order ?? idx, { type:'number' }))}
++        </div>
++      </div>`;
++  }
++  window.onDonasiCoverToggle = function(idx) {
++    const container = $('#dp-photos');
++    if (!container) return;
++    container.querySelectorAll('input[type="checkbox"][name$="__is_cover"]').forEach(cb => {
++      const ownIdx = cb.name.match(/^photos__(\d+)__is_cover$/)?.[1];
++      if (ownIdx !== String(idx)) cb.checked = false;
++    });
++  };
++  window.addDonasiPhoto = function() {
++    const container = $('#dp-photos');
++    if (!container) return;
++    const rows = container.querySelectorAll('.dp-row');
++    if (rows.length >= 5) { showToast('Maksimal 5 foto', 'warning'); return; }
++    donasiPhotoIndex++;
++    const wrap = document.createElement('div');
++    wrap.innerHTML = donasiPhotoRow(rows.length, {});
++    container.appendChild(wrap.firstElementChild);
++    attachImagePickers(container);
++  };
++
++  window.openDonasiModal = function(id) {
++    const item = id ? (STATE.cache.donasi||[]).find(d => String(d.id)===String(id)) : null;
++    const isEdit = !!item;
++    let photos = (item?.photos || []).slice(0, 5);
++    if (photos.length === 0) photos.push({ is_cover: 1, sort_order: 0 });
++    if (!photos.some(p => Number(p.is_cover))) photos[0].is_cover = 1;
++    donasiPhotoIndex = photos.length;
++
++    openModal(isEdit?'Edit Program Donasi':'Tambah Program Donasi', `
++      <form id="form-donasi" class="space-y-5">
++        ${formField('Judul Program', textInput('title', item?.title, { required:true }))}
++        ${formField('Deskripsi', textarea('description', item?.description, { rows:4, required:true }))}
++        ${formField('Foto Cover (utama)', imagePicker('image_url', item?.image_url || '', 'donasi'))}
++        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
++          ${formField('Target Dana (Rp)', textInput('target_amount', item?.target_amount ?? '', { type:'number', required:true, placeholder:'50000000' }))}
++          ${formField('Status', selectInput('status', [
++            {value:'active',label:'Aktif'},{value:'inactive',label:'Nonaktif'},{value:'completed',label:'Selesai'}
++          ], item?.status || 'active'))}
++        </div>
++
++        <div class="bg-primary-soft/40 border border-primary/15 rounded-2xl p-4 space-y-3">
++          <h5 class="font-extrabold text-primary text-sm flex items-center gap-2"><i data-lucide="landmark" class="w-4 h-4"></i>Informasi Rekening Donasi</h5>
++          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
++            ${formField('Nama Bank', textInput('bank_name', item?.bank_name, { placeholder:'BSI / BCA / Mandiri ...' }))}
++            ${formField('Nomor Rekening', textInput('bank_account_number', item?.bank_account_number, { placeholder:'1234567890' }))}
++          </div>
++          ${formField('Nama Pemilik Rekening', textInput('bank_account_name', item?.bank_account_name, { placeholder:'FSPP Kuluwut' }))}
++          ${formField('QRIS', imagePicker('qris_url', item?.qris_url || '', 'qris'))}
++        </div>
++
++        <div>
++          <div class="flex items-center justify-between mb-2">
++            <label class="text-sm font-semibold">Foto Program (1-5, tandai 1 sebagai Cover)</label>
++            <button type="button" onclick="addDonasiPhoto()" class="px-3 py-1.5 rounded-lg bg-primary-soft text-primary text-xs font-bold inline-flex items-center gap-1.5">
++              <i data-lucide="plus" class="w-3.5 h-3.5"></i>Tambah Foto
++            </button>
++          </div>
++          <div id="dp-photos" class="space-y-3">
++            ${photos.map((p, i) => donasiPhotoRow(i, p)).join('')}
++          </div>
++        </div>
++        ${modalFooter(isEdit)}
++      </form>
++    `);
++    attachImagePickers($('#modal-body'));
++
++    bindFormSubmit('form-donasi', async (fd, form) => {
++      const photos = [];
++      form.querySelectorAll('#dp-photos .dp-row').forEach((row) => {
++        const idx = row.dataset.idx;
++        const url = sanitizeInput(form.querySelector(`[name="photos__${idx}__photo_url"]`)?.value || '');
++        if (!url) return;
++        photos.push({
++          photo_url: url,
++          caption: sanitizeInput(form.querySelector(`[name="photos__${idx}__caption"]`)?.value || ''),
++          is_cover: form.querySelector(`[name="photos__${idx}__is_cover"]`)?.checked ? 1 : 0,
++          sort_order: Number(form.querySelector(`[name="photos__${idx}__sort_order"]`)?.value || photos.length),
++        });
++      });
++      if (photos.length === 0) throw new Error('Tambahkan minimal 1 foto');
++      if (photos.length > 5) throw new Error('Maksimal 5 foto');
++      if (!photos.some(p => p.is_cover)) photos[0].is_cover = 1;
++
++      const body = {
++        title: sanitizeInput(fd.get('title')),
++        description: sanitizeInput(fd.get('description')),
++        image_url: sanitizeInput(fd.get('image_url')) || photos.find(p => p.is_cover)?.photo_url || photos[0].photo_url,
++        target_amount: Number(fd.get('target_amount') || 0),
++        bank_name: sanitizeInput(fd.get('bank_name')),
++        bank_account_number: sanitizeInput(fd.get('bank_account_number')),
++        bank_account_name: sanitizeInput(fd.get('bank_account_name')),
++        qris_url: sanitizeInput(fd.get('qris_url')),
++        status: fd.get('status') || 'active',
++        photos,
++      };
++      const res = isEdit ? await apiPut(`/api/admin/donations/${item.id}`, body) : await apiPost('/api/admin/donations', body);
++      showToast(res.message || (isEdit?'Program diperbarui':'Program ditambahkan'), 'success');
++      closeModal(); renderDonasi();
++    });
++  };
++  window.deleteDonasi = (id) => confirmDelete(async () => {
++    try { const res = await apiDelete(`/api/admin/donations/${id}`); showToast(res.message || 'Program dihapus', 'success'); renderDonasi(); }
++    catch (e) { showToast(e.message || 'Gagal menghapus', 'error'); }
++  });
++  window.previewQris = function(encUrl) {
++    const url = decodeURIComponent(encUrl);
++    openModal('QRIS Donasi', `
++      <div class="flex flex-col items-center">
++        <img src="${escapeHtml(url)}" alt="QRIS" class="max-w-full max-h-[60vh] rounded-2xl border border-border-soft" onerror="this.src='${FALLBACK_IMG}'" />
++        <p class="text-xs text-text-muted mt-3 text-center break-all">${escapeHtml(url)}</p>
++      </div>
++    `);
++  };
++
++  window.openTambahDonatur = function(programId) {
++    openFinanceModal(null, { type:'income', program_id: programId });
++  };
++  window.openLihatDonatur = async function(programId) {
++    const program = (STATE.cache.donasi||[]).find(d => String(d.id)===String(programId));
++    openModal(`Donatur · ${program?.title || '-'}`, `
++      <div id="donatur-list">
++        ${Array(3).fill('<div class="skeleton h-14 mb-2"></div>').join('')}
++      </div>
++    `);
++    let items = [];
++    try { items = await fetchList('/api/admin/finance'); }
++    catch (e) { $('#donatur-list').innerHTML = `<p class="text-sm text-danger">${escapeHtml(e.message||'Gagal memuat')}</p>`; return; }
++    const donaturs = items.filter(f => String(f.program_id) === String(programId) && String(f.type).toLowerCase() === 'income')
++      .sort((a,b) => new Date(b.transaction_date||b.created_at||0) - new Date(a.transaction_date||a.created_at||0));
++    if (!donaturs.length) {
++      $('#donatur-list').innerHTML = `<div class="p-6 text-center text-sm text-text-muted">Belum ada donatur untuk program ini.</div>`;
++      return;
++    }
++    const total = donaturs.filter(d => String(d.status).toLowerCase()==='approved').reduce((s,d)=>s+Number(d.amount||0),0);
++    $('#donatur-list').innerHTML = `
++      <div class="bg-primary-soft border border-primary/15 rounded-xl p-3 mb-3 flex items-center gap-3">
++        <div class="w-10 h-10 rounded-xl bg-white text-primary flex items-center justify-center"><i data-lucide="heart-handshake" class="w-5 h-5"></i></div>
++        <div class="flex-1"><p class="text-xs text-text-muted font-semibold">Total Donasi Terkumpul (approved)</p><p class="text-primary font-extrabold">${formatRupiah(total)}</p></div>
++        <p class="text-xs text-text-muted">${donaturs.length} donatur</p>
++      </div>
++      <div class="divide-y divide-border-soft rounded-xl border border-border-soft bg-white overflow-hidden">
++        ${donaturs.map(d => `
++          <div class="p-3 flex items-center gap-3">
++            <div class="w-10 h-10 rounded-full bg-primary-soft text-primary font-bold flex items-center justify-center shrink-0">${escapeHtml(getInitials(Number(d.show_donor_name)===0 ? 'Hamba Allah' : (d.donor_name||'Donatur')))}</div>
++            <div class="flex-1 min-w-0">
++              <p class="font-bold text-text-main truncate">${escapeHtml(Number(d.show_donor_name)===0 ? 'Hamba Allah' : (d.donor_name || d.title || '-'))}</p>
++              <p class="text-[11px] text-text-muted truncate">${escapeHtml(d.category||'')} · ${formatDate(d.transaction_date||d.created_at)}</p>
++            </div>
++            <div class="text-right">
++              <p class="text-success font-extrabold whitespace-nowrap">${formatRupiah(d.amount)}</p>
++              <div class="mt-0.5">${statusBadge(d.status)}</div>
++            </div>
++          </div>
++        `).join('')}
++      </div>
++    `;
++    refreshIcons();
++  };
++
++
++  /* =========================================================
++   *  MODULE: TRANSPARANSI KEUANGAN
++   * ========================================================= */
++  async function renderTransparansi() {
++    const root = $('#main-content');
++    showLoading(root);
++    let list = [];
++    let programs = STATE.cache.donasi || [];
++    try {
++      const [fin, pgr] = await Promise.all([
++        apiGet('/api/admin/finance'),
++        STATE.cache.donasi ? Promise.resolve({ success:true, data: STATE.cache.donasi }) : apiGet('/api/admin/donations').catch(() => ({ success:true, data: [] })),
++      ]);
++      list = (fin && Array.isArray(fin.data)) ? fin.data : [];
++      programs = (pgr && Array.isArray(pgr.data)) ? pgr.data : programs;
++      STATE.cache.donasi = programs;
++    } catch (e) {
++      root.innerHTML = renderErrorBlock(e.message, renderTransparansi);
++      return;
++    }
++    STATE.cache.finance = list;
++    renderTransparansiList();
++  }
++  function renderTransparansiList() {
++    const root = $('#main-content');
++    const q = (STATE.search||'').toLowerCase();
++    const fType = STATE.financeType || '';
++    const fProgram = STATE.financeProgram || '';
++    let list = (STATE.cache.finance||[]).slice();
++    if (q) list = list.filter(f => (f.title||'').toLowerCase().includes(q) || (f.donor_name||'').toLowerCase().includes(q) || (f.category||'').toLowerCase().includes(q));
++    if (fType) list = list.filter(f => String(f.type).toLowerCase() === fType);
++    if (fProgram) list = list.filter(f => String(f.program_id||'') === fProgram);
++    list.sort((a,b) => new Date(b.transaction_date||b.created_at||0) - new Date(a.transaction_date||a.created_at||0));
++
++    const programs = STATE.cache.donasi || [];
++    const programMap = Object.fromEntries(programs.map(p => [String(p.id), p]));
++
++    const approved = list.filter(f => String(f.status).toLowerCase()==='approved');
++    const inc = approved.filter(f => String(f.type).toLowerCase()==='income').reduce((s,f)=>s+Number(f.amount||0),0);
++    const exp = approved.filter(f => String(f.type).toLowerCase()==='expense').reduce((s,f)=>s+Number(f.amount||0),0);
++
++    const filters = `
++      <select onchange="STATE.financeType=this.value; renderTransparansiList()"
++        class="px-3 py-2 rounded-xl border border-border-soft text-sm font-semibold bg-white">
++        <option value="">Semua Jenis</option>
++        <option value="income" ${fType==='income'?'selected':''}>Pemasukan</option>
++        <option value="expense" ${fType==='expense'?'selected':''}>Pengeluaran</option>
++      </select>
++      <select onchange="STATE.financeProgram=this.value; renderTransparansiList()"
++        class="px-3 py-2 rounded-xl border border-border-soft text-sm font-semibold bg-white">
++        <option value="">Semua Program</option>
++        ${programs.map(p => `<option value="${escapeHtml(p.id)}" ${fProgram===String(p.id)?'selected':''}>${escapeHtml(p.title||p.id)}</option>`).join('')}
++      </select>`;
++
++    root.innerHTML = `
++      <div class="fade-in space-y-4">
++        ${pageHeader({ title:'Transparansi Keuangan', subtitle:`${list.length} transaksi`, filters, actionLabel:'Tambah Transaksi', actionOnClick:'openFinanceModal()' })}
++        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
++          ${statCard('Total Pemasukan', formatRupiah(inc), 'trending-up', 'bg-success/10 text-success', 'transaksi approved')}
++          ${statCard('Total Pengeluaran', formatRupiah(exp), 'trending-down', 'bg-danger/10 text-danger', 'transaksi approved')}
++          ${statCard('Saldo', formatRupiah(inc-exp), 'wallet', (inc-exp)>=0?'bg-primary-soft text-primary':'bg-danger/10 text-danger')}
++        </div>
++        ${list.length ? `
++          <div class="hidden md:block bg-white border border-border-soft rounded-2xl overflow-hidden shadow-soft">
++            <div class="overflow-x-auto">
++              <table class="w-full text-sm">
++                <thead class="bg-gray-50 text-text-muted text-xs uppercase tracking-wide">
++                  <tr>
++                    <th class="text-left p-4">Transaksi</th>
++                    <th class="text-left p-4">Program</th>
++                    <th class="text-left p-4">Jenis</th>
++                    <th class="text-right p-4">Jumlah</th>
++                    <th class="text-left p-4">Status</th>
++                    <th class="text-left p-4">Tanggal</th>
++                    <th class="text-right p-4">Aksi</th>
++                  </tr>
++                </thead>
++                <tbody class="divide-y divide-border-soft">
++                  ${list.map(f => {
++                    const isInc = String(f.type).toLowerCase()==='income';
++                    const program = programMap[String(f.program_id||'')];
++                    const donorName = Number(f.show_donor_name)===0 && isInc ? 'Hamba Allah' : (f.donor_name || '');
++                    return `
++                    <tr class="hover:bg-gray-50">
++                      <td class="p-4">
++                        <div class="flex items-start gap-3">
++                          ${f.proof_url ? `<button onclick="previewQris('${encodeURIComponent(f.proof_url)}')" class="shrink-0">${imageBox(f.proof_url, 'bukti', 'w-10 h-10 rounded-lg object-cover')}</button>` : `<div class="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-text-muted"><i data-lucide="receipt" class="w-4 h-4"></i></div>`}
++                          <div class="min-w-0">
++                            <p class="font-semibold text-text-main">${escapeHtml(f.title||'-')}</p>
++                            <p class="text-xs text-text-muted truncate max-w-[18rem]">${escapeHtml(donorName || f.category || f.description || '')}</p>
++                          </div>
++                        </div>
++                      </td>
++                      <td class="p-4 text-text-muted">${program ? escapeHtml(program.title||'-') : '<span class="text-text-muted">—</span>'}</td>
++                      <td class="p-4">${badge(isInc?'Pemasukan':'Pengeluaran', isInc?'success':'danger')}</td>
++                      <td class="p-4 text-right font-extrabold ${isInc?'text-success':'text-danger'}">${isInc?'+':'-'} ${formatRupiah(f.amount)}</td>
++                      <td class="p-4">${statusBadge(f.status)}</td>
++                      <td class="p-4 text-text-muted">${formatDate(f.transaction_date||f.created_at)}</td>
++                      <td class="p-4 text-right">${actionButtons(`openFinanceModal('${f.id}')`, `deleteFinance('${f.id}')`)}</td>
++                    </tr>`;
++                  }).join('')}
++                </tbody>
++              </table>
++            </div>
++          </div>
++          <div class="md:hidden space-y-3">
++            ${list.map(f => {
++              const isInc = String(f.type).toLowerCase()==='income';
++              const program = programMap[String(f.program_id||'')];
++              const donorName = Number(f.show_donor_name)===0 && isInc ? 'Hamba Allah' : (f.donor_name || '');
++              return `
++              <div class="bg-white border border-border-soft rounded-2xl p-4 shadow-soft">
++                <div class="flex items-start gap-3">
++                  <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isInc?'bg-success/10 text-success':'bg-danger/10 text-danger'}">
++                    <i data-lucide="${isInc?'trending-up':'trending-down'}" class="w-5 h-5"></i>
++                  </div>
++                  <div class="flex-1 min-w-0">
++                    <p class="font-semibold text-text-main truncate">${escapeHtml(f.title||'-')}</p>
++                    <p class="text-xs text-text-muted truncate">${escapeHtml(donorName || f.category || '')}</p>
++                    ${program ? `<p class="text-[11px] text-primary truncate mt-0.5">Program: ${escapeHtml(program.title||'-')}</p>` : ''}
++                    <div class="flex items-center gap-2 mt-1.5">
++                      ${statusBadge(f.status)}
++                      <span class="text-[11px] text-text-muted">${formatDate(f.transaction_date||f.created_at)}</span>
++                    </div>
++                  </div>
++                  <p class="font-extrabold ${isInc?'text-success':'text-danger'} whitespace-nowrap">${isInc?'+':'-'}${formatRupiah(f.amount)}</p>
++                </div>
++                <div class="flex gap-2 mt-3">
++                  ${f.proof_url ? `<button onclick="previewQris('${encodeURIComponent(f.proof_url)}')" class="px-3 py-2 rounded-xl border border-border-soft text-xs font-bold inline-flex items-center gap-1.5"><i data-lucide="image" class="w-3.5 h-3.5"></i>Bukti</button>` : ''}
++                  <button onclick="openFinanceModal('${f.id}')" class="flex-1 px-3 py-2 rounded-xl border border-border-soft text-xs font-bold">Edit</button>
++                  <button onclick="deleteFinance('${f.id}')" class="px-3 py-2 rounded-xl border border-danger/30 text-danger text-xs font-bold"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
++                </div>
++              </div>`;
++            }).join('')}
++          </div>
++        ` : showEmptyState('Belum ada transaksi', { icon:'wallet', hint:'Catat pemasukan & pengeluaran pertama.', action:{label:'Tambah Transaksi', onclick:'openFinanceModal()'} })}
++      </div>`;
++    refreshIcons();
++  }
++  window.openFinanceModal = function(id, prefill) {
++    const item = id ? (STATE.cache.finance||[]).find(f => String(f.id)===String(id)) : null;
++    const isEdit = !!item;
++    const programs = STATE.cache.donasi || [];
++    const initialType = item?.type || prefill?.type || 'income';
++    const initialProgramId = item?.program_id || prefill?.program_id || '';
++
++    openModal(isEdit?'Edit Transaksi':'Tambah Transaksi Keuangan', `
++      <form id="form-finance" class="space-y-4">
++        <div class="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-xl" role="tablist">
++          <button type="button" data-type="income"
++            class="ft-tab py-2.5 rounded-lg text-sm font-bold transition ${initialType==='income'?'bg-white text-success shadow-soft':'text-text-muted'}">
++            <i data-lucide="trending-up" class="w-4 h-4 inline -mt-0.5"></i> Pemasukan
++          </button>
++          <button type="button" data-type="expense"
++            class="ft-tab py-2.5 rounded-lg text-sm font-bold transition ${initialType==='expense'?'bg-white text-danger shadow-soft':'text-text-muted'}">
++            <i data-lucide="trending-down" class="w-4 h-4 inline -mt-0.5"></i> Pengeluaran
++          </button>
++        </div>
++        <input type="hidden" name="type" value="${initialType}" />
++
++        ${formField('Program Donasi (opsional)', selectInput('program_id', [{value:'',label:'— Tidak terkait program —'}].concat(programs.map(p => ({value:p.id, label:p.title||p.id}))), initialProgramId))}
++
++        ${formField('Judul Transaksi', textInput('title', item?.title, { required:true, placeholder:'Mis. Donasi dari Ahmad' }))}
++        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
++          ${formField('Jumlah (Rp)', textInput('amount', item?.amount ?? '', { type:'number', required:true, placeholder:'0' }))}
++          ${formField('Kategori', textInput('category', item?.category, { placeholder:'Infak / Material / Operasional ...' }))}
++        </div>
++
++        <div data-section="donor" class="space-y-3 ${initialType==='income'?'':'hidden'}">
++          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
++            ${formField('Nama Donatur', textInput('donor_name', item?.donor_name))}
++            ${formField('No. HP Donatur', textInput('donor_phone', item?.donor_phone, { placeholder:'08123...' }))}
++          </div>
++          ${formField('Tampilkan Nama Donatur?', selectInput('show_donor_name', [{value:'1',label:'Ya, tampilkan publik'},{value:'0',label:'Tidak (Hamba Allah)'}], item?.show_donor_name ?? 1))}
++        </div>
++
++        ${formField('Deskripsi', textarea('description', item?.description, { rows:3 }))}
++        ${formField('Bukti Transaksi (foto)', imagePicker('proof_url', item?.proof_url || '', 'finance'))}
++
++        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
++          ${formField('Tanggal Transaksi', textInput('transaction_date', toDateInput(item?.transaction_date), { type:'date', required:true }))}
++          ${formField('Status', selectInput('status', [
++            {value:'approved',label:'Approved'},{value:'pending',label:'Pending'},{value:'rejected',label:'Rejected'}
++          ], item?.status || 'approved'))}
++          ${formField('Tampilkan ke Publik?', selectInput('is_public', [{value:'1',label:'Ya'},{value:'0',label:'Tidak'}], item?.is_public ?? 1))}
++        </div>
++
++        ${modalFooter(isEdit)}
++      </form>
++    `);
++    attachImagePickers($('#modal-body'));
++
++    const body = $('#modal-body');
++    const typeInput = body.querySelector('input[name="type"]');
++    body.querySelectorAll('.ft-tab').forEach(btn => {
++      btn.addEventListener('click', () => {
++        const t = btn.dataset.type;
++        typeInput.value = t;
++        body.querySelectorAll('.ft-tab').forEach(b => {
++          const active = b.dataset.type === t;
++          b.classList.toggle('bg-white', active);
++          b.classList.toggle('shadow-soft', active);
++          b.classList.toggle('text-success', active && t==='income');
++          b.classList.toggle('text-danger', active && t==='expense');
++          b.classList.toggle('text-text-muted', !active);
++        });
++        const donor = body.querySelector('[data-section="donor"]');
++        donor.classList.toggle('hidden', t !== 'income');
++      });
++    });
++
++    bindFormSubmit('form-finance', async (fd) => {
++      const type = fd.get('type') || 'income';
++      const base = {
++        program_id: sanitizeInput(fd.get('program_id')) || null,
++        type,
++        amount: Number(fd.get('amount') || 0),
++        category: sanitizeInput(fd.get('category')),
++        title: sanitizeInput(fd.get('title')),
++        description: sanitizeInput(fd.get('description')),
++        proof_url: sanitizeInput(fd.get('proof_url')),
++        transaction_date: fd.get('transaction_date') || null,
++        is_public: Number(fd.get('is_public') ?? 1) ? 1 : 0,
++        status: fd.get('status') || 'approved',
++      };
++      const body = type === 'income'
++        ? { ...base, donor_name: sanitizeInput(fd.get('donor_name')), donor_phone: sanitizeInput(fd.get('donor_phone')), show_donor_name: Number(fd.get('show_donor_name') ?? 1) ? 1 : 0 }
++        : base;
++      const res = isEdit ? await apiPut(`/api/admin/finance/${item.id}`, body) : await apiPost('/api/admin/finance', body);
++      showToast(res.message || (isEdit?'Transaksi diperbarui':'Transaksi ditambahkan'), 'success');
++      closeModal();
++      if (STATE.currentView === 'donasi') {
++        renderDonasi();
++      } else {
++        renderTransparansi();
++      }
++    });
++  };
++  window.deleteFinance = (id) => confirmDelete(async () => {
++    try { const res = await apiDelete(`/api/admin/finance/${id}`); showToast(res.message || 'Transaksi dihapus', 'success'); renderTransparansi(); }
++    catch (e) { showToast(e.message || 'Gagal menghapus', 'error'); }
++  });
++
++
++  /* =========================================================
++   *  MODULE: GALLERY
++   * ========================================================= */
++  async function renderGallery() {
++    const root = $('#main-content');
++    showLoading(root);
++    let list = [];
++    try { list = await fetchList('/api/admin/gallery'); }
++    catch (e) { root.innerHTML = renderErrorBlock(e.message, renderGallery); return; }
++    STATE.cache.gallery = list;
++    renderGalleryList();
++  }
++  function renderGalleryList() {
++    const root = $('#main-content');
++    const q = (STATE.search||'').toLowerCase();
++    const cat = STATE.galleryCat || '';
++    let list = (STATE.cache.gallery||[]).slice();
++    if (q) list = list.filter(g => (g.title||'').toLowerCase().includes(q) || (g.category||'').toLowerCase().includes(q));
++    if (cat) list = list.filter(g => String(g.category) === cat);
++    const cats = Array.from(new Set((STATE.cache.gallery||[]).map(g => g.category).filter(Boolean)));
++
++    const filters = `
++      <select onchange="STATE.galleryCat=this.value; renderGalleryList()"
++        class="px-3 py-2 rounded-xl border border-border-soft text-sm font-semibold bg-white">
++        <option value="">Semua Kategori</option>
++        ${cats.map(c => `<option value="${escapeHtml(c)}" ${cat===c?'selected':''}>${escapeHtml(c)}</option>`).join('')}
++      </select>`;
++
++    root.innerHTML = `
++      <div class="fade-in space-y-4">
++        ${pageHeader({ title:'Gallery Foto', subtitle:`${list.length} foto tersimpan`, filters, actionLabel:'Upload Foto', actionOnClick:'openGalleryModal()' })}
++        ${list.length ? `
++          <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
++            ${list.map(g => `
++              <div class="group relative bg-white border border-border-soft rounded-2xl overflow-hidden shadow-soft">
++                <div class="aspect-square bg-primary-soft">${imageBox(g.image_url, g.title, 'w-full h-full object-cover')}</div>
++                <div class="p-3">
++                  <p class="text-xs font-bold text-text-main truncate">${escapeHtml(g.title||'-')}</p>
++                  <p class="text-[10px] text-text-muted truncate">${escapeHtml(g.category||'general')}</p>
++                  <div class="flex gap-1.5 mt-2">
++                    <button onclick="openGalleryEditModal('${g.id}')" class="flex-1 px-2 py-1.5 rounded-lg border border-border-soft hover:bg-gray-50 text-[11px] font-bold inline-flex items-center justify-center gap-1"><i data-lucide="pencil" class="w-3 h-3"></i>Edit</button>
++                    <button onclick="deleteGallery('${g.id}')" class="px-2 py-1.5 rounded-lg border border-danger/30 text-danger hover:bg-danger/10 text-[11px] font-bold"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
++                  </div>
++                </div>
++                <div class="absolute inset-x-2 top-2 flex items-center justify-between gap-2">
++                  ${Number(g.is_public)?badge('Publik','primary'):badge('Privat','soft')}
++                  <button onclick="previewQris('${encodeURIComponent(g.image_url||'')}')" class="w-8 h-8 rounded-lg bg-white/90 text-primary hover:bg-primary hover:text-white shadow-soft flex items-center justify-center">
++                    <i data-lucide="eye" class="w-3.5 h-3.5"></i>
++                  </button>
++                </div>
++              </div>
++            `).join('')}
++          </div>
++        ` : showEmptyState('Belum ada foto', { icon:'image', hint:'Upload foto pertama Anda.', action:{label:'Upload Foto', onclick:'openGalleryModal()'} })}
++      </div>`;
++    refreshIcons();
++  }
++  window.openGalleryModal = function() {
++    openModal('Upload Foto ke Gallery', `
++      <form id="form-gallery" class="space-y-4">
++        ${formField('Judul Foto', textInput('title', '', { required:true }))}
++        ${formField('Deskripsi', textarea('description', '', { rows:2 }))}
++        ${formField('Kategori', textInput('category', 'general', { placeholder:'general, pesantren, agenda, ...' }))}
++        <div>
++          <label class="block text-sm font-semibold mb-1.5">Pilih Gambar</label>
++          <label class="block cursor-pointer">
++            <div class="border-2 border-dashed border-border-soft rounded-xl p-6 text-center hover:border-primary hover:bg-primary-soft/30 transition">
++              <i data-lucide="upload-cloud" class="w-8 h-8 mx-auto text-primary mb-2"></i>
++              <p class="text-sm font-semibold">Klik untuk pilih foto</p>
++              <p class="text-xs text-text-muted">JPG/PNG, maksimal 2MB</p>
++            </div>
++            <input id="gal-file" type="file" accept="image/*" class="hidden" required />
++          </label>
++          <div id="gal-preview" class="hidden mt-3 flex items-center gap-3 bg-gray-50 rounded-xl p-3">
++            <img id="gal-preview-img" class="w-16 h-16 rounded-lg object-cover" />
++            <div class="flex-1 min-w-0">
++              <p id="gal-preview-name" class="text-sm font-semibold truncate"></p>
++              <p id="gal-preview-size" class="text-xs text-text-muted"></p>
++            </div>
++          </div>
++        </div>
++        ${formField('Publik?', selectInput('is_public', [{value:'1',label:'Ya, tampilkan ke publik'},{value:'0',label:'Tidak, internal'}], '1'))}
++        ${modalFooter(false, 'Upload')}
++      </form>
++    `);
++    let selectedFile = null;
++    $('#gal-file').addEventListener('change', (e) => {
++      const f = e.target.files && e.target.files[0];
++      if (!f) return;
++      if (!/^image\//.test(f.type)) { showToast('File harus berupa gambar', 'error'); return; }
++      if (f.size > 2*1024*1024) { showToast('Maksimal 2MB', 'error'); return; }
++      selectedFile = f;
++      $('#gal-preview-img').src = URL.createObjectURL(f);
++      $('#gal-preview-name').textContent = f.name;
++      $('#gal-preview-size').textContent = (f.size/1024).toFixed(0)+' KB';
++      $('#gal-preview').classList.remove('hidden');
++    });
++    bindFormSubmit('form-gallery', async (fd) => {
++      if (!selectedFile) throw new Error('Pilih foto terlebih dahulu');
++      const image_base64 = await fileToBase64(selectedFile);
++      const safeName = (selectedFile.name||'foto.jpg').replace(/[^\w.\-]+/g,'-').toLowerCase();
++      const body = {
++        title: sanitizeInput(fd.get('title')),
++        description: sanitizeInput(fd.get('description')),
++        file_name: safeName,
++        image_base64,
++        category: sanitizeInput(fd.get('category')) || 'general',
++        is_public: Number(fd.get('is_public') ?? 1) ? 1 : 0,
++        sort_order: 0,
++      };
++      const res = await apiPost('/api/admin/gallery', body);
++      if (!res || res.success === false) throw new Error((res && res.message) || 'Gagal upload');
++      showToast(res.message || 'Foto berhasil diupload', 'success');
++      closeModal(); renderGallery();
++    });
++  };
++  window.openGalleryEditModal = function(id) {
++    const item = (STATE.cache.gallery||[]).find(g => String(g.id)===String(id));
++    if (!item) return;
++    openModal('Edit Foto Gallery', `
++      <form id="form-gallery-edit" class="space-y-4">
++        <div class="flex justify-center mb-2">
++          ${imageBox(item.image_url, item.title, 'w-32 h-32 rounded-xl object-cover border border-border-soft')}
++        </div>
++        ${formField('Judul Foto', textInput('title', item.title, { required:true }))}
++        ${formField('Deskripsi', textarea('description', item.description, { rows:2 }))}
++        ${formField('Kategori', textInput('category', item.category || 'general'))}
++        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
++          ${formField('Urutan', textInput('sort_order', item.sort_order ?? 0, { type:'number' }))}
++          ${formField('Publik?', selectInput('is_public', [{value:'1',label:'Ya'},{value:'0',label:'Tidak'}], item.is_public ?? 1))}
++        </div>
++        ${modalFooter(true)}
++      </form>
++    `);
++    bindFormSubmit('form-gallery-edit', async (fd) => {
++      const body = {
++        title: sanitizeInput(fd.get('title')),
++        description: sanitizeInput(fd.get('description')),
++        category: sanitizeInput(fd.get('category')) || 'general',
++        is_public: Number(fd.get('is_public') ?? 1) ? 1 : 0,
++        sort_order: Number(fd.get('sort_order') || 0),
++      };
++      const res = await apiPut(`/api/admin/gallery/${id}`, body);
++      if (!res || res.success === false) throw new Error((res && res.message) || 'Gagal menyimpan');
++      showToast(res.message || 'Foto diperbarui', 'success');
++      closeModal(); renderGallery();
++    });
++  };
++  window.deleteGallery = (id) => confirmDelete(async () => {
++    try { const res = await apiDelete(`/api/admin/gallery/${id}`); showToast(res.message || 'Foto dihapus', 'success'); renderGallery(); }
++    catch (e) { showToast(e.message || 'Gagal menghapus', 'error'); }
++  });
++
++  /* =========================================================
++   *  MODULE: NOTIFIKASI
++   * ========================================================= */
++  async function renderNotifikasi() {
++    const root = $('#main-content');
++    showLoading(root);
++    let list = [];
++    try { list = await fetchList('/api/admin/notifications'); }
++    catch (e) { root.innerHTML = renderErrorBlock(e.message, renderNotifikasi); return; }
++    STATE.cache.notif = list;
++    renderNotifikasiList();
++  }
++  function renderNotifikasiList() {
++    const root = $('#main-content');
++    const q = (STATE.search||'').toLowerCase();
++    let list = (STATE.cache.notif||[]).slice();
++    if (q) list = list.filter(n => (n.title||'').toLowerCase().includes(q) || (n.message||n.body||'').toLowerCase().includes(q));
++    list.sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
++    const unread = list.filter(n => Number(n.is_read) === 0).length;
++    const typeIconMap = { info:'info', agenda:'calendar', news:'newspaper', dakwah:'book-open', donation:'hand-coins', warning:'alert-triangle', success:'check-circle', expense:'trending-down', contact:'mail' };
++    const typeColorMap = { info:'bg-primary-soft text-primary', agenda:'bg-warning/15 text-warning', news:'bg-blue-100 text-blue-600', dakwah:'bg-purple-100 text-purple-600', donation:'bg-success/15 text-success', warning:'bg-warning/15 text-warning', success:'bg-success/15 text-success', expense:'bg-danger/10 text-danger', contact:'bg-gray-100 text-text-muted' };
++
++    root.innerHTML = `
++      <div class="fade-in space-y-4">
++        ${pageHeader({ title:'Notifikasi', subtitle:`${unread} belum dibaca dari ${list.length} notifikasi`, actionLabel:'Buat Notifikasi', actionOnClick:'openNotifModal()' })}
++        ${list.length ? `
++          <div class="bg-white border border-border-soft rounded-2xl shadow-soft overflow-hidden">
++            <div class="divide-y divide-border-soft">
++              ${list.map(n => {
++                const t = String(n.type||'info').toLowerCase();
++                const icon = typeIconMap[t] || 'bell';
++                const cls = typeColorMap[t] || 'bg-primary-soft text-primary';
++                return `
++                <div class="p-4 md:p-5 flex items-start gap-3 ${Number(n.is_read)===0?'bg-primary-soft/30':''}">
++                  <div class="w-10 h-10 rounded-xl ${cls} flex items-center justify-center shrink-0">
++                    <i data-lucide="${icon}" class="w-5 h-5"></i>
++                  </div>
++                  <div class="flex-1 min-w-0">
++                    <div class="flex items-center gap-2 flex-wrap">
++                      <p class="font-bold text-text-main truncate">${escapeHtml(n.title||'-')}</p>
++                      ${badge(t.toUpperCase(),'soft')}
++                      ${n.target?badge('TARGET: '+String(n.target).toUpperCase(),'primary'):''}
++                      ${Number(n.is_read)===0?badge('Baru','warning'):''}
++                    </div>
++                    <p class="text-sm text-text-muted truncate-2 mt-0.5">${escapeHtml(n.message||n.body||'')}</p>
++                    <p class="text-[11px] text-text-muted mt-1">${relativeTime(n.created_at)}</p>
++                  </div>
++                  <div class="flex items-center gap-2">
++                    ${Number(n.is_read)===0?`<button onclick="markReadNotif('${n.id}')" class="px-3 py-1.5 rounded-lg bg-primary-soft text-primary text-xs font-bold">Tandai dibaca</button>`:''}
++                    <button onclick="deleteNotif('${n.id}')" class="p-2 rounded-lg hover:bg-danger/10 text-danger"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
++                  </div>
++                </div>`;
++              }).join('')}
++            </div>
++          </div>
++        ` : showEmptyState('Belum ada notifikasi', { icon:'bell', hint:'Notifikasi sistem akan tampil di sini.' })}
++      </div>`;
++    refreshIcons();
++  }
++  window.openNotifModal = function() {
++    openModal('Buat Notifikasi', `
++      <form id="form-notif" class="space-y-4">
++        ${formField('Judul', textInput('title', '', { required:true }))}
++        ${formField('Pesan', textarea('message', '', { rows:4, required:true }))}
++        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
++          ${formField('Tipe', selectInput('type', [
++            {value:'info',label:'Info'},{value:'agenda',label:'Agenda'},{value:'news',label:'Berita'},{value:'dakwah',label:'Dakwah'},
++            {value:'donation',label:'Donasi'},{value:'warning',label:'Peringatan'},{value:'success',label:'Sukses'},{value:'expense',label:'Pengeluaran'},{value:'contact',label:'Kontak'}
++          ], 'info'))}
++          ${formField('Target', selectInput('target', [
++            {value:'public',label:'Publik (semua pengunjung)'},{value:'admin',label:'Admin'},{value:'all',label:'Semua'}
++          ], 'public'))}
++        </div>
++        ${modalFooter(false)}
++      </form>
++    `);
++    bindFormSubmit('form-notif', async (fd) => {
++      const body = {
++        title: sanitizeInput(fd.get('title')),
++        message: sanitizeInput(fd.get('message')),
++        type: fd.get('type') || 'info',
++        target: fd.get('target') || 'public',
++      };
++      const res = await apiPost('/api/admin/notifications', body);
++      if (!res || res.success === false) throw new Error((res && res.message) || 'Gagal membuat notifikasi');
++      showToast(res.message || 'Notifikasi dibuat', 'success');
++      closeModal(); renderNotifikasi();
++    });
++  };
++  window.markReadNotif = async (id) => {
++    try { await apiPut(`/api/admin/notifications/${id}`, { is_read: 1 }); renderNotifikasi(); }
++    catch (e) { showToast(e.message || 'Gagal', 'error'); }
++  };
++  window.deleteNotif = (id) => confirmDelete(async () => {
++    try { const res = await apiDelete(`/api/admin/notifications/${id}`); showToast(res.message || 'Notifikasi dihapus', 'success'); renderNotifikasi(); }
++    catch (e) { showToast(e.message || 'Gagal menghapus', 'error'); }
++  });
++
++  /* =========================================================
++   *  MODULE: SETTINGS
++   * ========================================================= */
++  async function renderSettings() {
++    const root = $('#main-content');
++    showLoading(root);
++    let settings = {};
++    try {
++      const res = await apiGet('/api/admin/settings');
++      settings = (res && (res.data || res)) || {};
++      if (settings.success !== undefined) settings = settings.data || {};
++    } catch (e) {
++      root.innerHTML = renderErrorBlock(e.message, renderSettings);
++      return;
++    }
++    STATE.cache.settings = settings;
++    renderSettingsView(settings);
++  }
++
++  function renderSettingsView(settings) {
++    const root = $('#main-content');
++    const a = STATE.admin || {};
++    const s = settings || {};
++    root.innerHTML = `
++      <div class="fade-in space-y-4">
++        ${pageHeader({ title:'Settings', subtitle:'Pengaturan website FSPP Kuluwut' })}
++        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
++          <div class="space-y-4">
++            <div class="bg-white border border-border-soft rounded-2xl shadow-soft p-6 text-center">
++              <div class="w-24 h-24 mx-auto rounded-full bg-primary text-white font-extrabold text-3xl flex items-center justify-center shadow-pop">${escapeHtml(getInitials(a.name))}</div>
++              <h3 class="font-extrabold text-text-main mt-3 truncate">${escapeHtml(a.name||'Admin FSPP')}</h3>
++              <p class="text-sm text-text-muted truncate">${escapeHtml(a.email||'admin@fspp.local')}</p>
++              <div class="mt-2">${badge((a.role||'admin').toString().toUpperCase(),'primary')}</div>
++              <button onclick="logout()" class="mt-4 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-danger/30 text-danger hover:bg-danger/10 font-bold text-sm">
++                <i data-lucide="log-out" class="w-4 h-4"></i>Keluar dari Akun
++              </button>
++            </div>
++            <div class="bg-white border border-border-soft rounded-2xl shadow-soft p-5">
++              <h4 class="font-extrabold text-text-main mb-3 text-sm">Tentang</h4>
++              <div class="space-y-3 text-sm">
++                <div class="flex items-center gap-3">
++                  <div class="w-9 h-9 rounded-xl bg-primary-soft text-primary flex items-center justify-center"><i data-lucide="globe" class="w-4 h-4"></i></div>
++                  <div class="min-w-0"><p class="font-semibold text-xs">API Base</p><p class="text-[11px] text-text-muted break-all">${API_BASE}</p></div>
++                </div>
++                <div class="flex items-center gap-3">
++                  <div class="w-9 h-9 rounded-xl bg-primary-soft text-primary flex items-center justify-center"><i data-lucide="leaf" class="w-4 h-4"></i></div>
++                  <div class="min-w-0"><p class="font-semibold text-xs">Dashboard FSPP</p><p class="text-[11px] text-text-muted">Administrator Panel v1.0</p></div>
++                </div>
++              </div>
++            </div>
++          </div>
++          <div class="lg:col-span-2 bg-white border border-border-soft rounded-2xl shadow-soft p-6">
++            <h4 class="font-extrabold text-text-main mb-1">Informasi Website</h4>
++            <p class="text-sm text-text-muted mb-5">Update profil & kontak website FSPP. Perubahan tersimpan ke <code class="text-primary">POST /api/admin/settings</code>.</p>
++            <form id="form-settings" class="space-y-4">
++              ${formField('Nama Situs', textInput('site_name', s.site_name, { required:true, placeholder:'FSPP Kuluwut' }))}
++              ${formField('Deskripsi Situs', textarea('site_description', s.site_description, { rows:3, placeholder:'Forum Silaturahmi Pondok Pesantren ...' }))}
++              ${formField('Logo Website', imagePicker('logo_url', s.logo_url || '', 'settings'))}
++              ${formField('Alamat', textarea('address', s.address, { rows:2, placeholder:'Kuluwut, Brebes' }))}
++              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
++                ${formField('Nomor WhatsApp', textInput('whatsapp', s.whatsapp, { placeholder:'08123456789' }))}
++                ${formField('Email Kontak', textInput('email', s.email, { type:'email', placeholder:'admin@fsppkuluwut.org' }))}
++              </div>
++              <div class="flex flex-col-reverse md:flex-row md:justify-end gap-2 pt-3 border-t border-border-soft">
++                <button type="button" onclick="renderSettings()" class="px-5 py-2.5 rounded-xl border border-border-soft font-bold hover:bg-gray-50">Reset</button>
++                <button type="submit" class="btn-primary px-5 py-2.5 rounded-xl font-bold inline-flex items-center justify-center gap-2">
++                  <i data-lucide="save" class="w-4 h-4"></i>Simpan Pengaturan
++                </button>
++              </div>
++            </form>
++          </div>
++        </div>
++      </div>
++    `;
++    attachImagePickers($('#main-content'));
++    bindFormSubmit('form-settings', async (fd) => {
++      const body = {
++        site_name: sanitizeInput(fd.get('site_name')),
++        site_description: sanitizeInput(fd.get('site_description')),
++        logo_url: sanitizeInput(fd.get('logo_url')),
++        address: sanitizeInput(fd.get('address')),
++        whatsapp: sanitizeInput(fd.get('whatsapp')),
++        email: sanitizeInput(fd.get('email')),
++      };
++      const res = await apiPost('/api/admin/settings', body);
++      if (!res || res.success === false) throw new Error((res && res.message) || 'Gagal menyimpan');
++      showToast(res.message || 'Pengaturan disimpan', 'success');
++      STATE.cache.settings = body;
++    });
++    refreshIcons();
++  }
++
++  /* =========================================================
++   *  SHARED RENDER HELPERS
++   * ========================================================= */
++  function actionButtons(editFn, deleteFn) {
++    return `
++      <div class="inline-flex items-center gap-1">
++        <button onclick="${editFn}" class="p-2 rounded-lg hover:bg-primary-soft text-text-muted hover:text-primary" title="Edit"><i data-lucide="pencil" class="w-4 h-4"></i></button>
++        <button onclick="${deleteFn}" class="p-2 rounded-lg hover:bg-danger/10 text-text-muted hover:text-danger" title="Hapus"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
++      </div>`;
++  }
++
++  function cardItem({ image, title, subtitle, meta=[], status, onEdit, onDelete }) {
++    return `
++      <div class="bg-white border border-border-soft rounded-2xl p-4 shadow-soft">
++        <div class="flex items-start gap-3">
++          ${image ? imageBox(image, title, 'w-16 h-16 rounded-xl object-cover shrink-0') : ''}
++          <div class="flex-1 min-w-0">
++            <p class="font-bold text-text-main truncate">${escapeHtml(title||'-')}</p>
++            ${subtitle?`<p class="text-xs text-text-muted truncate-2 mt-0.5">${escapeHtml(subtitle)}</p>`:''}
++            <div class="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1.5 text-[11px] text-text-muted">
++              ${meta.map(m => `<span>${escapeHtml(m)}</span>`).join('<span>·</span>')}
++            </div>
++            ${status?`<div class="mt-1.5">${statusBadge(status)}</div>`:''}
++          </div>
++        </div>
++        ${(onEdit||onDelete)?`<div class="flex gap-2 mt-3">
++          ${onEdit?`<button onclick="${onEdit}" class="flex-1 px-3 py-2 rounded-xl border border-border-soft text-xs font-bold inline-flex items-center justify-center gap-1.5"><i data-lucide="pencil" class="w-3.5 h-3.5"></i>Edit</button>`:''}
++          ${onDelete?`<button onclick="${onDelete}" class="px-3 py-2 rounded-xl border border-danger/30 text-danger text-xs font-bold"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>`:''}
++        </div>`:''}
++      </div>`;
++  }
++
++  function modalFooter(isEdit, label) {
++    return `
++      <div class="flex flex-col-reverse md:flex-row md:items-center md:justify-end gap-2 pt-3 border-t border-border-soft">
++        <button type="button" onclick="closeModal()" class="px-5 py-2.5 rounded-xl border border-border-soft font-bold hover:bg-gray-50">Batal</button>
++        <button type="submit" class="btn-primary px-5 py-2.5 rounded-xl font-bold inline-flex items-center justify-center gap-2">
++          <i data-lucide="check" class="w-4 h-4"></i>${label || (isEdit ? 'Simpan Perubahan' : 'Simpan')}
++        </button>
++      </div>`;
++  }
++
++  function renderErrorBlock(message, retryFn) {
++    const id = 'retry-' + Math.random().toString(36).slice(2,8);
++    setTimeout(() => { const b = document.getElementById(id); if (b) b.onclick = retryFn; }, 0);
++    return `
++      <div class="bg-white border border-danger/20 rounded-2xl p-8 text-center">
++        <div class="w-14 h-14 rounded-2xl bg-danger/10 text-danger flex items-center justify-center mx-auto mb-3"><i data-lucide="alert-circle" class="w-7 h-7"></i></div>
++        <h4 class="font-bold text-text-main">Gagal memuat data</h4>
++        <p class="text-sm text-text-muted mt-1">${escapeHtml(message||'Terjadi kesalahan saat memuat.')}</p>
++        <button id="${id}" class="mt-4 btn-primary px-5 py-2 rounded-xl font-bold text-sm">Coba lagi</button>
++      </div>`;
++  }
++
++  /* =========================================================
++   *  DATE UTILS
++   * ========================================================= */
++  function toDateTimeLocal(val) {
++    if (!val) return '';
++    const d = new Date(val);
++    if (isNaN(d)) return '';
++    const pad = (n) => String(n).padStart(2,'0');
++    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
++  }
++  function toDateInput(val) {
++    if (!val) return '';
++    const d = new Date(val);
++    if (isNaN(d)) return String(val).slice(0,10);
++    const pad = (n) => String(n).padStart(2,'0');
++    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
++  }
++  function toISOString(val) {
++    if (!val) return null;
++    const d = new Date(val);
++    if (isNaN(d)) return null;
++    return d.toISOString();
++  }
++
++  /* =========================================================
++   *  INIT
++   * ========================================================= */
++  function init() {
++    refreshIcons();
++    STATE.token = localStorage.getItem('fspp_token');
++    try { STATE.admin = JSON.parse(localStorage.getItem('fspp_admin') || 'null'); }
++    catch(e) { STATE.admin = null; }
++
++    // Login form
++    $('#form-login').addEventListener('submit', handleLogin);
++    $('#toggle-password').addEventListener('click', () => {
++      const inp = $('#login-password');
++      inp.type = inp.type === 'password' ? 'text' : 'password';
++    });
++
++    // Top search
++    $('#global-search').addEventListener('input', (e) => {
++      STATE.search = e.target.value || '';
++      const fn = ({
++        berita: renderBeritaList, dakwah: renderDakwahList, agenda: renderAgendaList,
++        pesantren: renderPesantrenList, pengurus: renderPengurusList, donasi: renderDonasiList,
++        transparansi: renderTransparansiList, gallery: renderGalleryList, notifikasi: renderNotifikasiList,
++      })[STATE.currentView];
++      if (fn) fn();
++    });
++
++    // Drawer / mobile
++    $('#btn-open-drawer').addEventListener('click', openDrawer);
++    $('#btn-close-drawer').addEventListener('click', closeDrawer);
++    $('#drawer-overlay').addEventListener('click', closeDrawer);
++
++    // Bottom nav
++    $$('#bottom-nav .bn').forEach(b => {
++      b.addEventListener('click', () => {
++        if (b.id === 'btn-more-menu') {
++          openMobileMenu();
++        } else if (b.dataset.view) {
++          navigate(b.dataset.view);
++        }
++      });
++    });
++
++    // Close modal with Escape
++    document.addEventListener('keydown', (e) => {
++      if (e.key === 'Escape') {
++        if (!$('#modal-root').classList.contains('hidden')) closeModal();
++      }
++    });
++
++    if (STATE.token && STATE.admin) {
++      enterApp();
++    } else {
++      showScreen('login');
++    }
++  }
++
++  function openMobileMenu() {
++    const items = MENU.map(m => `
++      <button onclick="navigate('${m.key}'); closeModal();" class="flex items-center gap-3 p-3 rounded-2xl border border-border-soft hover:bg-primary-soft hover:border-primary transition text-left">
++        <div class="w-10 h-10 rounded-xl bg-primary-soft text-primary flex items-center justify-center">
++          <i data-lucide="${m.icon}" class="w-5 h-5"></i>
++        </div>
++        <div class="min-w-0 flex-1">
++          <p class="font-bold text-text-main truncate">${m.label}</p>
++          <p class="text-xs text-text-muted truncate">${m.subtitle}</p>
++        </div>
++      </button>
++    `).join('');
++    openModal('Menu Lengkap', `<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">${items}</div>`);
++  }
++
++  document.addEventListener('DOMContentLoaded', init);
++  </script>
++</body>
++</html>

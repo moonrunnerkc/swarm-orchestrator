@@ -1,0 +1,2075 @@
+diff --git a/package-lock.json b/package-lock.json
+index 4e4e7a0..30fad9b 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -8,7 +8,10 @@
+       "name": "content-pilot",
+       "version": "0.1.0",
+       "dependencies": {
++        "clsx": "^2.1.1",
++        "lucide-react": "^1.16.0",
+         "next": "16.2.6",
++        "next-themes": "^0.4.6",
+         "react": "19.2.4",
+         "react-dom": "19.2.4"
+       },
+@@ -2669,6 +2672,15 @@
+       "integrity": "sha512-IV3Ou0jSMzZrd3pZ48nLkT9DA7Ag1pnPzaiQhpW7c3RbcqqzvzzVu+L8gfqMp/8IM2MQtSiqaCxrrcfu8I8rMA==",
+       "license": "MIT"
+     },
++    "node_modules/clsx": {
++      "version": "2.1.1",
++      "resolved": "https://registry.npmjs.org/clsx/-/clsx-2.1.1.tgz",
++      "integrity": "sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=6"
++      }
++    },
+     "node_modules/color-convert": {
+       "version": "2.0.1",
+       "resolved": "https://registry.npmjs.org/color-convert/-/color-convert-2.0.1.tgz",
+@@ -4908,6 +4920,15 @@
+         "yallist": "^3.0.2"
+       }
+     },
++    "node_modules/lucide-react": {
++      "version": "1.16.0",
++      "resolved": "https://registry.npmjs.org/lucide-react/-/lucide-react-1.16.0.tgz",
++      "integrity": "sha512-dYwyPzb4MEKpGUmNYk3WKWPnMrHs3FKM+q94kAnJrcDIqqn1hq2xY8scaS2ovsOCM5D51ey2gaRG3PBb1vgoYQ==",
++      "license": "ISC",
++      "peerDependencies": {
++        "react": "^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0"
++      }
++    },
+     "node_modules/magic-string": {
+       "version": "0.30.21",
+       "resolved": "https://registry.npmjs.org/magic-string/-/magic-string-0.30.21.tgz",
+@@ -5076,6 +5097,16 @@
+         }
+       }
+     },
++    "node_modules/next-themes": {
++      "version": "0.4.6",
++      "resolved": "https://registry.npmjs.org/next-themes/-/next-themes-0.4.6.tgz",
++      "integrity": "sha512-pZvgD5L0IEvX5/9GWyHMf3m8BKiVQwsCMHfoFosXtXBMnaS0ZnIJ9ST4b4NqLVKDEm8QBxoNNGNaBv2JNF6XNA==",
++      "license": "MIT",
++      "peerDependencies": {
++        "react": "^16.8 || ^17 || ^18 || ^19 || ^19.0.0-rc",
++        "react-dom": "^16.8 || ^17 || ^18 || ^19 || ^19.0.0-rc"
++      }
++    },
+     "node_modules/next/node_modules/postcss": {
+       "version": "8.4.31",
+       "resolved": "https://registry.npmjs.org/postcss/-/postcss-8.4.31.tgz",
+diff --git a/package.json b/package.json
+index b1ab3c5..8674a1e 100644
+--- a/package.json
++++ b/package.json
+@@ -9,7 +9,10 @@
+     "lint": "eslint"
+   },
+   "dependencies": {
++    "clsx": "^2.1.1",
++    "lucide-react": "^1.16.0",
+     "next": "16.2.6",
++    "next-themes": "^0.4.6",
+     "react": "19.2.4",
+     "react-dom": "19.2.4"
+   },
+diff --git a/src/app/api/chat/route.ts b/src/app/api/chat/route.ts
+new file mode 100644
+index 0000000..1aa73b4
+--- /dev/null
++++ b/src/app/api/chat/route.ts
+@@ -0,0 +1,53 @@
++export const dynamic = "force-dynamic";
++
++export async function POST(request: Request) {
++  const body = await request.json();
++  const { messages, baseUrl, apiKey, model } = body;
++
++  if (!baseUrl || !apiKey || !model) {
++    return Response.json(
++      { error: "Missing API configuration. Please configure settings first." },
++      { status: 400 }
++    );
++  }
++
++  const url = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
++
++  try {
++    const response = await fetch(url, {
++      method: "POST",
++      headers: {
++        "Content-Type": "application/json",
++        Authorization: `Bearer ${apiKey}`,
++      },
++      body: JSON.stringify({
++        model,
++        messages,
++        stream: true,
++      }),
++    });
++
++    if (!response.ok) {
++      const errorText = await response.text();
++      return Response.json(
++        { error: `API error: ${response.status} - ${errorText}` },
++        { status: response.status }
++      );
++    }
++
++    if (!response.body) {
++      return Response.json({ error: "No response body" }, { status: 500 });
++    }
++
++    return new Response(response.body, {
++      headers: {
++        "Content-Type": "text/event-stream",
++        "Cache-Control": "no-cache",
++        Connection: "keep-alive",
++      },
++    });
++  } catch (error) {
++    const message = error instanceof Error ? error.message : "Unknown error";
++    return Response.json({ error: message }, { status: 500 });
++  }
++}
+diff --git a/src/app/chat/page.tsx b/src/app/chat/page.tsx
+new file mode 100644
+index 0000000..ce5d3de
+--- /dev/null
++++ b/src/app/chat/page.tsx
+@@ -0,0 +1,303 @@
++"use client";
++
++import { useState, useRef, useEffect } from "react";
++import Link from "next/link";
++import { useLocale } from "@/lib/locale-context";
++import { t } from "@/lib/i18n";
++import { getSettings } from "@/lib/store";
++import {
++  Send,
++  Copy,
++  Check,
++  Bot,
++  User,
++  Settings,
++  Sparkles,
++  FileText,
++  AtSign,
++  Image as ImageIcon,
++  Briefcase,
++} from "lucide-react";
++
++interface Message {
++  role: "system" | "user" | "assistant";
++  content: string;
++}
++
++const quickPrompts = [
++  { icon: FileText, labelEn: "Blog Post", labelId: "Postingan Blog", prompt: "Write a 500-word SEO-optimized blog post about" },
++  { icon: AtSign, labelEn: "Tweet Thread", labelId: "Thread Tweet", prompt: "Create a viral tweet thread (5-7 tweets) about" },
++  { icon: ImageIcon, labelEn: "Instagram Caption", labelId: "Caption Instagram", prompt: "Write an engaging Instagram caption with hashtags about" },
++  { icon: Briefcase, labelEn: "LinkedIn Post", labelId: "Postingan LinkedIn", prompt: "Write a professional LinkedIn post about" },
++];
++
++export default function ChatPage() {
++  const { locale } = useLocale();
++  const [messages, setMessages] = useState<Message[]>([]);
++  const [input, setInput] = useState("");
++  const [isLoading, setIsLoading] = useState(false);
++  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
++  const scrollRef = useRef<HTMLDivElement>(null);
++  const textareaRef = useRef<HTMLTextAreaElement>(null);
++
++  const settings = getSettings();
++  const isConfigured = settings.baseUrl && settings.apiKey && settings.model;
++
++  useEffect(() => {
++    if (scrollRef.current) {
++      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
++    }
++  }, [messages]);
++
++  useEffect(() => {
++    if (textareaRef.current) {
++      textareaRef.current.style.height = "auto";
++      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + "px";
++    }
++  }, [input]);
++
++  async function handleSend() {
++    if (!input.trim() || isLoading) return;
++
++    const systemMessage: Message = {
++      role: "system",
++      content: t("chat.system.prompt", locale),
++    };
++
++    const userMessage: Message = { role: "user", content: input.trim() };
++    const newMessages = [...messages, userMessage];
++    setMessages(newMessages);
++    setInput("");
++    setIsLoading(true);
++
++    const apiMessages = [systemMessage, ...newMessages];
++
++    try {
++      const res = await fetch("/api/chat", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify({
++          messages: apiMessages,
++          baseUrl: settings.baseUrl,
++          apiKey: settings.apiKey,
++          model: settings.model,
++        }),
++      });
++
++      if (!res.ok) {
++        const err = await res.json();
++        throw new Error(err.error || "API request failed");
++      }
++
++      const reader = res.body?.getReader();
++      if (!reader) throw new Error("No reader available");
++
++      const decoder = new TextDecoder();
++      let assistantContent = "";
++
++      setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
++
++      let buffer = "";
++      while (true) {
++        const { done, value } = await reader.read();
++        if (done) break;
++
++        buffer += decoder.decode(value, { stream: true });
++        const lines = buffer.split("\n");
++        buffer = lines.pop() || "";
++
++        for (const line of lines) {
++          const trimmed = line.trim();
++          if (!trimmed.startsWith("data: ")) continue;
++          const data = trimmed.slice(6);
++          if (data === "[DONE]") continue;
++
++          try {
++            const parsed = JSON.parse(data);
++            const delta = parsed.choices?.[0]?.delta?.content;
++            if (delta) {
++              assistantContent += delta;
++              setMessages((prev) => {
++                const updated = [...prev];
++                updated[updated.length - 1] = {
++                  role: "assistant",
++                  content: assistantContent,
++                };
++                return updated;
++              });
++            }
++          } catch {
++            // skip malformed JSON chunks
++          }
++        }
++      }
++    } catch (error) {
++      const msg = error instanceof Error ? error.message : "Unknown error";
++      setMessages((prev) => [
++        ...prev,
++        { role: "assistant", content: `${t("chat.error", locale)}\n\n${msg}` },
++      ]);
++    } finally {
++      setIsLoading(false);
++    }
++  }
++
++  function copyToClipboard(text: string, idx: number) {
++    navigator.clipboard.writeText(text);
++    setCopiedIdx(idx);
++    setTimeout(() => setCopiedIdx(null), 2000);
++  }
++
++  function handleQuickPrompt(prompt: string) {
++    setInput(prompt + " ");
++    textareaRef.current?.focus();
++  }
++
++  return (
++    <div className="flex h-[calc(100vh-4rem)] flex-col">
++      {/* Messages */}
++      <div ref={scrollRef} className="flex-1 overflow-y-auto">
++        {messages.length === 0 ? (
++          <div className="flex h-full items-center justify-center">
++            <div className="max-w-lg px-4 text-center">
++              <div className="mx-auto mb-6 inline-flex rounded-2xl bg-indigo-50 p-4 dark:bg-indigo-950">
++                <Sparkles size={32} className="text-indigo-600 dark:text-indigo-400" />
++              </div>
++              <h2 className="mb-2 text-2xl font-bold text-gray-900 dark:text-white">
++                {t("chat.welcome", locale)}
++              </h2>
++              <p className="mb-8 text-gray-600 dark:text-gray-400">
++                {t("chat.welcome.desc", locale)}
++              </p>
++
++              {!isConfigured && (
++                <div className="mb-8 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
++                  <p className="mb-2 font-medium">{t("chat.configure", locale)}</p>
++                  <Link
++                    href="/settings"
++                    className="inline-flex items-center gap-1 font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
++                  >
++                    <Settings size={14} />
++                    {t("nav.settings", locale)}
++                  </Link>
++                </div>
++              )}
++
++              <div className="grid grid-cols-2 gap-3">
++                {quickPrompts.map(({ icon: Icon, labelEn, labelId, prompt }) => (
++                  <button
++                    key={labelEn}
++                    onClick={() => handleQuickPrompt(prompt)}
++                    className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white p-3 text-left text-sm text-gray-700 transition-all hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-800 dark:hover:bg-indigo-950"
++                  >
++                    <Icon size={16} className="shrink-0 text-indigo-500" />
++                    {locale === "en" ? labelEn : labelId}
++                  </button>
++                ))}
++              </div>
++            </div>
++          </div>
++        ) : (
++          <div className="mx-auto max-w-3xl px-4 py-6">
++            {messages.map((msg, idx) => (
++              <div
++                key={idx}
++                className={`mb-6 animate-fade-in ${msg.role === "user" ? "flex justify-end" : ""}`}
++              >
++                <div
++                  className={`flex max-w-[85%] gap-3 ${
++                    msg.role === "user" ? "flex-row-reverse" : ""
++                  }`}
++                >
++                  <div
++                    className={`mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
++                      msg.role === "user"
++                        ? "bg-indigo-600 text-white"
++                        : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
++                    }`}
++                  >
++                    {msg.role === "user" ? <User size={16} /> : <Bot size={16} />}
++                  </div>
++                  <div
++                    className={`rounded-2xl px-4 py-3 ${
++                      msg.role === "user"
++                        ? "bg-indigo-600 text-white"
++                        : "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
++                    }`}
++                  >
++                    <div className="prose-content whitespace-pre-wrap text-sm leading-relaxed">
++                      {msg.content}
++                    </div>
++                    {msg.role === "assistant" && msg.content && (
++                      <div className="mt-2 flex justify-end">
++                        <button
++                          onClick={() => copyToClipboard(msg.content, idx)}
++                          className="rounded-lg p-1 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-gray-300"
++                          title={t("common.copy", locale)}
++                        >
++                          {copiedIdx === idx ? (
++                            <Check size={14} className="text-green-500" />
++                          ) : (
++                            <Copy size={14} />
++                          )}
++                        </button>
++                      </div>
++                    )}
++                  </div>
++                </div>
++              </div>
++            ))}
++            {isLoading && messages[messages.length - 1]?.role !== "assistant" && (
++              <div className="mb-6 flex gap-3">
++                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
++                  <Bot size={16} />
++                </div>
++                <div className="rounded-2xl bg-gray-100 px-4 py-3 dark:bg-gray-800">
++                  <div className="flex gap-1.5">
++                    <span className="typing-dot h-2 w-2 rounded-full bg-gray-400" />
++                    <span className="typing-dot h-2 w-2 rounded-full bg-gray-400" />
++                    <span className="typing-dot h-2 w-2 rounded-full bg-gray-400" />
++                  </div>
++                </div>
++              </div>
++            )}
++          </div>
++        )}
++      </div>
++
++      {/* Input */}
++      <div className="border-t border-gray-200 bg-white px-4 py-4 dark:border-gray-800 dark:bg-gray-950">
++        <div className="mx-auto max-w-3xl">
++          <div className="flex items-end gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-100 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:border-indigo-700 dark:focus-within:ring-indigo-900">
++            <textarea
++              ref={textareaRef}
++              value={input}
++              onChange={(e) => setInput(e.target.value)}
++              onKeyDown={(e) => {
++                if (e.key === "Enter" && !e.shiftKey) {
++                  e.preventDefault();
++                  handleSend();
++                }
++              }}
++              placeholder={t("chat.placeholder", locale)}
++              rows={1}
++              className="max-h-[200px] flex-1 resize-none bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100"
++            />
++            <button
++              onClick={handleSend}
++              disabled={!input.trim() || isLoading}
++              className="shrink-0 rounded-xl bg-indigo-600 p-2 text-white transition-all hover:bg-indigo-700 disabled:opacity-40 disabled:hover:bg-indigo-600"
++            >
++              <Send size={16} />
++            </button>
++          </div>
++          <p className="mt-2 text-center text-xs text-gray-400">
++            {locale === "en"
++              ? "Press Enter to send, Shift+Enter for new line"
++              : "Tekan Enter untuk kirim, Shift+Enter untuk baris baru"}
++          </p>
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/app/content/page.tsx b/src/app/content/page.tsx
+new file mode 100644
+index 0000000..d8413f1
+--- /dev/null
++++ b/src/app/content/page.tsx
+@@ -0,0 +1,579 @@
++"use client";
++
++import { useState, useEffect } from "react";
++import { useLocale } from "@/lib/locale-context";
++import { t } from "@/lib/i18n";
++import {
++  getSettings,
++  getColumns,
++  saveColumns,
++  ContentColumn,
++} from "@/lib/store";
++import {
++  Plus,
++  Trash2,
++  Sparkles,
++  ChevronDown,
++  ChevronUp,
++  Copy,
++  Check,
++  FileText,
++  AtSign,
++  Image as ImageIcon,
++  Briefcase,
++  Mail,
++  Video,
++} from "lucide-react";
++import Link from "next/link";
++
++interface Template {
++  id: string;
++  titleKey: string;
++  descKey: string;
++  icon: typeof FileText;
++  platform: string;
++  promptEn: string;
++  promptId: string;
++}
++
++const templates: Template[] = [
++  {
++    id: "blog",
++    titleKey: "template.blog.title",
++    descKey: "template.blog.desc",
++    icon: FileText,
++    platform: "blog",
++    promptEn:
++      "You are a content column assistant. Create a list of 5 SEO-optimized blog post topics with title, target keyword, and brief outline for each. The column direction is: {goal}",
++    promptId:
++      "Kamu adalah asisten kolom konten. Buat daftar 5 topik postingan blog yang dioptimasi SEO dengan judul, kata kunci target, dan garis besar singkat untuk masing-masing. Arah kolom adalah: {goal}",
++  },
++  {
++    id: "tweet",
++    titleKey: "template.tweet.title",
++    descKey: "template.tweet.desc",
++    icon: AtSign,
++    platform: "twitter",
++    promptEn:
++      "You are a content column assistant. Create a list of 5 viral tweet thread topics with hooks, key points, and engagement strategy. The column direction is: {goal}",
++    promptId:
++      "Kamu adalah asisten kolom konten. Buat daftar 5 topik thread tweet viral dengan hook, poin utama, dan strategi engagement. Arah kolom adalah: {goal}",
++  },
++  {
++    id: "instagram",
++    titleKey: "template.instagram.title",
++    descKey: "template.instagram.desc",
++    icon: ImageIcon,
++    platform: "instagram",
++    promptEn:
++      "You are a content column assistant. Create a list of 5 Instagram post topics with caption hooks, visual ideas, and hashtag groups. The column direction is: {goal}",
++    promptId:
++      "Kamu adalah asisten kolom konten. Buat daftar 5 topik postingan Instagram dengan hook caption, ide visual, dan grup hashtag. Arah kolom adalah: {goal}",
++  },
++  {
++    id: "linkedin",
++    titleKey: "template.linkedin.title",
++    descKey: "template.linkedin.desc",
++    icon: Briefcase,
++    platform: "linkedin",
++    promptEn:
++      "You are a content column assistant. Create a list of 5 LinkedIn post topics for thought leadership with hook, narrative structure, and CTA. The column direction is: {goal}",
++    promptId:
++      "Kamu adalah asisten kolom konten. Buat daftar 5 topik postingan LinkedIn untuk thought leadership dengan hook, struktur narasi, dan CTA. Arah kolom adalah: {goal}",
++  },
++  {
++    id: "newsletter",
++    titleKey: "template.newsletter.title",
++    descKey: "template.newsletter.desc",
++    icon: Mail,
++    platform: "newsletter",
++    promptEn:
++      "You are a content column assistant. Create a list of 5 newsletter edition topics with subject line, sections outline, and key takeaway. The column direction is: {goal}",
++    promptId:
++      "Kamu adalah asisten kolom konten. Buat daftar 5 topik edisi newsletter dengan subject line, garis besar bagian, dan key takeaway. Arah kolom adalah: {goal}",
++  },
++  {
++    id: "tiktok",
++    titleKey: "template.tiktok.title",
++    descKey: "template.tiktok.desc",
++    icon: Video,
++    platform: "tiktok",
++    promptEn:
++      "You are a content column assistant. Create a list of 5 TikTok video script topics with hooks (first 3 seconds), content structure, and trending sounds/effects suggestions. The column direction is: {goal}",
++    promptId:
++      "Kamu adalah asisten kolom konten. Buat daftar 5 topik skrip video TikTok dengan hook (3 detik pertama), struktur konten, dan saran sounds/effects trending. Arah kolom adalah: {goal}",
++  },
++];
++
++export default function ContentPage() {
++  const { locale } = useLocale();
++  const [columns, setColumns] = useState<ContentColumn[]>([]);
++  const [showForm, setShowForm] = useState(false);
++  const [name, setName] = useState("");
++  const [goal, setGoal] = useState("");
++  const [platform, setPlatform] = useState("blog");
++  const [language, setLanguage] = useState<"en" | "id" | "both">("en");
++  const [expandedCol, setExpandedCol] = useState<string | null>(null);
++  const [generating, setGenerating] = useState<string | null>(null);
++  const [copiedId, setCopiedId] = useState<string | null>(null);
++
++  const settings = getSettings();
++  const isConfigured = settings.baseUrl && settings.apiKey && settings.model;
++
++  useEffect(() => {
++    setColumns(getColumns());
++  }, []);
++
++  function createColumn() {
++    if (!name.trim() || !goal.trim()) return;
++    const col: ContentColumn = {
++      id: Date.now().toString(),
++      name: name.trim(),
++      goal: goal.trim(),
++      platform,
++      language,
++      topics: [],
++      drafts: [],
++      createdAt: new Date().toISOString(),
++    };
++    const updated = [col, ...columns];
++    setColumns(updated);
++    saveColumns(updated);
++    setName("");
++    setGoal("");
++    setShowForm(false);
++    setExpandedCol(col.id);
++  }
++
++  function deleteColumn(id: string) {
++    const updated = columns.filter((c) => c.id !== id);
++    setColumns(updated);
++    saveColumns(updated);
++  }
++
++  function useTemplate(tpl: Template) {
++    setName(t(tpl.titleKey, locale));
++    setGoal("");
++    setPlatform(tpl.platform);
++    setShowForm(true);
++  }
++
++  async function generateTopics(col: ContentColumn) {
++    if (!isConfigured) return;
++    setGenerating(col.id + "-topics");
++
++    const prompt =
++      locale === "id"
++        ? `Kamu adalah asisten kolom konten. Buat daftar 7 topik konten untuk kolom "${col.name}" di platform ${col.platform}. Arah kolom: ${col.goal}. Bahasa output: ${col.language === "both" ? "English dan Bahasa Indonesia" : col.language === "id" ? "Bahasa Indonesia" : "English"}. Untuk setiap topik, berikan: nomor, judul, dan deskripsi singkat 1 baris.`
++        : `You are a content column assistant. Create a list of 7 content topics for the column "${col.name}" on ${col.platform}. Column direction: ${col.goal}. Output language: ${col.language === "both" ? "English and Bahasa Indonesia" : col.language === "id" ? "Bahasa Indonesia" : "English"}. For each topic, provide: number, title, and a brief 1-line description.`;
++
++    try {
++      const res = await fetch("/api/chat", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify({
++          messages: [{ role: "user", content: prompt }],
++          baseUrl: settings.baseUrl,
++          apiKey: settings.apiKey,
++          model: settings.model,
++        }),
++      });
++
++      if (!res.ok) throw new Error("API error");
++
++      const reader = res.body?.getReader();
++      if (!reader) throw new Error("No reader");
++
++      const decoder = new TextDecoder();
++      let content = "";
++      let buffer = "";
++
++      while (true) {
++        const { done, value } = await reader.read();
++        if (done) break;
++        buffer += decoder.decode(value, { stream: true });
++        const lines = buffer.split("\n");
++        buffer = lines.pop() || "";
++        for (const line of lines) {
++          const trimmed = line.trim();
++          if (!trimmed.startsWith("data: ")) continue;
++          const data = trimmed.slice(6);
++          if (data === "[DONE]") continue;
++          try {
++            const parsed = JSON.parse(data);
++            const delta = parsed.choices?.[0]?.delta?.content;
++            if (delta) content += delta;
++          } catch {
++            // skip
++          }
++        }
++      }
++
++      const updated = columns.map((c) =>
++        c.id === col.id ? { ...c, topics: [...c.topics, content] } : c
++      );
++      setColumns(updated);
++      saveColumns(updated);
++    } catch {
++      // error handled silently
++    } finally {
++      setGenerating(null);
++    }
++  }
++
++  async function generateDraft(col: ContentColumn, topicIdx: number) {
++    if (!isConfigured || !col.topics[topicIdx]) return;
++    setGenerating(col.id + "-draft-" + topicIdx);
++
++    const prompt =
++      locale === "id"
++        ? `Kamu adalah asisten konten profesional. Berdasarkan topik berikut, buat draf konten lengkap untuk platform ${col.platform}. Bahasa: ${col.language === "both" ? "Tulis dalam English dan Bahasa Indonesia" : col.language === "id" ? "Bahasa Indonesia" : "English"}.\n\nTopik:\n${col.topics[topicIdx]}\n\nBuat draf yang siap publish, lengkap dengan hook pembuka, konten utama, dan CTA penutup.`
++        : `You are a professional content assistant. Based on the following topic, create a complete content draft for the ${col.platform} platform. Language: ${col.language === "both" ? "Write in both English and Bahasa Indonesia" : col.language === "id" ? "Bahasa Indonesia" : "English"}.\n\nTopic:\n${col.topics[topicIdx]}\n\nCreate a publish-ready draft with an opening hook, main content, and closing CTA.`;
++
++    try {
++      const res = await fetch("/api/chat", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify({
++          messages: [{ role: "user", content: prompt }],
++          baseUrl: settings.baseUrl,
++          apiKey: settings.apiKey,
++          model: settings.model,
++        }),
++      });
++
++      if (!res.ok) throw new Error("API error");
++
++      const reader = res.body?.getReader();
++      if (!reader) throw new Error("No reader");
++
++      const decoder = new TextDecoder();
++      let content = "";
++      let buffer = "";
++
++      while (true) {
++        const { done, value } = await reader.read();
++        if (done) break;
++        buffer += decoder.decode(value, { stream: true });
++        const lines = buffer.split("\n");
++        buffer = lines.pop() || "";
++        for (const line of lines) {
++          const trimmed = line.trim();
++          if (!trimmed.startsWith("data: ")) continue;
++          const data = trimmed.slice(6);
++          if (data === "[DONE]") continue;
++          try {
++            const parsed = JSON.parse(data);
++            const delta = parsed.choices?.[0]?.delta?.content;
++            if (delta) content += delta;
++          } catch {
++            // skip
++          }
++        }
++      }
++
++      const updated = columns.map((c) =>
++        c.id === col.id ? { ...c, drafts: [...c.drafts, content] } : c
++      );
++      setColumns(updated);
++      saveColumns(updated);
++    } catch {
++      // error handled silently
++    } finally {
++      setGenerating(null);
++    }
++  }
++
++  function copyText(text: string, id: string) {
++    navigator.clipboard.writeText(text);
++    setCopiedId(id);
++    setTimeout(() => setCopiedId(null), 2000);
++  }
++
++  return (
++    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
++      {/* Header */}
++      <div className="mb-8">
++        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
++          {t("content.title", locale)}
++        </h1>
++        <p className="mt-2 text-gray-600 dark:text-gray-400">
++          {t("content.subtitle", locale)}
++        </p>
++      </div>
++
++      {!isConfigured && (
++        <div className="mb-8 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
++          <p className="mb-2 font-medium">{t("chat.configure", locale)}</p>
++          <Link
++            href="/settings"
++            className="inline-flex items-center gap-1 font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
++          >
++            {t("nav.settings", locale)}
++          </Link>
++        </div>
++      )}
++
++      {/* Templates */}
++      <div className="mb-10">
++        <h2 className="mb-4 text-xl font-semibold text-gray-900 dark:text-white">
++          {t("content.templates", locale)}
++        </h2>
++        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
++          {templates.map((tpl) => {
++            const Icon = tpl.icon;
++            return (
++              <div
++                key={tpl.id}
++                className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900"
++              >
++                <div className="mb-3 flex items-center gap-2">
++                  <div className="rounded-lg bg-indigo-50 p-2 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400">
++                    <Icon size={18} />
++                  </div>
++                  <h3 className="font-semibold text-gray-900 dark:text-white">
++                    {t(tpl.titleKey, locale)}
++                  </h3>
++                </div>
++                <p className="mb-3 text-sm text-gray-600 dark:text-gray-400">
++                  {t(tpl.descKey, locale)}
++                </p>
++                <button
++                  onClick={() => useTemplate(tpl)}
++                  className="text-sm font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
++                >
++                  {t("content.use.template", locale)} &rarr;
++                </button>
++              </div>
++            );
++          })}
++        </div>
++      </div>
++
++      {/* Create Column */}
++      <div className="mb-8">
++        <button
++          onClick={() => setShowForm(!showForm)}
++          className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-indigo-700"
++        >
++          <Plus size={16} />
++          {t("content.create", locale)}
++        </button>
++
++        {showForm && (
++          <div className="mt-4 animate-fade-in rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
++            <div className="grid gap-4 sm:grid-cols-2">
++              <div>
++                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
++                  {t("content.name", locale)}
++                </label>
++                <input
++                  value={name}
++                  onChange={(e) => setName(e.target.value)}
++                  placeholder={t("content.name.placeholder", locale)}
++                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:ring-indigo-900"
++                />
++              </div>
++              <div>
++                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
++                  {t("content.platform", locale)}
++                </label>
++                <select
++                  value={platform}
++                  onChange={(e) => setPlatform(e.target.value)}
++                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
++                >
++                  <option value="blog">{t("platform.blog", locale)}</option>
++                  <option value="twitter">{t("platform.twitter", locale)}</option>
++                  <option value="instagram">{t("platform.instagram", locale)}</option>
++                  <option value="linkedin">{t("platform.linkedin", locale)}</option>
++                  <option value="newsletter">{t("platform.newsletter", locale)}</option>
++                  <option value="tiktok">{t("platform.tiktok", locale)}</option>
++                </select>
++              </div>
++              <div className="sm:col-span-2">
++                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
++                  {t("content.goal", locale)}
++                </label>
++                <textarea
++                  value={goal}
++                  onChange={(e) => setGoal(e.target.value)}
++                  placeholder={t("content.goal.placeholder", locale)}
++                  rows={3}
++                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:ring-indigo-900"
++                />
++              </div>
++              <div>
++                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
++                  {t("content.language", locale)}
++                </label>
++                <select
++                  value={language}
++                  onChange={(e) => setLanguage(e.target.value as "en" | "id" | "both")}
++                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
++                >
++                  <option value="en">{t("common.english", locale)}</option>
++                  <option value="id">{t("common.indonesian", locale)}</option>
++                  <option value="both">{t("common.both", locale)}</option>
++                </select>
++              </div>
++              <div className="flex items-end">
++                <button
++                  onClick={createColumn}
++                  disabled={!name.trim() || !goal.trim()}
++                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40"
++                >
++                  {t("content.create", locale)}
++                </button>
++              </div>
++            </div>
++          </div>
++        )}
++      </div>
++
++      {/* Columns List */}
++      <div>
++        <h2 className="mb-4 text-xl font-semibold text-gray-900 dark:text-white">
++          {t("content.columns", locale)}
++        </h2>
++
++        {columns.length === 0 ? (
++          <p className="text-gray-500 dark:text-gray-400">{t("content.no.columns", locale)}</p>
++        ) : (
++          <div className="space-y-4">
++            {columns.map((col) => (
++              <div
++                key={col.id}
++                className="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
++              >
++                {/* Column header */}
++                <div
++                  className="flex cursor-pointer items-center justify-between p-4"
++                  onClick={() => setExpandedCol(expandedCol === col.id ? null : col.id)}
++                >
++                  <div>
++                    <h3 className="font-semibold text-gray-900 dark:text-white">{col.name}</h3>
++                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
++                      {t(`platform.${col.platform}`, locale)} &middot;{" "}
++                      {col.language === "both"
++                        ? t("common.both", locale)
++                        : col.language === "id"
++                        ? t("common.indonesian", locale)
++                        : t("common.english", locale)}
++                    </p>
++                  </div>
++                  <div className="flex items-center gap-2">
++                    <button
++                      onClick={(e) => {
++                        e.stopPropagation();
++                        deleteColumn(col.id);
++                      }}
++                      className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
++                    >
++                      <Trash2 size={16} />
++                    </button>
++                    {expandedCol === col.id ? (
++                      <ChevronUp size={18} className="text-gray-400" />
++                    ) : (
++                      <ChevronDown size={18} className="text-gray-400" />
++                    )}
++                  </div>
++                </div>
++
++                {/* Expanded content */}
++                {expandedCol === col.id && (
++                  <div className="animate-fade-in border-t border-gray-200 p-4 dark:border-gray-800">
++                    <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">{col.goal}</p>
++
++                    {/* Generate Topics */}
++                    <div className="mb-4">
++                      <button
++                        onClick={() => generateTopics(col)}
++                        disabled={!isConfigured || generating === col.id + "-topics"}
++                        className="inline-flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40 dark:bg-indigo-950 dark:text-indigo-300 dark:hover:bg-indigo-900"
++                      >
++                        <Sparkles size={14} />
++                        {generating === col.id + "-topics"
++                          ? t("common.loading", locale)
++                          : t("content.generate.topics", locale)}
++                      </button>
++                    </div>
++
++                    {/* Topics */}
++                    {col.topics.map((topic, tIdx) => (
++                      <div
++                        key={tIdx}
++                        className="mb-4 rounded-lg border border-gray-100 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800/50"
++                      >
++                        <div className="mb-2 flex items-center justify-between">
++                          <span className="text-xs font-medium text-gray-500">
++                            {t("content.topics", locale)} #{tIdx + 1}
++                          </span>
++                          <div className="flex items-center gap-1">
++                            <button
++                              onClick={() => copyText(topic, `topic-${col.id}-${tIdx}`)}
++                              className="rounded p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
++                            >
++                              {copiedId === `topic-${col.id}-${tIdx}` ? (
++                                <Check size={14} className="text-green-500" />
++                              ) : (
++                                <Copy size={14} />
++                              )}
++                            </button>
++                            <button
++                              onClick={() => generateDraft(col, tIdx)}
++                              disabled={
++                                !isConfigured ||
++                                generating === col.id + "-draft-" + tIdx
++                              }
++                              className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-40"
++                            >
++                              <Sparkles size={12} />
++                              {generating === col.id + "-draft-" + tIdx
++                                ? t("common.loading", locale)
++                                : t("content.generate.draft", locale)}
++                            </button>
++                          </div>
++                        </div>
++                        <div className="prose-content whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">
++                          {topic}
++                        </div>
++                      </div>
++                    ))}
++
++                    {/* Drafts */}
++                    {col.drafts.map((draft, dIdx) => (
++                      <div
++                        key={dIdx}
++                        className="mb-4 rounded-lg border border-indigo-100 bg-indigo-50/50 p-4 dark:border-indigo-900 dark:bg-indigo-950/30"
++                      >
++                        <div className="mb-2 flex items-center justify-between">
++                          <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400">
++                            {t("content.draft", locale)} #{dIdx + 1}
++                          </span>
++                          <button
++                            onClick={() => copyText(draft, `draft-${col.id}-${dIdx}`)}
++                            className="rounded p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
++                          >
++                            {copiedId === `draft-${col.id}-${dIdx}` ? (
++                              <Check size={14} className="text-green-500" />
++                            ) : (
++                              <Copy size={14} />
++                            )}
++                          </button>
++                        </div>
++                        <div className="prose-content whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">
++                          {draft}
++                        </div>
++                      </div>
++                    ))}
++                  </div>
++                )}
++              </div>
++            ))}
++          </div>
++        )}
++      </div>
++    </div>
++  );
++}
+diff --git a/src/app/globals.css b/src/app/globals.css
+index a2dc41e..78acb99 100644
+--- a/src/app/globals.css
++++ b/src/app/globals.css
+@@ -1,26 +1,84 @@
+ @import "tailwindcss";
+ 
+-:root {
+-  --background: #ffffff;
+-  --foreground: #171717;
+-}
+-
+ @theme inline {
+-  --color-background: var(--background);
+-  --color-foreground: var(--foreground);
+   --font-sans: var(--font-geist-sans);
+   --font-mono: var(--font-geist-mono);
+ }
+ 
+-@media (prefers-color-scheme: dark) {
+-  :root {
+-    --background: #0a0a0a;
+-    --foreground: #ededed;
+-  }
++@custom-variant dark (&:is(.dark *));
++
++::selection {
++  background-color: #6366f1;
++  color: white;
++}
++
++/* Scrollbar styling */
++::-webkit-scrollbar {
++  width: 6px;
++}
++::-webkit-scrollbar-track {
++  background: transparent;
++}
++::-webkit-scrollbar-thumb {
++  background: #d1d5db;
++  border-radius: 3px;
++}
++.dark ::-webkit-scrollbar-thumb {
++  background: #4b5563;
++}
++
++/* Markdown content styling */
++.prose-content h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
++.prose-content h2 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
++.prose-content h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.25rem; }
++.prose-content p { margin-bottom: 0.75rem; line-height: 1.7; }
++.prose-content ul { list-style: disc; margin-left: 1.5rem; margin-bottom: 0.75rem; }
++.prose-content ol { list-style: decimal; margin-left: 1.5rem; margin-bottom: 0.75rem; }
++.prose-content li { margin-bottom: 0.25rem; }
++.prose-content code {
++  background: #f3f4f6;
++  padding: 0.125rem 0.375rem;
++  border-radius: 0.25rem;
++  font-size: 0.875rem;
++}
++.dark .prose-content code {
++  background: #1f2937;
++}
++.prose-content pre {
++  background: #1f2937;
++  color: #e5e7eb;
++  padding: 1rem;
++  border-radius: 0.5rem;
++  overflow-x: auto;
++  margin-bottom: 0.75rem;
++}
++.prose-content pre code {
++  background: transparent;
++  padding: 0;
++}
++.prose-content blockquote {
++  border-left: 3px solid #6366f1;
++  padding-left: 1rem;
++  margin-bottom: 0.75rem;
++  color: #6b7280;
+ }
++.prose-content strong { font-weight: 600; }
+ 
+-body {
+-  background: var(--background);
+-  color: var(--foreground);
+-  font-family: Arial, Helvetica, sans-serif;
++/* Animation */
++@keyframes fade-in {
++  from { opacity: 0; transform: translateY(8px); }
++  to { opacity: 1; transform: translateY(0); }
++}
++.animate-fade-in {
++  animation: fade-in 0.3s ease-out;
++}
++
++@keyframes pulse-dot {
++  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
++  40% { transform: scale(1); opacity: 1; }
++}
++.typing-dot {
++  animation: pulse-dot 1.4s ease-in-out infinite;
+ }
++.typing-dot:nth-child(2) { animation-delay: 0.2s; }
++.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+diff --git a/src/app/layout.tsx b/src/app/layout.tsx
+index 976eb90..e99890c 100644
+--- a/src/app/layout.tsx
++++ b/src/app/layout.tsx
+@@ -1,6 +1,8 @@
+ import type { Metadata } from "next";
+ import { Geist, Geist_Mono } from "next/font/google";
+ import "./globals.css";
++import Providers from "@/components/providers";
++import Navbar from "@/components/navbar";
+ 
+ const geistSans = Geist({
+   variable: "--font-geist-sans",
+@@ -13,8 +15,9 @@ const geistMono = Geist_Mono({
+ });
+ 
+ export const metadata: Metadata = {
+-  title: "Create Next App",
+-  description: "Generated by create next app",
++  title: "ContentPilot - AI Content Creation Assistant",
++  description:
++    "AI-powered content creation assistant with bilingual support (English & Bahasa Indonesia). Create blog posts, social media content, and more.",
+ };
+ 
+ export default function RootLayout({
+@@ -25,9 +28,15 @@ export default function RootLayout({
+   return (
+     <html
+       lang="en"
++      suppressHydrationWarning
+       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+     >
+-      <body className="min-h-full flex flex-col">{children}</body>
++      <body className="min-h-full flex flex-col bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100">
++        <Providers>
++          <Navbar />
++          <main className="flex-1">{children}</main>
++        </Providers>
++      </body>
+     </html>
+   );
+ }
+diff --git a/src/app/page.tsx b/src/app/page.tsx
+index 3f36f7c..ff8d44d 100644
+--- a/src/app/page.tsx
++++ b/src/app/page.tsx
+@@ -1,65 +1,123 @@
+-import Image from "next/image";
++"use client";
++
++import Link from "next/link";
++import { useLocale } from "@/lib/locale-context";
++import { t } from "@/lib/i18n";
++import {
++  MessageSquare,
++  Columns3,
++  Languages,
++  Plug,
++  LayoutTemplate,
++  HardDrive,
++  ArrowRight,
++} from "lucide-react";
++
++const features = [
++  { key: "chat", icon: MessageSquare },
++  { key: "column", icon: Columns3 },
++  { key: "bilingual", icon: Languages },
++  { key: "api", icon: Plug },
++  { key: "templates", icon: LayoutTemplate },
++  { key: "local", icon: HardDrive },
++];
+ 
+ export default function Home() {
++  const { locale } = useLocale();
++
+   return (
+-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
+-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
+-        <Image
+-          className="dark:invert"
+-          src="/next.svg"
+-          alt="Next.js logo"
+-          width={100}
+-          height={20}
+-          priority
+-        />
+-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
+-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
+-            To get started, edit the page.tsx file.
++    <div className="flex flex-col">
++      {/* Hero */}
++      <section className="relative overflow-hidden bg-gradient-to-b from-indigo-50 via-white to-white dark:from-gray-900 dark:via-gray-950 dark:to-gray-950">
++        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-100/50 via-transparent to-transparent dark:from-indigo-900/20" />
++        <div className="relative mx-auto max-w-5xl px-4 py-24 text-center sm:px-6 sm:py-32 lg:px-8">
++          <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl lg:text-6xl dark:text-white">
++            <span className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
++              {t("hero.title", locale)}
++            </span>
+           </h1>
+-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
+-            Looking for a starting point or more instructions? Head over to{" "}
+-            <a
+-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+-              className="font-medium text-zinc-950 dark:text-zinc-50"
++          <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-gray-600 dark:text-gray-400">
++            {t("hero.subtitle", locale)}
++          </p>
++          <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
++            <Link
++              href="/chat"
++              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-lg shadow-indigo-600/25 transition-all hover:bg-indigo-700 hover:shadow-xl hover:shadow-indigo-600/30"
+             >
+-              Templates
+-            </a>{" "}
+-            or the{" "}
+-            <a
+-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+-              className="font-medium text-zinc-950 dark:text-zinc-50"
++              {t("hero.cta", locale)}
++              <ArrowRight size={18} />
++            </Link>
++            <Link
++              href="/settings"
++              className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-6 py-3 text-base font-semibold text-gray-700 transition-all hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-750"
+             >
+-              Learning
+-            </a>{" "}
+-            center.
++              {t("hero.cta2", locale)}
++            </Link>
++          </div>
++        </div>
++      </section>
++
++      {/* Features */}
++      <section className="py-20 sm:py-28">
++        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
++          <div className="text-center">
++            <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl dark:text-white">
++              {t("features.title", locale)}
++            </h2>
++            <p className="mx-auto mt-4 max-w-2xl text-lg text-gray-600 dark:text-gray-400">
++              {t("features.subtitle", locale)}
++            </p>
++          </div>
++          <div className="mt-16 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
++            {features.map(({ key, icon: Icon }) => (
++              <div
++                key={key}
++                className="group rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all hover:border-indigo-200 hover:shadow-md dark:border-gray-800 dark:bg-gray-900 dark:hover:border-indigo-900"
++              >
++                <div className="mb-4 inline-flex rounded-xl bg-indigo-50 p-3 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400">
++                  <Icon size={24} />
++                </div>
++                <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">
++                  {t(`features.${key}.title`, locale)}
++                </h3>
++                <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-400">
++                  {t(`features.${key}.desc`, locale)}
++                </p>
++              </div>
++            ))}
++          </div>
++        </div>
++      </section>
++
++      {/* CTA */}
++      <section className="border-t border-gray-200 bg-gray-50 py-16 dark:border-gray-800 dark:bg-gray-900/50">
++        <div className="mx-auto max-w-3xl px-4 text-center sm:px-6 lg:px-8">
++          <h2 className="text-2xl font-bold text-gray-900 sm:text-3xl dark:text-white">
++            {locale === "en" ? "Ready to create amazing content?" : "Siap membuat konten yang luar biasa?"}
++          </h2>
++          <p className="mt-4 text-gray-600 dark:text-gray-400">
++            {locale === "en"
++              ? "Set up your API, pick a template, and start creating in seconds."
++              : "Siapkan API Anda, pilih template, dan mulai membuat dalam hitungan detik."}
+           </p>
++          <div className="mt-8 flex justify-center gap-4">
++            <Link
++              href="/chat"
++              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 font-semibold text-white transition-all hover:bg-indigo-700"
++            >
++              {t("hero.cta", locale)}
++              <ArrowRight size={18} />
++            </Link>
++          </div>
+         </div>
+-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
+-          <a
+-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
+-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+-            target="_blank"
+-            rel="noopener noreferrer"
+-          >
+-            <Image
+-              className="dark:invert"
+-              src="/vercel.svg"
+-              alt="Vercel logomark"
+-              width={16}
+-              height={16}
+-            />
+-            Deploy Now
+-          </a>
+-          <a
+-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
+-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+-            target="_blank"
+-            rel="noopener noreferrer"
+-          >
+-            Documentation
+-          </a>
++      </section>
++
++      {/* Footer */}
++      <footer className="border-t border-gray-200 py-8 dark:border-gray-800">
++        <div className="mx-auto max-w-7xl px-4 text-center text-sm text-gray-500 sm:px-6 lg:px-8">
++          ContentPilot &mdash; {locale === "en" ? "Your AI Content Creation Assistant" : "Asisten Pembuatan Konten AI Anda"}
+         </div>
+-      </main>
++      </footer>
+     </div>
+   );
+ }
+diff --git a/src/app/settings/page.tsx b/src/app/settings/page.tsx
+new file mode 100644
+index 0000000..d468eb4
+--- /dev/null
++++ b/src/app/settings/page.tsx
+@@ -0,0 +1,199 @@
++"use client";
++
++import { useState, useEffect } from "react";
++import { useLocale } from "@/lib/locale-context";
++import { t } from "@/lib/i18n";
++import { getSettings, saveSettings, ApiSettings } from "@/lib/store";
++import { Save, Zap, CheckCircle, XCircle, Eye, EyeOff } from "lucide-react";
++
++export default function SettingsPage() {
++  const { locale } = useLocale();
++  const [settings, setSettings] = useState<ApiSettings>({
++    baseUrl: "",
++    apiKey: "",
++    model: "",
++  });
++  const [saved, setSaved] = useState(false);
++  const [testing, setTesting] = useState(false);
++  const [testResult, setTestResult] = useState<"success" | "error" | null>(null);
++  const [showKey, setShowKey] = useState(false);
++
++  useEffect(() => {
++    setSettings(getSettings());
++  }, []);
++
++  function handleSave() {
++    saveSettings(settings);
++    setSaved(true);
++    setTimeout(() => setSaved(false), 3000);
++  }
++
++  async function handleTest() {
++    setTesting(true);
++    setTestResult(null);
++
++    try {
++      const res = await fetch("/api/chat", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify({
++          messages: [{ role: "user", content: "Say 'Connection successful!' in one sentence." }],
++          baseUrl: settings.baseUrl,
++          apiKey: settings.apiKey,
++          model: settings.model,
++        }),
++      });
++
++      if (res.ok) {
++        setTestResult("success");
++      } else {
++        setTestResult("error");
++      }
++    } catch {
++      setTestResult("error");
++    } finally {
++      setTesting(false);
++    }
++  }
++
++  return (
++    <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 lg:px-8">
++      <div className="mb-8">
++        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
++          {t("settings.title", locale)}
++        </h1>
++        <p className="mt-2 text-gray-600 dark:text-gray-400">
++          {t("settings.subtitle", locale)}
++        </p>
++      </div>
++
++      <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
++        <div className="space-y-5">
++          {/* Base URL */}
++          <div>
++            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
++              {t("settings.baseUrl", locale)}
++            </label>
++            <input
++              type="url"
++              value={settings.baseUrl}
++              onChange={(e) => setSettings({ ...settings, baseUrl: e.target.value })}
++              placeholder={t("settings.baseUrl.placeholder", locale)}
++              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:ring-indigo-900"
++            />
++            <p className="mt-1 text-xs text-gray-400">
++              {locale === "en"
++                ? "Examples: https://api.openai.com/v1, https://api.groq.com/openai/v1, http://localhost:11434/v1"
++                : "Contoh: https://api.openai.com/v1, https://api.groq.com/openai/v1, http://localhost:11434/v1"}
++            </p>
++          </div>
++
++          {/* API Key */}
++          <div>
++            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
++              {t("settings.apiKey", locale)}
++            </label>
++            <div className="relative">
++              <input
++                type={showKey ? "text" : "password"}
++                value={settings.apiKey}
++                onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })}
++                placeholder={t("settings.apiKey.placeholder", locale)}
++                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-10 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:ring-indigo-900"
++              />
++              <button
++                onClick={() => setShowKey(!showKey)}
++                type="button"
++                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
++              >
++                {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
++              </button>
++            </div>
++          </div>
++
++          {/* Model */}
++          <div>
++            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
++              {t("settings.model", locale)}
++            </label>
++            <input
++              type="text"
++              value={settings.model}
++              onChange={(e) => setSettings({ ...settings, model: e.target.value })}
++              placeholder={t("settings.model.placeholder", locale)}
++              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:focus:ring-indigo-900"
++            />
++            <p className="mt-1 text-xs text-gray-400">
++              {locale === "en"
++                ? "Examples: gpt-4o-mini, gpt-4o, llama-3.3-70b-versatile, deepseek-chat, claude-3-5-sonnet"
++                : "Contoh: gpt-4o-mini, gpt-4o, llama-3.3-70b-versatile, deepseek-chat, claude-3-5-sonnet"}
++            </p>
++          </div>
++        </div>
++
++        {/* Actions */}
++        <div className="mt-6 flex flex-wrap items-center gap-3">
++          <button
++            onClick={handleSave}
++            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-indigo-700"
++          >
++            <Save size={16} />
++            {saved ? t("settings.saved", locale) : t("settings.save", locale)}
++          </button>
++
++          <button
++            onClick={handleTest}
++            disabled={!settings.baseUrl || !settings.apiKey || !settings.model || testing}
++            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-750"
++          >
++            <Zap size={16} />
++            {testing ? t("settings.testing", locale) : t("settings.test", locale)}
++          </button>
++
++          {testResult === "success" && (
++            <span className="inline-flex items-center gap-1 text-sm font-medium text-green-600 dark:text-green-400">
++              <CheckCircle size={16} />
++              {t("settings.test.success", locale)}
++            </span>
++          )}
++
++          {testResult === "error" && (
++            <span className="inline-flex items-center gap-1 text-sm font-medium text-red-600 dark:text-red-400">
++              <XCircle size={16} />
++              {t("settings.test.error", locale)}
++            </span>
++          )}
++        </div>
++      </div>
++
++      {/* Tips */}
++      <div className="mt-8 rounded-xl border border-gray-200 bg-gray-50 p-6 dark:border-gray-800 dark:bg-gray-900/50">
++        <h3 className="mb-3 font-semibold text-gray-900 dark:text-white">
++          {locale === "en" ? "Quick Setup Guide" : "Panduan Setup Cepat"}
++        </h3>
++        <div className="space-y-3 text-sm text-gray-600 dark:text-gray-400">
++          <div>
++            <p className="font-medium text-gray-800 dark:text-gray-200">OpenAI</p>
++            <p>Base URL: https://api.openai.com/v1</p>
++            <p>Model: gpt-4o-mini, gpt-4o</p>
++          </div>
++          <div>
++            <p className="font-medium text-gray-800 dark:text-gray-200">Groq</p>
++            <p>Base URL: https://api.groq.com/openai/v1</p>
++            <p>Model: llama-3.3-70b-versatile, mixtral-8x7b-32768</p>
++          </div>
++          <div>
++            <p className="font-medium text-gray-800 dark:text-gray-200">Ollama (Local)</p>
++            <p>Base URL: http://localhost:11434/v1</p>
++            <p>Model: llama3.2, mistral, deepseek-r1</p>
++          </div>
++          <div>
++            <p className="font-medium text-gray-800 dark:text-gray-200">OpenRouter</p>
++            <p>Base URL: https://openrouter.ai/api/v1</p>
++            <p>Model: google/gemini-2.0-flash-exp, anthropic/claude-3.5-sonnet</p>
++          </div>
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/components/navbar.tsx b/src/components/navbar.tsx
+new file mode 100644
+index 0000000..033e528
+--- /dev/null
++++ b/src/components/navbar.tsx
+@@ -0,0 +1,113 @@
++"use client";
++
++import Link from "next/link";
++import { usePathname } from "next/navigation";
++import { useTheme } from "next-themes";
++import { useLocale } from "@/lib/locale-context";
++import { t } from "@/lib/i18n";
++import {
++  Home,
++  MessageSquare,
++  Columns3,
++  Settings,
++  Sun,
++  Moon,
++  Globe,
++  Menu,
++  X,
++} from "lucide-react";
++import { useState } from "react";
++
++export default function Navbar() {
++  const pathname = usePathname();
++  const { theme, setTheme } = useTheme();
++  const { locale, setLocale } = useLocale();
++  const [mobileOpen, setMobileOpen] = useState(false);
++
++  const links = [
++    { href: "/", label: t("nav.home", locale), icon: Home },
++    { href: "/chat", label: t("nav.chat", locale), icon: MessageSquare },
++    { href: "/content", label: t("nav.content", locale), icon: Columns3 },
++    { href: "/settings", label: t("nav.settings", locale), icon: Settings },
++  ];
++
++  return (
++    <header className="sticky top-0 z-50 border-b border-gray-200 bg-white/80 backdrop-blur-md dark:border-gray-800 dark:bg-gray-950/80">
++      <nav className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
++        <Link href="/" className="flex items-center gap-2 font-bold text-xl text-indigo-600 dark:text-indigo-400">
++          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" className="shrink-0">
++            <rect width="28" height="28" rx="6" fill="currentColor" />
++            <path d="M8 10h12M8 14h8M8 18h10" stroke="white" strokeWidth="2" strokeLinecap="round" />
++          </svg>
++          ContentPilot
++        </Link>
++
++        {/* Desktop nav */}
++        <div className="hidden md:flex items-center gap-1">
++          {links.map(({ href, label, icon: Icon }) => (
++            <Link
++              key={href}
++              href={href}
++              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
++                pathname === href
++                  ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"
++                  : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
++              }`}
++            >
++              <Icon size={16} />
++              {label}
++            </Link>
++          ))}
++        </div>
++
++        <div className="flex items-center gap-2">
++          <button
++            onClick={() => setLocale(locale === "en" ? "id" : "en")}
++            className="flex items-center gap-1 rounded-lg px-2 py-2 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
++            title={t("common.language", locale)}
++          >
++            <Globe size={16} />
++            <span className="hidden sm:inline">{locale === "en" ? "EN" : "ID"}</span>
++          </button>
++
++          <button
++            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
++            className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
++            title={t("common.theme", locale)}
++          >
++            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
++          </button>
++
++          {/* Mobile menu button */}
++          <button
++            onClick={() => setMobileOpen(!mobileOpen)}
++            className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 md:hidden dark:text-gray-400 dark:hover:bg-gray-800"
++          >
++            {mobileOpen ? <X size={20} /> : <Menu size={20} />}
++          </button>
++        </div>
++      </nav>
++
++      {/* Mobile nav */}
++      {mobileOpen && (
++        <div className="border-t border-gray-200 bg-white px-4 pb-4 md:hidden dark:border-gray-800 dark:bg-gray-950">
++          {links.map(({ href, label, icon: Icon }) => (
++            <Link
++              key={href}
++              href={href}
++              onClick={() => setMobileOpen(false)}
++              className={`flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium ${
++                pathname === href
++                  ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"
++                  : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
++              }`}
++            >
++              <Icon size={18} />
++              {label}
++            </Link>
++          ))}
++        </div>
++      )}
++    </header>
++  );
++}
+diff --git a/src/components/providers.tsx b/src/components/providers.tsx
+new file mode 100644
+index 0000000..7e143fd
+--- /dev/null
++++ b/src/components/providers.tsx
+@@ -0,0 +1,12 @@
++"use client";
++
++import { ThemeProvider } from "next-themes";
++import { LocaleProvider } from "@/lib/locale-context";
++
++export default function Providers({ children }: { children: React.ReactNode }) {
++  return (
++    <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
++      <LocaleProvider>{children}</LocaleProvider>
++    </ThemeProvider>
++  );
++}
+diff --git a/src/lib/i18n.ts b/src/lib/i18n.ts
+new file mode 100644
+index 0000000..ab9c2e9
+--- /dev/null
++++ b/src/lib/i18n.ts
+@@ -0,0 +1,252 @@
++export type Locale = "en" | "id";
++
++const translations: Record<Locale, Record<string, string>> = {
++  en: {
++    // Nav
++    "nav.home": "Home",
++    "nav.chat": "AI Chat",
++    "nav.content": "Content Creation",
++    "nav.settings": "Settings",
++
++    // Hero
++    "hero.title": "Create once. Publish everywhere.",
++    "hero.subtitle":
++      "Your personal AI content creation assistant. Strategy-driven, bilingual content for blogs, social media, and more.",
++    "hero.cta": "Start Creating",
++    "hero.cta2": "Configure API",
++
++    // Features
++    "features.title": "What Can ContentPilot Do?",
++    "features.subtitle":
++      "AI-powered content creation tools designed for creators and marketers",
++    "features.chat.title": "AI Content Chat",
++    "features.chat.desc":
++      "Chat with AI to brainstorm ideas, write blog posts, social media captions, tweets, and more. Supports streaming responses.",
++    "features.column.title": "Column-Based Creation",
++    "features.column.desc":
++      "Create content columns with positioning, then generate topics and drafts systematically for consistent output.",
++    "features.bilingual.title": "Bilingual Output",
++    "features.bilingual.desc":
++      "Generate content in both English and Bahasa Indonesia with a single click. Perfect for reaching wider audiences.",
++    "features.api.title": "Custom API & Model",
++    "features.api.desc":
++      "Connect to any OpenAI-compatible API. Use your own base URL, API key, and model selection.",
++    "features.templates.title": "Content Templates",
++    "features.templates.desc":
++      "Pre-built templates for blog posts, tweets, Instagram captions, LinkedIn posts, and more.",
++    "features.local.title": "Local Deployment",
++    "features.local.desc":
++      "Runs entirely on your local machine. No data leaves your environment unless you choose to connect an external API.",
++
++    // Chat
++    "chat.title": "AI Content Assistant",
++    "chat.placeholder": "Describe the content you want to create...",
++    "chat.send": "Send",
++    "chat.thinking": "Thinking...",
++    "chat.welcome": "Welcome! I'm your AI content creation assistant.",
++    "chat.welcome.desc":
++      "Tell me what kind of content you'd like to create. I can help with blog posts, social media captions, tweets, marketing copy, and more.",
++    "chat.error": "Error: Could not connect to the AI API. Please check your settings.",
++    "chat.configure": "Please configure your API settings first.",
++    "chat.system.prompt":
++      "You are a professional content creation assistant. You help users create high-quality content for blogs, social media (Twitter/X, Instagram, LinkedIn, Facebook), newsletters, and marketing materials. You can write in both English and Bahasa Indonesia. Always provide well-structured, engaging content. When asked, provide multiple variations or options.",
++
++    // Content
++    "content.title": "Content Creation",
++    "content.subtitle":
++      "Create content columns, generate topics, and produce drafts systematically.",
++    "content.create": "Create Column",
++    "content.name": "Column Name",
++    "content.name.placeholder": "e.g., AI Tools Weekly, Growth Notes...",
++    "content.goal": "Goal / Direction",
++    "content.goal.placeholder": "Describe the content direction, target audience, and publishing channel...",
++    "content.platform": "Platform",
++    "content.language": "Language",
++    "content.generate.topics": "Generate Topics",
++    "content.generate.draft": "Generate Draft",
++    "content.topics": "Topics",
++    "content.draft": "Draft",
++    "content.columns": "Your Columns",
++    "content.no.columns": "No columns yet. Create one to get started!",
++    "content.delete": "Delete",
++    "content.templates": "Templates",
++    "content.use.template": "Use Template",
++
++    // Settings
++    "settings.title": "API Settings",
++    "settings.subtitle": "Configure your AI API connection. Supports any OpenAI-compatible API.",
++    "settings.baseUrl": "API Base URL",
++    "settings.baseUrl.placeholder": "https://api.openai.com/v1",
++    "settings.apiKey": "API Key",
++    "settings.apiKey.placeholder": "sk-...",
++    "settings.model": "Model",
++    "settings.model.placeholder": "gpt-4o-mini",
++    "settings.save": "Save Settings",
++    "settings.saved": "Settings saved!",
++    "settings.test": "Test Connection",
++    "settings.testing": "Testing...",
++    "settings.test.success": "Connection successful!",
++    "settings.test.error": "Connection failed. Please check your settings.",
++
++    // Common
++    "common.language": "Language",
++    "common.theme": "Theme",
++    "common.light": "Light",
++    "common.dark": "Dark",
++    "common.english": "English",
++    "common.indonesian": "Bahasa Indonesia",
++    "common.both": "Both",
++    "common.copy": "Copy",
++    "common.copied": "Copied!",
++    "common.loading": "Loading...",
++
++    // Platforms
++    "platform.blog": "Blog Post",
++    "platform.twitter": "Twitter/X",
++    "platform.instagram": "Instagram",
++    "platform.linkedin": "LinkedIn",
++    "platform.facebook": "Facebook",
++    "platform.newsletter": "Newsletter",
++    "platform.tiktok": "TikTok",
++
++    // Templates
++    "template.blog.title": "SEO Blog Post",
++    "template.blog.desc": "Long-form SEO-optimized blog article with headings, meta description, and keywords.",
++    "template.tweet.title": "Viral Tweet Thread",
++    "template.tweet.desc": "Engaging tweet thread with hooks, insights, and call-to-action.",
++    "template.instagram.title": "Instagram Caption",
++    "template.instagram.desc": "Eye-catching Instagram caption with hashtags and call-to-action.",
++    "template.linkedin.title": "LinkedIn Post",
++    "template.linkedin.desc": "Professional LinkedIn post for thought leadership and engagement.",
++    "template.newsletter.title": "Newsletter Edition",
++    "template.newsletter.desc": "Complete newsletter with intro, main content, and sign-off.",
++    "template.tiktok.title": "TikTok Script",
++    "template.tiktok.desc": "Short-form video script with hook, content, and CTA.",
++  },
++  id: {
++    // Nav
++    "nav.home": "Beranda",
++    "nav.chat": "Chat AI",
++    "nav.content": "Buat Konten",
++    "nav.settings": "Pengaturan",
++
++    // Hero
++    "hero.title": "Buat sekali. Publikasikan di mana saja.",
++    "hero.subtitle":
++      "Asisten pembuatan konten AI pribadi Anda. Konten berbasis strategi, dwibahasa untuk blog, media sosial, dan lainnya.",
++    "hero.cta": "Mulai Membuat",
++    "hero.cta2": "Konfigurasi API",
++
++    // Features
++    "features.title": "Apa yang Bisa ContentPilot Lakukan?",
++    "features.subtitle":
++      "Alat pembuatan konten berbasis AI yang dirancang untuk kreator dan pemasar",
++    "features.chat.title": "Chat Konten AI",
++    "features.chat.desc":
++      "Chat dengan AI untuk brainstorming ide, menulis postingan blog, caption media sosial, tweet, dan lainnya. Mendukung respons streaming.",
++    "features.column.title": "Pembuatan Berbasis Kolom",
++    "features.column.desc":
++      "Buat kolom konten dengan positioning, lalu hasilkan topik dan draf secara sistematis untuk output yang konsisten.",
++    "features.bilingual.title": "Output Dwibahasa",
++    "features.bilingual.desc":
++      "Hasilkan konten dalam Bahasa Inggris dan Bahasa Indonesia dengan satu klik. Sempurna untuk menjangkau audiens yang lebih luas.",
++    "features.api.title": "API & Model Kustom",
++    "features.api.desc":
++      "Hubungkan ke API apa pun yang kompatibel dengan OpenAI. Gunakan base URL, API key, dan pilihan model Anda sendiri.",
++    "features.templates.title": "Template Konten",
++    "features.templates.desc":
++      "Template siap pakai untuk postingan blog, tweet, caption Instagram, postingan LinkedIn, dan lainnya.",
++    "features.local.title": "Deploy Lokal",
++    "features.local.desc":
++      "Berjalan sepenuhnya di mesin lokal Anda. Tidak ada data yang keluar kecuali Anda menghubungkan API eksternal.",
++
++    // Chat
++    "chat.title": "Asisten Konten AI",
++    "chat.placeholder": "Deskripsikan konten yang ingin Anda buat...",
++    "chat.send": "Kirim",
++    "chat.thinking": "Berpikir...",
++    "chat.welcome": "Selamat datang! Saya asisten pembuatan konten AI Anda.",
++    "chat.welcome.desc":
++      "Ceritakan jenis konten apa yang ingin Anda buat. Saya bisa membantu dengan postingan blog, caption media sosial, tweet, copy marketing, dan lainnya.",
++    "chat.error": "Error: Tidak bisa terhubung ke API AI. Silakan periksa pengaturan Anda.",
++    "chat.configure": "Silakan konfigurasi pengaturan API Anda terlebih dahulu.",
++    "chat.system.prompt":
++      "Kamu adalah asisten pembuatan konten profesional. Kamu membantu pengguna membuat konten berkualitas tinggi untuk blog, media sosial (Twitter/X, Instagram, LinkedIn, Facebook), newsletter, dan materi marketing. Kamu bisa menulis dalam Bahasa Inggris dan Bahasa Indonesia. Selalu berikan konten yang terstruktur baik dan menarik. Jika diminta, berikan beberapa variasi atau opsi.",
++
++    // Content
++    "content.title": "Pembuatan Konten",
++    "content.subtitle":
++      "Buat kolom konten, hasilkan topik, dan produksi draf secara sistematis.",
++    "content.create": "Buat Kolom",
++    "content.name": "Nama Kolom",
++    "content.name.placeholder": "cth., Tips AI Mingguan, Catatan Pertumbuhan...",
++    "content.goal": "Tujuan / Arah",
++    "content.goal.placeholder": "Deskripsikan arah konten, target audiens, dan kanal publikasi...",
++    "content.platform": "Platform",
++    "content.language": "Bahasa",
++    "content.generate.topics": "Hasilkan Topik",
++    "content.generate.draft": "Hasilkan Draf",
++    "content.topics": "Topik",
++    "content.draft": "Draf",
++    "content.columns": "Kolom Anda",
++    "content.no.columns": "Belum ada kolom. Buat satu untuk memulai!",
++    "content.delete": "Hapus",
++    "content.templates": "Template",
++    "content.use.template": "Gunakan Template",
++
++    // Settings
++    "settings.title": "Pengaturan API",
++    "settings.subtitle": "Konfigurasi koneksi API AI Anda. Mendukung API apa pun yang kompatibel dengan OpenAI.",
++    "settings.baseUrl": "URL Dasar API",
++    "settings.baseUrl.placeholder": "https://api.openai.com/v1",
++    "settings.apiKey": "Kunci API",
++    "settings.apiKey.placeholder": "sk-...",
++    "settings.model": "Model",
++    "settings.model.placeholder": "gpt-4o-mini",
++    "settings.save": "Simpan Pengaturan",
++    "settings.saved": "Pengaturan disimpan!",
++    "settings.test": "Tes Koneksi",
++    "settings.testing": "Menguji...",
++    "settings.test.success": "Koneksi berhasil!",
++    "settings.test.error": "Koneksi gagal. Silakan periksa pengaturan Anda.",
++
++    // Common
++    "common.language": "Bahasa",
++    "common.theme": "Tema",
++    "common.light": "Terang",
++    "common.dark": "Gelap",
++    "common.english": "English",
++    "common.indonesian": "Bahasa Indonesia",
++    "common.both": "Keduanya",
++    "common.copy": "Salin",
++    "common.copied": "Tersalin!",
++    "common.loading": "Memuat...",
++
++    // Platforms
++    "platform.blog": "Postingan Blog",
++    "platform.twitter": "Twitter/X",
++    "platform.instagram": "Instagram",
++    "platform.linkedin": "LinkedIn",
++    "platform.facebook": "Facebook",
++    "platform.newsletter": "Newsletter",
++    "platform.tiktok": "TikTok",
++
++    // Templates
++    "template.blog.title": "Postingan Blog SEO",
++    "template.blog.desc": "Artikel blog panjang yang dioptimasi SEO dengan heading, meta description, dan kata kunci.",
++    "template.tweet.title": "Thread Tweet Viral",
++    "template.tweet.desc": "Thread tweet yang menarik dengan hook, insight, dan call-to-action.",
++    "template.instagram.title": "Caption Instagram",
++    "template.instagram.desc": "Caption Instagram yang eye-catching dengan hashtag dan call-to-action.",
++    "template.linkedin.title": "Postingan LinkedIn",
++    "template.linkedin.desc": "Postingan LinkedIn profesional untuk thought leadership dan engagement.",
++    "template.newsletter.title": "Edisi Newsletter",
++    "template.newsletter.desc": "Newsletter lengkap dengan intro, konten utama, dan penutup.",
++    "template.tiktok.title": "Skrip TikTok",
++    "template.tiktok.desc": "Skrip video pendek dengan hook, konten, dan CTA.",
++  },
++};
++
++export function t(key: string, locale: Locale): string {
++  return translations[locale]?.[key] ?? translations.en[key] ?? key;
++}
+diff --git a/src/lib/locale-context.tsx b/src/lib/locale-context.tsx
+new file mode 100644
+index 0000000..aff4091
+--- /dev/null
++++ b/src/lib/locale-context.tsx
+@@ -0,0 +1,38 @@
++"use client";
++
++import { createContext, useContext, useState, useEffect, useCallback } from "react";
++import { Locale } from "./i18n";
++import { getLocale, saveLocale } from "./store";
++
++interface LocaleContextType {
++  locale: Locale;
++  setLocale: (l: Locale) => void;
++}
++
++const LocaleContext = createContext<LocaleContextType>({
++  locale: "en",
++  setLocale: () => {},
++});
++
++export function LocaleProvider({ children }: { children: React.ReactNode }) {
++  const [locale, setLocaleState] = useState<Locale>("en");
++
++  useEffect(() => {
++    setLocaleState(getLocale());
++  }, []);
++
++  const setLocale = useCallback((l: Locale) => {
++    setLocaleState(l);
++    saveLocale(l);
++  }, []);
++
++  return (
++    <LocaleContext.Provider value={{ locale, setLocale }}>
++      {children}
++    </LocaleContext.Provider>
++  );
++}
++
++export function useLocale() {
++  return useContext(LocaleContext);
++}
+diff --git a/src/lib/store.ts b/src/lib/store.ts
+new file mode 100644
+index 0000000..0d2f482
+--- /dev/null
++++ b/src/lib/store.ts
+@@ -0,0 +1,65 @@
++"use client";
++
++import { Locale } from "./i18n";
++
++export interface ApiSettings {
++  baseUrl: string;
++  apiKey: string;
++  model: string;
++}
++
++export interface ContentColumn {
++  id: string;
++  name: string;
++  goal: string;
++  platform: string;
++  language: "en" | "id" | "both";
++  topics: string[];
++  drafts: string[];
++  createdAt: string;
++}
++
++const SETTINGS_KEY = "contentpilot_settings";
++const LOCALE_KEY = "contentpilot_locale";
++const COLUMNS_KEY = "contentpilot_columns";
++
++export function getSettings(): ApiSettings {
++  if (typeof window === "undefined") {
++    return { baseUrl: "", apiKey: "", model: "" };
++  }
++  const raw = localStorage.getItem(SETTINGS_KEY);
++  if (!raw) return { baseUrl: "", apiKey: "", model: "" };
++  try {
++    return JSON.parse(raw);
++  } catch {
++    return { baseUrl: "", apiKey: "", model: "" };
++  }
++}
++
++export function saveSettings(settings: ApiSettings): void {
++  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
++}
++
++export function getLocale(): Locale {
++  if (typeof window === "undefined") return "en";
++  return (localStorage.getItem(LOCALE_KEY) as Locale) || "en";
++}
++
++export function saveLocale(locale: Locale): void {
++  localStorage.setItem(LOCALE_KEY, locale);
++}
++
++export function getColumns(): ContentColumn[] {
++  if (typeof window === "undefined") return [];
++  const raw = localStorage.getItem(COLUMNS_KEY);
++  if (!raw) return [];
++  try {
++    return JSON.parse(raw);
++  } catch {
++    return [];
++  }
++}
++
++export function saveColumns(columns: ContentColumn[]): void {
++  localStorage.setItem(COLUMNS_KEY, JSON.stringify(columns));
++}

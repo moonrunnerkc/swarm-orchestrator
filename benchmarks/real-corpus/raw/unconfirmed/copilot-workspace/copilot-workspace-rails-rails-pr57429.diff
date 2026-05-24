@@ -1,0 +1,51 @@
+diff --git a/activesupport/lib/active_support/message_pack/extensions.rb b/activesupport/lib/active_support/message_pack/extensions.rb
+index ce96b65d9ec4b..8e6cadb84f54a 100644
+--- a/activesupport/lib/active_support/message_pack/extensions.rb
++++ b/activesupport/lib/active_support/message_pack/extensions.rb
+@@ -105,8 +105,9 @@ def install(registry)
+           recursive: true
+ 
+         registry.register_type 18, ActiveSupport::SafeBuffer,
+-          packer: :to_s,
+-          unpacker: :new
++          packer: method(:write_safe_buffer),
++          unpacker: method(:read_safe_buffer),
++          recursive: true
+       end
+ 
+       def install_unregistered_type_error(registry)
+@@ -247,6 +248,14 @@ def read_hash_with_indifferent_access(unpacker)
+         ActiveSupport::HashWithIndifferentAccess.new(unpacker.read)
+       end
+ 
++      def write_safe_buffer(buffer, packer)
++        packer.write(buffer.to_str)
++      end
++
++      def read_safe_buffer(unpacker)
++        ActiveSupport::SafeBuffer.new(unpacker.read)
++      end
++
+       def raise_unserializable(object, *)
+         raise UnserializableObjectError, "Unsupported type #{object.class} for object #{object.inspect}"
+       end
+diff --git a/activesupport/test/message_pack/shared_serializer_tests.rb b/activesupport/test/message_pack/shared_serializer_tests.rb
+index f024cadf2a882..514b4666708d9 100644
+--- a/activesupport/test/message_pack/shared_serializer_tests.rb
++++ b/activesupport/test/message_pack/shared_serializer_tests.rb
+@@ -148,6 +148,15 @@ module MessagePackSharedSerializerTests
+       assert_roundtrip ActiveSupport::HashWithIndifferentAccess.new(a: true, b: 2, c: "three")
+     end
+ 
++    test "roundtrips ActiveSupport::SafeBuffer preserving encoding" do
++      deserialized = load(dump(ActiveSupport::SafeBuffer.new("Mäßig")))
++
++      assert_instance_of ActiveSupport::SafeBuffer, deserialized
++      assert_predicate deserialized, :html_safe?
++      assert_equal Encoding::UTF_8, deserialized.encoding
++      assert_equal "prefix Mäßig", "prefix " + deserialized
++    end
++
+     test "works with ENV['RAILS_MAX_THREADS']" do
+       original_env = ENV.to_h
+       ENV["RAILS_MAX_THREADS"] = "1"

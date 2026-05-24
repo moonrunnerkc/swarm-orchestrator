@@ -1,0 +1,26 @@
+{
+  "id": "devin-divord97-ccc-pr13",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 13,
+    "headSha": "9139e09e449091ce51c6544ccf2ba946713f0c17",
+    "baseSha": "ac11653abc37f247553229df361723b7cb7441d7",
+    "title": "Phase 10: Scaling + Hardening — Annotation Management, LLM Gateway, WebRTC Quality (DDD/TDD)",
+    "body": "## Summary\n\nPhase 10 implementation covering the backend-implementable portions of the scaling + hardening phase:\n\n**New Domain Entities (DDD):**\n- **AI BC — Annotation Management:** `AnnotationTask` (lifecycle: pending→in_progress→completed/cancelled, auto-complete when all items labeled, duplicate submit guard), `AnnotationResult` (per-item labeling with annotator tracking)\n- **AI BC — LLM Gateway:** `LLMModelConfig` (multi-model provider registry supporting tongyi/openai/bailian/self_hosted, default model per tenant)\n- **Call BC — WebRTC Quality:** `WebRTCQualityLog` (packet loss, jitter, RTT, MOS, audio level, bitrate, codec — with traffic-light quality level)\n\n**TDD Tests (13 new, 168 total):**\n- 7 annotation tests: create, invalid type, lifecycle, cancel, auto-complete, duplicate submit, list results\n- 4 LLM gateway tests: create config, invalid provider type, get default, no default error\n- 2 WebRTC quality tests: quality level mapping, create and list\n\n**Infrastructure:**\n- 4 MySQL repos: AnnotationTaskRepo, AnnotationResultRepo, LLMModelConfigRepo, WebRTCQualityRepo\n- Migration `000002`: `llm_model_configs` table + partition reference DDL\n\n**HTTP API (17 new endpoints):**\n- `POST/GET /annotation-tasks`, `GET/POST /{id}/start|complete|cancel`, `POST/GET /{id}/annotations`\n- `POST/GET /llm-models`, `GET /llm-models/default`, `GET/PUT/DELETE /{id}`\n- `POST /webrtc-quality`, `GET /calls/{callId}/webrtc-quality`, `GET /agents/{agentId}/webrtc-quality`\n\n**DI wiring in main.go:** All new repos, services, handlers wired into RouterDeps.\n\n**Devin Review fixes:** Added `snowflake.NextID()` to all 4 entity creation points (CreateTask, SubmitAnnotation, CreateConfig, Save).\n\n## Review & Testing Checklist for Human\n- [ ] Verify annotation task auto-complete logic: when `labeled_items >= total_items`, task status transitions to `completed` automatically\n- [ ] Verify LLM model config does not expose `api_key` in JSON responses (field tagged `json:\"-\"`)\n- [ ] Run `go test -race ./...` locally to confirm all 168 tests pass\n\n### Notes\n- Phase 10 infrastructure tasks (FreeSWITCH clustering, load testing, TLS/SRTP, Prometheus/Grafana dashboards, penetration testing) are ops-level concerns — not backend Go code. They should be handled via deployment configuration.\n- MySQL partitioning DDL is provided as reference in the migration file. Production partition management requires dropping FK constraints first and should be executed during a maintenance window.\n- Frontend tasks (annotation UI, WebRTC quality indicator, SDK) are deferred per project convention.\n\nLink to Devin session: https://app.devin.ai/sessions/35e328fa681447e98fa82466c8f69b99\nRequested by: @divord97\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/divord97/ccc/pull/13\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779576056-phase10-scaling",
+    "repository": "divord97/ccc"
+  },
+  "diffRef": {
+    "repository": "divord97/ccc",
+    "headSha": "9139e09e449091ce51c6544ccf2ba946713f0c17",
+    "baseSha": "ac11653abc37f247553229df361723b7cb7441d7"
+  },
+  "vendoredDiffPath": "devin/devin-divord97-ccc-pr13.diff",
+  "vendoredAt": "2026-05-24T03:04:57.385Z",
+  "collectedAt": "2026-05-24T03:04:57.385Z"
+}

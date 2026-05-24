@@ -1,0 +1,2922 @@
+diff --git a/app/portfolio/components/CodeEditor.tsx b/app/portfolio/components/CodeEditor.tsx
+new file mode 100644
+index 0000000..ddb50e7
+--- /dev/null
++++ b/app/portfolio/components/CodeEditor.tsx
+@@ -0,0 +1,209 @@
++"use client"
++
++import { useState } from 'react'
++import { motion } from 'framer-motion'
++import { FileJson, FileCode, FileText, Terminal } from 'lucide-react'
++import type { PortfolioLang } from '../data/i18n'
++import { portfolioTranslations } from '../data/i18n'
++
++interface CodeEditorProps {
++  lang: PortfolioLang
++}
++
++const tabs = [
++  { id: 'about', icon: FileJson, color: '#3b82f6' },
++  { id: 'skills', icon: FileCode, color: '#8b5cf6' },
++  { id: 'system', icon: FileText, color: '#3b82f6' },
++  { id: 'challenges', icon: Terminal, color: '#8b5cf6' },
++] as const
++
++const codeContent = {
++  about: `{
++  "name": "Mazen Elsaka",
++  "title": "Web Developer & AI Engineer",
++  "location": "Egypt",
++  "focus": "Computer Vision",
++  "languages": ["Arabic", "English"],
++  "interests": [
++    "Building intelligent web apps",
++    "Computer Vision research",
++    "Open source contribution",
++    "Teaching & mentoring"
++  ],
++  "current_role": "Full-Stack Developer @ NASS Academy",
++  "philosophy": "Code with purpose, build with passion"
++}`,
++  skills: `interface Developer {
++  frontend: Framework[];
++  backend: Technology[];
++  ai: MLTool[];
++  soft: HumanSkill[];
++}
++
++const mazen: Developer = {
++  frontend: [
++    { name: "React/Next.js", years: 4, love: "∞" },
++    { name: "TypeScript", years: 3, love: "high" },
++    { name: "Tailwind + Framer Motion", years: 3 },
++  ],
++  backend: [
++    { name: "Node.js", years: 4 },
++    { name: "Python/FastAPI", years: 2 },
++    { name: "PostgreSQL + Supabase", years: 3 },
++  ],
++  ai: [
++    { name: "TensorFlow/PyTorch", years: 2 },
++    { name: "OpenCV", years: 1, growing: true },
++    { name: "Hugging Face", years: 1 },
++  ],
++  soft: [
++    "Event Management",
++    "Team Leadership",
++    "Technical Writing",
++    "Problem Solving",
++  ],
++};`,
++  system: `# SYSTEM INTEGRITY REPORT
++# Generated: 2026-05-24
++# Author: Mazen Elsaka
++
++## Status: OPERATIONAL ✓
++
++### Core Systems
++- Frontend Pipeline .......... [████████████] 100%
++- Backend Services ........... [██████████░░] 88%
++- AI/ML Models ............... [████████░░░░] 72%
++- Computer Vision Module ..... [██████░░░░░░] 68% (GROWING)
++- DevOps & Deployment ........ [█████████░░░] 82%
++
++### Analysis
++> All systems nominal. Computer vision module
++> actively expanding. Expected to reach 90%
++> proficiency by Q4 2026.
++
++### Recommendations
++1. Continue OpenCV deep-dive
++2. Build 3 more CV projects
++3. Contribute to open-source CV libraries
++4. Publish research findings`,
++  challenges: `[2024-01-15] CHALLENGE: Real-time audio in browser
++  → SOLUTION: WebRTC + custom audio worklets
++  → RESULT: <50ms latency achieved
++
++[2024-03-22] CHALLENGE: Arabic text NLP accuracy
++  → SOLUTION: Fine-tuned AraBERT + custom tokenizer
++  → RESULT: 94% accuracy on sentiment analysis
++
++[2024-06-10] CHALLENGE: 500+ concurrent users
++  → SOLUTION: Redis caching + connection pooling
++  → RESULT: p99 latency < 200ms
++
++[2024-09-05] CHALLENGE: Complex RBAC system
++  → SOLUTION: JWT middleware + role hierarchy
++  → RESULT: Zero unauthorized access incidents
++
++[2025-01-20] CHALLENGE: Image segmentation speed
++  → SOLUTION: ONNX Runtime + model quantization
++  → RESULT: 30fps on consumer hardware
++
++[2025-04-12] CHALLENGE: Full platform rebuild
++  → SOLUTION: Next.js 16 + Supabase + edge functions
++  → RESULT: 98 Lighthouse score, 2s FCP`,
++}
++
++export default function CodeEditor({ lang }: CodeEditorProps) {
++  const [activeTab, setActiveTab] = useState<keyof typeof codeContent>('about')
++  const t = portfolioTranslations[lang].codeEditor
++
++  return (
++    <section className="relative py-24 md:py-32 bg-gray-50/50">
++      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
++        {/* Header */}
++        <motion.div
++          className="text-center mb-12"
++          initial={{ opacity: 0, y: 20 }}
++          whileInView={{ opacity: 1, y: 0 }}
++          viewport={{ once: true }}
++        >
++          <h2 className="text-3xl md:text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
++            {t.title}
++          </h2>
++        </motion.div>
++
++        {/* Editor */}
++        <motion.div
++          className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-xl shadow-blue-50/50"
++          initial={{ opacity: 0, y: 30 }}
++          whileInView={{ opacity: 1, y: 0 }}
++          viewport={{ once: true }}
++          transition={{ duration: 0.6 }}
++        >
++          {/* Title bar */}
++          <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 border-b border-gray-200">
++            <div className="flex gap-1.5">
++              <div className="w-3 h-3 rounded-full bg-red-400" />
++              <div className="w-3 h-3 rounded-full bg-yellow-400" />
++              <div className="w-3 h-3 rounded-full bg-green-400" />
++            </div>
++            <span className="text-gray-400 text-xs font-mono ml-3">brain-portfolio // mazen-elsaka</span>
++          </div>
++
++          {/* Tabs */}
++          <div className="flex items-center border-b border-gray-200 bg-gray-50/50 overflow-x-auto">
++            {tabs.map(tab => {
++              const Icon = tab.icon
++              const tabKey = tab.id as keyof typeof codeContent
++              return (
++                <button
++                  key={tab.id}
++                  onClick={() => setActiveTab(tabKey)}
++                  className={`flex items-center gap-2 px-4 py-2.5 text-xs font-mono border-r border-gray-100 transition-all whitespace-nowrap ${
++                    activeTab === tabKey
++                      ? 'bg-white text-blue-600 border-t-2'
++                      : 'text-gray-400 hover:text-gray-600 hover:bg-white/50'
++                  }`}
++                  style={{ borderTopColor: activeTab === tabKey ? tab.color : 'transparent' }}
++                >
++                  <Icon className="w-3.5 h-3.5" style={{ color: tab.color }} />
++                  {t.tabs[tab.id as keyof typeof t.tabs]}
++                </button>
++              )
++            })}
++          </div>
++
++          {/* Content */}
++          <div className="flex">
++            {/* Line numbers */}
++            <div className="hidden sm:flex flex-col items-end py-4 px-3 bg-gray-50/50 border-r border-gray-100 select-none">
++              {codeContent[activeTab].split('\n').map((_, i) => (
++                <span key={i} className="text-xs font-mono text-gray-300 leading-6">
++                  {i + 1}
++                </span>
++              ))}
++            </div>
++
++            {/* Code */}
++            <div className="flex-1 p-4 overflow-x-auto">
++              <pre className="text-sm font-mono leading-6 text-gray-700">
++                <code>{codeContent[activeTab]}</code>
++              </pre>
++            </div>
++          </div>
++
++          {/* Status bar */}
++          <div className="flex items-center justify-between px-4 py-1.5 bg-gray-50 border-t border-gray-200 text-xs font-mono text-gray-400">
++            <div className="flex items-center gap-3">
++              <span className="text-blue-500">●</span>
++              <span>UTF-8</span>
++              <span>LF</span>
++            </div>
++            <div className="flex items-center gap-3">
++              <span>{activeTab === 'about' ? 'JSON' : activeTab === 'skills' ? 'TypeScript' : activeTab === 'system' ? 'Markdown' : 'Log'}</span>
++              <span>Ln {codeContent[activeTab].split('\n').length}</span>
++            </div>
++          </div>
++        </motion.div>
++      </div>
++    </section>
++  )
++}
+diff --git a/app/portfolio/components/Contact.tsx b/app/portfolio/components/Contact.tsx
+new file mode 100644
+index 0000000..11bfa04
+--- /dev/null
++++ b/app/portfolio/components/Contact.tsx
+@@ -0,0 +1,112 @@
++"use client"
++
++import { motion } from 'framer-motion'
++import { Mail, Github, Linkedin, Send, ArrowUp } from 'lucide-react'
++import type { PortfolioLang } from '../data/i18n'
++import { portfolioTranslations } from '../data/i18n'
++
++interface ContactProps {
++  lang: PortfolioLang
++}
++
++export default function Contact({ lang }: ContactProps) {
++  const t = portfolioTranslations[lang].contact
++
++  return (
++    <section id="contact" className="relative py-24 md:py-32 bg-white">
++      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
++        {/* Header */}
++        <motion.div
++          className="text-center mb-12"
++          initial={{ opacity: 0, y: 20 }}
++          whileInView={{ opacity: 1, y: 0 }}
++          viewport={{ once: true }}
++        >
++          <h2 className="text-3xl md:text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
++            {t.title}
++          </h2>
++          <p className="text-gray-500 text-lg max-w-xl mx-auto">
++            {t.subtitle}
++          </p>
++        </motion.div>
++
++        <motion.div
++          className="max-w-xl mx-auto"
++          initial={{ opacity: 0, y: 20 }}
++          whileInView={{ opacity: 1, y: 0 }}
++          viewport={{ once: true }}
++          transition={{ delay: 0.2 }}
++        >
++          {/* Contact form */}
++          <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
++            <div>
++              <label className="block text-sm text-gray-600 mb-2">{t.name}</label>
++              <input
++                type="text"
++                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all"
++                placeholder="John Doe"
++              />
++            </div>
++            <div>
++              <label className="block text-sm text-gray-600 mb-2">{t.email}</label>
++              <input
++                type="email"
++                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all"
++                placeholder="you@example.com"
++              />
++            </div>
++            <div>
++              <label className="block text-sm text-gray-600 mb-2">{t.message}</label>
++              <textarea
++                rows={5}
++                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all resize-none"
++                placeholder="Your message..."
++              />
++            </div>
++            <button
++              type="submit"
++              className="w-full py-3 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 transition-all duration-300 shadow-lg shadow-blue-200 hover:shadow-blue-300 flex items-center justify-center gap-2"
++            >
++              <Send className="w-4 h-4" />
++              {t.send}
++            </button>
++          </form>
++
++          {/* Social links */}
++          <div className="mt-10 flex items-center justify-center gap-4">
++            {[
++              { icon: Github, href: '#', label: 'GitHub' },
++              { icon: Linkedin, href: '#', label: 'LinkedIn' },
++              { icon: Mail, href: 'mailto:mazen@example.com', label: 'Email' },
++            ].map(({ icon: Icon, href, label }) => (
++              <a
++                key={label}
++                href={href}
++                target="_blank"
++                rel="noopener noreferrer"
++                className="p-3 rounded-xl border border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-all duration-300"
++                aria-label={label}
++              >
++                <Icon className="w-5 h-5" />
++              </a>
++            ))}
++          </div>
++        </motion.div>
++      </div>
++
++      {/* Footer */}
++      <div className="mt-20 border-t border-gray-200 pt-8 text-center">
++        <p className="text-gray-400 text-sm">
++          © {new Date().getFullYear()} Mazen Elsaka // brain.portfolio v3.0
++        </p>
++        <button
++          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
++          className="mt-4 p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-all inline-flex"
++          aria-label="Back to top"
++        >
++          <ArrowUp className="w-5 h-5" />
++        </button>
++      </div>
++    </section>
++  )
++}
+diff --git a/app/portfolio/components/Education.tsx b/app/portfolio/components/Education.tsx
+new file mode 100644
+index 0000000..d80d6d0
+--- /dev/null
++++ b/app/portfolio/components/Education.tsx
+@@ -0,0 +1,113 @@
++"use client"
++
++import { motion } from 'framer-motion'
++import { GraduationCap, Award, BookOpen } from 'lucide-react'
++import { educationData } from '../data/education'
++import type { PortfolioLang } from '../data/i18n'
++import { portfolioTranslations } from '../data/i18n'
++
++interface EducationProps {
++  lang: PortfolioLang
++}
++
++const typeIcons = {
++  degree: GraduationCap,
++  certification: Award,
++  course: BookOpen,
++}
++
++const typeColors = {
++  degree: '#3b82f6',
++  certification: '#8b5cf6',
++  course: '#6366f1',
++}
++
++export default function Education({ lang }: EducationProps) {
++  const t = portfolioTranslations[lang].education
++
++  return (
++    <section id="education" className="relative py-24 md:py-32 bg-gray-50/50">
++      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
++        {/* Header */}
++        <motion.div
++          className="text-center mb-16"
++          initial={{ opacity: 0, y: 20 }}
++          whileInView={{ opacity: 1, y: 0 }}
++          viewport={{ once: true }}
++        >
++          <h2 className="text-3xl md:text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
++            {t.title}
++          </h2>
++          <p className="text-gray-500 text-lg max-w-xl mx-auto">
++            {t.subtitle}
++          </p>
++        </motion.div>
++
++        {/* Cards */}
++        <motion.div
++          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
++          initial="hidden"
++          whileInView="visible"
++          viewport={{ once: true }}
++          variants={{
++            hidden: { opacity: 0 },
++            visible: {
++              opacity: 1,
++              transition: { staggerChildren: 0.1 },
++            },
++          }}
++        >
++          {educationData.map(item => {
++            const Icon = typeIcons[item.type]
++            const color = typeColors[item.type]
++
++            return (
++              <motion.div
++                key={item.id}
++                variants={{
++                  hidden: { opacity: 0, y: 20 },
++                  visible: { opacity: 1, y: 0 },
++                }}
++                className="group p-5 rounded-xl border border-gray-200 bg-white hover:border-blue-300 hover:shadow-lg hover:shadow-blue-50 transition-all duration-300"
++                whileHover={{ y: -3 }}
++              >
++                <div className="flex items-start gap-3 mb-3">
++                  <div
++                    className="p-2 rounded-lg border"
++                    style={{ backgroundColor: `${color}10`, borderColor: `${color}30` }}
++                  >
++                    <Icon className="w-5 h-5" style={{ color }} />
++                  </div>
++                  <div className="flex-1 min-w-0">
++                    <h3 className="text-gray-900 font-semibold text-base truncate">
++                      {lang === 'ar' ? item.titleAr : item.title}
++                    </h3>
++                    <p className="text-gray-500 text-sm truncate">
++                      {lang === 'ar' ? item.institutionAr : item.institution}
++                    </p>
++                  </div>
++                </div>
++
++                {item.description && (
++                  <p className="text-gray-500 text-sm mb-3 line-clamp-2">
++                    {lang === 'ar' ? item.descriptionAr : item.description}
++                  </p>
++                )}
++
++                <div className="flex items-center justify-between">
++                  <span className="text-xs text-gray-400">{item.year}</span>
++                  <span
++                    className="px-2 py-0.5 rounded-full text-xs font-medium border"
++                    style={{ backgroundColor: `${color}10`, color, borderColor: `${color}30` }}
++                  >
++                    {item.type}
++                  </span>
++                </div>
++              </motion.div>
++            )
++          })}
++        </motion.div>
++      </div>
++    </section>
++  )
++}
+diff --git a/app/portfolio/components/EventsGrid.tsx b/app/portfolio/components/EventsGrid.tsx
+new file mode 100644
+index 0000000..93771c9
+--- /dev/null
++++ b/app/portfolio/components/EventsGrid.tsx
+@@ -0,0 +1,201 @@
++"use client"
++
++import { useState } from 'react'
++import { motion, AnimatePresence } from 'framer-motion'
++import { Calendar, MapPin, X, Users } from 'lucide-react'
++import { events } from '../data/events'
++import type { PortfolioLang } from '../data/i18n'
++import { portfolioTranslations } from '../data/i18n'
++import type { Event } from '../data/events'
++
++interface EventsGridProps {
++  lang: PortfolioLang
++}
++
++function EventCard({ event, lang, onClick }: { event: Event; lang: PortfolioLang; onClick: () => void }) {
++  return (
++    <motion.div
++      className="group relative rounded-xl overflow-hidden border border-gray-200 bg-white cursor-pointer hover:border-blue-300 hover:shadow-xl hover:shadow-blue-50 transition-all duration-300"
++      whileHover={{ scale: 1.02, y: -5 }}
++      whileTap={{ scale: 0.98 }}
++      onClick={onClick}
++      layout
++    >
++      {/* Image placeholder */}
++      <div className="relative h-48 bg-gradient-to-br from-blue-50 to-purple-50 overflow-hidden">
++        <div className="absolute inset-0 flex items-center justify-center">
++          <div className="text-4xl opacity-40">📸</div>
++        </div>
++        {/* Subtle grid */}
++        <div
++          className="absolute inset-0 opacity-5"
++          style={{
++            backgroundImage: 'linear-gradient(rgba(59,130,246,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(59,130,246,0.5) 1px, transparent 1px)',
++            backgroundSize: '20px 20px',
++          }}
++        />
++        {/* Date badge */}
++        <div className="absolute top-3 right-3 px-3 py-1 rounded-full bg-white/90 backdrop-blur-sm border border-gray-200 text-xs text-blue-600 font-medium shadow-sm">
++          {event.date}
++        </div>
++      </div>
++
++      {/* Content */}
++      <div className="p-5">
++        <h3 className="text-gray-900 font-semibold text-lg mb-2 group-hover:text-blue-600 transition-colors">
++          {lang === 'ar' ? event.titleAr : event.title}
++        </h3>
++        <p className="text-gray-500 text-sm mb-3 line-clamp-2">
++          {lang === 'ar' ? event.descriptionAr : event.description}
++        </p>
++        <div className="flex items-center gap-3 text-xs text-gray-400">
++          <span className="flex items-center gap-1">
++            <MapPin className="w-3 h-3 text-blue-500" />
++            {lang === 'ar' ? event.locationAr : event.location}
++          </span>
++          <span className="flex items-center gap-1">
++            <Calendar className="w-3 h-3 text-purple-500" />
++            {event.date}
++          </span>
++        </div>
++      </div>
++    </motion.div>
++  )
++}
++
++function EventModal({ event, lang, onClose }: { event: Event; lang: PortfolioLang; onClose: () => void }) {
++  const t = portfolioTranslations[lang].events
++
++  return (
++    <motion.div
++      className="fixed inset-0 z-50 flex items-center justify-center p-4"
++      initial={{ opacity: 0 }}
++      animate={{ opacity: 1 }}
++      exit={{ opacity: 0 }}
++    >
++      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
++      <motion.div
++        className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white border border-gray-200 p-6 md:p-8 shadow-2xl"
++        initial={{ scale: 0.9, y: 20 }}
++        animate={{ scale: 1, y: 0 }}
++        exit={{ scale: 0.9, y: 20 }}
++        transition={{ type: 'spring', stiffness: 200, damping: 20 }}
++      >
++        <button
++          onClick={onClose}
++          className="absolute top-4 right-4 p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all"
++        >
++          <X className="w-5 h-5" />
++        </button>
++
++        {/* Image placeholder */}
++        <div className="w-full h-56 rounded-xl bg-gradient-to-br from-blue-50 to-purple-50 mb-6 flex items-center justify-center border border-gray-100">
++          <span className="text-5xl opacity-40">📸</span>
++        </div>
++
++        <h2 className="text-2xl font-bold text-gray-900 mb-2">
++          {lang === 'ar' ? event.titleAr : event.title}
++        </h2>
++
++        <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 mb-4">
++          <span className="flex items-center gap-1">
++            <Calendar className="w-4 h-4 text-blue-500" />
++            {event.date}
++          </span>
++          <span className="flex items-center gap-1">
++            <MapPin className="w-4 h-4 text-purple-500" />
++            {lang === 'ar' ? event.locationAr : event.location}
++          </span>
++          <span className="flex items-center gap-1">
++            <Users className="w-4 h-4 text-blue-500" />
++            {lang === 'ar' ? event.roleAr : event.role}
++          </span>
++        </div>
++
++        <p className="text-gray-600 leading-relaxed mb-4 text-sm">
++          {lang === 'ar' ? event.detailsAr : event.details}
++        </p>
++
++        {event.impact && (
++          <div className="px-4 py-3 rounded-lg bg-blue-50 border border-blue-200">
++            <p className="text-blue-700 text-sm">
++              {lang === 'ar' ? event.impactAr : event.impact}
++            </p>
++          </div>
++        )}
++
++        <button
++          onClick={onClose}
++          className="mt-6 w-full py-3 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-all shadow-sm"
++        >
++          {t.close}
++        </button>
++      </motion.div>
++    </motion.div>
++  )
++}
++
++export default function EventsGrid({ lang }: EventsGridProps) {
++  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
++  const t = portfolioTranslations[lang].events
++
++  return (
++    <section id="events" className="relative py-24 md:py-32 bg-white">
++      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
++        {/* Header */}
++        <motion.div
++          className="text-center mb-16"
++          initial={{ opacity: 0, y: 20 }}
++          whileInView={{ opacity: 1, y: 0 }}
++          viewport={{ once: true }}
++          transition={{ duration: 0.5 }}
++        >
++          <h2 className="text-3xl md:text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
++            {t.title}
++          </h2>
++          <p className="text-gray-500 text-lg max-w-xl mx-auto">
++            {t.subtitle}
++          </p>
++          <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full border border-blue-200 bg-blue-50">
++            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
++            <span className="text-blue-700 text-sm font-medium">NASS Academy</span>
++          </div>
++        </motion.div>
++
++        {/* Grid */}
++        <motion.div
++          className="grid grid-cols-1 md:grid-cols-2 gap-6"
++          initial="hidden"
++          whileInView="visible"
++          viewport={{ once: true }}
++          variants={{
++            hidden: { opacity: 0 },
++            visible: {
++              opacity: 1,
++              transition: { staggerChildren: 0.1 },
++            },
++          }}
++        >
++          {events.map((event) => (
++            <motion.div
++              key={event.id}
++              variants={{
++                hidden: { opacity: 0, y: 20 },
++                visible: { opacity: 1, y: 0 },
++              }}
++            >
++              <EventCard event={event} lang={lang} onClick={() => setSelectedEvent(event)} />
++            </motion.div>
++          ))}
++        </motion.div>
++      </div>
++
++      {/* Modal */}
++      <AnimatePresence>
++        {selectedEvent && (
++          <EventModal event={selectedEvent} lang={lang} onClose={() => setSelectedEvent(null)} />
++        )}
++      </AnimatePresence>
++    </section>
++  )
++}
+diff --git a/app/portfolio/components/Hero.tsx b/app/portfolio/components/Hero.tsx
+new file mode 100644
+index 0000000..9ba5c25
+--- /dev/null
++++ b/app/portfolio/components/Hero.tsx
+@@ -0,0 +1,167 @@
++"use client"
++
++import { useEffect, useState } from 'react'
++import { motion } from 'framer-motion'
++import { ArrowDown, Github, Linkedin, Mail, Download } from 'lucide-react'
++import type { PortfolioLang } from '../data/i18n'
++import { portfolioTranslations } from '../data/i18n'
++
++interface HeroProps {
++  lang: PortfolioLang
++}
++
++export default function Hero({ lang }: HeroProps) {
++  const t = portfolioTranslations[lang].hero
++  const [typedText, setTypedText] = useState('')
++  const [showCursor, setShowCursor] = useState(true)
++  const fullText = t.name
++
++  useEffect(() => {
++    setTypedText('')
++    let i = 0
++    const interval = setInterval(() => {
++      if (i < fullText.length) {
++        setTypedText(fullText.slice(0, i + 1))
++        i++
++      } else {
++        clearInterval(interval)
++      }
++    }, 100)
++    return () => clearInterval(interval)
++  }, [fullText])
++
++  useEffect(() => {
++    const blink = setInterval(() => setShowCursor(v => !v), 530)
++    return () => clearInterval(blink)
++  }, [])
++
++  return (
++    <section
++      id="home"
++      className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-b from-white via-blue-50/30 to-white"
++    >
++      {/* Soft radial glow */}
++      <div className="absolute inset-0">
++        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-blue-100/40 rounded-full blur-[150px]" />
++        <div className="absolute top-1/3 right-1/4 w-[400px] h-[400px] bg-purple-100/30 rounded-full blur-[120px]" />
++      </div>
++
++      <div className="relative z-10 max-w-4xl mx-auto px-4 text-center">
++        {/* Greeting */}
++        <motion.div
++          className="inline-flex items-center gap-2 mb-6"
++          initial={{ opacity: 0, y: 20 }}
++          animate={{ opacity: 1, y: 0 }}
++          transition={{ duration: 0.5, delay: 0.2 }}
++        >
++          <span className="text-blue-400 text-sm">{'>'}</span>
++          <span className="text-gray-500 text-sm tracking-wider">
++            {t.greeting}
++          </span>
++        </motion.div>
++
++        {/* Name with typing effect */}
++        <motion.h1
++          className="text-4xl sm:text-5xl md:text-7xl lg:text-8xl font-bold mb-4 tracking-tight"
++          initial={{ opacity: 0, y: 20 }}
++          animate={{ opacity: 1, y: 0 }}
++          transition={{ duration: 0.5, delay: 0.4 }}
++        >
++          <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-blue-600 bg-clip-text text-transparent">
++            {typedText}
++          </span>
++          <span
++            className={`inline-block w-[3px] h-[0.75em] bg-blue-600 ml-1 align-middle transition-opacity ${
++              showCursor ? 'opacity-100' : 'opacity-0'
++            }`}
++          />
++        </motion.h1>
++
++        {/* Title */}
++        <motion.p
++          className="text-xl md:text-2xl text-gray-600 mb-3"
++          initial={{ opacity: 0, y: 20 }}
++          animate={{ opacity: 1, y: 0 }}
++          transition={{ duration: 0.5, delay: 0.6 }}
++        >
++          {t.title}
++        </motion.p>
++
++        {/* Focus badge */}
++        <motion.div
++          className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-purple-200 bg-purple-50 mb-6"
++          initial={{ opacity: 0, scale: 0.9 }}
++          animate={{ opacity: 1, scale: 1 }}
++          transition={{ duration: 0.5, delay: 0.8 }}
++        >
++          <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
++          <span className="text-purple-700 text-sm font-medium">{t.focus}</span>
++        </motion.div>
++
++        {/* Subtitle */}
++        <motion.p
++          className="text-gray-500 text-base md:text-lg max-w-xl mx-auto mb-10"
++          initial={{ opacity: 0, y: 20 }}
++          animate={{ opacity: 1, y: 0 }}
++          transition={{ duration: 0.5, delay: 1.0 }}
++        >
++          {t.subtitle}
++        </motion.p>
++
++        {/* CTA Buttons */}
++        <motion.div
++          className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12"
++          initial={{ opacity: 0, y: 20 }}
++          animate={{ opacity: 1, y: 0 }}
++          transition={{ duration: 0.5, delay: 1.2 }}
++        >
++          <button
++            onClick={() => document.getElementById('projects')?.scrollIntoView({ behavior: 'smooth' })}
++            className="group px-8 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-all duration-300 shadow-lg shadow-blue-200 hover:shadow-blue-300 flex items-center gap-2"
++          >
++            {t.cta}
++            <ArrowDown className="w-4 h-4 group-hover:translate-y-0.5 transition-transform" />
++          </button>
++          <button className="px-8 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-300 flex items-center gap-2">
++            <Download className="w-4 h-4" />
++            {t.download}
++          </button>
++        </motion.div>
++
++        {/* Social Links */}
++        <motion.div
++          className="flex items-center justify-center gap-4"
++          initial={{ opacity: 0 }}
++          animate={{ opacity: 1 }}
++          transition={{ duration: 0.5, delay: 1.4 }}
++        >
++          {[
++            { icon: Github, href: '#', label: 'GitHub' },
++            { icon: Linkedin, href: '#', label: 'LinkedIn' },
++            { icon: Mail, href: '#', label: 'Email' },
++          ].map(({ icon: Icon, href, label }) => (
++            <a
++              key={label}
++              href={href}
++              target="_blank"
++              rel="noopener noreferrer"
++              className="p-3 rounded-lg border border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-all duration-300"
++              aria-label={label}
++            >
++              <Icon className="w-5 h-5" />
++            </a>
++          ))}
++        </motion.div>
++      </div>
++
++      {/* Scroll indicator */}
++      <motion.div
++        className="absolute bottom-8 left-1/2 -translate-x-1/2"
++        animate={{ y: [0, 8, 0] }}
++        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
++      >
++        <ArrowDown className="w-5 h-5 text-blue-400/50" />
++      </motion.div>
++    </section>
++  )
++}
+diff --git a/app/portfolio/components/Navigation.tsx b/app/portfolio/components/Navigation.tsx
+new file mode 100644
+index 0000000..3574283
+--- /dev/null
++++ b/app/portfolio/components/Navigation.tsx
+@@ -0,0 +1,98 @@
++"use client"
++
++import { useState, useEffect } from 'react'
++import { motion } from 'framer-motion'
++import { Globe } from 'lucide-react'
++import type { PortfolioLang } from '../data/i18n'
++
++interface NavigationProps {
++  lang: PortfolioLang
++  onLangChange: (lang: PortfolioLang) => void
++}
++
++const navItems = [
++  { id: 'home', label: 'Home', labelAr: 'الرئيسية' },
++  { id: 'about', label: 'Journey', labelAr: 'رحلتي' },
++  { id: 'events', label: 'Events', labelAr: 'الفعاليات' },
++  { id: 'projects', label: 'Projects', labelAr: 'المشاريع' },
++  { id: 'skills', label: 'Skills', labelAr: 'المهارات' },
++  { id: 'education', label: 'Education', labelAr: 'التعليم' },
++  { id: 'contact', label: 'Contact', labelAr: 'تواصل' },
++]
++
++export default function Navigation({ lang, onLangChange }: NavigationProps) {
++  const [scrolled, setScrolled] = useState(false)
++  const [activeSection, setActiveSection] = useState('home')
++
++  useEffect(() => {
++    const handleScroll = () => {
++      setScrolled(window.scrollY > 50)
++
++      // Determine active section
++      const sections = navItems.map(item => document.getElementById(item.id))
++      for (let i = sections.length - 1; i >= 0; i--) {
++        const section = sections[i]
++        if (section && section.getBoundingClientRect().top <= 150) {
++          setActiveSection(navItems[i].id)
++          break
++        }
++      }
++    }
++    window.addEventListener('scroll', handleScroll)
++    return () => window.removeEventListener('scroll', handleScroll)
++  }, [])
++
++  return (
++    <motion.nav
++      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
++        scrolled
++          ? 'bg-white/80 backdrop-blur-xl border-b border-gray-200 shadow-sm'
++          : 'bg-transparent'
++      }`}
++      initial={{ y: -100 }}
++      animate={{ y: 0 }}
++      transition={{ type: 'spring', stiffness: 100, damping: 20 }}
++    >
++      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
++        <div className="flex items-center justify-between h-16">
++          <motion.button
++            onClick={() => {
++              document.getElementById('home')?.scrollIntoView({ behavior: 'smooth' })
++            }}
++            className="text-blue-600 font-bold text-lg"
++            whileHover={{ scale: 1.05 }}
++            whileTap={{ scale: 0.95 }}
++          >
++            {'<ME />'}
++          </motion.button>
++
++          {/* Nav links - desktop */}
++          <div className="hidden md:flex items-center gap-1">
++            {navItems.map(item => (
++              <button
++                key={item.id}
++                onClick={() => document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth' })}
++                className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
++                  activeSection === item.id
++                    ? 'text-blue-600 bg-blue-50 font-medium'
++                    : 'text-gray-600 hover:text-blue-600 hover:bg-gray-50'
++                }`}
++              >
++                {lang === 'ar' ? item.labelAr : item.label}
++              </button>
++            ))}
++          </div>
++
++          <button
++            onClick={() => onLangChange(lang === 'en' ? 'ar' : 'en')}
++            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-gray-600 hover:text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-all text-sm"
++            title={lang === 'en' ? 'العربية' : 'English'}
++          >
++            <Globe className="w-4 h-4" />
++            <span>{lang === 'en' ? 'AR' : 'EN'}</span>
++          </button>
++        </div>
++      </div>
++    </motion.nav>
++  )
++}
+diff --git a/app/portfolio/components/NeuralBackground.tsx b/app/portfolio/components/NeuralBackground.tsx
+new file mode 100644
+index 0000000..cac1adf
+--- /dev/null
++++ b/app/portfolio/components/NeuralBackground.tsx
+@@ -0,0 +1,184 @@
++"use client"
++
++import { useEffect, useRef } from 'react'
++
++interface Node {
++  x: number
++  y: number
++  vx: number
++  vy: number
++  radius: number
++  opacity: number
++  pulse: number
++  pulseSpeed: number
++  color: 'blue' | 'purple'
++}
++
++export default function NeuralBackground() {
++  const canvasRef = useRef<HTMLCanvasElement>(null)
++  const animationRef = useRef<number>(0)
++  const nodesRef = useRef<Node[]>([])
++  const mouseRef = useRef({ x: -1000, y: -1000 })
++
++  useEffect(() => {
++    const canvas = canvasRef.current
++    if (!canvas) return
++
++    const ctx = canvas.getContext('2d')
++    if (!ctx) return
++
++    const resize = () => {
++      canvas.width = window.innerWidth
++      canvas.height = window.innerHeight
++    }
++
++    resize()
++    window.addEventListener('resize', resize)
++
++    // Initialize nodes - brain-like distribution
++    const nodeCount = Math.min(90, Math.floor((window.innerWidth * window.innerHeight) / 12000))
++    nodesRef.current = Array.from({ length: nodeCount }, () => ({
++      x: Math.random() * canvas.width,
++      y: Math.random() * canvas.height,
++      vx: (Math.random() - 0.5) * 0.25,
++      vy: (Math.random() - 0.5) * 0.25,
++      radius: Math.random() * 2.5 + 1,
++      opacity: Math.random() * 0.4 + 0.2,
++      pulse: Math.random() * Math.PI * 2,
++      pulseSpeed: Math.random() * 0.015 + 0.008,
++      color: Math.random() > 0.5 ? 'blue' : 'purple',
++    }))
++
++    const handleMouseMove = (e: MouseEvent) => {
++      mouseRef.current = { x: e.clientX, y: e.clientY }
++    }
++
++    const handleMouseLeave = () => {
++      mouseRef.current = { x: -1000, y: -1000 }
++    }
++
++    window.addEventListener('mousemove', handleMouseMove)
++    window.addEventListener('mouseleave', handleMouseLeave)
++
++    const connectionDistance = 160
++    const mouseRadius = 180
++
++    const animate = () => {
++      ctx.clearRect(0, 0, canvas.width, canvas.height)
++
++      const nodes = nodesRef.current
++
++      // Update nodes
++      for (const node of nodes) {
++        node.x += node.vx
++        node.y += node.vy
++        node.pulse += node.pulseSpeed
++
++        // Bounce off edges
++        if (node.x < 0 || node.x > canvas.width) node.vx *= -1
++        if (node.y < 0 || node.y > canvas.height) node.vy *= -1
++
++        // Mouse attraction (brain-like, subtle pull)
++        const dx = node.x - mouseRef.current.x
++        const dy = node.y - mouseRef.current.y
++        const dist = Math.sqrt(dx * dx + dy * dy)
++        if (dist < mouseRadius && dist > 0) {
++          const force = (mouseRadius - dist) / mouseRadius * 0.015
++          node.vx += (dx / dist) * force
++          node.vy += (dy / dist) * force
++        }
++
++        // Dampen velocity
++        node.vx *= 0.99
++        node.vy *= 0.99
++      }
++
++      // Draw connections (synapses)
++      for (let i = 0; i < nodes.length; i++) {
++        for (let j = i + 1; j < nodes.length; j++) {
++          const dx = nodes[i].x - nodes[j].x
++          const dy = nodes[i].y - nodes[j].y
++          const dist = Math.sqrt(dx * dx + dy * dy)
++
++          if (dist < connectionDistance) {
++            const alpha = (1 - dist / connectionDistance) * 0.12
++            const isBluePair = nodes[i].color === 'blue' || nodes[j].color === 'blue'
++            ctx.beginPath()
++            ctx.moveTo(nodes[i].x, nodes[i].y)
++            ctx.lineTo(nodes[j].x, nodes[j].y)
++            ctx.strokeStyle = isBluePair
++              ? `rgba(59, 130, 246, ${alpha})`
++              : `rgba(139, 92, 246, ${alpha})`
++            ctx.lineWidth = 0.6
++            ctx.stroke()
++          }
++        }
++      }
++
++      // Draw nodes (neurons)
++      for (const node of nodes) {
++        const pulseOpacity = node.opacity + Math.sin(node.pulse) * 0.12
++
++        // Glow
++        ctx.beginPath()
++        ctx.arc(node.x, node.y, node.radius * 3.5, 0, Math.PI * 2)
++        if (node.color === 'blue') {
++          ctx.fillStyle = `rgba(59, 130, 246, ${pulseOpacity * 0.08})`
++        } else {
++          ctx.fillStyle = `rgba(139, 92, 246, ${pulseOpacity * 0.08})`
++        }
++        ctx.fill()
++
++        // Core
++        ctx.beginPath()
++        ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2)
++        if (node.color === 'blue') {
++          ctx.fillStyle = `rgba(59, 130, 246, ${pulseOpacity})`
++        } else {
++          ctx.fillStyle = `rgba(139, 92, 246, ${pulseOpacity})`
++        }
++        ctx.fill()
++      }
++
++      // Draw signal pulses along connections (neural impulses)
++      const time = Date.now() * 0.001
++      for (let i = 0; i < nodes.length; i++) {
++        for (let j = i + 1; j < nodes.length; j++) {
++          const dx = nodes[i].x - nodes[j].x
++          const dy = nodes[i].y - nodes[j].y
++          const dist = Math.sqrt(dx * dx + dy * dy)
++
++          if (dist < connectionDistance * 0.6) {
++            const progress = ((time + i * 0.3) % 2) / 2
++            const px = nodes[i].x + (nodes[j].x - nodes[i].x) * progress
++            const py = nodes[i].y + (nodes[j].y - nodes[i].y) * progress
++
++            ctx.beginPath()
++            ctx.arc(px, py, 1.2, 0, Math.PI * 2)
++            ctx.fillStyle = `rgba(139, 92, 246, 0.5)`
++            ctx.fill()
++          }
++        }
++      }
++
++      animationRef.current = requestAnimationFrame(animate)
++    }
++
++    animate()
++
++    return () => {
++      cancelAnimationFrame(animationRef.current)
++      window.removeEventListener('resize', resize)
++      window.removeEventListener('mousemove', handleMouseMove)
++      window.removeEventListener('mouseleave', handleMouseLeave)
++    }
++  }, [])
++
++  return (
++    <canvas
++      ref={canvasRef}
++      className="fixed inset-0 w-full h-full pointer-events-none z-0"
++      style={{ opacity: 0.4 }}
++    />
++  )
++}
+diff --git a/app/portfolio/components/PortfolioDock.tsx b/app/portfolio/components/PortfolioDock.tsx
+new file mode 100644
+index 0000000..ea609f1
+--- /dev/null
++++ b/app/portfolio/components/PortfolioDock.tsx
+@@ -0,0 +1,115 @@
++"use client"
++
++import { useState, useEffect } from 'react'
++import MacOSDock from '@/components/ui/mac-os-dock'
++import type { PortfolioLang } from '../data/i18n'
++
++interface PortfolioDockProps {
++  lang: PortfolioLang
++}
++
++const dockSections = [
++  {
++    id: 'home',
++    name: 'Home',
++    nameAr: 'الرئيسية',
++    icon: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0a0a0a"/><rect width="64" height="64" rx="14" fill="none" stroke="#00ff41" stroke-width="1.5" opacity="0.4"/><path d="M32 16L16 28v18a2 2 0 002 2h8v-10h12v10h8a2 2 0 002-2V28L32 16z" fill="#00ff41" opacity="0.9"/></svg>`)}`,
++  },
++  {
++    id: 'about',
++    name: 'Journey',
++    nameAr: 'رحلتي',
++    icon: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0a0a0a"/><rect width="64" height="64" rx="14" fill="none" stroke="#00d4ff" stroke-width="1.5" opacity="0.4"/><circle cx="32" cy="20" r="4" fill="#00d4ff" opacity="0.9"/><line x1="32" y1="24" x2="32" y2="48" stroke="#00d4ff" stroke-width="2" opacity="0.5" stroke-dasharray="4 3"/><circle cx="32" cy="34" r="3" fill="#00d4ff" opacity="0.7"/><circle cx="32" cy="48" r="3" fill="#00d4ff" opacity="0.9"/></svg>`)}`,
++  },
++  {
++    id: 'events',
++    name: 'Events',
++    nameAr: 'الفعاليات',
++    icon: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0a0a0a"/><rect width="64" height="64" rx="14" fill="none" stroke="#00ff41" stroke-width="1.5" opacity="0.4"/><rect x="16" y="20" width="32" height="28" rx="4" fill="#00ff41" opacity="0.15"/><rect x="16" y="20" width="32" height="28" rx="4" fill="none" stroke="#00ff41" opacity="0.8"/><rect x="16" y="20" width="32" height="8" rx="4" fill="#00ff41" opacity="0.3"/><circle cx="24" cy="17" r="2" fill="#00ff41"/><circle cx="40" cy="17" r="2" fill="#00ff41"/><rect x="21" y="33" width="6" height="4" rx="1" fill="#00ff41" opacity="0.5"/><rect x="29" y="33" width="6" height="4" rx="1" fill="#00ff41" opacity="0.5"/><rect x="37" y="33" width="6" height="4" rx="1" fill="#00ff41" opacity="0.5"/></svg>`)}`,
++  },
++  {
++    id: 'projects',
++    name: 'Projects',
++    nameAr: 'المشاريع',
++    icon: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0a0a0a"/><rect width="64" height="64" rx="14" fill="none" stroke="#00ff41" stroke-width="1.5" opacity="0.4"/><circle cx="24" cy="24" r="3" fill="#00ff41" opacity="0.9"/><circle cx="40" cy="24" r="3" fill="#00d4ff" opacity="0.9"/><circle cx="32" cy="40" r="3" fill="#00ff41" opacity="0.9"/><circle cx="20" cy="40" r="2" fill="#00d4ff" opacity="0.6"/><circle cx="44" cy="40" r="2" fill="#00d4ff" opacity="0.6"/><line x1="24" y1="24" x2="40" y2="24" stroke="#00ff41" stroke-width="1" opacity="0.4"/><line x1="24" y1="24" x2="32" y2="40" stroke="#00ff41" stroke-width="1" opacity="0.4"/><line x1="40" y1="24" x2="32" y2="40" stroke="#00d4ff" stroke-width="1" opacity="0.4"/></svg>`)}`,
++  },
++  {
++    id: 'skills',
++    name: 'Skills',
++    nameAr: 'المهارات',
++    icon: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0a0a0a"/><rect width="64" height="64" rx="14" fill="none" stroke="#00ff41" stroke-width="1.5" opacity="0.4"/><rect x="16" y="38" width="6" height="10" rx="1" fill="#00ff41" opacity="0.6"/><rect x="24" y="32" width="6" height="16" rx="1" fill="#00ff41" opacity="0.7"/><rect x="32" y="26" width="6" height="22" rx="1" fill="#00ff41" opacity="0.8"/><rect x="40" y="20" width="6" height="28" rx="1" fill="#00ff41" opacity="0.9"/></svg>`)}`,
++  },
++  {
++    id: 'education',
++    name: 'Education',
++    nameAr: 'التعليم',
++    icon: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0a0a0a"/><rect width="64" height="64" rx="14" fill="none" stroke="#00d4ff" stroke-width="1.5" opacity="0.4"/><path d="M32 18L14 28l18 10 18-10L32 18z" fill="#00d4ff" opacity="0.9"/><path d="M20 32v10c0 0 4 6 12 6s12-6 12-6V32" fill="none" stroke="#00d4ff" stroke-width="2" opacity="0.6"/><line x1="50" y1="28" x2="50" y2="44" stroke="#00d4ff" stroke-width="2" opacity="0.5"/></svg>`)}`,
++  },
++  {
++    id: 'contact',
++    name: 'Contact',
++    nameAr: 'تواصل',
++    icon: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0a0a0a"/><rect width="64" height="64" rx="14" fill="none" stroke="#00ff41" stroke-width="1.5" opacity="0.4"/><rect x="14" y="20" width="36" height="24" rx="4" fill="#00ff41" opacity="0.15"/><rect x="14" y="20" width="36" height="24" rx="4" fill="none" stroke="#00ff41" opacity="0.8"/><polyline points="14,22 32,36 50,22" fill="none" stroke="#00ff41" stroke-width="2" opacity="0.6"/></svg>`)}`,
++  },
++]
++
++export default function PortfolioDock({ lang }: PortfolioDockProps) {
++  const [activeSection, setActiveSection] = useState('home')
++  const [isVisible, setIsVisible] = useState(true)
++  const [lastScrollY, setLastScrollY] = useState(0)
++
++  useEffect(() => {
++    const handleScroll = () => {
++      const currentScrollY = window.scrollY
++      
++      if (currentScrollY > lastScrollY && currentScrollY > 200) {
++        setIsVisible(false)
++      } else {
++        setIsVisible(true)
++      }
++      setLastScrollY(currentScrollY)
++
++      const sections = dockSections.map(s => s.id)
++      const scrollPos = window.scrollY + window.innerHeight / 2
++
++      for (let i = sections.length - 1; i >= 0; i--) {
++        const el = document.getElementById(sections[i])
++        if (el && el.offsetTop <= scrollPos) {
++          setActiveSection(sections[i])
++          break
++        }
++      }
++    }
++
++    window.addEventListener('scroll', handleScroll, { passive: true })
++    return () => window.removeEventListener('scroll', handleScroll)
++  }, [lastScrollY])
++
++  const handleAppClick = (sectionId: string) => {
++    const el = document.getElementById(sectionId)
++    if (el) {
++      el.scrollIntoView({ behavior: 'smooth' })
++    }
++  }
++
++  const apps = dockSections.map(section => ({
++    id: section.id,
++    name: lang === 'ar' ? section.nameAr : section.name,
++    icon: section.icon,
++  }))
++
++  return (
++    <div
++      className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 transition-all duration-500 ${
++        isVisible ? 'translate-y-0 opacity-100' : 'translate-y-24 opacity-0'
++      }`}
++    >
++      <MacOSDock
++        apps={apps}
++        onAppClick={handleAppClick}
++        openApps={[activeSection]}
++        className="!border-[#00ff41]/20 !shadow-[0_0_30px_rgba(0,255,65,0.1)]"
++      />
++    </div>
++  )
++}
+diff --git a/app/portfolio/components/ProjectsSection.tsx b/app/portfolio/components/ProjectsSection.tsx
+new file mode 100644
+index 0000000..f585ab8
+--- /dev/null
++++ b/app/portfolio/components/ProjectsSection.tsx
+@@ -0,0 +1,262 @@
++"use client"
++
++import { useState, useMemo } from 'react'
++import { motion, AnimatePresence } from 'framer-motion'
++import { ExternalLink, Github, ChevronRight } from 'lucide-react'
++import { projects, technologies } from '../data/projects'
++import type { PortfolioLang } from '../data/i18n'
++import { portfolioTranslations } from '../data/i18n'
++
++interface ProjectsSectionProps {
++  lang: PortfolioLang
++}
++
++function TechGraph({ activeTech }: { activeTech: string | null }) {
++  const nodes = useMemo(() => {
++    return technologies.map((tech, i) => {
++      const angle = (i / technologies.length) * Math.PI * 2
++      const radius = 120 + Math.random() * 60
++      return {
++        id: tech,
++        x: 200 + Math.cos(angle) * radius,
++        y: 200 + Math.sin(angle) * radius,
++      }
++    })
++  }, [])
++
++  const edges = useMemo(() => {
++    const result: { from: string; to: string }[] = []
++    projects.forEach(project => {
++      for (let i = 0; i < project.technologies.length; i++) {
++        for (let j = i + 1; j < project.technologies.length; j++) {
++          const edge = { from: project.technologies[i], to: project.technologies[j] }
++          if (!result.find(e => (e.from === edge.from && e.to === edge.to) || (e.from === edge.to && e.to === edge.from))) {
++            result.push(edge)
++          }
++        }
++      }
++    })
++    return result
++  }, [])
++
++  return (
++    <div className="hidden lg:block w-full max-w-[420px] aspect-square relative">
++      <svg width="400" height="400" viewBox="0 0 400 400" className="w-full h-full">
++        {/* Edges */}
++        {edges.map((edge, i) => {
++          const from = nodes.find(n => n.id === edge.from)
++          const to = nodes.find(n => n.id === edge.to)
++          if (!from || !to) return null
++          const isActive = activeTech === edge.from || activeTech === edge.to
++          return (
++            <line
++              key={i}
++              x1={from.x}
++              y1={from.y}
++              x2={to.x}
++              y2={to.y}
++              stroke={isActive ? '#3b82f6' : '#e5e7eb'}
++              strokeWidth={isActive ? 1.5 : 0.5}
++              opacity={isActive ? 0.9 : 0.5}
++            />
++          )
++        })}
++        {/* Nodes */}
++        {nodes.map(node => {
++          const isActive = activeTech === node.id
++          return (
++            <g key={node.id}>
++              {isActive && (
++                <circle
++                  cx={node.x}
++                  cy={node.y}
++                  r={12}
++                  fill="none"
++                  stroke="#8b5cf6"
++                  strokeWidth={0.5}
++                  opacity={0.4}
++                />
++              )}
++              <circle
++                cx={node.x}
++                cy={node.y}
++                r={isActive ? 6 : 3}
++                fill={isActive ? '#3b82f6' : '#d1d5db'}
++                stroke={isActive ? '#3b82f6' : 'transparent'}
++                strokeWidth={2}
++                opacity={isActive ? 1 : 0.7}
++              />
++              {isActive && (
++                <text
++                  x={node.x}
++                  y={node.y - 14}
++                  textAnchor="middle"
++                  fill="#3b82f6"
++                  fontSize="10"
++                  fontFamily="system-ui"
++                >
++                  {node.id}
++                </text>
++              )}
++            </g>
++          )
++        })}
++      </svg>
++    </div>
++  )
++}
++
++export default function ProjectsSection({ lang }: ProjectsSectionProps) {
++  const [filter, setFilter] = useState<'all' | 'web' | 'ai'>('all')
++  const [hoveredTech, setHoveredTech] = useState<string | null>(null)
++  const [expandedProject, setExpandedProject] = useState<string | null>(null)
++  const t = portfolioTranslations[lang].projects
++
++  const filtered = projects.filter(p => filter === 'all' || p.category === filter)
++
++  return (
++    <section id="projects" className="relative py-24 md:py-32 bg-gray-50/50">
++      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
++        {/* Header */}
++        <motion.div
++          className="text-center mb-12"
++          initial={{ opacity: 0, y: 20 }}
++          whileInView={{ opacity: 1, y: 0 }}
++          viewport={{ once: true }}
++        >
++          <h2 className="text-3xl md:text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
++            {t.title}
++          </h2>
++          <p className="text-gray-500 text-lg max-w-xl mx-auto">
++            {t.subtitle}
++          </p>
++        </motion.div>
++
++        {/* Filter */}
++        <div className="flex items-center justify-center gap-2 mb-12">
++          {(['all', 'web', 'ai'] as const).map(cat => (
++            <button
++              key={cat}
++              onClick={() => setFilter(cat)}
++              className={`px-4 py-2 rounded-lg text-sm transition-all ${
++                filter === cat
++                  ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
++                  : 'text-gray-500 hover:text-blue-600 border border-gray-200 hover:border-blue-300 hover:bg-blue-50'
++              }`}
++            >
++              {cat === 'all' ? t.filterAll : cat === 'web' ? t.filterWeb : t.filterAI}
++            </button>
++          ))}
++        </div>
++
++        <div className="flex flex-col lg:flex-row gap-8 items-start">
++          {/* Graph */}
++          <TechGraph activeTech={hoveredTech} />
++
++          {/* Cards */}
++          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-5">
++            <AnimatePresence mode="popLayout">
++              {filtered.map(project => (
++                <motion.div
++                  key={project.id}
++                  layout
++                  initial={{ opacity: 0, scale: 0.95 }}
++                  animate={{ opacity: 1, scale: 1 }}
++                  exit={{ opacity: 0, scale: 0.95 }}
++                  className="rounded-xl border border-gray-200 bg-white overflow-hidden hover:border-blue-300 hover:shadow-lg hover:shadow-blue-50 transition-all duration-300 group"
++                  onMouseEnter={() => setHoveredTech(project.technologies[0])}
++                  onMouseLeave={() => setHoveredTech(null)}
++                >
++                  {/* Image */}
++                  <div className="h-40 bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center relative overflow-hidden">
++                    <div
++                      className="absolute inset-0 opacity-5"
++                      style={{
++                        backgroundImage: 'linear-gradient(rgba(59,130,246,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(59,130,246,0.5) 1px, transparent 1px)',
++                        backgroundSize: '30px 30px',
++                      }}
++                    />
++                    <div className="text-3xl opacity-30">
++                      {project.category === 'web' ? '🌐' : '🤖'}
++                    </div>
++                    <div className="absolute top-3 right-3 px-2 py-1 rounded-full text-xs bg-white/90 border border-gray-200 text-blue-600 font-medium shadow-sm">
++                      {project.category.toUpperCase()}
++                    </div>
++                  </div>
++
++                  <div className="p-5">
++                    <h3 className="text-gray-900 font-semibold text-lg mb-2 group-hover:text-blue-600 transition-colors">
++                      {lang === 'ar' ? project.titleAr : project.title}
++                    </h3>
++                    <p className="text-gray-500 text-sm mb-3 line-clamp-2">
++                      {lang === 'ar' ? project.descriptionAr : project.description}
++                    </p>
++
++                    {/* Tech tags */}
++                    <div className="flex flex-wrap gap-1.5 mb-4">
++                      {project.technologies.slice(0, 4).map(tech => (
++                        <span
++                          key={tech}
++                          className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-600 border border-blue-100"
++                          onMouseEnter={() => setHoveredTech(tech)}
++                        >
++                          {tech}
++                        </span>
++                      ))}
++                      {project.technologies.length > 4 && (
++                        <span className="px-2 py-0.5 rounded-full text-xs text-gray-400">
++                          +{project.technologies.length - 4}
++                        </span>
++                      )}
++                    </div>
++
++                    {/* Expand for challenges */}
++                    <button
++                      onClick={() => setExpandedProject(expandedProject === project.id ? null : project.id)}
++                      className="text-sm text-purple-500 hover:text-purple-700 flex items-center gap-1 transition-colors mb-3"
++                    >
++                      <ChevronRight className={`w-3 h-3 transition-transform ${expandedProject === project.id ? 'rotate-90' : ''}`} />
++                      Challenges & Solutions
++                    </button>
++
++                    <AnimatePresence>
++                      {expandedProject === project.id && (
++                        <motion.div
++                          initial={{ height: 0, opacity: 0 }}
++                          animate={{ height: 'auto', opacity: 1 }}
++                          exit={{ height: 0, opacity: 0 }}
++                          className="overflow-hidden mb-3"
++                        >
++                          <div className="space-y-2 text-xs">
++                            {(lang === 'ar' ? project.challengesAr : project.challenges).map((challenge, i) => (
++                              <div key={i} className="flex gap-2">
++                                <span className="text-purple-500 mt-0.5">▸</span>
++                                <span className="text-gray-600">{challenge}</span>
++                              </div>
++                            ))}
++                          </div>
++                        </motion.div>
++                      )}
++                    </AnimatePresence>
++
++                    {/* Links */}
++                    <div className="flex items-center gap-3 pt-3 border-t border-gray-100">
++                      <a href={project.github} className="text-gray-400 hover:text-blue-600 transition-colors">
++                        <Github className="w-4 h-4" />
++                      </a>
++                      {project.live && (
++                        <a href={project.live} className="text-gray-400 hover:text-purple-600 transition-colors">
++                          <ExternalLink className="w-4 h-4" />
++                        </a>
++                      )}
++                    </div>
++                  </div>
++                </motion.div>
++              ))}
++            </AnimatePresence>
++          </div>
++        </div>
++      </div>
++    </section>
++  )
++}
+diff --git a/app/portfolio/components/SkillsSection.tsx b/app/portfolio/components/SkillsSection.tsx
+new file mode 100644
+index 0000000..0a8d947
+--- /dev/null
++++ b/app/portfolio/components/SkillsSection.tsx
+@@ -0,0 +1,135 @@
++"use client"
++
++import { useState } from 'react'
++import { motion } from 'framer-motion'
++import { useInView } from 'framer-motion'
++import { useRef } from 'react'
++import { skills, skillCategories } from '../data/skills'
++import type { PortfolioLang } from '../data/i18n'
++import { portfolioTranslations } from '../data/i18n'
++
++interface SkillsSectionProps {
++  lang: PortfolioLang
++}
++
++function SkillBar({ name, level, delay }: { name: string; level: number; delay: number }) {
++  const ref = useRef(null)
++  const isInView = useInView(ref, { once: true, margin: '-50px' })
++
++  return (
++    <div ref={ref} className="group">
++      <div className="flex items-center justify-between mb-1.5">
++        <span className="text-sm text-gray-700">{name}</span>
++        <span className="text-xs text-blue-600">{level}%</span>
++      </div>
++      <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
++        <motion.div
++          className="h-full rounded-full"
++          style={{
++            background: 'linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%)',
++          }}
++          initial={{ width: 0 }}
++          animate={isInView ? { width: `${level}%` } : { width: 0 }}
++          transition={{ duration: 1, delay, ease: [0.22, 1, 0.36, 1] }}
++        />
++      </div>
++    </div>
++  )
++}
++
++export default function SkillsSection({ lang }: SkillsSectionProps) {
++  const [activeCategory, setActiveCategory] = useState<string>('frontend')
++  const t = portfolioTranslations[lang].skills
++
++  const categoryLabels: Record<string, string> = {
++    frontend: t.frontend,
++    backend: t.backend,
++    ai: t.ai,
++    tools: t.tools,
++    design: t.design,
++  }
++
++  const filteredSkills = skills.filter(s => s.category === activeCategory)
++
++  return (
++    <section id="skills" className="relative py-24 md:py-32 bg-white">
++      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
++        {/* Header */}
++        <motion.div
++          className="text-center mb-12"
++          initial={{ opacity: 0, y: 20 }}
++          whileInView={{ opacity: 1, y: 0 }}
++          viewport={{ once: true }}
++        >
++          <h2 className="text-3xl md:text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
++            {t.title}
++          </h2>
++          <p className="text-gray-500 text-lg max-w-xl mx-auto">
++            {t.subtitle}
++          </p>
++        </motion.div>
++
++        {/* Category tabs */}
++        <div className="flex flex-wrap items-center justify-center gap-2 mb-12">
++          {skillCategories.map(cat => (
++            <button
++              key={cat.id}
++              onClick={() => setActiveCategory(cat.id)}
++              className={`px-4 py-2 rounded-lg text-sm transition-all ${
++                activeCategory === cat.id
++                  ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
++                  : 'text-gray-500 border border-gray-200 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50'
++              }`}
++            >
++              {categoryLabels[cat.id]}
++            </button>
++          ))}
++        </div>
++
++        {/* Skills grid */}
++        <motion.div
++          key={activeCategory}
++          className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-5 max-w-3xl mx-auto"
++          initial={{ opacity: 0, y: 10 }}
++          animate={{ opacity: 1, y: 0 }}
++          transition={{ duration: 0.3 }}
++        >
++          {filteredSkills.map((skill, i) => (
++            <SkillBar
++              key={skill.name}
++              name={skill.name}
++              level={skill.level}
++              delay={i * 0.05}
++            />
++          ))}
++        </motion.div>
++
++        {/* Overall stats */}
++        <motion.div
++          className="mt-16 grid grid-cols-2 md:grid-cols-4 gap-4"
++          initial={{ opacity: 0, y: 20 }}
++          whileInView={{ opacity: 1, y: 0 }}
++          viewport={{ once: true }}
++          transition={{ delay: 0.3 }}
++        >
++          {[
++            { label: 'Technologies', value: '30+' },
++            { label: 'Projects', value: '15+' },
++            { label: 'Years Coding', value: '4+' },
++            { label: 'Events Managed', value: '10+' },
++          ].map(stat => (
++            <div
++              key={stat.label}
++              className="text-center p-4 rounded-xl border border-gray-200 bg-white shadow-sm"
++            >
++              <div className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
++                {stat.value}
++              </div>
++              <div className="text-xs text-gray-500 mt-1">{stat.label}</div>
++            </div>
++          ))}
++        </motion.div>
++      </div>
++    </section>
++  )
++}
+diff --git a/app/portfolio/components/Timeline.tsx b/app/portfolio/components/Timeline.tsx
+new file mode 100644
+index 0000000..0b02546
+--- /dev/null
++++ b/app/portfolio/components/Timeline.tsx
+@@ -0,0 +1,119 @@
++"use client"
++
++import { motion } from 'framer-motion'
++import { useInView } from 'framer-motion'
++import { useRef } from 'react'
++import { timelineData } from '../data/timeline'
++import type { PortfolioLang } from '../data/i18n'
++import { portfolioTranslations } from '../data/i18n'
++
++interface TimelineProps {
++  lang: PortfolioLang
++}
++
++function TimelineCard({ item, index, lang }: { item: typeof timelineData[0]; index: number; lang: PortfolioLang }) {
++  const ref = useRef(null)
++  const isInView = useInView(ref, { once: true, margin: '-100px' })
++  const isLeft = index % 2 === 0
++
++  return (
++    <motion.div
++      ref={ref}
++      className={`flex items-center gap-4 md:gap-8 ${isLeft ? 'md:flex-row' : 'md:flex-row-reverse'} flex-row`}
++      initial={{ opacity: 0, x: isLeft ? -50 : 50 }}
++      animate={isInView ? { opacity: 1, x: 0 } : {}}
++      transition={{ type: 'spring', stiffness: 100, damping: 20, delay: 0.1 }}
++    >
++      {/* Card */}
++      <div className={`flex-1 ${isLeft ? 'md:text-right' : 'md:text-left'} text-left`}>
++        <motion.div
++          className="p-5 rounded-xl border border-gray-200 bg-white/80 backdrop-blur-sm hover:border-blue-300 hover:shadow-lg hover:shadow-blue-50 transition-all duration-300 group"
++          whileHover={{ scale: 1.02 }}
++        >
++          <div className="flex items-center gap-2 mb-2">
++            <span className="text-2xl">{item.icon}</span>
++            <span className="text-blue-600 font-medium text-sm">{item.year}</span>
++          </div>
++          <h3 className="text-gray-900 font-semibold text-lg mb-1">
++            {lang === 'ar' ? item.titleAr : item.title}
++          </h3>
++          <p className="text-gray-500 text-sm leading-relaxed">
++            {lang === 'ar' ? item.descriptionAr : item.description}
++          </p>
++          <div className="mt-3">
++            <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
++              item.type === 'education' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
++              item.type === 'work' ? 'bg-purple-50 text-purple-600 border border-purple-200' :
++              item.type === 'achievement' ? 'bg-amber-50 text-amber-600 border border-amber-200' :
++              'bg-violet-50 text-violet-600 border border-violet-200'
++            }`}>
++              {item.type}
++            </span>
++          </div>
++        </motion.div>
++      </div>
++
++      {/* Node with pulse */}
++      <div className="relative flex-shrink-0 hidden md:flex flex-col items-center">
++        <motion.div
++          className="w-4 h-4 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 border-4 border-white z-10 shadow-md"
++          initial={{ scale: 0 }}
++          animate={isInView ? { scale: 1 } : {}}
++          transition={{ type: 'spring', stiffness: 200, delay: 0.2 }}
++        />
++        {/* Pulse ring */}
++        <motion.div
++          className="absolute w-8 h-8 rounded-full border border-blue-300"
++          initial={{ scale: 0, opacity: 0 }}
++          animate={isInView ? { scale: [0.5, 1.5], opacity: [0.5, 0] } : {}}
++          transition={{ duration: 1.5, repeat: Infinity, delay: 0.5 }}
++        />
++      </div>
++
++      {/* Spacer for alignment */}
++      <div className="flex-1 hidden md:block" />
++    </motion.div>
++  )
++}
++
++export default function Timeline({ lang }: TimelineProps) {
++  const t = portfolioTranslations[lang].timeline
++
++  return (
++    <section id="about" className="relative py-24 md:py-32 bg-gray-50/50">
++      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
++        {/* Header */}
++        <motion.div
++          className="text-center mb-16"
++          initial={{ opacity: 0, y: 20 }}
++          whileInView={{ opacity: 1, y: 0 }}
++          viewport={{ once: true }}
++          transition={{ duration: 0.5 }}
++        >
++          <h2 className="text-3xl md:text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
++            {t.title}
++          </h2>
++          <p className="text-gray-500 text-lg max-w-xl mx-auto">
++            {t.subtitle}
++          </p>
++        </motion.div>
++
++        {/* Timeline */}
++        <div className="relative">
++          {/* Center line */}
++          <div className="absolute left-4 md:left-1/2 top-0 bottom-0 w-px hidden md:block"
++            style={{
++              background: 'linear-gradient(to bottom, transparent, #3b82f6 10%, #8b5cf6 90%, transparent)',
++            }}
++          />
++
++          <div className="space-y-8 md:space-y-12">
++            {timelineData.map((item, index) => (
++              <TimelineCard key={item.id} item={item} index={index} lang={lang} />
++            ))}
++          </div>
++        </div>
++      </div>
++    </section>
++  )
++}
+diff --git a/app/portfolio/data/education.ts b/app/portfolio/data/education.ts
+new file mode 100644
+index 0000000..50c3362
+--- /dev/null
++++ b/app/portfolio/data/education.ts
+@@ -0,0 +1,70 @@
++export interface Education {
++  id: string
++  title: string
++  titleAr: string
++  institution: string
++  institutionAr: string
++  year: string
++  type: 'degree' | 'certification' | 'course'
++  description?: string
++  descriptionAr?: string
++  verifyUrl?: string
++}
++
++export const educationData: Education[] = [
++  {
++    id: 'cs-degree',
++    title: 'Computer Science',
++    titleAr: 'علوم الحاسوب',
++    institution: 'University',
++    institutionAr: 'الجامعة',
++    year: '2020 - Present',
++    type: 'degree',
++    description: 'Bachelor of Computer Science with focus on AI and Software Engineering.',
++    descriptionAr: 'بكالوريوس علوم حاسوب مع تركيز على الذكاء الاصطناعي وهندسة البرمجيات.',
++  },
++  {
++    id: 'meta-frontend',
++    title: 'Meta Frontend Developer',
++    titleAr: 'مطور واجهات Meta',
++    institution: 'Meta (Coursera)',
++    institutionAr: 'Meta (كورسيرا)',
++    year: '2023',
++    type: 'certification',
++    description: 'Professional certificate in frontend development covering React, testing, and UX.',
++    descriptionAr: 'شهادة مهنية في تطوير الواجهات تغطي React والاختبار وتجربة المستخدم.',
++  },
++  {
++    id: 'deep-learning',
++    title: 'Deep Learning Specialization',
++    titleAr: 'تخصص التعلم العميق',
++    institution: 'DeepLearning.AI (Coursera)',
++    institutionAr: 'DeepLearning.AI (كورسيرا)',
++    year: '2024',
++    type: 'certification',
++    description: 'Andrew Ng\'s deep learning specialization covering CNNs, RNNs, and transformers.',
++    descriptionAr: 'تخصص التعلم العميق من Andrew Ng يغطي CNNs وRNNs والمحولات.',
++  },
++  {
++    id: 'aws-cloud',
++    title: 'AWS Cloud Practitioner',
++    titleAr: 'ممارس AWS السحابي',
++    institution: 'Amazon Web Services',
++    institutionAr: 'أمازون ويب سيرفيسز',
++    year: '2024',
++    type: 'certification',
++    description: 'Foundational cloud computing certification.',
++    descriptionAr: 'شهادة أساسية في الحوسبة السحابية.',
++  },
++  {
++    id: 'cv-course',
++    title: 'Computer Vision with OpenCV',
++    titleAr: 'رؤية الحاسوب مع OpenCV',
++    institution: 'OpenCV University',
++    institutionAr: 'جامعة OpenCV',
++    year: '2025',
++    type: 'course',
++    description: 'Advanced computer vision techniques including object detection and image segmentation.',
++    descriptionAr: 'تقنيات رؤية حاسوب متقدمة تشمل كشف الأجسام وتجزئة الصور.',
++  },
++]
+diff --git a/app/portfolio/data/events.ts b/app/portfolio/data/events.ts
+new file mode 100644
+index 0000000..6652666
+--- /dev/null
++++ b/app/portfolio/data/events.ts
+@@ -0,0 +1,88 @@
++export interface Event {
++  id: string
++  title: string
++  titleAr: string
++  description: string
++  descriptionAr: string
++  date: string
++  location: string
++  locationAr: string
++  image: string
++  role: string
++  roleAr: string
++  details: string
++  detailsAr: string
++  impact?: string
++  impactAr?: string
++}
++
++export const events: Event[] = [
++  {
++    id: 'nass-tech-summit-2025',
++    title: 'NASS Tech Summit 2025',
++    titleAr: 'قمة ناس التقنية 2025',
++    description: 'Annual technology summit bringing together developers, designers, and entrepreneurs.',
++    descriptionAr: 'قمة تقنية سنوية تجمع المطورين والمصممين ورواد الأعمال.',
++    date: '2025-03-15',
++    location: 'Cairo, Egypt',
++    locationAr: 'القاهرة، مصر',
++    image: '/portfolio/events/tech-summit.jpg',
++    role: 'Event Coordinator & Technical Lead',
++    roleAr: 'منسق الفعالية والمسؤول التقني',
++    details: 'Managed a team of 15 volunteers, coordinated with 8 speakers, and handled all technical infrastructure including live streaming and registration systems.',
++    detailsAr: 'أدرت فريقاً من 15 متطوعاً، نسقت مع 8 متحدثين، وتوليت جميع البنية التقنية بما في ذلك البث المباشر وأنظمة التسجيل.',
++    impact: '500+ attendees, 95% satisfaction rate',
++    impactAr: 'أكثر من 500 حاضر، معدل رضا 95%',
++  },
++  {
++    id: 'nass-hackathon-2024',
++    title: 'NASS Hackathon 2024',
++    titleAr: 'هاكاثون ناس 2024',
++    description: '48-hour hackathon focused on AI solutions for education.',
++    descriptionAr: 'هاكاثون 48 ساعة يركز على حلول الذكاء الاصطناعي للتعليم.',
++    date: '2024-11-20',
++    location: 'Alexandria, Egypt',
++    locationAr: 'الإسكندرية، مصر',
++    image: '/portfolio/events/hackathon.jpg',
++    role: 'Lead Organizer',
++    roleAr: 'المنظم الرئيسي',
++    details: 'Organized the entire event from concept to execution. Built the judging platform, managed sponsors, and mentored 12 teams.',
++    detailsAr: 'نظمت الفعالية بالكامل من الفكرة إلى التنفيذ. بنيت منصة التحكيم، أدرت الرعاة، ووجهت 12 فريقاً.',
++    impact: '120 participants, 12 teams, 3 projects got funded',
++    impactAr: '120 مشاركاً، 12 فريقاً، 3 مشاريع حصلت على تمويل',
++  },
++  {
++    id: 'nass-workshop-web',
++    title: 'Web Development Workshop Series',
++    titleAr: 'سلسلة ورش تطوير الويب',
++    description: 'Monthly workshop series teaching modern web development from basics to advanced.',
++    descriptionAr: 'سلسلة ورش شهرية لتعليم تطوير الويب الحديث من الأساسيات إلى المتقدم.',
++    date: '2024-06-01',
++    location: 'Online + Cairo Hub',
++    locationAr: 'أونلاين + مركز القاهرة',
++    image: '/portfolio/events/workshop.jpg',
++    role: 'Instructor & Curriculum Designer',
++    roleAr: 'مدرب ومصمم المنهج',
++    details: 'Designed and delivered a 6-part workshop series covering React, Next.js, and full-stack development. Created hands-on projects for each session.',
++    detailsAr: 'صممت وقدمت سلسلة من 6 ورش تغطي React وNext.js وتطوير Full-stack. أنشأت مشاريع عملية لكل جلسة.',
++    impact: '200+ students enrolled, 85% completion rate',
++    impactAr: 'أكثر من 200 طالب مسجل، معدل إتمام 85%',
++  },
++  {
++    id: 'nass-ai-conference',
++    title: 'AI in MENA Conference',
++    titleAr: 'مؤتمر الذكاء الاصطناعي في المنطقة',
++    description: 'Regional conference exploring AI applications and opportunities in the Middle East.',
++    descriptionAr: 'مؤتمر إقليمي يستكشف تطبيقات وفرص الذكاء الاصطناعي في الشرق الأوسط.',
++    date: '2024-09-10',
++    location: 'Cairo, Egypt',
++    locationAr: 'القاهرة، مصر',
++    image: '/portfolio/events/ai-conference.jpg',
++    role: 'Technical Program Manager',
++    roleAr: 'مدير البرنامج التقني',
++    details: 'Curated the technical track, managed speaker selection, and built the conference website and registration system from scratch.',
++    detailsAr: 'أشرفت على المسار التقني، أدرت اختيار المتحدثين، وبنيت موقع المؤتمر ونظام التسجيل من الصفر.',
++    impact: '300+ attendees from 8 countries',
++    impactAr: 'أكثر من 300 حاضر من 8 دول',
++  },
++]
+diff --git a/app/portfolio/data/i18n.ts b/app/portfolio/data/i18n.ts
+new file mode 100644
+index 0000000..f9f0434
+--- /dev/null
++++ b/app/portfolio/data/i18n.ts
+@@ -0,0 +1,145 @@
++export const portfolioTranslations = {
++  en: {
++    nav: {
++      home: 'Home',
++      about: 'Journey',
++      events: 'Events',
++      projects: 'Projects',
++      skills: 'Skills',
++      education: 'Education',
++      contact: 'Contact',
++    },
++    hero: {
++      greeting: "Hi, I'm",
++      name: 'Mazen Elsaka',
++      title: 'Web Developer & AI Engineer',
++      focus: 'Next Focus: Computer Vision',
++      cta: 'View Projects',
++      download: 'Download CV',
++      subtitle: 'Building intelligent web experiences with modern technologies',
++    },
++    timeline: {
++      title: 'My Journey',
++      subtitle: 'The path that shaped who I am today',
++    },
++    events: {
++      title: 'Event Management',
++      subtitle: 'Events organized with NASS Academy',
++      viewDetails: 'View Details',
++      close: 'Close',
++    },
++    projects: {
++      title: 'Projects',
++      subtitle: 'Web & AI projects connected by technology',
++      viewProject: 'View Project',
++      liveDemo: 'Live Demo',
++      sourceCode: 'Source Code',
++      filterAll: 'All',
++      filterWeb: 'Web',
++      filterAI: 'AI',
++    },
++    skills: {
++      title: 'Skills & Technologies',
++      subtitle: 'Tools and technologies I work with',
++      frontend: 'Frontend',
++      backend: 'Backend',
++      ai: 'AI / ML',
++      tools: 'Tools',
++      design: 'Design',
++    },
++    education: {
++      title: 'Education & Credentials',
++      subtitle: 'Academic background and certifications',
++    },
++    contact: {
++      title: 'Get In Touch',
++      subtitle: "Let's build something together",
++      email: 'Email',
++      message: 'Message',
++      send: 'Send Message',
++      name: 'Your Name',
++    },
++    codeEditor: {
++      title: 'System Report',
++      tabs: {
++        about: 'about.json',
++        skills: 'skills.ts',
++        system: 'system_report.md',
++        challenges: 'challenges.log',
++      },
++    },
++  },
++  ar: {
++    nav: {
++      home: 'الرئيسية',
++      about: 'رحلتي',
++      events: 'الفعاليات',
++      projects: 'المشاريع',
++      skills: 'المهارات',
++      education: 'التعليم',
++      contact: 'تواصل',
++    },
++    hero: {
++      greeting: 'مرحباً، أنا',
++      name: 'مازن السقا',
++      title: 'مطور ويب ومهندس ذكاء اصطناعي',
++      focus: 'التركيز القادم: رؤية الحاسوب',
++      cta: 'عرض المشاريع',
++      download: 'تحميل السيرة الذاتية',
++      subtitle: 'أبني تجارب ويب ذكية بأحدث التقنيات',
++    },
++    timeline: {
++      title: 'رحلتي',
++      subtitle: 'المسار الذي شكّل من أنا اليوم',
++    },
++    events: {
++      title: 'إدارة الفعاليات',
++      subtitle: 'فعاليات نُظمت مع أكاديمية ناس',
++      viewDetails: 'عرض التفاصيل',
++      close: 'إغلاق',
++    },
++    projects: {
++      title: 'المشاريع',
++      subtitle: 'مشاريع ويب وذكاء اصطناعي مرتبطة بالتقنيات',
++      viewProject: 'عرض المشروع',
++      liveDemo: 'عرض مباشر',
++      sourceCode: 'الكود المصدري',
++      filterAll: 'الكل',
++      filterWeb: 'ويب',
++      filterAI: 'ذكاء اصطناعي',
++    },
++    skills: {
++      title: 'المهارات والتقنيات',
++      subtitle: 'الأدوات والتقنيات التي أعمل بها',
++      frontend: 'الواجهة الأمامية',
++      backend: 'الخلفية',
++      ai: 'الذكاء الاصطناعي',
++      tools: 'الأدوات',
++      design: 'التصميم',
++    },
++    education: {
++      title: 'التعليم والشهادات',
++      subtitle: 'الخلفية الأكاديمية والشهادات المهنية',
++    },
++    contact: {
++      title: 'تواصل معي',
++      subtitle: 'لنبني شيئاً معاً',
++      email: 'البريد الإلكتروني',
++      message: 'الرسالة',
++      send: 'إرسال الرسالة',
++      name: 'اسمك',
++    },
++    codeEditor: {
++      title: 'تقرير النظام',
++      tabs: {
++        about: 'about.json',
++        skills: 'skills.ts',
++        system: 'system_report.md',
++        challenges: 'challenges.log',
++      },
++    },
++  },
++}
++
++export type PortfolioLang = 'en' | 'ar'
++export type PortfolioTranslations = typeof portfolioTranslations.en
+diff --git a/app/portfolio/data/projects.ts b/app/portfolio/data/projects.ts
+new file mode 100644
+index 0000000..8ef78d2
+--- /dev/null
++++ b/app/portfolio/data/projects.ts
+@@ -0,0 +1,148 @@
++export interface Project {
++  id: string
++  title: string
++  titleAr: string
++  description: string
++  descriptionAr: string
++  category: 'web' | 'ai'
++  technologies: string[]
++  image: string
++  liveUrl?: string
++  githubUrl?: string
++  challenges: string[]
++  challengesAr: string[]
++  solutions: string[]
++  solutionsAr: string[]
++}
++
++export const projects: Project[] = [
++  {
++    id: 'itqan-platform',
++    title: 'Itqan Educational Platform',
++    titleAr: 'منصة إتقان التعليمية',
++    description: 'A comprehensive Islamic educational platform with Quran recitation assessment, course management, and real-time audio evaluation.',
++    descriptionAr: 'منصة تعليمية إسلامية شاملة مع تقييم تلاوة القرآن وإدارة الدورات والتقييم الصوتي في الوقت الفعلي.',
++    category: 'web',
++    technologies: ['Next.js', 'React', 'TypeScript', 'Tailwind CSS', 'Supabase', 'Framer Motion'],
++    image: '/portfolio/projects/itqan.png',
++    challenges: [
++      'Real-time audio streaming and processing',
++      'Complex role-based access control',
++      'Bilingual RTL/LTR support',
++    ],
++    challengesAr: [
++      'بث ومعالجة الصوت في الوقت الفعلي',
++      'نظام صلاحيات معقد',
++      'دعم ثنائي اللغة RTL/LTR',
++    ],
++    solutions: [
++      'WebRTC + custom audio pipeline',
++      'JWT-based middleware with role hierarchy',
++      'Context-driven i18n with layout switching',
++    ],
++    solutionsAr: [
++      'WebRTC مع خط أنابيب صوتي مخصص',
++      'وسيط JWT مع تسلسل الأدوار',
++      'ترجمة مبنية على السياق مع تبديل التخطيط',
++    ],
++  },
++  {
++    id: 'cv-object-detection',
++    title: 'Real-time Object Detection System',
++    titleAr: 'نظام كشف الأجسام في الوقت الفعلي',
++    description: 'Computer vision system for real-time object detection and tracking using deep learning models.',
++    descriptionAr: 'نظام رؤية حاسوبية لكشف وتتبع الأجسام في الوقت الفعلي باستخدام نماذج التعلم العميق.',
++    category: 'ai',
++    technologies: ['Python', 'OpenCV', 'TensorFlow', 'YOLO', 'NumPy'],
++    image: '/portfolio/projects/cv-detection.png',
++    challenges: [
++      'Achieving real-time inference speed',
++      'Handling varying lighting conditions',
++      'Multi-object tracking across frames',
++    ],
++    challengesAr: [
++      'تحقيق سرعة استدلال في الوقت الفعلي',
++      'التعامل مع ظروف إضاءة متغيرة',
++      'تتبع أجسام متعددة عبر الإطارات',
++    ],
++    solutions: [
++      'Model quantization and TensorRT optimization',
++      'Data augmentation with lighting variations',
++      'DeepSORT tracking algorithm integration',
++    ],
++    solutionsAr: [
++      'تكميم النموذج وتحسين TensorRT',
++      'تعزيز البيانات مع تغيرات الإضاءة',
++      'دمج خوارزمية تتبع DeepSORT',
++    ],
++  },
++  {
++    id: 'ecommerce-platform',
++    title: 'E-Commerce Platform',
++    titleAr: 'منصة تجارة إلكترونية',
++    description: 'Full-stack e-commerce solution with payment integration, inventory management, and analytics dashboard.',
++    descriptionAr: 'حل تجارة إلكترونية متكامل مع تكامل الدفع وإدارة المخزون ولوحة تحليلات.',
++    category: 'web',
++    technologies: ['React', 'Node.js', 'PostgreSQL', 'Stripe', 'Redis', 'Docker'],
++    image: '/portfolio/projects/ecommerce.png',
++    liveUrl: '#',
++    githubUrl: '#',
++    challenges: [
++      'High-concurrency cart operations',
++      'Payment webhook reliability',
++      'Inventory race conditions',
++    ],
++    challengesAr: [
++      'عمليات سلة التسوق عالية التزامن',
++      'موثوقية webhook الدفع',
++      'حالات سباق المخزون',
++    ],
++    solutions: [
++      'Redis-based session and cart caching',
++      'Idempotent webhook handlers with retry logic',
++      'Optimistic locking with PostgreSQL advisory locks',
++    ],
++    solutionsAr: [
++      'تخزين مؤقت للجلسة والسلة مبني على Redis',
++      'معالجات webhook متساوية القوة مع منطق إعادة المحاولة',
++      'قفل متفائل مع أقفال استشارية PostgreSQL',
++    ],
++  },
++  {
++    id: 'nlp-sentiment',
++    title: 'Arabic Sentiment Analysis',
++    titleAr: 'تحليل المشاعر العربية',
++    description: 'NLP model for Arabic text sentiment analysis using transformer-based architecture.',
++    descriptionAr: 'نموذج معالجة لغات طبيعية لتحليل مشاعر النصوص العربية باستخدام بنية المحولات.',
++    category: 'ai',
++    technologies: ['Python', 'PyTorch', 'Hugging Face', 'BERT', 'FastAPI'],
++    image: '/portfolio/projects/nlp-sentiment.png',
++    challenges: [
++      'Limited Arabic training data',
++      'Dialectal variation handling',
++      'Model serving latency',
++    ],
++    challengesAr: [
++      'بيانات تدريب عربية محدودة',
++      'التعامل مع تنوع اللهجات',
++      'زمن استجابة خدمة النموذج',
++    ],
++    solutions: [
++      'Transfer learning from AraBERT pre-trained model',
++      'Multi-dialect data augmentation pipeline',
++      'ONNX export with dynamic batching',
++    ],
++    solutionsAr: [
++      'نقل التعلم من نموذج AraBERT المدرب مسبقاً',
++      'خط أنابيب تعزيز بيانات متعدد اللهجات',
++      'تصدير ONNX مع التجميع الديناميكي',
++    ],
++  },
++]
++
++export const technologies = [
++  'Next.js', 'React', 'TypeScript', 'Tailwind CSS', 'Framer Motion',
++  'Node.js', 'Python', 'PostgreSQL', 'Supabase', 'Redis',
++  'Docker', 'TensorFlow', 'PyTorch', 'OpenCV', 'YOLO',
++  'Hugging Face', 'FastAPI', 'Stripe', 'NumPy', 'BERT',
++]
+diff --git a/app/portfolio/data/skills.ts b/app/portfolio/data/skills.ts
+new file mode 100644
+index 0000000..e01f84f
+--- /dev/null
++++ b/app/portfolio/data/skills.ts
+@@ -0,0 +1,58 @@
++export interface Skill {
++  name: string
++  level: number // 0-100
++  category: 'frontend' | 'backend' | 'ai' | 'tools' | 'design'
++  icon?: string
++}
++
++export const skills: Skill[] = [
++  // Frontend
++  { name: 'React', level: 95, category: 'frontend' },
++  { name: 'Next.js', level: 92, category: 'frontend' },
++  { name: 'TypeScript', level: 90, category: 'frontend' },
++  { name: 'Tailwind CSS', level: 95, category: 'frontend' },
++  { name: 'Framer Motion', level: 85, category: 'frontend' },
++  { name: 'HTML/CSS', level: 98, category: 'frontend' },
++  { name: 'JavaScript', level: 95, category: 'frontend' },
++  { name: 'shadcn/ui', level: 90, category: 'frontend' },
++
++  // Backend
++  { name: 'Node.js', level: 88, category: 'backend' },
++  { name: 'Python', level: 85, category: 'backend' },
++  { name: 'PostgreSQL', level: 82, category: 'backend' },
++  { name: 'Supabase', level: 88, category: 'backend' },
++  { name: 'REST APIs', level: 90, category: 'backend' },
++  { name: 'Redis', level: 75, category: 'backend' },
++  { name: 'FastAPI', level: 78, category: 'backend' },
++
++  // AI/ML
++  { name: 'TensorFlow', level: 75, category: 'ai' },
++  { name: 'PyTorch', level: 72, category: 'ai' },
++  { name: 'OpenCV', level: 70, category: 'ai' },
++  { name: 'Computer Vision', level: 68, category: 'ai' },
++  { name: 'NLP', level: 72, category: 'ai' },
++  { name: 'Hugging Face', level: 70, category: 'ai' },
++  { name: 'NumPy/Pandas', level: 80, category: 'ai' },
++
++  // Tools
++  { name: 'Git', level: 92, category: 'tools' },
++  { name: 'Docker', level: 78, category: 'tools' },
++  { name: 'Linux', level: 82, category: 'tools' },
++  { name: 'VS Code', level: 95, category: 'tools' },
++  { name: 'CI/CD', level: 75, category: 'tools' },
++  { name: 'Vercel', level: 88, category: 'tools' },
++
++  // Design
++  { name: 'Figma', level: 78, category: 'design' },
++  { name: 'UI/UX Design', level: 80, category: 'design' },
++  { name: 'Responsive Design', level: 92, category: 'design' },
++  { name: 'Animation Design', level: 85, category: 'design' },
++]
++
++export const skillCategories = [
++  { id: 'frontend', color: '#00d4ff' },
++  { id: 'backend', color: '#10b981' },
++  { id: 'ai', color: '#8b5cf6' },
++  { id: 'tools', color: '#f59e0b' },
++  { id: 'design', color: '#ec4899' },
++] as const
+diff --git a/app/portfolio/data/timeline.ts b/app/portfolio/data/timeline.ts
+new file mode 100644
+index 0000000..70910b7
+--- /dev/null
++++ b/app/portfolio/data/timeline.ts
+@@ -0,0 +1,83 @@
++export interface TimelineItem {
++  id: string
++  year: string
++  title: string
++  titleAr: string
++  description: string
++  descriptionAr: string
++  type: 'education' | 'work' | 'achievement' | 'milestone'
++  icon: string
++}
++
++export const timelineData: TimelineItem[] = [
++  {
++    id: 'start-coding',
++    year: '2020',
++    title: 'Started Programming Journey',
++    titleAr: 'بدأت رحلة البرمجة',
++    description: 'Wrote my first lines of code and fell in love with problem solving.',
++    descriptionAr: 'كتبت أول سطور برمجة وأحببت حل المشكلات.',
++    type: 'milestone',
++    icon: '🚀',
++  },
++  {
++    id: 'web-dev-basics',
++    year: '2021',
++    title: 'Mastered Web Fundamentals',
++    titleAr: 'أتقنت أساسيات الويب',
++    description: 'Learned HTML, CSS, JavaScript, and built my first websites.',
++    descriptionAr: 'تعلمت HTML وCSS وJavaScript وبنيت أول مواقعي.',
++    type: 'education',
++    icon: '📚',
++  },
++  {
++    id: 'react-nextjs',
++    year: '2022',
++    title: 'React & Next.js Deep Dive',
++    titleAr: 'تعمقت في React و Next.js',
++    description: 'Built full-stack applications with React, Next.js, and Node.js. Started freelancing.',
++    descriptionAr: 'بنيت تطبيقات full-stack مع React وNext.js وNode.js. بدأت العمل الحر.',
++    type: 'work',
++    icon: '⚛️',
++  },
++  {
++    id: 'nass-academy',
++    year: '2023',
++    title: 'Joined NASS Academy',
++    titleAr: 'انضممت لأكاديمية ناس',
++    description: 'Started leading event management and technical operations at NASS Academy.',
++    descriptionAr: 'بدأت قيادة إدارة الفعاليات والعمليات التقنية في أكاديمية ناس.',
++    type: 'work',
++    icon: '🎯',
++  },
++  {
++    id: 'ai-engineering',
++    year: '2024',
++    title: 'AI Engineering Path',
++    titleAr: 'مسار هندسة الذكاء الاصطناعي',
++    description: 'Expanded into AI/ML. Built models with TensorFlow and PyTorch. Started NLP projects.',
++    descriptionAr: 'توسعت في الذكاء الاصطناعي. بنيت نماذج مع TensorFlow وPyTorch. بدأت مشاريع NLP.',
++    type: 'achievement',
++    icon: '🤖',
++  },
++  {
++    id: 'itqan-platform',
++    year: '2025',
++    title: 'Built Itqan Platform',
++    titleAr: 'بنيت منصة إتقان',
++    description: 'Designed and developed a full educational platform for Quran learning with real-time assessment.',
++    descriptionAr: 'صممت وطورت منصة تعليمية كاملة لتعلم القرآن مع تقييم في الوقت الفعلي.',
++    type: 'achievement',
++    icon: '🏆',
++  },
++  {
++    id: 'computer-vision',
++    year: '2026',
++    title: 'Computer Vision Focus',
++    titleAr: 'التركيز على رؤية الحاسوب',
++    description: 'Diving deep into computer vision — object detection, image segmentation, and real-time processing.',
++    descriptionAr: 'أتعمق في رؤية الحاسوب — كشف الأجسام وتجزئة الصور والمعالجة في الوقت الفعلي.',
++    type: 'milestone',
++    icon: '👁️',
++  },
++]
+diff --git a/app/portfolio/layout.tsx b/app/portfolio/layout.tsx
+new file mode 100644
+index 0000000..325e9a5
+--- /dev/null
++++ b/app/portfolio/layout.tsx
+@@ -0,0 +1,36 @@
++import type { Metadata } from 'next'
++import { JetBrains_Mono, Inter } from 'next/font/google'
++import { ThemeProvider } from '@/components/theme-provider'
++
++const jetbrains = JetBrains_Mono({
++  subsets: ['latin'],
++  weight: ['400', '500', '600', '700'],
++  variable: '--font-mono',
++})
++
++const inter = Inter({
++  subsets: ['latin'],
++  weight: ['300', '400', '500', '600', '700', '800', '900'],
++  variable: '--font-inter',
++})
++
++export const metadata: Metadata = {
++  title: 'Mazen Elsaka | Web Developer & AI Engineer',
++  description: 'Personal portfolio of Mazen Elsaka — Web Developer and AI Engineer specializing in modern web technologies and computer vision.',
++}
++
++export default function PortfolioLayout({
++  children,
++}: {
++  children: React.ReactNode
++}) {
++  return (
++    <div
++      lang="en"
++      dir="ltr"
++      className={`${jetbrains.variable} ${inter.variable} portfolio-root`}
++    >
++      {children}
++    </div>
++  )
++}
+diff --git a/app/portfolio/lib/animations.ts b/app/portfolio/lib/animations.ts
+new file mode 100644
+index 0000000..5a1fb79
+--- /dev/null
++++ b/app/portfolio/lib/animations.ts
+@@ -0,0 +1,76 @@
++import type { Variants } from 'framer-motion'
++
++export const fadeInUp: Variants = {
++  hidden: { opacity: 0, y: 30 },
++  visible: {
++    opacity: 1,
++    y: 0,
++    transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] },
++  },
++}
++
++export const fadeIn: Variants = {
++  hidden: { opacity: 0 },
++  visible: {
++    opacity: 1,
++    transition: { duration: 0.5 },
++  },
++}
++
++export const staggerContainer: Variants = {
++  hidden: { opacity: 0 },
++  visible: {
++    opacity: 1,
++    transition: {
++      staggerChildren: 0.1,
++      delayChildren: 0.2,
++    },
++  },
++}
++
++export const scaleIn: Variants = {
++  hidden: { opacity: 0, scale: 0.9 },
++  visible: {
++    opacity: 1,
++    scale: 1,
++    transition: { type: 'spring', stiffness: 200, damping: 20 },
++  },
++}
++
++export const slideInLeft: Variants = {
++  hidden: { opacity: 0, x: -50 },
++  visible: {
++    opacity: 1,
++    x: 0,
++    transition: { type: 'spring', stiffness: 100, damping: 20 },
++  },
++}
++
++export const slideInRight: Variants = {
++  hidden: { opacity: 0, x: 50 },
++  visible: {
++    opacity: 1,
++    x: 0,
++    transition: { type: 'spring', stiffness: 100, damping: 20 },
++  },
++}
++
++export const cardHover = {
++  rest: { scale: 1, boxShadow: '0 0 0 rgba(0, 212, 255, 0)' },
++  hover: {
++    scale: 1.02,
++    boxShadow: '0 0 30px rgba(0, 212, 255, 0.15)',
++    transition: { type: 'spring', stiffness: 300, damping: 20 },
++  },
++}
++
++export const glowPulse: Variants = {
++  animate: {
++    boxShadow: [
++      '0 0 20px rgba(0, 212, 255, 0.1)',
++      '0 0 40px rgba(0, 212, 255, 0.2)',
++      '0 0 20px rgba(0, 212, 255, 0.1)',
++    ],
++    transition: { duration: 3, repeat: Infinity, ease: 'easeInOut' },
++  },
++}
+diff --git a/app/portfolio/page.tsx b/app/portfolio/page.tsx
+new file mode 100644
+index 0000000..52ccba5
+--- /dev/null
++++ b/app/portfolio/page.tsx
+@@ -0,0 +1,41 @@
++"use client"
++
++import { useState } from 'react'
++import NeuralBackground from './components/NeuralBackground'
++import Navigation from './components/Navigation'
++import Hero from './components/Hero'
++import Timeline from './components/Timeline'
++import EventsGrid from './components/EventsGrid'
++import ProjectsSection from './components/ProjectsSection'
++import CodeEditor from './components/CodeEditor'
++import SkillsSection from './components/SkillsSection'
++import Education from './components/Education'
++import Contact from './components/Contact'
++import type { PortfolioLang } from './data/i18n'
++
++export default function PortfolioPage() {
++  const [lang, setLang] = useState<PortfolioLang>('en')
++
++  return (
++    <div
++      className="min-h-screen bg-white text-gray-900 font-[family-name:var(--font-inter)]"
++      dir={lang === 'ar' ? 'rtl' : 'ltr'}
++    >
++      {/* Brain Neural Network Background */}
++      <NeuralBackground />
++
++      {/* Navigation */}
++      <Navigation lang={lang} onLangChange={setLang} />
++
++      {/* Sections */}
++      <Hero lang={lang} />
++      <Timeline lang={lang} />
++      <EventsGrid lang={lang} />
++      <ProjectsSection lang={lang} />
++      <CodeEditor lang={lang} />
++      <SkillsSection lang={lang} />
++      <Education lang={lang} />
++      <Contact lang={lang} />
++    </div>
++  )
++}
+diff --git a/components/ui/mac-os-dock.tsx b/components/ui/mac-os-dock.tsx
+new file mode 100644
+index 0000000..b610878
+--- /dev/null
++++ b/components/ui/mac-os-dock.tsx
+@@ -0,0 +1,324 @@
++'use client';
++
++import React, { useState, useRef, useCallback, useEffect } from 'react';
++
++// Types for the component
++interface DockApp {
++  id: string;
++  name: string;
++  icon: string;
++}
++
++interface MacOSDockProps {
++  apps: DockApp[];
++  onAppClick: (appId: string) => void;
++  openApps?: string[];
++  className?: string;
++}
++
++const MacOSDock: React.FC<MacOSDockProps> = ({ 
++  apps, 
++  onAppClick, 
++  openApps = [],
++  className = ''
++}) => {
++  const [mouseX, setMouseX] = useState<number | null>(null);
++  const [currentScales, setCurrentScales] = useState<number[]>(apps.map(() => 1));
++  const [currentPositions, setCurrentPositions] = useState<number[]>([]);
++  const dockRef = useRef<HTMLDivElement>(null);
++  const iconRefs = useRef<(HTMLDivElement | null)[]>([]);
++  const animationFrameRef = useRef<number | undefined>(undefined);
++  const lastMouseMoveTime = useRef<number>(0);
++
++  // Responsive size calculations based on viewport
++  const getResponsiveConfig = useCallback(() => {
++    if (typeof window === 'undefined') {
++      return { baseIconSize: 64, maxScale: 1.6, effectWidth: 240 };
++    }
++
++    // Base calculations on smaller dimension for better mobile experience
++    const smallerDimension = Math.min(window.innerWidth, window.innerHeight);
++    
++    // Scale icon size based on screen size
++    if (smallerDimension < 480) {
++      // Mobile phones
++      return {
++        baseIconSize: Math.max(40, smallerDimension * 0.08),
++        maxScale: 1.4,
++        effectWidth: smallerDimension * 0.4
++      };
++    } else if (smallerDimension < 768) {
++      // Tablets
++      return {
++        baseIconSize: Math.max(48, smallerDimension * 0.07),
++        maxScale: 1.5,
++        effectWidth: smallerDimension * 0.35
++      };
++    } else if (smallerDimension < 1024) {
++      // Small laptops
++      return {
++        baseIconSize: Math.max(56, smallerDimension * 0.06),
++        maxScale: 1.6,
++        effectWidth: smallerDimension * 0.3
++      };
++    } else {
++      // Desktop and large screens
++      return {
++        baseIconSize: Math.max(64, Math.min(80, smallerDimension * 0.05)),
++        maxScale: 1.8,
++        effectWidth: 300
++      };
++    }
++  }, []);
++
++  const [config, setConfig] = useState(getResponsiveConfig);
++  const { baseIconSize, maxScale, effectWidth } = config;
++  const minScale = 1.0;
++  const baseSpacing = Math.max(4, baseIconSize * 0.08);
++
++  // Update config on window resize
++  useEffect(() => {
++    const handleResize = () => {
++      setConfig(getResponsiveConfig());
++    };
++
++    window.addEventListener('resize', handleResize);
++    return () => window.removeEventListener('resize', handleResize);
++  }, [getResponsiveConfig]);
++
++  // Authentic macOS cosine-based magnification algorithm
++  const calculateTargetMagnification = useCallback((mousePosition: number | null) => {
++    if (mousePosition === null) {
++      return apps.map(() => minScale);
++    }
++
++    return apps.map((_, index) => {
++      const normalIconCenter = (index * (baseIconSize + baseSpacing)) + (baseIconSize / 2);
++      const minX = mousePosition - (effectWidth / 2);
++      const maxX = mousePosition + (effectWidth / 2);
++      
++      if (normalIconCenter < minX || normalIconCenter > maxX) {
++        return minScale;
++      }
++      
++      const theta = ((normalIconCenter - minX) / effectWidth) * 2 * Math.PI;
++      const cappedTheta = Math.min(Math.max(theta, 0), 2 * Math.PI);
++      const scaleFactor = (1 - Math.cos(cappedTheta)) / 2;
++      
++      return minScale + (scaleFactor * (maxScale - minScale));
++    });
++  }, [apps, baseIconSize, baseSpacing, effectWidth, maxScale, minScale]);
++
++  // Calculate positions based on current scales
++  const calculatePositions = useCallback((scales: number[]) => {
++    let currentX = 0;
++    
++    return scales.map((scale) => {
++      const scaledWidth = baseIconSize * scale;
++      const centerX = currentX + (scaledWidth / 2);
++      currentX += scaledWidth + baseSpacing;
++      return centerX;
++    });
++  }, [baseIconSize, baseSpacing]);
++
++  // Initialize positions
++  useEffect(() => {
++    const initialScales = apps.map(() => minScale);
++    const initialPositions = calculatePositions(initialScales);
++    setCurrentScales(initialScales);
++    setCurrentPositions(initialPositions);
++  }, [apps, calculatePositions, minScale, config]);
++
++  // Animation loop
++  const animateToTarget = useCallback(() => {
++    const targetScales = calculateTargetMagnification(mouseX);
++    const targetPositions = calculatePositions(targetScales);
++    const lerpFactor = mouseX !== null ? 0.2 : 0.12;
++
++    setCurrentScales(prevScales => {
++      return prevScales.map((currentScale, index) => {
++        const diff = targetScales[index] - currentScale;
++        return currentScale + (diff * lerpFactor);
++      });
++    });
++
++    setCurrentPositions(prevPositions => {
++      return prevPositions.map((currentPos, index) => {
++        const diff = targetPositions[index] - currentPos;
++        return currentPos + (diff * lerpFactor);
++      });
++    });
++
++    const scalesNeedUpdate = currentScales.some((scale, index) => 
++      Math.abs(scale - targetScales[index]) > 0.002
++    );
++    const positionsNeedUpdate = currentPositions.some((pos, index) => 
++      Math.abs(pos - targetPositions[index]) > 0.1
++    );
++    
++    if (scalesNeedUpdate || positionsNeedUpdate || mouseX !== null) {
++      animationFrameRef.current = requestAnimationFrame(animateToTarget);
++    }
++  }, [mouseX, calculateTargetMagnification, calculatePositions, currentScales, currentPositions]);
++
++  // Start/stop animation loop
++  useEffect(() => {
++    if (animationFrameRef.current) {
++      cancelAnimationFrame(animationFrameRef.current);
++    }
++    animationFrameRef.current = requestAnimationFrame(animateToTarget);
++
++    return () => {
++      if (animationFrameRef.current) {
++        cancelAnimationFrame(animationFrameRef.current);
++      }
++    };
++  }, [animateToTarget]);
++
++  // Throttled mouse movement handler
++  const handleMouseMove = useCallback((e: React.MouseEvent) => {
++    const now = performance.now();
++    
++    if (now - lastMouseMoveTime.current < 16) {
++      return;
++    }
++    
++    lastMouseMoveTime.current = now;
++    
++    if (dockRef.current) {
++      const rect = dockRef.current.getBoundingClientRect();
++      const padding = Math.max(8, baseIconSize * 0.12);
++      setMouseX(e.clientX - rect.left - padding);
++    }
++  }, [baseIconSize]);
++
++  const handleMouseLeave = useCallback(() => {
++    setMouseX(null);
++  }, []);
++
++  const createBounceAnimation = (element: HTMLElement) => {
++    const bounceHeight = Math.max(-8, -baseIconSize * 0.15);
++    element.style.transition = 'transform 0.2s ease-out';
++    element.style.transform = `translateY(${bounceHeight}px)`;
++    
++    setTimeout(() => {
++      element.style.transform = 'translateY(0px)';
++    }, 200);
++  };
++
++  const handleAppClick = (appId: string, index: number) => {
++    if (iconRefs.current[index]) {
++      if (typeof window !== 'undefined' && (window as any).gsap) {
++        const gsap = (window as any).gsap;
++        const bounceHeight = currentScales[index] > 1.3 ? -baseIconSize * 0.2 : -baseIconSize * 0.15;
++        
++        gsap.to(iconRefs.current[index], {
++          y: bounceHeight,
++          duration: 0.2,
++          ease: 'power2.out',
++          yoyo: true,
++          repeat: 1,
++          transformOrigin: 'bottom center'
++        });
++      } else {
++        createBounceAnimation(iconRefs.current[index]!);
++      }
++    }
++    
++    onAppClick(appId);
++  };
++
++  // Calculate content width
++  const contentWidth = currentPositions.length > 0 
++    ? Math.max(...currentPositions.map((pos, index) => 
++        pos + (baseIconSize * currentScales[index]) / 2
++      ))
++    : (apps.length * (baseIconSize + baseSpacing)) - baseSpacing;
++
++  const padding = Math.max(8, baseIconSize * 0.12);
++
++  return (
++    <div 
++      ref={dockRef}
++      className={`backdrop-blur-md ${className}`}
++      style={{
++        width: `${contentWidth + padding * 2}px`,
++        background: 'rgba(5, 5, 5, 0.85)',
++        borderRadius: `${Math.max(12, baseIconSize * 0.4)}px`,
++        border: '1px solid rgba(0, 255, 65, 0.15)',
++        boxShadow: `
++          0 ${Math.max(4, baseIconSize * 0.1)}px ${Math.max(16, baseIconSize * 0.4)}px rgba(0, 0, 0, 0.6),
++          0 ${Math.max(2, baseIconSize * 0.05)}px ${Math.max(8, baseIconSize * 0.2)}px rgba(0, 0, 0, 0.4),
++          0 0 20px rgba(0, 255, 65, 0.05),
++          inset 0 1px 0 rgba(0, 255, 65, 0.1),
++          inset 0 -1px 0 rgba(0, 0, 0, 0.3)
++        `,
++        padding: `${padding}px`
++      }}
++      onMouseMove={handleMouseMove}
++      onMouseLeave={handleMouseLeave}
++    >
++      <div 
++        className="relative"
++        style={{
++          height: `${baseIconSize}px`,
++          width: '100%'
++        }}
++      >
++        {apps.map((app, index) => {
++          const scale = currentScales[index];
++          const position = currentPositions[index] || 0;
++          const scaledSize = baseIconSize * scale;
++          
++          return (
++            <div
++              key={app.id}
++              ref={(el) => { iconRefs.current[index] = el; }}
++              className="absolute cursor-pointer flex flex-col items-center justify-end"
++              title={app.name}
++              onClick={() => handleAppClick(app.id, index)}
++              style={{
++                left: `${position - scaledSize / 2}px`,
++                bottom: '0px',
++                width: `${scaledSize}px`,
++                height: `${scaledSize}px`,
++                transformOrigin: 'bottom center',
++                zIndex: Math.round(scale * 10)
++              }}
++            >
++              <img
++                src={app.icon}
++                alt={app.name}
++                width={scaledSize}
++                height={scaledSize}
++                className="object-contain"
++                style={{
++                  filter: `drop-shadow(0 ${scale > 1.2 ? Math.max(2, baseIconSize * 0.05) : Math.max(1, baseIconSize * 0.03)}px ${scale > 1.2 ? Math.max(4, baseIconSize * 0.1) : Math.max(2, baseIconSize * 0.06)}px rgba(0,0,0,${0.2 + (scale - 1) * 0.15}))`
++                }}
++              />
++              
++              {/* App Indicator Dot */}
++              {openApps.includes(app.id) && (
++                <div 
++                  className="absolute"
++                  style={{
++                    bottom: `${Math.max(-2, -baseIconSize * 0.05)}px`,
++                    left: '50%',
++                    transform: 'translateX(-50%)',
++                    width: `${Math.max(3, baseIconSize * 0.06)}px`,
++                    height: `${Math.max(3, baseIconSize * 0.06)}px`,
++                    borderRadius: '50%',
++                    backgroundColor: 'rgba(0, 255, 65, 0.9)',
++                    boxShadow: '0 0 6px rgba(0, 255, 65, 0.5)',
++                  }}
++                />
++              )}
++            </div>
++          );
++        })}
++      </div>
++    </div>
++  );
++};
++
++export default MacOSDock;
+diff --git a/middleware.ts b/middleware.ts
+index 14e4d77..dca3c5e 100644
+--- a/middleware.ts
++++ b/middleware.ts
+@@ -1,6 +1,6 @@
+ import { NextRequest, NextResponse } from "next/server"
+ 
+-const publicPaths = ["/", "/about", "/contact", "/sitemap-page", "/login", "/login-admin", "/register", "/reader-register", "/forgot-password", "/reset-password", "/verify", "/privacy", "/terms", "/maintenance"]
++const publicPaths = ["/", "/about", "/contact", "/sitemap-page", "/login", "/login-admin", "/register", "/reader-register", "/forgot-password", "/reset-password", "/verify", "/privacy", "/terms", "/maintenance", "/portfolio"]
+ const apiPublicPaths = ["/api/auth", "/api/admin/homepage", "/api/admin/analytics", "/api/uploadthing"]
+ 
+ // Academy public paths (for public lessons and invitations)

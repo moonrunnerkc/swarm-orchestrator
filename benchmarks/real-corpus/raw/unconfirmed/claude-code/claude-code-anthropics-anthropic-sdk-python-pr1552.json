@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1552",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1552,
+    "headSha": "451cdedaa65e142cd87eb2066f5a9c3fd364c959",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824",
+    "title": "fix: wrap mid-stream httpx.TransportError as APIConnectionError",
+    "body": "## What\n\nWrap mid-stream `httpx.TransportError` (during SSE body iteration) as `anthropic.APIConnectionError`, in both `Stream._iter_events` and `AsyncStream._iter_events`.\n\n## Why\n\nMid-stream transport drops (`RemoteProtocolError`, `ReadError`, `ConnectError`) currently leak through as bare `httpx` exceptions because the SDK's wrapping in `_base_client._request` only covers the *pre-body* request. Once the SSE 200 is sent and body iteration starts, there's no try/except in `_iter_events`.\n\nThis means customers' standard retry ladders:\n```python\nexcept anthropic.APIConnectionError:\n    retry()\n````\n…miss mid-stream drops. They have to know to also catch `httpx.TransportError`, which nobody discovers without debugging.\n\n## Changes\n\n- `Stream._iter_events` / `AsyncStream._iter_events`: wrap `httpx.TransportError` as `APIConnectionError` (same pattern as `_base_client.py:1104`); let `TimeoutException` pass through unchanged so it doesn't get double-wrapped (`APITimeoutError` is already an `APIConnectionError` subclass).\n- 2 tests: mid-stream `RemoteProtocolError` is wrapped (with `__cause__` preserved); mid-stream `ReadTimeout` passes through.\n\n## Not in this PR\n\nThe follow-up — auto-retry the full request inside `MessageStream.get_final_message()` on mid-stream `APIConnectionError` — is a larger behavior change. This PR just makes the exception catchable with the right type.\n",
+    "author": "blut-agent",
+    "headRef": "fix/stream-transport-error",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "451cdedaa65e142cd87eb2066f5a9c3fd364c959",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1552.diff",
+  "vendoredAt": "2026-05-24T03:17:21.718Z",
+  "collectedAt": "2026-05-24T03:17:21.718Z"
+}

@@ -1,0 +1,1192 @@
+diff --git a/src-tauri/Cargo.lock b/src-tauri/Cargo.lock
+index 43e440e1..ce5e3e16 100644
+--- a/src-tauri/Cargo.lock
++++ b/src-tauri/Cargo.lock
+@@ -5146,6 +5146,7 @@ dependencies = [
+ name = "terax"
+ version = "0.7.1"
+ dependencies = [
++ "base64 0.22.1",
+  "bytes",
+  "dirs 5.0.1",
+  "futures-util",
+@@ -5158,9 +5159,11 @@ dependencies = [
+  "libc",
+  "log",
+  "portable-pty",
++ "rand 0.9.4",
+  "reqwest 0.12.28",
+  "serde",
+  "serde_json",
++ "sha2",
+  "shared_child",
+  "tauri",
+  "tauri-build",
+@@ -5174,6 +5177,8 @@ dependencies = [
+  "tauri-plugin-window-state",
+  "tempfile",
+  "tokio",
++ "url",
++ "urlencoding",
+  "windows-sys 0.59.0",
+ ]
+ 
+@@ -5634,6 +5639,12 @@ dependencies = [
+  "serde_derive",
+ ]
+ 
++[[package]]
++name = "urlencoding"
++version = "2.1.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
++
+ [[package]]
+ name = "urlpattern"
+ version = "0.3.0"
+diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
+index 7e35f340..e2730181 100644
+--- a/src-tauri/Cargo.toml
++++ b/src-tauri/Cargo.toml
+@@ -23,6 +23,11 @@ tauri = { version = "2", features = [] }
+ tauri-plugin-opener = "2"
+ serde = { version = "1", features = ["derive"] }
+ serde_json = "1"
++base64 = "0.22"
++rand = "0.9"
++sha2 = "0.10"
++url = "2"
++urlencoding = "2"
+ portable-pty = "0.9"
+ dirs = "5"
+ log = "0.4"
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index dcf6122c..7d84e996 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -1,6 +1,6 @@
+ mod modules;
+ 
+-use modules::{fs, git, net, pty, secrets, shell, workspace};
++use modules::{fs, git, net, oauth, pty, secrets, shell, workspace};
+ use std::sync::Mutex;
+ use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+ use tauri_plugin_window_state::StateFlags;
+@@ -173,6 +173,11 @@ pub fn run() {
+             secrets::secrets_set,
+             secrets::secrets_delete,
+             secrets::secrets_get_all,
++            oauth::openai_oauth_login,
++            oauth::openai_oauth_access_token,
++            oauth::openai_oauth_credentials,
++            oauth::openai_oauth_logout,
++            oauth::openai_codex_exec,
+             net::lm_ping,
+             net::ai_http_request,
+             net::ai_http_stream,
+diff --git a/src-tauri/src/modules/mod.rs b/src-tauri/src/modules/mod.rs
+index 5fab9a93..5aba93f1 100644
+--- a/src-tauri/src/modules/mod.rs
++++ b/src-tauri/src/modules/mod.rs
+@@ -1,6 +1,7 @@
+ pub mod fs;
+ pub mod git;
+ pub mod net;
++pub mod oauth;
+ pub mod proc;
+ pub mod pty;
+ pub mod secrets;
+diff --git a/src-tauri/src/modules/oauth.rs b/src-tauri/src/modules/oauth.rs
+new file mode 100644
+index 00000000..fd28cc36
+--- /dev/null
++++ b/src-tauri/src/modules/oauth.rs
+@@ -0,0 +1,463 @@
++use std::{
++    fs,
++    io::{Read, Write},
++    net::TcpListener,
++    path::PathBuf,
++    process::{Command, Stdio},
++    time::{Duration, SystemTime, UNIX_EPOCH},
++};
++
++use base64::Engine;
++use rand::RngCore;
++use serde::{Deserialize, Serialize};
++use sha2::{Digest, Sha256};
++use tauri::{AppHandle, Manager};
++use tauri_plugin_opener::OpenerExt;
++
++use crate::modules::secrets::SecretsState;
++
++#[cfg(windows)]
++use std::os::windows::process::CommandExt;
++
++const OPENAI_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
++const OPENAI_ISSUER: &str = "https://auth.openai.com";
++const OPENAI_REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
++const OPENAI_SCOPE: &str =
++    "openid profile email offline_access api.connectors.read api.connectors.invoke";
++const CALLBACK_HTML: &str = r#"<!doctype html><meta charset="utf-8"><title>Terax</title><body style="font:14px system-ui;margin:40px">OpenAI sign-in complete. You can close this tab and return to Terax.</body>"#;
++
++#[derive(Debug, Clone, Serialize, Deserialize)]
++pub struct OpenAiOAuthToken {
++    pub id_token: String,
++    pub access_token: String,
++    pub refresh_token: String,
++    pub expires_at: u64,
++}
++
++#[derive(Debug, Clone, Serialize, Deserialize)]
++pub struct OpenAiOAuthCredentials {
++    pub access_token: String,
++    pub account_id: Option<String>,
++    pub is_fedramp_account: bool,
++}
++
++#[derive(Debug, Deserialize)]
++struct CodexJsonLine {
++    #[serde(rename = "type")]
++    event_type: String,
++    item: Option<CodexJsonItem>,
++}
++
++#[derive(Debug, Deserialize)]
++struct CodexJsonItem {
++    #[serde(rename = "type")]
++    item_type: String,
++    text: Option<String>,
++}
++
++#[derive(Debug, Deserialize)]
++struct JwtClaims {
++    #[serde(rename = "https://api.openai.com/auth", default)]
++    auth: Option<AuthClaims>,
++}
++
++#[derive(Debug, Deserialize)]
++struct AuthClaims {
++    #[serde(default)]
++    chatgpt_account_id: Option<String>,
++    #[serde(default)]
++    chatgpt_account_is_fedramp: bool,
++}
++
++#[derive(Debug, Deserialize)]
++struct TokenResponse {
++    id_token: Option<String>,
++    access_token: String,
++    refresh_token: Option<String>,
++    expires_in: Option<u64>,
++}
++
++struct PkceCodes {
++    verifier: String,
++    challenge: String,
++}
++
++#[tauri::command]
++pub async fn openai_oauth_login(
++    app: AppHandle,
++    state: tauri::State<'_, SecretsState>,
++) -> Result<OpenAiOAuthToken, String> {
++    let pkce = generate_pkce();
++    let expected_state = random_urlsafe(32);
++    let auth_url = build_authorize_url(&pkce, &expected_state);
++
++    let listener = TcpListener::bind("127.0.0.1:1455")
++        .map_err(|e| format!("Could not start OAuth callback server on port 1455: {e}"))?;
++    listener
++        .set_nonblocking(false)
++        .map_err(|e| e.to_string())?;
++
++    app.opener()
++        .open_url(auth_url, None::<&str>)
++        .map_err(|e| format!("Could not open browser: {e}"))?;
++
++    let code = tauri::async_runtime::spawn_blocking(move || wait_for_callback(listener, expected_state))
++        .await
++        .map_err(|e| e.to_string())??;
++
++    let token = exchange_code_for_token(&code, &pkce.verifier).await?;
++    save_openai_oauth_token(&app, &state, &token).await?;
++    Ok(token)
++}
++
++#[tauri::command]
++pub async fn openai_oauth_access_token(
++    app: AppHandle,
++    state: tauri::State<'_, SecretsState>,
++) -> Result<Option<String>, String> {
++    get_openai_oauth_access_token(&app, &state).await
++}
++
++#[tauri::command]
++pub async fn openai_oauth_credentials(
++    app: AppHandle,
++    state: tauri::State<'_, SecretsState>,
++) -> Result<Option<OpenAiOAuthCredentials>, String> {
++    get_openai_oauth_credentials(&app, &state).await
++}
++
++pub async fn get_openai_oauth_access_token(
++    app: &AppHandle,
++    state: &SecretsState,
++) -> Result<Option<String>, String> {
++    let _ = state;
++    let Some(token) = load_openai_oauth_token(app)? else {
++        return Ok(None);
++    };
++    if token.expires_at > now_ms().saturating_add(60_000) {
++        return Ok(Some(token.access_token));
++    }
++
++    let refreshed = refresh_token(&token.refresh_token).await?;
++    save_openai_oauth_token(app, state, &refreshed).await?;
++    Ok(Some(refreshed.access_token))
++}
++
++pub async fn get_openai_oauth_credentials(
++    app: &AppHandle,
++    state: &SecretsState,
++) -> Result<Option<OpenAiOAuthCredentials>, String> {
++    let _ = state;
++    let Some(mut token) = load_openai_oauth_token(app)? else {
++        return Ok(None);
++    };
++    if token.expires_at <= now_ms().saturating_add(60_000) {
++        token = refresh_token(&token.refresh_token).await?;
++        save_openai_oauth_token(app, state, &token).await?;
++    }
++    let claims = parse_jwt_claims(&token.id_token)
++        .or_else(|_| parse_jwt_claims(&token.access_token))
++        .unwrap_or(None);
++    Ok(Some(OpenAiOAuthCredentials {
++        access_token: token.access_token,
++        account_id: claims
++            .as_ref()
++            .and_then(|claims| claims.auth.as_ref())
++            .and_then(|auth| auth.chatgpt_account_id.clone()),
++        is_fedramp_account: claims
++            .and_then(|claims| claims.auth)
++            .is_some_and(|auth| auth.chatgpt_account_is_fedramp),
++    }))
++}
++
++pub async fn delete_openai_oauth_token(
++    app: &AppHandle,
++    state: &SecretsState,
++) -> Result<(), String> {
++    let _ = state;
++    let path = token_path(app)?;
++    match fs::remove_file(&path) {
++        Ok(()) => Ok(()),
++        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
++        Err(err) => Err(err.to_string()),
++    }
++}
++
++#[tauri::command]
++pub async fn openai_oauth_logout(
++    app: AppHandle,
++    state: tauri::State<'_, SecretsState>,
++) -> Result<(), String> {
++    delete_openai_oauth_token(&app, &state).await
++}
++
++#[tauri::command]
++pub async fn openai_codex_exec(prompt: String, model: String) -> Result<String, String> {
++    if prompt.trim().is_empty() {
++        return Err("Prompt is empty".to_string());
++    }
++    tauri::async_runtime::spawn_blocking(move || run_codex_exec(&prompt, &model))
++        .await
++        .map_err(|e| e.to_string())?
++}
++
++async fn save_openai_oauth_token(
++    app: &AppHandle,
++    state: &SecretsState,
++    token: &OpenAiOAuthToken,
++) -> Result<(), String> {
++    let raw = serde_json::to_string(token).map_err(|e| e.to_string())?;
++    let _ = state;
++    let path = token_path(app)?;
++    if let Some(parent) = path.parent() {
++        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
++    }
++    fs::write(path, raw).map_err(|e| e.to_string())
++}
++
++fn load_openai_oauth_token(app: &AppHandle) -> Result<Option<OpenAiOAuthToken>, String> {
++    let path = token_path(app)?;
++    if !path.exists() {
++        return Ok(None);
++    }
++    let raw = fs::read_to_string(path).map_err(|e| e.to_string())?;
++    serde_json::from_str(&raw).map(Some).map_err(|e| e.to_string())
++}
++
++fn token_path(app: &AppHandle) -> Result<PathBuf, String> {
++    Ok(app
++        .path()
++        .app_local_data_dir()
++        .map_err(|e| e.to_string())?
++        .join("openai-oauth.json"))
++}
++
++fn parse_jwt_claims(jwt: &str) -> Result<Option<JwtClaims>, String> {
++    let mut parts = jwt.split('.');
++    let _header = parts.next();
++    let Some(payload) = parts.next() else {
++        return Ok(None);
++    };
++    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
++        .decode(payload)
++        .map_err(|e| e.to_string())?;
++    serde_json::from_slice(&bytes).map(Some).map_err(|e| e.to_string())
++}
++
++fn build_authorize_url(pkce: &PkceCodes, state: &str) -> String {
++    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
++    serializer
++        .append_pair("response_type", "code")
++        .append_pair("client_id", OPENAI_CLIENT_ID)
++        .append_pair("redirect_uri", OPENAI_REDIRECT_URI)
++        .append_pair("scope", OPENAI_SCOPE)
++        .append_pair("code_challenge", &pkce.challenge)
++        .append_pair("code_challenge_method", "S256")
++        .append_pair("id_token_add_organizations", "true")
++        .append_pair("codex_cli_simplified_flow", "true")
++        .append_pair("state", state)
++        .append_pair("originator", "codex_cli_rs");
++    format!("{OPENAI_ISSUER}/oauth/authorize?{}", serializer.finish())
++}
++
++fn wait_for_callback(listener: TcpListener, expected_state: String) -> Result<String, String> {
++    listener
++        .set_nonblocking(false)
++        .map_err(|e| e.to_string())?;
++    let (mut stream, _) = listener.accept().map_err(|e| e.to_string())?;
++    stream
++        .set_read_timeout(Some(Duration::from_secs(30)))
++        .map_err(|e| e.to_string())?;
++
++    let mut buf = [0u8; 8192];
++    let n = stream.read(&mut buf).map_err(|e| e.to_string())?;
++    let request = String::from_utf8_lossy(&buf[..n]);
++    let first_line = request.lines().next().unwrap_or_default();
++    let target = first_line
++        .split_whitespace()
++        .nth(1)
++        .ok_or_else(|| "OAuth callback was malformed".to_string())?;
++
++    let url = url::Url::parse(&format!("http://localhost{target}")).map_err(|e| e.to_string())?;
++    let params = url.query_pairs().into_owned().collect::<Vec<_>>();
++    let state = params
++        .iter()
++        .find(|(k, _)| k == "state")
++        .map(|(_, v)| v.as_str())
++        .unwrap_or_default();
++    if state != expected_state {
++        write_http_response(&mut stream, "OAuth state mismatch.");
++        return Err("OAuth state mismatch".to_string());
++    }
++    if let Some((_, err)) = params.iter().find(|(k, _)| k == "error") {
++        write_http_response(&mut stream, "OpenAI sign-in failed.");
++        return Err(format!("OpenAI OAuth error: {err}"));
++    }
++    let code = params
++        .iter()
++        .find(|(k, _)| k == "code")
++        .map(|(_, v)| v.to_string())
++        .ok_or_else(|| "OAuth callback did not include a code".to_string())?;
++    write_http_response(&mut stream, CALLBACK_HTML);
++    Ok(code)
++}
++
++fn write_http_response(stream: &mut std::net::TcpStream, body: &str) {
++    let _ = write!(
++        stream,
++        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
++        body.len(),
++        body
++    );
++    let _ = stream.flush();
++}
++
++async fn exchange_code_for_token(code: &str, verifier: &str) -> Result<OpenAiOAuthToken, String> {
++    let body = format!(
++        "grant_type=authorization_code&code={}&redirect_uri={}&client_id={}&code_verifier={}",
++        urlencoding::encode(code),
++        urlencoding::encode(OPENAI_REDIRECT_URI),
++        urlencoding::encode(OPENAI_CLIENT_ID),
++        urlencoding::encode(verifier),
++    );
++    let token = post_token_form(body).await?;
++    Ok(OpenAiOAuthToken {
++        id_token: token.id_token.unwrap_or_default(),
++        access_token: token.access_token,
++        refresh_token: token
++            .refresh_token
++            .ok_or_else(|| "OpenAI did not return a refresh token".to_string())?,
++        expires_at: now_ms() + token.expires_in.unwrap_or(3600) * 1000,
++    })
++}
++
++async fn refresh_token(refresh_token: &str) -> Result<OpenAiOAuthToken, String> {
++    let body = format!(
++        "grant_type=refresh_token&client_id={}&refresh_token={}",
++        urlencoding::encode(OPENAI_CLIENT_ID),
++        urlencoding::encode(refresh_token),
++    );
++    let token = post_token_form(body).await?;
++    Ok(OpenAiOAuthToken {
++        id_token: token.id_token.unwrap_or_default(),
++        access_token: token.access_token,
++        refresh_token: token.refresh_token.unwrap_or_else(|| refresh_token.to_string()),
++        expires_at: now_ms() + token.expires_in.unwrap_or(3600) * 1000,
++    })
++}
++
++async fn post_token_form(body: String) -> Result<TokenResponse, String> {
++    let resp = reqwest::Client::new()
++        .post(format!("{OPENAI_ISSUER}/oauth/token"))
++        .header("Content-Type", "application/x-www-form-urlencoded")
++        .body(body)
++        .send()
++        .await
++        .map_err(|e| e.to_string())?;
++    let status = resp.status();
++    let text = resp.text().await.map_err(|e| e.to_string())?;
++    if !status.is_success() {
++        return Err(format!("OpenAI token exchange failed ({status}): {text}"));
++    }
++    serde_json::from_str(&text).map_err(|e| e.to_string())
++}
++
++fn run_codex_exec(prompt: &str, model: &str) -> Result<String, String> {
++    let codex = std::env::var("APPDATA")
++        .ok()
++        .map(PathBuf::from)
++        .map(|p| p.join("npm").join("codex.cmd"))
++        .filter(|p| p.exists())
++        .unwrap_or_else(|| PathBuf::from("codex.cmd"));
++
++    let mut args = vec![
++        "exec",
++        "--json",
++        "--skip-git-repo-check",
++        "--ephemeral",
++        "--ignore-user-config",
++        "--ignore-rules",
++        "--sandbox",
++        "read-only",
++    ];
++    if !model.trim().is_empty() {
++        args.push("--model");
++        args.push(model.trim());
++    }
++    let mut command = Command::new(codex);
++    command
++        .args(args)
++        .stdin(Stdio::piped())
++        .stdout(Stdio::piped())
++        .stderr(Stdio::piped());
++    #[cfg(windows)]
++    command.creation_flags(0x08000000);
++
++    let mut child = command
++        .spawn()
++        .map_err(|e| format!("Could not run Codex CLI: {e}"))?;
++    if let Some(mut stdin) = child.stdin.take() {
++        stdin
++            .write_all(prompt.as_bytes())
++            .map_err(|e| format!("Could not write to Codex CLI: {e}"))?;
++    }
++    let output = child
++        .wait_with_output()
++        .map_err(|e| format!("Could not read Codex CLI output: {e}"))?;
++
++    let stdout = String::from_utf8_lossy(&output.stdout);
++    let stderr = String::from_utf8_lossy(&output.stderr);
++    if !output.status.success() {
++        let detail = stderr.trim();
++        return Err(if detail.is_empty() {
++            format!("Codex CLI failed with status {}", output.status)
++        } else {
++            detail.to_string()
++        });
++    }
++
++    let mut text = String::new();
++    for line in stdout.lines() {
++        let Ok(event) = serde_json::from_str::<CodexJsonLine>(line) else {
++            continue;
++        };
++        if event.event_type == "item.completed" {
++            if let Some(item) = event.item {
++                if item.item_type == "agent_message" {
++                    if let Some(part) = item.text {
++                        text.push_str(&part);
++                    }
++                }
++            }
++        }
++    }
++
++    if text.trim().is_empty() {
++        Err("Codex CLI completed without an assistant message".to_string())
++    } else {
++        Ok(text)
++    }
++}
++
++fn generate_pkce() -> PkceCodes {
++    let verifier = random_urlsafe(32);
++    let digest = Sha256::digest(verifier.as_bytes());
++    let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest);
++    PkceCodes {
++        verifier,
++        challenge,
++    }
++}
++
++fn random_urlsafe(len: usize) -> String {
++    let mut bytes = vec![0u8; len];
++    rand::rng().fill_bytes(&mut bytes);
++    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
++}
++
++fn now_ms() -> u64 {
++    SystemTime::now()
++        .duration_since(UNIX_EPOCH)
++        .unwrap_or_default()
++        .as_millis() as u64
++}
+diff --git a/src-tauri/src/modules/secrets.rs b/src-tauri/src/modules/secrets.rs
+index ecd3febd..d2f773bf 100644
+--- a/src-tauri/src/modules/secrets.rs
++++ b/src-tauri/src/modules/secrets.rs
+@@ -38,6 +38,85 @@ pub struct SecretsState {
+     _phantom: Mutex<()>,
+ }
+ 
++pub async fn secret_get(
++    app: &AppHandle,
++    state: &SecretsState,
++    service: &str,
++    account: &str,
++) -> Result<Option<String>, String> {
++    #[cfg(target_os = "linux")]
++    {
++        let key = key(service, account);
++        with_store(app, state, |m| m.get(&key).cloned())
++    }
++    #[cfg(not(target_os = "linux"))]
++    {
++        let _ = (app, state);
++        let e = entry(service, account)?;
++        match e.get_password() {
++            Ok(v) => Ok(Some(v)),
++            Err(keyring::Error::NoEntry) => Ok(None),
++            Err(err) => Err(err.to_string()),
++        }
++    }
++}
++
++pub async fn secret_set(
++    app: &AppHandle,
++    state: &SecretsState,
++    service: &str,
++    account: &str,
++    password: String,
++) -> Result<(), String> {
++    #[cfg(target_os = "linux")]
++    {
++        let key = key(service, account);
++        with_store(app, state, |m| {
++            m.insert(key, password);
++        })?;
++        let snapshot = {
++            let guard = state.cache.lock().map_err(|e| e.to_string())?;
++            guard.as_ref().cloned().unwrap_or_default()
++        };
++        write_store(app, &snapshot)
++    }
++    #[cfg(not(target_os = "linux"))]
++    {
++        let _ = (app, state);
++        let e = entry(service, account)?;
++        e.set_password(&password).map_err(|e| e.to_string())
++    }
++}
++
++pub async fn secret_delete(
++    app: &AppHandle,
++    state: &SecretsState,
++    service: &str,
++    account: &str,
++) -> Result<(), String> {
++    #[cfg(target_os = "linux")]
++    {
++        let key = key(service, account);
++        with_store(app, state, |m| {
++            m.remove(&key);
++        })?;
++        let snapshot = {
++            let guard = state.cache.lock().map_err(|e| e.to_string())?;
++            guard.as_ref().cloned().unwrap_or_default()
++        };
++        write_store(app, &snapshot)
++    }
++    #[cfg(not(target_os = "linux"))]
++    {
++        let _ = (app, state);
++        let e = entry(service, account)?;
++        match e.delete_credential() {
++            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
++            Err(err) => Err(err.to_string()),
++        }
++    }
++}
++
+ #[cfg(target_os = "linux")]
+ fn key(service: &str, account: &str) -> String {
+     format!("{}::{}", service, account)
+@@ -108,22 +187,7 @@ pub async fn secrets_get(
+     service: String,
+     account: String,
+ ) -> Result<Option<String>, String> {
+-    #[cfg(target_os = "linux")]
+-    {
+-        let _ = state; // capture
+-        let key = key(&service, &account);
+-        with_store(&app, &state, |m| m.get(&key).cloned())
+-    }
+-    #[cfg(not(target_os = "linux"))]
+-    {
+-        let _ = (app, state);
+-        let e = entry(&service, &account)?;
+-        match e.get_password() {
+-            Ok(v) => Ok(Some(v)),
+-            Err(keyring::Error::NoEntry) => Ok(None),
+-            Err(err) => Err(err.to_string()),
+-        }
+-    }
++    secret_get(&app, &state, &service, &account).await
+ }
+ 
+ #[tauri::command]
+@@ -134,24 +198,7 @@ pub async fn secrets_set(
+     account: String,
+     password: String,
+ ) -> Result<(), String> {
+-    #[cfg(target_os = "linux")]
+-    {
+-        let key = key(&service, &account);
+-        with_store(&app, &state, |m| {
+-            m.insert(key, password);
+-        })?;
+-        let snapshot = {
+-            let guard = state.cache.lock().map_err(|e| e.to_string())?;
+-            guard.as_ref().cloned().unwrap_or_default()
+-        };
+-        write_store(&app, &snapshot)
+-    }
+-    #[cfg(not(target_os = "linux"))]
+-    {
+-        let _ = (app, state);
+-        let e = entry(&service, &account)?;
+-        e.set_password(&password).map_err(|e| e.to_string())
+-    }
++    secret_set(&app, &state, &service, &account, password).await
+ }
+ 
+ #[tauri::command]
+@@ -161,27 +208,7 @@ pub async fn secrets_delete(
+     service: String,
+     account: String,
+ ) -> Result<(), String> {
+-    #[cfg(target_os = "linux")]
+-    {
+-        let key = key(&service, &account);
+-        with_store(&app, &state, |m| {
+-            m.remove(&key);
+-        })?;
+-        let snapshot = {
+-            let guard = state.cache.lock().map_err(|e| e.to_string())?;
+-            guard.as_ref().cloned().unwrap_or_default()
+-        };
+-        write_store(&app, &snapshot)
+-    }
+-    #[cfg(not(target_os = "linux"))]
+-    {
+-        let _ = (app, state);
+-        let e = entry(&service, &account)?;
+-        match e.delete_credential() {
+-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+-            Err(err) => Err(err.to_string()),
+-        }
+-    }
++    secret_delete(&app, &state, &service, &account).await
+ }
+ 
+ /// Batch read — single IPC roundtrip for the cold-boot fan-out.
+diff --git a/src-tauri/tauri.conf.json b/src-tauri/tauri.conf.json
+index dacef07a..61e1e903 100644
+--- a/src-tauri/tauri.conf.json
++++ b/src-tauri/tauri.conf.json
+@@ -6,7 +6,7 @@
+   "build": {
+     "beforeDevCommand": "pnpm dev",
+     "devUrl": "http://localhost:1420",
+-    "beforeBuildCommand": "pnpm build",
++    "beforeBuildCommand": "corepack pnpm build",
+     "frontendDist": "../dist",
+     "removeUnusedCommands": true
+   },
+diff --git a/src/modules/ai/lib/agent.ts b/src/modules/ai/lib/agent.ts
+index 45c2c10a..6975a433 100644
+--- a/src/modules/ai/lib/agent.ts
++++ b/src/modules/ai/lib/agent.ts
+@@ -7,6 +7,7 @@ import {
+   type ModelMessage,
+   type UIMessage,
+ } from "ai";
++import { invoke } from "@tauri-apps/api/core";
+ import {
+   DEFAULT_MODEL_ID,
+   getModel,
+@@ -22,7 +23,11 @@ import {
+ } from "../config";
+ import { buildTools, type ToolContext } from "../tools/tools";
+ import { compactModelMessagesDetailed } from "./compact";
+-import type { ProviderKeys } from "./keyring";
++import {
++  getKey,
++  getOpenAiOAuthCredentials,
++  type ProviderKeys,
++} from "./keyring";
+ import { createProxyFetch } from "./proxyFetch";
+ 
+ const localProxyFetch = createProxyFetch({ allowPrivateNetwork: true });
+@@ -66,33 +71,144 @@ export type BuildModelOptions = {
+   mlxBaseURL?: string;
+   ollamaBaseURL?: string;
+   openaiCompatibleBaseURL?: string;
++  codexPromptPrefix?: string;
+ };
+ 
+ const modelCache = new Map<string, LanguageModel>();
+ 
++function emptyUsage() {
++  return {
++    inputTokens: {
++      total: undefined,
++      noCache: undefined,
++      cacheRead: undefined,
++      cacheWrite: undefined,
++    },
++    outputTokens: {
++      total: undefined,
++      text: undefined,
++      reasoning: undefined,
++    },
++  };
++}
++
++function promptPartToText(part: unknown): string {
++  if (typeof part === "string") return part;
++  if (!part || typeof part !== "object") return "";
++  const p = part as Record<string, unknown>;
++  if (typeof p.text === "string") return p.text;
++  if (typeof p.output === "string") return p.output;
++  if (p.output && typeof p.output === "object") {
++    const out = p.output as Record<string, unknown>;
++    if (typeof out.value === "string") return out.value;
++  }
++  return "";
++}
++
++function promptToCodexText(prompt: unknown): string {
++  if (!Array.isArray(prompt)) return String(prompt ?? "");
++  return prompt
++    .map((message) => {
++      if (!message || typeof message !== "object") return "";
++      const m = message as Record<string, unknown>;
++      const role = String(m.role ?? "user").toUpperCase();
++      const content = Array.isArray(m.content)
++        ? m.content.map(promptPartToText).filter(Boolean).join("\n")
++        : promptPartToText(m.content);
++      return content ? `${role}:\n${content}` : "";
++    })
++    .filter(Boolean)
++    .join("\n\n");
++}
++
++function createCodexCliModel(
++  modelId: string,
++  promptPrefix: string | undefined,
++): LanguageModel {
++  const prefix = promptPrefix?.trim()
++    ? `Follow these Terax instructions for this entire response. They define the selected agent mode and override any generic default behavior when they conflict.\n\n${promptPrefix.trim()}\n\n---\n`
++    : "";
++  const model = {
++    specificationVersion: "v3" as const,
++    provider: "openai-codex-cli",
++    modelId,
++    supportedUrls: {},
++    async doGenerate(options: { prompt?: unknown }) {
++      const text = await invoke<string>("openai_codex_exec", {
++        prompt: `${prefix}${promptToCodexText(options.prompt)}`,
++        model: modelId,
++      });
++      return {
++        content: [{ type: "text" as const, text }],
++        finishReason: { unified: "stop" as const, raw: "stop" },
++        usage: emptyUsage(),
++        warnings: [],
++      };
++    },
++    async doStream(options: { prompt?: unknown }) {
++      const stream = new ReadableStream({
++        async start(controller) {
++          const id = "codex-cli-text";
++          controller.enqueue({ type: "stream-start", warnings: [] });
++          controller.enqueue({ type: "text-start", id });
++          try {
++            const text = await invoke<string>("openai_codex_exec", {
++              prompt: `${prefix}${promptToCodexText(options.prompt)}`,
++              model: modelId,
++            });
++            controller.enqueue({ type: "text-delta", id, delta: text });
++            controller.enqueue({ type: "text-end", id });
++            controller.enqueue({
++              type: "finish",
++              finishReason: { unified: "stop", raw: "stop" },
++              usage: emptyUsage(),
++            });
++            controller.close();
++          } catch (error) {
++            controller.enqueue({ type: "error", error });
++            controller.close();
++          }
++        },
++      });
++      return { stream };
++    },
++  };
++  return model as LanguageModel;
++}
++
+ export async function buildLanguageModel(
+   provider: ProviderId,
+   keys: ProviderKeys,
+   resolvedModelId: string,
+   options: BuildModelOptions = {},
+ ): Promise<LanguageModel> {
+-  if (providerNeedsKey(provider) && !keys[provider]) {
++  const openAiOAuth =
++    provider === "openai" ? await getOpenAiOAuthCredentials() : null;
++  const refreshedOpenAiKey =
++    provider === "openai" ? (openAiOAuth?.access_token ?? await getKey("openai")) : null;
++  const key = refreshedOpenAiKey ?? keys[provider] ?? "";
++  if (providerNeedsKey(provider) && !key) {
+     throw new Error(
+       `No API key configured for ${provider}. Open Settings → AI to add one.`,
+     );
+   }
+-  const key = keys[provider] ?? "";
+   const lmstudioURL = options.lmstudioBaseURL ?? LMSTUDIO_DEFAULT_BASE_URL;
+   const mlxURL = options.mlxBaseURL ?? MLX_DEFAULT_BASE_URL;
+   const ollamaURL = options.ollamaBaseURL ?? OLLAMA_DEFAULT_BASE_URL;
+   const compatURL = options.openaiCompatibleBaseURL ?? "";
+-  const cacheKey = `${provider} ${key} ${resolvedModelId} ${lmstudioURL} ${mlxURL} ${ollamaURL} ${compatURL}`;
++  const codexPromptPrefix =
++    provider === "openai" && openAiOAuth ? (options.codexPromptPrefix ?? "") : "";
++  const cacheKey = `${provider} ${key} ${resolvedModelId} ${lmstudioURL} ${mlxURL} ${ollamaURL} ${compatURL} ${codexPromptPrefix}`;
+   const hit = modelCache.get(cacheKey);
+   if (hit) return hit;
+ 
+   let built: LanguageModel;
+   switch (provider) {
+     case "openai": {
++      if (openAiOAuth) {
++        built = createCodexCliModel(resolvedModelId, options.codexPromptPrefix);
++        break;
++      }
+       const { createOpenAI } = await import("@ai-sdk/openai");
+       built = createOpenAI({ apiKey: key })(resolvedModelId);
+       break;
+@@ -220,6 +336,7 @@ export type LocalProviderConfig = {
+   ollamaModelId?: string;
+   openaiCompatibleBaseURL?: string;
+   openaiCompatibleModelId?: string;
++  codexPromptPrefix?: string;
+ };
+ 
+ export function buildConfiguredLanguageModel(
+@@ -263,6 +380,7 @@ export function buildConfiguredLanguageModel(
+     mlxBaseURL: local.mlxBaseURL,
+     ollamaBaseURL: local.ollamaBaseURL,
+     openaiCompatibleBaseURL: local.openaiCompatibleBaseURL,
++    codexPromptPrefix: local.codexPromptPrefix,
+   });
+ }
+ 
+@@ -355,6 +473,13 @@ export type RunAgentOptions = {
+ 
+ export async function runAgentStream(opts: RunAgentOptions) {
+   const modelId = opts.modelId ?? DEFAULT_MODEL_ID;
++  const provider = getModel(modelId).provider;
++  const stableSystem = buildStableSystem(
++    modelId,
++    opts.agentPersona ?? null,
++    opts.customInstructions,
++    opts.projectMemory ?? null,
++  );
+   const model = await buildConfiguredLanguageModel(modelId, opts.keys, {
+     lmstudioBaseURL: opts.lmstudioBaseURL,
+     lmstudioModelId: opts.lmstudioModelId,
+@@ -364,15 +489,8 @@ export async function runAgentStream(opts: RunAgentOptions) {
+     ollamaModelId: opts.ollamaModelId,
+     openaiCompatibleBaseURL: opts.openaiCompatibleBaseURL,
+     openaiCompatibleModelId: opts.openaiCompatibleModelId,
++    codexPromptPrefix: stableSystem,
+   });
+-  const provider = getModel(modelId).provider;
+-
+-  const stableSystem = buildStableSystem(
+-    modelId,
+-    opts.agentPersona ?? null,
+-    opts.customInstructions,
+-    opts.projectMemory ?? null,
+-  );
+ 
+   const history = await convertToModelMessages(opts.uiMessages);
+   const prunedHistory = pruneMessages({
+diff --git a/src/modules/ai/lib/keyring.ts b/src/modules/ai/lib/keyring.ts
+index 86f96570..4bf75609 100644
+--- a/src/modules/ai/lib/keyring.ts
++++ b/src/modules/ai/lib/keyring.ts
+@@ -9,6 +9,12 @@ import {
+ 
+ export type ProviderKeys = Record<ProviderId, string | null>;
+ 
++export type OpenAiOAuthCredentials = {
++  access_token: string;
++  account_id: string | null;
++  is_fedramp_account: boolean;
++};
++
+ export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
+   openai: null,
+   anthropic: null,
+@@ -27,6 +33,14 @@ export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
+ 
+ export async function getKey(provider: ProviderId): Promise<string | null> {
+   if (!providerSupportsKey(provider)) return null;
++  if (provider === "openai") {
++    try {
++      const token = await invoke<string | null>("openai_oauth_access_token");
++      if (token) return token;
++    } catch {
++      // Fall through to the manually configured API key.
++    }
++  }
+   try {
+     const v = await invoke<string | null>("secrets_get", {
+       service: KEYRING_SERVICE,
+@@ -38,6 +52,16 @@ export async function getKey(provider: ProviderId): Promise<string | null> {
+   }
+ }
+ 
++export async function getOpenAiOAuthCredentials(): Promise<OpenAiOAuthCredentials | null> {
++  try {
++    return await invoke<OpenAiOAuthCredentials | null>(
++      "openai_oauth_credentials",
++    );
++  } catch {
++    return null;
++  }
++}
++
+ export async function setKey(provider: ProviderId, key: string): Promise<void> {
+   if (!providerSupportsKey(provider)) {
+     throw new Error(`${provider} does not use an API key`);
+@@ -53,6 +77,13 @@ export async function setKey(provider: ProviderId, key: string): Promise<void> {
+ 
+ export async function clearKey(provider: ProviderId): Promise<void> {
+   if (!providerSupportsKey(provider)) return;
++  if (provider === "openai") {
++    try {
++      await invoke("openai_oauth_logout");
++    } catch {
++      // Continue clearing the API key below.
++    }
++  }
+   try {
+     await invoke("secrets_delete", {
+       service: KEYRING_SERVICE,
+@@ -75,6 +106,7 @@ export async function getAllKeys(): Promise<ProviderKeys> {
+       const v = results[i];
+       out[p.id] = v && v.length > 0 ? v : null;
+     });
++    out.openai = await getKey("openai");
+     return out;
+   } catch {
+     const entries = await Promise.all(
+diff --git a/src/settings/components/ProviderKeyCard.tsx b/src/settings/components/ProviderKeyCard.tsx
+index f06d5041..ff895ea5 100644
+--- a/src/settings/components/ProviderKeyCard.tsx
++++ b/src/settings/components/ProviderKeyCard.tsx
+@@ -23,6 +23,9 @@ type Props = {
+   onSave: (key: string) => Promise<void>;
+   onClear: () => Promise<void>;
+   onRemove?: () => void;
++  onOAuth?: () => Promise<void>;
++  oauthBusy?: boolean;
++  oauthError?: string | null;
+ };
+ 
+ function maskKey(key: string): string {
+@@ -36,12 +39,17 @@ export function ProviderKeyCard({
+   onSave,
+   onClear,
+   onRemove,
++  onOAuth,
++  oauthBusy = false,
++  oauthError,
+ }: Props) {
+   const [editing, setEditing] = useState(!currentKey);
+   const [value, setValue] = useState("");
+   const [reveal, setReveal] = useState(false);
+   const [saving, setSaving] = useState(false);
+   const [error, setError] = useState<string | null>(null);
++  const connected = !!currentKey;
++  const showConnectActions = !connected;
+ 
+   useEffect(() => {
+     setEditing(!currentKey);
+@@ -75,7 +83,7 @@ export function ProviderKeyCard({
+       <div className="flex items-center gap-2">
+         <ProviderIcon provider={provider.id} size={15} />
+         <span className="text-[12.5px] font-medium">{provider.label}</span>
+-        {currentKey ? (
++        {connected ? (
+           <Badge
+             variant="outline"
+             className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
+@@ -88,27 +96,55 @@ export function ProviderKeyCard({
+             Connected
+           </Badge>
+         ) : null}
+-        <button
+-          type="button"
+-          onClick={() => void openUrl(provider.consoleUrl)}
+-          className="ml-auto inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
+-        >
+-          Get key
+-          <HugeiconsIcon icon={ArrowUpRight01Icon} size={11} strokeWidth={1.75} />
+-        </button>
++        {showConnectActions && onOAuth ? (
++          <Button
++            size="sm"
++            variant="outline"
++            disabled={oauthBusy}
++            onClick={() => void onOAuth()}
++            className="ml-auto h-7 gap-1.5 px-2.5 text-[11px]"
++          >
++            {oauthBusy ? <Spinner className="size-3" /> : null}
++            Sign in
++          </Button>
++        ) : null}
++        {showConnectActions ? (
++          <button
++            type="button"
++            onClick={() => void openUrl(provider.consoleUrl)}
++            className={cn(
++              "inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground",
++              !onOAuth && "ml-auto",
++            )}
++          >
++            Get key
++            <HugeiconsIcon
++              icon={ArrowUpRight01Icon}
++              size={11}
++              strokeWidth={1.75}
++            />
++          </button>
++        ) : null}
+         {onRemove ? (
+           <Button
+             size="icon"
+             variant="ghost"
+             onClick={onRemove}
+             title="Remove provider"
+-            className="size-7 text-muted-foreground hover:text-destructive"
++            className={cn(
++              "size-7 text-muted-foreground hover:text-destructive",
++              !showConnectActions && "ml-auto",
++            )}
+           >
+             <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+           </Button>
+         ) : null}
+       </div>
+ 
++      {oauthError ? (
++        <p className="text-[10.5px] text-destructive">{oauthError}</p>
++      ) : null}
++
+       {editing ? (
+         <div className="flex flex-col gap-1.5">
+           <div className="flex gap-1.5">
+diff --git a/src/settings/sections/ModelsSection.tsx b/src/settings/sections/ModelsSection.tsx
+index 85ee08e1..5d4c5ed8 100644
+--- a/src/settings/sections/ModelsSection.tsx
++++ b/src/settings/sections/ModelsSection.tsx
+@@ -104,6 +104,8 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
+ export function ModelsSection() {
+   const [keys, setKeys] = useState<KeysMap | null>(null);
+   const [adding, setAdding] = useState<Set<ProviderId>>(new Set());
++  const [oauthBusy, setOauthBusy] = useState(false);
++  const [oauthError, setOauthError] = useState<string | null>(null);
+ 
+   const defaultModel = usePreferencesStore((s) => s.defaultModelId);
+   const lmstudioBaseURL = usePreferencesStore((s) => s.lmstudioBaseURL);
+@@ -134,6 +136,22 @@ export function ModelsSection() {
+     await emitKeysChanged();
+   };
+ 
++  const onOpenAiOAuth = async () => {
++    setOauthBusy(true);
++    setOauthError(null);
++    try {
++      const token = await invoke<{ access_token: string }>("openai_oauth_login");
++      setKeys((prev) =>
++        prev ? { ...prev, openai: token.access_token } : prev,
++      );
++      await emitKeysChanged();
++    } catch (e) {
++      setOauthError(`OpenAI sign-in failed: ${String(e)}`);
++    } finally {
++      setOauthBusy(false);
++    }
++  };
++
+   const localConfig = (id: ProviderId): LocalConfig | null => {
+     switch (id) {
+       case "lmstudio":
+@@ -268,6 +286,9 @@ export function ModelsSection() {
+                   onSave={(v) => onSaveKey(p.id, v)}
+                   onClear={() => onClearKey(p.id)}
+                   onRemove={() => removeProvider(p.id)}
++                  onOAuth={p.id === "openai" ? onOpenAiOAuth : undefined}
++                  oauthBusy={p.id === "openai" ? oauthBusy : false}
++                  oauthError={p.id === "openai" ? oauthError : null}
+                 />
+               ),
+             )}

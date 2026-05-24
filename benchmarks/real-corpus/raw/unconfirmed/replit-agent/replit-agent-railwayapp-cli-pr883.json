@@ -1,0 +1,26 @@
+{
+  "id": "replit-agent-railwayapp-cli-pr883",
+  "agent": {
+    "vendor": "replit-agent",
+    "confidence": "low",
+    "source": "body=replit-agent-footer"
+  },
+  "pr": {
+    "number": 883,
+    "headSha": "43b6a5c29774df1accc70694949525f215d47b4a",
+    "baseSha": "4f8bf3c6a24ada152454916e205299c733514cc5",
+    "title": "Detect additional coding agents in telemetry",
+    "body": "## Summary\n- Add Pi detection for CLI telemetry using `PI_CODING_AGENT`.\n- Add Amp detection for CLI telemetry using `AMP_CURRENT_THREAD_ID` and gated `AGENT=amp`.\n- Add Copilot CLI detection using `COPILOT_AGENT_SESSION_ID` / `COPILOT_CLI`, and reuse `COPILOT_AGENT_SESSION_ID` for `agentSessionId` when present.\n- Add Gemini CLI detection using `GEMINI_CLI` and process-name fallback.\n- Add Aider, Factory Droid, and Replit Agent telemetry detection using their existing agent env signals.\n- Add process-name fallbacks for `pi`, `amp`, `aider`, `replit`, `copilot`, `gemini`, and `factory-droid`/`factory_droid`.\n- Include new agent env signals in agent advisory detection so agent setup guidance is shown in those environments.\n- Add unit coverage for process-name matching and short-name false-positive avoidance.\n\n## Behavior\n- Pi sessions now report `caller = \"pi\"` instead of falling back to `agent_subprocess`.\n- Amp sessions now report `caller = \"amp\"`.\n- Copilot CLI sessions now report `caller = \"copilot_cli\"` and use the Copilot session ID when available.\n- Gemini CLI sessions now report `caller = \"gemini\"`.\n- Aider sessions now report `caller = \"aider\"`.\n- Factory Droid sessions now report `caller = \"factory_droid\"`.\n- Replit Agent sessions now report `caller = \"replit\"`.\n\n## Test\n- `nix shell nixpkgs#cargo nixpkgs#rustc nixpkgs#rustfmt -c cargo test telemetry::tests`\n",
+    "author": "codyde",
+    "headRef": "add-pi-agent-telemetry",
+    "repository": "railwayapp/cli"
+  },
+  "diffRef": {
+    "repository": "railwayapp/cli",
+    "headSha": "43b6a5c29774df1accc70694949525f215d47b4a",
+    "baseSha": "4f8bf3c6a24ada152454916e205299c733514cc5"
+  },
+  "vendoredDiffPath": "unconfirmed/replit-agent/replit-agent-railwayapp-cli-pr883.diff",
+  "vendoredAt": "2026-05-24T03:14:38.216Z",
+  "collectedAt": "2026-05-24T03:14:38.216Z"
+}

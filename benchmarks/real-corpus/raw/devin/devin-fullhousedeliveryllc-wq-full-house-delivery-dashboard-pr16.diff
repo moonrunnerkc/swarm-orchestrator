@@ -1,0 +1,894 @@
+diff --git a/index.html b/index.html
+index 2959b34..fb26a24 100644
+--- a/index.html
++++ b/index.html
+@@ -403,6 +403,25 @@
+         .edit-box input:focus, .edit-box select:focus { outline: none; border-color: var(--accent); }
+         .edit-actions { display: flex; gap: 10px; margin-top: 20px; }
+         .edit-actions .btn { flex: 1; text-align: center; justify-content: center; }
++
++        /* Invoice upload */
++        .invoice-preview { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
++        .invoice-thumb { position: relative; width: 60px; height: 60px; border-radius: 6px; overflow: hidden; border: 2px solid var(--border); }
++        .invoice-thumb img { width: 100%; height: 100%; object-fit: cover; }
++        .invoice-thumb .remove-invoice {
++            position: absolute; top: -2px; right: -2px; background: var(--danger); color: white;
++            border: none; border-radius: 50%; width: 18px; height: 18px; font-size: 10px;
++            cursor: pointer; line-height: 18px; text-align: center; padding: 0;
++        }
++        .invoice-btn { background: none; border: none; cursor: pointer; font-size: 16px; padding: 2px 6px; border-radius: 4px; }
++        .invoice-btn:hover { background: #eee; }
++        .invoice-viewer { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
++        .invoice-viewer img { max-width: 100%; max-height: 400px; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
++
++        /* Chime tab */
++        .chime-balance-card { background: linear-gradient(135deg, #2196F3, #1565C0); color: white; border-radius: 12px; padding: 24px; text-align: center; border-left: 5px solid #000; }
++        .chime-balance-card .num { font-size: 32px; font-weight: 800; }
++        .chime-balance-card .label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.85; margin-top: 4px; }
+     </style>
+ </head>
+ <body>
+@@ -420,7 +439,7 @@ <h1>Fullhouse Delivery LLC</h1>
+ 
+ <!-- Auth Bar -->
+ <div class="auth-bar" id="authBar">
+-    <span style="font-size:10px;color:#999;margin-right:8px" id="appVersion">v15</span>
++    <span style="font-size:10px;color:#999;margin-right:8px" id="appVersion">v16</span>
+     <span class="sync-status" id="syncStatus">Local Only</span>
+     <span class="user-email" id="userEmail"></span>
+     <button id="syncNowBtn" onclick="manualSync()" style="display:none;font-size:11px;padding:4px 10px;background:#2196F3;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-right:4px">&#x21bb; Sync Now</button>
+@@ -431,6 +450,7 @@ <h1>Fullhouse Delivery LLC</h1>
+ <div class="tab-bar">
+     <button class="tab-btn active" onclick="switchTab('jobs')">&#128203; Customer &amp; Jobs</button>
+     <button class="tab-btn" onclick="switchTab('finance')">&#128176; Revenues &amp; Expenses</button>
++    <button class="tab-btn" onclick="switchTab('chime')">&#128179; Chime Payments</button>
+ </div>
+ 
+ <!-- ═══════════════════════════════════════════════
+@@ -505,9 +525,14 @@ <h2><span class="icon">&#9999;&#65039;</span> Log a New Entry</h2>
+                     <option value="Miscellaneous">Miscellaneous</option>
+                 </select>
+             </div>
++            <div class="form-group highlight-field">
++                <label for="entryNote">Note</label>
++                <input type="text" id="entryNote" placeholder="e.g. 'Big sofa delivery'" required>
++            </div>
+             <div class="form-group">
+-                <label for="entryNote">Note (optional)</label>
+-                <input type="text" id="entryNote" placeholder="e.g. 'Big sofa delivery'">
++                <label for="entryInvoices">Invoices (up to 5 photos)</label>
++                <input type="file" id="entryInvoices" accept="image/*" multiple onchange="handleInvoiceSelect(this)" style="font-size:13px;">
++                <div class="invoice-preview" id="invoicePreview"></div>
+             </div>
+             <button type="submit" class="btn btn-primary">&#10133; Add Entry</button>
+         </form>
+@@ -551,7 +576,7 @@ <h2><span class="icon">&#128210;</span> Entry Log</h2>
+         <div style="overflow-x:auto;">
+             <table>
+                 <thead>
+-                    <tr><th>Date</th><th>Category</th><th>Customer</th><th>Phone</th><th>Email</th><th>Details</th><th>Jobs</th><th>Revenue</th><th>Note</th><th>Actions</th></tr>
++                    <tr><th>Date</th><th>Category</th><th>Customer</th><th>Phone</th><th>Email</th><th>Details</th><th>Jobs</th><th>Revenue</th><th>Note</th><th>Docs</th><th>Actions</th></tr>
+                 </thead>
+                 <tbody id="logBody"></tbody>
+             </table>
+@@ -584,7 +609,7 @@ <h2><span class="icon">&#128200;</span> Financial Overview</h2>
+             <canvas id="financeBarChart" width="600" height="320"></canvas>
+             <div class="no-data-msg" id="noFinanceMsg">
+                 <span class="big-icon">&#128176;</span>
+-                Log your first revenue or expense below!
++                Log your first expense below!
+             </div>
+         </div>
+     </div>
+@@ -597,7 +622,7 @@ <h2><span class="icon">&#128200;</span> Breakdown (<span id="periodLabel">Daily<
+ 
+     <!-- Log Finance Entry -->
+     <div class="card">
+-        <h2><span class="icon">&#128181;</span> Log Revenue / Expense</h2>
++        <h2><span class="icon">&#128181;</span> Log Expense</h2>
+         <form id="financeForm">
+             <div class="form-group">
+                 <label for="finDate">Date</label>
+@@ -680,6 +705,119 @@ <h2><span class="icon">&#128210;</span> Finance Log</h2>
+ </div>
+ </div><!-- end tab-finance -->
+ 
++<!-- ═══════════════════════════════════════════════
++     TAB 3: CHIME PAYMENTS
++     ═══════════════════════════════════════════════ -->
++<div class="tab-content" id="tab-chime">
++
++<div class="container flush-top" style="padding-bottom:0;">
++    <div class="full-width summary-strip" id="chimeSummaryStrip"></div>
++</div>
++
++<div class="container">
++
++    <!-- Chime Chart -->
++    <div class="card full-width">
++        <h2><span class="icon">&#128200;</span> Chime Overview</h2>
++        <div class="period-selector" id="chimePeriodSelector">
++            <button class="period-btn active" onclick="setChimePeriod('daily')">Daily</button>
++            <button class="period-btn" onclick="setChimePeriod('weekly')">Weekly</button>
++            <button class="period-btn" onclick="setChimePeriod('monthly')">Monthly</button>
++            <button class="period-btn" onclick="setChimePeriod('quarterly')">Quarterly</button>
++        </div>
++        <div class="bar-chart-wrapper">
++            <canvas id="chimeBarChart" width="600" height="320"></canvas>
++            <div class="no-data-msg" id="noChimeMsg">
++                <span class="big-icon">&#128179;</span>
++                Log your first Chime transaction below or import from CSV!
++            </div>
++        </div>
++    </div>
++
++    <!-- Chime Breakdown -->
++    <div class="card full-width">
++        <h2><span class="icon">&#128200;</span> Chime Breakdown (<span id="chimePeriodLabel">Daily</span>)</h2>
++        <div class="finance-grid" id="chimeGrid"></div>
++    </div>
++
++    <!-- Log Chime Entry -->
++    <div class="card">
++        <h2><span class="icon">&#128179;</span> Log Chime Transaction</h2>
++        <form id="chimeForm">
++            <div class="form-group">
++                <label for="chimeDate">Date</label>
++                <input type="date" id="chimeDate" required>
++            </div>
++            <div class="form-group">
++                <label for="chimeType">Type</label>
++                <select id="chimeType" required>
++                    <option value="Deposit">Deposit</option>
++                    <option value="Withdrawal">Withdrawal</option>
++                    <option value="Transfer In">Transfer In</option>
++                    <option value="Transfer Out">Transfer Out</option>
++                    <option value="Payment Received">Payment Received</option>
++                    <option value="Fee">Fee</option>
++                </select>
++            </div>
++            <div class="form-group">
++                <label for="chimeAmount">Amount ($)</label>
++                <div class="currency-input-wrap">
++                    <span class="currency-symbol">$</span>
++                    <input type="number" id="chimeAmount" min="0.01" step="0.01" placeholder="0.00" required>
++                </div>
++            </div>
++            <div class="form-group">
++                <label for="chimeDesc">Description</label>
++                <input type="text" id="chimeDesc" placeholder="e.g. 'Customer payment via Chime'">
++            </div>
++            <button type="submit" class="btn btn-primary">&#10133; Add Transaction</button>
++        </form>
++    </div>
++
++    <!-- Chime CSV Import -->
++    <div class="card">
++        <h2><span class="icon">&#128196;</span> Import Chime CSV</h2>
++        <div class="upload-zone" id="chimeUploadZone" onclick="document.getElementById('chimeFileInput').click()">
++            <span class="upload-icon">&#128179;</span>
++            <p><strong>Click to upload</strong> your Chime transaction export</p>
++            <p class="formats">Supports CSV (.csv) files exported from Chime</p>
++        </div>
++        <input type="file" id="chimeFileInput" accept=".csv,text/csv" style="display:none" onchange="handleChimeCSV(event)">
++        <div class="upload-hint">
++            <strong>How to export from Chime:</strong> Log in to your Chime account &rarr; Go to Transaction History &rarr;
++            Click &ldquo;Export&rdquo; or &ldquo;Download&rdquo; &rarr; Select CSV format &rarr; Upload the file here.
++            Transactions will be categorized automatically as deposits or withdrawals.
++        </div>
++    </div>
++
++    <!-- Chime Log -->
++    <div class="card full-width">
++        <h2><span class="icon">&#128210;</span> Chime Transaction Log</h2>
++        <div class="log-controls">
++            <select id="filterChimeType" onchange="renderChimeLog()">
++                <option value="all">All Types</option>
++                <option value="Deposit">Deposits</option>
++                <option value="Withdrawal">Withdrawals</option>
++                <option value="Transfer In">Transfers In</option>
++                <option value="Transfer Out">Transfers Out</option>
++                <option value="Payment Received">Payments Received</option>
++                <option value="Fee">Fees</option>
++            </select>
++            <input type="month" id="filterChimeMonth" onchange="renderChimeLog()">
++            <button class="btn btn-outline btn-sm" onclick="clearChimeFilters()">Clear Filters</button>
++        </div>
++        <div style="overflow-x:auto;">
++            <table class="finance-table">
++                <thead>
++                    <tr><th>Date</th><th>Type</th><th>Amount</th><th>Description</th><th>Actions</th></tr>
++                </thead>
++                <tbody id="chimeLogBody"></tbody>
++            </table>
++        </div>
++    </div>
++</div>
++</div><!-- end tab-chime -->
++
+ <footer>
+     Fullhouse Delivery LLC &copy; <span id="footerYear"></span> &mdash; Data synced with Supabase &amp; stored locally.
+ </footer>
+@@ -769,7 +907,11 @@ <h2>&#9999;&#65039; Edit Job Entry</h2>
+         </div>
+         <div class="form-group">
+             <label for="editJobNote">Note</label>
+-            <input type="text" id="editJobNote">
++            <input type="text" id="editJobNote" required>
++        </div>
++        <div class="form-group" id="editInvoiceSection" style="display:none;">
++            <label>Invoices</label>
++            <div class="invoice-preview" id="editInvoicePreview"></div>
+         </div>
+         <div class="edit-actions">
+             <button class="btn btn-primary" onclick="saveJobEdit()">&#128190; Save Changes</button>
+@@ -806,6 +948,54 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+     </div>
+ </div>
+ 
++<!-- Invoice Viewer Modal -->
++<div class="modal-overlay" id="invoiceModal">
++    <div class="modal-box" style="max-width:700px;">
++        <div class="modal-header">
++            <h3>&#128206; Invoice Photos</h3>
++            <button class="btn btn-outline btn-sm" onclick="closeInvoiceModal()">&times; Close</button>
++        </div>
++        <div class="modal-body">
++            <div class="invoice-viewer" id="invoiceViewerBody"></div>
++        </div>
++    </div>
++</div>
++
++<!-- Edit Chime Entry Modal -->
++<div class="edit-overlay" id="editChimeModal">
++    <div class="edit-box">
++        <h2>&#9999;&#65039; Edit Chime Transaction</h2>
++        <input type="hidden" id="editChimeId">
++        <div class="form-group">
++            <label for="editChimeDate">Date</label>
++            <input type="date" id="editChimeDate">
++        </div>
++        <div class="form-group">
++            <label for="editChimeType">Type</label>
++            <select id="editChimeType">
++                <option value="Deposit">Deposit</option>
++                <option value="Withdrawal">Withdrawal</option>
++                <option value="Transfer In">Transfer In</option>
++                <option value="Transfer Out">Transfer Out</option>
++                <option value="Payment Received">Payment Received</option>
++                <option value="Fee">Fee</option>
++            </select>
++        </div>
++        <div class="form-group">
++            <label for="editChimeAmount">Amount ($)</label>
++            <input type="number" id="editChimeAmount" min="0.01" step="0.01">
++        </div>
++        <div class="form-group">
++            <label for="editChimeDesc">Description</label>
++            <input type="text" id="editChimeDesc">
++        </div>
++        <div class="edit-actions">
++            <button class="btn btn-primary" onclick="saveChimeEdit()">&#128190; Save Changes</button>
++            <button class="btn btn-outline" onclick="closeEditChimeModal()">Cancel</button>
++        </div>
++    </div>
++</div>
++
+ <div class="toast" id="toast"></div>
+ 
+ <script>
+@@ -1157,6 +1347,7 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+     localStorage.setItem('fhd_entries', JSON.stringify(entries));
+     localStorage.setItem('fhd_finance', JSON.stringify(financeEntries));
+     localStorage.setItem('fhd_financeTypes', JSON.stringify(financeTypes));
++    localStorage.setItem('fhd_chime', JSON.stringify(chimeEntries));
+     localStorage.setItem('fhd_dirty', '1');
+ }
+ 
+@@ -1199,12 +1390,15 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+    TAB SWITCHING
+    ═══════════════════════════════════════ */
+ function switchTab(tab) {
++    var tabs = ['jobs', 'finance', 'chime'];
+     document.querySelectorAll('.tab-btn').forEach(function(b, i) {
+-        b.classList.toggle('active', (tab === 'jobs' && i === 0) || (tab === 'finance' && i === 1));
++        b.classList.toggle('active', tabs[i] === tab);
++    });
++    tabs.forEach(function(t) {
++        document.getElementById('tab-' + t).classList.toggle('active', t === tab);
+     });
+-    document.getElementById('tab-jobs').classList.toggle('active', tab === 'jobs');
+-    document.getElementById('tab-finance').classList.toggle('active', tab === 'finance');
+     if (tab === 'finance') renderFinanceAll();
++    if (tab === 'chime') renderChimeAll();
+ }
+ 
+ /* ═══════════════════════════════════════
+@@ -1240,11 +1434,18 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+ var entries = JSON.parse(localStorage.getItem('fhd_entries')) || [];
+ var financeEntries = JSON.parse(localStorage.getItem('fhd_finance')) || [];
+ var financeTypes = JSON.parse(localStorage.getItem('fhd_financeTypes')) || [
+-    'Money Received', 'Driver Pay', 'Gas', 'Tolls', 'Supplies',
++    'Driver Pay', 'Gas', 'Tolls', 'Supplies',
+     'Vehicle Insurance', 'Liability Insurance', 'Truck Repair/Maintenance',
+     'Commissions', 'Trash Removal Fee', 'Miscellaneous'
+ ];
++// Remove legacy Money Received if present
++var mrIdx = financeTypes.indexOf('Money Received');
++if (mrIdx !== -1) { financeTypes.splice(mrIdx, 1); localStorage.setItem('fhd_financeTypes', JSON.stringify(financeTypes)); }
++
++var chimeEntries = JSON.parse(localStorage.getItem('fhd_chime')) || [];
+ var currentPeriod = 'daily';
++var chimePeriod = 'daily';
++var pendingInvoices = [];
+ var _syncChain = Promise.resolve();
+ var _syncScheduled = false;
+ var _syncTimer = null;
+@@ -1473,7 +1674,8 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+    FINANCE TYPES
+    ═══════════════════════════════════════ */
+ function renderFinanceTypes() {
+-    var optHtml = financeTypes.map(function(t) { return '<option value="' + esc(t) + '">' + esc(t) + '</option>'; }).join('');
++    var expenseTypes = financeTypes.filter(function(t) { return t !== 'Money Received'; });
++    var optHtml = expenseTypes.map(function(t) { return '<option value="' + esc(t) + '">' + esc(t) + '</option>'; }).join('');
+     document.getElementById('finType').innerHTML = optHtml;
+     document.getElementById('filterFinType').innerHTML = '<option value="all">All Types</option>' + optHtml;
+     document.getElementById('editFinTypeSelect').innerHTML = optHtml;
+@@ -1533,6 +1735,8 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+     var cat = document.getElementById('entryCategory').value;
+     var revenueVal = parseFloat(document.getElementById('entryRevenue').value);
+     if (isNaN(revenueVal) || revenueVal < 0) { toast('Please enter a valid revenue amount.'); return; }
++    var noteVal = document.getElementById('entryNote').value.trim();
++    if (!noteVal) { toast('Note is required.'); return; }
+     var entry = {
+         id: Date.now(), date: document.getElementById('entryDate').value, category: cat,
+         amount: parseInt(document.getElementById('entryAmount').value, 10),
+@@ -1542,12 +1746,16 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+         email: document.getElementById('entryEmail').value.trim(),
+         storeName: cat === 'Furniture Store Jobs' ? document.getElementById('entryStoreName').value.trim() : '',
+         referredBy: cat === 'Online Customers' ? document.getElementById('entryReferredBy').value : '',
+-        note: document.getElementById('entryNote').value.trim()
++        note: noteVal,
++        invoices: pendingInvoices.slice()
+     };
+     entries.push(entry); save(); renderAll(); renderFinanceAll();
+     ['entryCustomer','entryPhone','entryEmail','entryStoreName','entryReferredBy','entryNote'].forEach(function(id) { document.getElementById(id).value = ''; });
+     document.getElementById('entryAmount').value = 1;
+     document.getElementById('entryRevenue').value = '';
++    pendingInvoices = [];
++    document.getElementById('invoicePreview').innerHTML = '';
++    document.getElementById('entryInvoices').value = '';
+     toast('+' + entry.amount + ' job(s) logged — $' + revenueVal.toFixed(2) + ' revenue');
+ });
+ 
+@@ -1562,11 +1770,13 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+     if (monthFilter) filtered = filtered.filter(function(e) { return e.date.startsWith(monthFilter); });
+     filtered.sort(function(a, b) { return b.date.localeCompare(a.date) || b.id - a.id; });
+     var body = document.getElementById('logBody');
+-    if (!filtered.length) { body.innerHTML = '<tr><td colspan="10" class="empty-log">No entries yet &mdash; start logging above!</td></tr>'; return; }
++    if (!filtered.length) { body.innerHTML = '<tr><td colspan="11" class="empty-log">No entries yet &mdash; start logging above!</td></tr>'; return; }
+     body.innerHTML = filtered.map(function(e) {
+         var details = e.storeName ? 'Store: ' + e.storeName : (e.referredBy ? 'Ref: ' + e.referredBy : '');
+         var rev = (typeof e.revenue === 'number') ? '$' + e.revenue.toFixed(2) : '\u2014';
+-        return '<tr><td>' + e.date + '</td><td>' + esc(e.category) + '</td><td>' + esc(e.customer || '\u2014') + '</td><td>' + esc(e.phone || '\u2014') + '</td><td>' + esc(e.email || '\u2014') + '</td><td>' + esc(details || '\u2014') + '</td><td>' + e.amount + '</td><td>' + rev + '</td><td>' + esc(e.note || '\u2014') + '</td><td class="action-cell"><button class="btn-edit" onclick="editEntry(' + e.id + ')" title="Edit">&#9998;</button><button class="btn btn-danger" onclick="deleteEntry(' + e.id + ')" title="Delete">&times;</button></td></tr>';
++        var invoiceCount = (e.invoices && e.invoices.length) ? e.invoices.length : 0;
++        var docsCell = invoiceCount > 0 ? '<button class="invoice-btn" onclick="viewInvoices(' + e.id + ')" title="View ' + invoiceCount + ' invoice(s)">&#128206; ' + invoiceCount + '</button>' : '\u2014';
++        return '<tr><td>' + e.date + '</td><td>' + esc(e.category) + '</td><td>' + esc(e.customer || '\u2014') + '</td><td>' + esc(e.phone || '\u2014') + '</td><td>' + esc(e.email || '\u2014') + '</td><td>' + esc(details || '\u2014') + '</td><td>' + e.amount + '</td><td>' + rev + '</td><td>' + esc(e.note || '\u2014') + '</td><td>' + docsCell + '</td><td class="action-cell"><button class="btn-edit" onclick="editEntry(' + e.id + ')" title="Edit">&#9998;</button><button class="btn btn-danger" onclick="deleteEntry(' + e.id + ')" title="Delete">&times;</button></td></tr>';
+     }).join('');
+ }
+ 
+@@ -1609,6 +1819,17 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+     document.getElementById('editJobStoreName').value = entry.storeName || '';
+     document.getElementById('editJobReferredBy').value = entry.referredBy || '';
+     document.getElementById('editJobNote').value = entry.note || '';
++    var invoiceSection = document.getElementById('editInvoiceSection');
++    var invoicePreview = document.getElementById('editInvoicePreview');
++    if (entry.invoices && entry.invoices.length > 0) {
++        invoiceSection.style.display = 'block';
++        invoicePreview.innerHTML = entry.invoices.map(function(src) {
++            return '<div class="invoice-thumb"><img src="' + src + '"></div>';
++        }).join('');
++    } else {
++        invoiceSection.style.display = 'none';
++        invoicePreview.innerHTML = '';
++    }
+     updateEditConditionalFields();
+     document.getElementById('editJobModal').classList.add('active');
+ }
+@@ -1719,14 +1940,13 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+ function renderFinanceSummary() {
+     var all = getFilteredFinance();
+     var jobTotals = getJobRevenueTotals();
+-    var manualRevenue = all.filter(function(e) { return e.type === 'Money Received'; }).reduce(function(s, e) { return s + e.amount; }, 0);
+-    var revenue = manualRevenue + jobTotals.revenue;
++    var revenue = jobTotals.revenue;
+     var expenses = all.filter(function(e) { return e.type !== 'Money Received'; }).reduce(function(s, e) { return s + e.amount; }, 0);
+     var net = revenue - expenses;
+     var netClass = net >= 0 ? 'green' : 'red';
+     var totalTransactions = all.length + jobTotals.entries;
+     document.getElementById('financeSummaryStrip').innerHTML =
+-        '<div class="summary-card green"><div class="num">$' + revenue.toFixed(2) + '</div><div class="label">Total Revenue</div></div>' +
++        '<div class="summary-card green"><div class="num">$' + revenue.toFixed(2) + '</div><div class="label">Total Revenue (Jobs)</div></div>' +
+         '<div class="summary-card red"><div class="num">$' + expenses.toFixed(2) + '</div><div class="label">Total Expenses</div></div>' +
+         '<div class="summary-card ' + netClass + '"><div class="num">$' + net.toFixed(2) + '</div><div class="label">Net Profit</div></div>' +
+         '<div class="summary-card gold"><div class="num">' + totalTransactions + '</div><div class="label">Transactions</div></div>' +
+@@ -1736,22 +1956,56 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+ /* ═══════════════════════════════════════
+    FINANCE: BREAKDOWN GRID
+    ═══════════════════════════════════════ */
++function getCurrentPeriodRange() {
++    var now = new Date();
++    var todayStr = now.toISOString().slice(0, 10);
++    if (currentPeriod === 'daily') {
++        return { start: todayStr, end: todayStr };
++    }
++    if (currentPeriod === 'weekly') {
++        var day = now.getDay();
++        var diff = now.getDate() - day + (day === 0 ? -6 : 1);
++        var monday = new Date(now); monday.setDate(diff);
++        var sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
++        return { start: monday.toISOString().slice(0, 10), end: sunday.toISOString().slice(0, 10) };
++    }
++    if (currentPeriod === 'monthly') {
++        var monthStart = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
++        var lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
++        var monthEnd = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(lastDay).padStart(2, '0');
++        return { start: monthStart, end: monthEnd };
++    }
++    if (currentPeriod === 'quarterly') {
++        var q = Math.floor(now.getMonth() / 3);
++        var qStart = new Date(now.getFullYear(), q * 3, 1);
++        var qEnd = new Date(now.getFullYear(), q * 3 + 3, 0);
++        return { start: qStart.toISOString().slice(0, 10), end: qEnd.toISOString().slice(0, 10) };
++    }
++    return { start: todayStr, end: todayStr };
++}
++
+ function renderFinanceBreakdown() {
+     document.getElementById('periodLabel').textContent = getPeriodLabel();
+-    var all = getFilteredFinance();
+-    var jobTotals = getJobRevenueTotals();
+-    var types = ['Job Revenue'].concat(financeTypes);
++    var range = getCurrentPeriodRange();
++    var all = getFilteredFinance().filter(function(e) {
++        return e.date >= range.start && e.date <= range.end;
++    });
++    var periodJobRevenue = entries.filter(function(e) {
++        return e.date >= range.start && e.date <= range.end && typeof e.revenue === 'number';
++    }).reduce(function(s, e) { return s + e.revenue; }, 0);
++
++    var expenseTypes = financeTypes.filter(function(t) { return t !== 'Money Received'; });
++    var types = ['Job Revenue'].concat(expenseTypes);
+     var html = '';
+     types.forEach(function(type) {
+-        var total, isRevenue, cls;
++        var total, cls;
+         if (type === 'Job Revenue') {
+-            total = jobTotals.revenue;
+-            isRevenue = true;
++            total = periodJobRevenue;
++            cls = 'fi-green';
+         } else {
+             total = all.filter(function(e) { return e.type === type; }).reduce(function(s, e) { return s + e.amount; }, 0);
+-            isRevenue = type === 'Money Received';
++            cls = 'fi-red';
+         }
+-        cls = isRevenue ? 'fi-green' : 'fi-red';
+         html += '<div class="finance-item"><span class="fi-label">' + type + '</span><span class="fi-value ' + cls + '">$' + total.toFixed(2) + '</span></div>';
+     });
+     document.getElementById('financeGrid').innerHTML = html;
+@@ -1772,10 +2026,10 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+ 
+     var periodKeys = {};
+     all.forEach(function(e) {
++        if (e.type === 'Money Received') return;
+         var key = getPeriodKey(e.date, currentPeriod);
+         if (!periodKeys[key]) periodKeys[key] = { revenue: 0, expenses: 0 };
+-        if (e.type === 'Money Received') periodKeys[key].revenue += e.amount;
+-        else periodKeys[key].expenses += e.amount;
++        periodKeys[key].expenses += e.amount;
+     });
+     entries.forEach(function(e) {
+         if (typeof e.revenue === 'number' && e.revenue > 0) {
+@@ -1880,9 +2134,7 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+     var body = document.getElementById('financeLogBody');
+     if (!filtered.length) { body.innerHTML = '<tr><td colspan="5" class="empty-log">No finance entries yet.</td></tr>'; return; }
+     body.innerHTML = filtered.map(function(e) {
+-        var cls = e.type === 'Money Received' ? 'amount-pos' : 'amount-neg';
+-        var prefix = e.type === 'Money Received' ? '+' : '-';
+-        return '<tr><td>' + e.date + '</td><td>' + esc(e.type) + '</td><td class="' + cls + '">' + prefix + '$' + e.amount.toFixed(2) + '</td><td>' + esc(e.note || '\u2014') + '</td><td class="action-cell"><button class="btn-edit" onclick="editFinanceEntry(' + e.id + ')" title="Edit">&#9998;</button><button class="btn btn-danger" onclick="deleteFinanceEntry(' + e.id + ')" title="Delete">&times;</button></td></tr>';
++        return '<tr><td>' + e.date + '</td><td>' + esc(e.type) + '</td><td class="amount-neg">-$' + e.amount.toFixed(2) + '</td><td>' + esc(e.note || '\u2014') + '</td><td class="action-cell"><button class="btn-edit" onclick="editFinanceEntry(' + e.id + ')" title="Edit">&#9998;</button><button class="btn btn-danger" onclick="deleteFinanceEntry(' + e.id + ')" title="Delete">&times;</button></td></tr>';
+     }).join('');
+ }
+ 
+@@ -1951,7 +2203,7 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+    EXPORT / IMPORT
+    ═══════════════════════════════════════ */
+ function exportData() {
+-    var blob = new Blob([JSON.stringify({ categories: categories, entries: entries, financeEntries: financeEntries }, null, 2)], { type: 'application/json' });
++    var blob = new Blob([JSON.stringify({ categories: categories, entries: entries, financeEntries: financeEntries, chimeEntries: chimeEntries }, null, 2)], { type: 'application/json' });
+     dl(blob, 'fhd-data-' + today() + '.json');
+     toast('JSON exported!');
+ }
+@@ -1984,7 +2236,8 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+             if (Array.isArray(obj.categories)) categories = obj.categories;
+             if (Array.isArray(obj.entries)) entries = obj.entries;
+             if (Array.isArray(obj.financeEntries)) financeEntries = obj.financeEntries;
+-            save(); renderAll(); renderFinanceAll();
++            if (Array.isArray(obj.chimeEntries)) chimeEntries = obj.chimeEntries;
++            save(); renderAll(); renderFinanceAll(); renderChimeAll();
+             toast('Data imported successfully!');
+         } catch(err) { toast('Invalid file format.'); }
+     };
+@@ -2386,6 +2639,363 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+     t._tm = setTimeout(function() { t.classList.remove('show'); }, isError ? 6000 : 2500);
+ }
+ 
++/* ═══════════════════════════════════════
++   INVOICE HANDLING
++   ═══════════════════════════════════════ */
++function handleInvoiceSelect(input) {
++    var files = Array.from(input.files);
++    if (pendingInvoices.length + files.length > 5) {
++        toast('Maximum 5 invoice photos per entry.');
++        input.value = '';
++        return;
++    }
++    files.forEach(function(file) {
++        if (!file.type.startsWith('image/')) return;
++        var reader = new FileReader();
++        reader.onload = function() {
++            resizeImage(reader.result, function(resized) {
++                if (pendingInvoices.length >= 5) return;
++                pendingInvoices.push(resized);
++                renderInvoicePreview();
++            });
++        };
++        reader.readAsDataURL(file);
++    });
++    input.value = '';
++}
++
++function resizeImage(dataUrl, callback) {
++    var img = new Image();
++    img.onload = function() {
++        var maxW = 800, maxH = 800;
++        var w = img.width, h = img.height;
++        if (w > maxW) { h = h * (maxW / w); w = maxW; }
++        if (h > maxH) { w = w * (maxH / h); h = maxH; }
++        var canvas = document.createElement('canvas');
++        canvas.width = w; canvas.height = h;
++        var ctx = canvas.getContext('2d');
++        ctx.drawImage(img, 0, 0, w, h);
++        callback(canvas.toDataURL('image/jpeg', 0.6));
++    };
++    img.src = dataUrl;
++}
++
++function renderInvoicePreview() {
++    var html = pendingInvoices.map(function(src, i) {
++        return '<div class="invoice-thumb"><img src="' + src + '"><button class="remove-invoice" onclick="removeInvoice(' + i + ')">&times;</button></div>';
++    }).join('');
++    document.getElementById('invoicePreview').innerHTML = html;
++}
++
++function removeInvoice(i) {
++    pendingInvoices.splice(i, 1);
++    renderInvoicePreview();
++}
++
++function viewInvoices(id) {
++    var entry = entries.find(function(e) { return String(e.id) === String(id); });
++    if (!entry || !entry.invoices || !entry.invoices.length) return;
++    var html = entry.invoices.map(function(src) {
++        return '<img src="' + src + '">';
++    }).join('');
++    document.getElementById('invoiceViewerBody').innerHTML = html;
++    document.getElementById('invoiceModal').classList.add('active');
++}
++
++function closeInvoiceModal() {
++    document.getElementById('invoiceModal').classList.remove('active');
++}
++
++/* ═══════════════════════════════════════
++   CHIME: STATE & HELPERS
++   ═══════════════════════════════════════ */
++var CHIME_DEPOSIT_TYPES = ['Deposit', 'Transfer In', 'Payment Received'];
++
++function isChimeDeposit(type) {
++    return CHIME_DEPOSIT_TYPES.indexOf(type) !== -1;
++}
++
++function setChimePeriod(p) {
++    chimePeriod = p;
++    document.querySelectorAll('#chimePeriodSelector .period-btn').forEach(function(b) {
++        b.classList.toggle('active', b.textContent.toLowerCase() === p);
++    });
++    renderChimeAll();
++}
++
++function saveChime() {
++    localStorage.setItem('fhd_chime', JSON.stringify(chimeEntries));
++}
++
++/* ═══════════════════════════════════════
++   CHIME: FORM
++   ═══════════════════════════════════════ */
++document.getElementById('chimeForm').addEventListener('submit', function(e) {
++    e.preventDefault();
++    var ce = {
++        id: Date.now(),
++        date: document.getElementById('chimeDate').value,
++        type: document.getElementById('chimeType').value,
++        amount: parseFloat(document.getElementById('chimeAmount').value),
++        description: document.getElementById('chimeDesc').value.trim()
++    };
++    chimeEntries.push(ce); saveChime(); saveLocal(); renderChimeAll();
++    document.getElementById('chimeAmount').value = '';
++    document.getElementById('chimeDesc').value = '';
++    toast('$' + ce.amount.toFixed(2) + ' ' + ce.type + ' logged to Chime.');
++});
++
++/* ═══════════════════════════════════════
++   CHIME: SUMMARY
++   ═══════════════════════════════════════ */
++function renderChimeSummary() {
++    var deposits = chimeEntries.filter(function(e) { return isChimeDeposit(e.type); }).reduce(function(s, e) { return s + e.amount; }, 0);
++    var withdrawals = chimeEntries.filter(function(e) { return !isChimeDeposit(e.type); }).reduce(function(s, e) { return s + e.amount; }, 0);
++    var balance = deposits - withdrawals;
++    var balClass = balance >= 0 ? '' : '';
++    document.getElementById('chimeSummaryStrip').innerHTML =
++        '<div class="chime-balance-card"><div class="num">$' + balance.toFixed(2) + '</div><div class="label">Current Balance</div></div>' +
++        '<div class="summary-card green"><div class="num">$' + deposits.toFixed(2) + '</div><div class="label">Total Deposits</div></div>' +
++        '<div class="summary-card red"><div class="num">$' + withdrawals.toFixed(2) + '</div><div class="label">Total Withdrawals</div></div>' +
++        '<div class="summary-card gold"><div class="num">' + chimeEntries.length + '</div><div class="label">Transactions</div></div>';
++}
++
++/* ═══════════════════════════════════════
++   CHIME: BREAKDOWN
++   ═══════════════════════════════════════ */
++function renderChimeBreakdown() {
++    document.getElementById('chimePeriodLabel').textContent = chimePeriod.charAt(0).toUpperCase() + chimePeriod.slice(1);
++    var chimeTypes = ['Deposit', 'Withdrawal', 'Transfer In', 'Transfer Out', 'Payment Received', 'Fee'];
++    var html = '';
++    chimeTypes.forEach(function(type) {
++        var total = chimeEntries.filter(function(e) { return e.type === type; }).reduce(function(s, e) { return s + e.amount; }, 0);
++        var cls = isChimeDeposit(type) ? 'fi-green' : 'fi-red';
++        html += '<div class="finance-item"><span class="fi-label">' + type + '</span><span class="fi-value ' + cls + '">$' + total.toFixed(2) + '</span></div>';
++    });
++    document.getElementById('chimeGrid').innerHTML = html;
++}
++
++/* ═══════════════════════════════════════
++   CHIME: BAR CHART
++   ═══════════════════════════════════════ */
++function drawChimeChart() {
++    var cc = document.getElementById('chimeBarChart');
++    var cctx = cc.getContext('2d');
++    var hasData = chimeEntries.length > 0;
++
++    document.getElementById('noChimeMsg').style.display = hasData ? 'none' : 'block';
++    cc.style.display = hasData ? 'block' : 'none';
++    if (!hasData) return;
++
++    var periodKeys = {};
++    chimeEntries.forEach(function(e) {
++        var key = getPeriodKey(e.date, chimePeriod);
++        if (!periodKeys[key]) periodKeys[key] = { deposits: 0, withdrawals: 0 };
++        if (isChimeDeposit(e.type)) periodKeys[key].deposits += e.amount;
++        else periodKeys[key].withdrawals += e.amount;
++    });
++
++    var keys = Object.keys(periodKeys).sort();
++    var maxVal = 0;
++    keys.forEach(function(k) { maxVal = Math.max(maxVal, periodKeys[k].deposits, periodKeys[k].withdrawals); });
++    maxVal = maxVal || 1;
++
++    var dpr = window.devicePixelRatio || 1;
++    var w = cc.clientWidth, h = cc.clientHeight;
++    cc.width = w * dpr; cc.height = h * dpr;
++    cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
++    cctx.clearRect(0, 0, w, h);
++
++    var pad = { top: 20, right: 20, bottom: 60, left: 70 };
++    var chartW = w - pad.left - pad.right;
++    var chartH = h - pad.top - pad.bottom;
++    var groupW = chartW / keys.length;
++    var barW = Math.min(groupW * 0.35, 40);
++
++    cctx.strokeStyle = '#e0e0e0'; cctx.lineWidth = 1;
++    cctx.fillStyle = '#6c757d'; cctx.font = '11px "Segoe UI", system-ui, sans-serif';
++    cctx.textAlign = 'right'; cctx.textBaseline = 'middle';
++    for (var gi = 0; gi <= 4; gi++) {
++        var yVal = (maxVal / 4) * gi;
++        var yPos = pad.top + chartH - (gi / 4) * chartH;
++        cctx.beginPath(); cctx.moveTo(pad.left, yPos); cctx.lineTo(w - pad.right, yPos); cctx.stroke();
++        cctx.fillText('$' + Math.round(yVal), pad.left - 8, yPos);
++    }
++
++    keys.forEach(function(key, i) {
++        var d = periodKeys[key];
++        var cx = pad.left + groupW * i + groupW / 2;
++        var dh = (d.deposits / maxVal) * chartH;
++        var wh = (d.withdrawals / maxVal) * chartH;
++
++        cctx.fillStyle = '#2196F3';
++        cctx.beginPath(); roundRect(cctx, cx - barW - 2, pad.top + chartH - dh, barW, dh, 4); cctx.fill();
++
++        cctx.fillStyle = '#e94560';
++        cctx.beginPath(); roundRect(cctx, cx + 2, pad.top + chartH - wh, barW, wh, 4); cctx.fill();
++
++        cctx.fillStyle = '#6c757d'; cctx.font = '10px "Segoe UI", system-ui, sans-serif';
++        cctx.textAlign = 'center'; cctx.textBaseline = 'top';
++        var label = key.length > 10 ? key.slice(5) : key;
++        cctx.save(); cctx.translate(cx, pad.top + chartH + 8); cctx.rotate(-0.4); cctx.fillText(label, 0, 0); cctx.restore();
++    });
++
++    cctx.font = '12px "Segoe UI", system-ui, sans-serif';
++    cctx.textAlign = 'left'; cctx.textBaseline = 'middle';
++    cctx.fillStyle = '#2196F3'; cctx.fillRect(pad.left, h - 18, 12, 12);
++    cctx.fillStyle = '#333'; cctx.fillText('Deposits', pad.left + 16, h - 12);
++    cctx.fillStyle = '#e94560'; cctx.fillRect(pad.left + 90, h - 18, 12, 12);
++    cctx.fillStyle = '#333'; cctx.fillText('Withdrawals', pad.left + 106, h - 12);
++}
++
++/* ═══════════════════════════════════════
++   CHIME: LOG TABLE
++   ═══════════════════════════════════════ */
++function renderChimeLog() {
++    var typeFilter = document.getElementById('filterChimeType').value;
++    var monthFilter = document.getElementById('filterChimeMonth').value;
++    var filtered = chimeEntries.slice();
++    if (typeFilter !== 'all') filtered = filtered.filter(function(e) { return e.type === typeFilter; });
++    if (monthFilter) filtered = filtered.filter(function(e) { return e.date.startsWith(monthFilter); });
++    filtered.sort(function(a, b) { return b.date.localeCompare(a.date) || b.id - a.id; });
++    var body = document.getElementById('chimeLogBody');
++    if (!filtered.length) { body.innerHTML = '<tr><td colspan="5" class="empty-log">No Chime transactions yet.</td></tr>'; return; }
++    body.innerHTML = filtered.map(function(e) {
++        var cls = isChimeDeposit(e.type) ? 'amount-pos' : 'amount-neg';
++        var prefix = isChimeDeposit(e.type) ? '+' : '-';
++        return '<tr><td>' + e.date + '</td><td>' + esc(e.type) + '</td><td class="' + cls + '">' + prefix + '$' + e.amount.toFixed(2) + '</td><td>' + esc(e.description || '\u2014') + '</td><td class="action-cell"><button class="btn-edit" onclick="editChimeEntry(' + e.id + ')" title="Edit">&#9998;</button><button class="btn btn-danger" onclick="deleteChimeEntry(' + e.id + ')" title="Delete">&times;</button></td></tr>';
++    }).join('');
++}
++
++function deleteChimeEntry(id) {
++    if (!confirm('Delete this Chime transaction?')) return;
++    chimeEntries = chimeEntries.filter(function(e) { return String(e.id) !== String(id); });
++    saveChime(); saveLocal(); renderChimeAll(); toast('Chime transaction deleted.');
++}
++
++function editChimeEntry(id) {
++    var entry = chimeEntries.find(function(e) { return String(e.id) === String(id); });
++    if (!entry) return;
++    document.getElementById('editChimeId').value = id;
++    document.getElementById('editChimeDate').value = entry.date;
++    document.getElementById('editChimeType').value = entry.type;
++    document.getElementById('editChimeAmount').value = entry.amount;
++    document.getElementById('editChimeDesc').value = entry.description || '';
++    document.getElementById('editChimeModal').classList.add('active');
++}
++
++function saveChimeEdit() {
++    var id = document.getElementById('editChimeId').value;
++    var entry = chimeEntries.find(function(e) { return String(e.id) === String(id); });
++    if (!entry) return;
++    var amountVal = parseFloat(document.getElementById('editChimeAmount').value);
++    if (isNaN(amountVal) || amountVal <= 0) { toast('Amount must be greater than 0.'); return; }
++    entry.date = document.getElementById('editChimeDate').value;
++    entry.type = document.getElementById('editChimeType').value;
++    entry.amount = amountVal;
++    entry.description = document.getElementById('editChimeDesc').value.trim();
++    saveChime(); saveLocal(); renderChimeAll(); closeEditChimeModal(); toast('Chime transaction updated.');
++}
++
++function closeEditChimeModal() {
++    document.getElementById('editChimeModal').classList.remove('active');
++}
++
++function clearChimeFilters() {
++    document.getElementById('filterChimeType').value = 'all';
++    document.getElementById('filterChimeMonth').value = '';
++    renderChimeLog();
++}
++
++/* ═══════════════════════════════════════
++   CHIME: CSV IMPORT
++   ═══════════════════════════════════════ */
++function handleChimeCSV(event) {
++    var file = event.target.files[0];
++    if (!file) return;
++    var reader = new FileReader();
++    reader.onload = function() {
++        try {
++            parseChimeCSV(reader.result);
++        } catch (err) {
++            toast('Error parsing Chime CSV: ' + err.message, true);
++        }
++    };
++    reader.readAsText(file);
++    event.target.value = '';
++}
++
++function parseChimeCSV(csvText) {
++    var lines = csvText.split(/\r?\n/).filter(function(l) { return l.trim().length > 0; });
++    if (lines.length < 2) { toast('CSV file appears empty.'); return; }
++
++    var headers = parseCSVLine(lines[0]);
++    var dateCol = -1, descCol = -1, amountCol = -1, balanceCol = -1;
++
++    headers.forEach(function(h, i) {
++        var lc = h.toLowerCase().replace(/[^a-z0-9]/g, '');
++        if (dateCol === -1 && /date|transactiondate|postdate/.test(lc)) dateCol = i;
++        if (descCol === -1 && /description|desc|memo|details|merchant|name/.test(lc)) descCol = i;
++        if (amountCol === -1 && /^(amount|transactionamount|amt)$/.test(lc)) amountCol = i;
++        if (balanceCol === -1 && /balance/.test(lc)) balanceCol = i;
++    });
++    if (dateCol === -1) dateCol = 0;
++    if (amountCol === -1) {
++        for (var j = 0; j < headers.length; j++) {
++            if (j !== dateCol && j !== descCol && j !== balanceCol) { amountCol = j; break; }
++        }
++    }
++
++    var imported = 0;
++    for (var i = 1; i < lines.length; i++) {
++        var fields = parseCSVLine(lines[i]);
++        if (fields.length < 2) continue;
++        var dateStr = parseDate(fields[dateCol]);
++        if (!dateStr) continue;
++        var desc = descCol !== -1 ? (fields[descCol] || '').trim() : '';
++        var amt = parseAmount(fields[amountCol]);
++        if (amt === null || amt === 0) continue;
++        var isDeposit = amt > 0;
++        chimeEntries.push({
++            id: Date.now() + Math.floor(Math.random() * 10000) + i,
++            date: dateStr,
++            type: isDeposit ? 'Deposit' : 'Withdrawal',
++            amount: Math.abs(amt),
++            description: desc.substring(0, 80) || 'Chime Transaction'
++        });
++        imported++;
++    }
++
++    if (imported === 0) { toast('No valid transactions found in the Chime CSV.'); return; }
++    saveChime(); saveLocal(); renderChimeAll();
++    toast(imported + ' Chime transactions imported!');
++}
++
++// Chime CSV drag & drop
++(function() {
++    var zone = document.getElementById('chimeUploadZone');
++    if (!zone) return;
++    zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.classList.add('dragover'); });
++    zone.addEventListener('dragleave', function() { zone.classList.remove('dragover'); });
++    zone.addEventListener('drop', function(e) {
++        e.preventDefault(); zone.classList.remove('dragover');
++        var file = e.dataTransfer.files[0];
++        if (!file) return;
++        if (file.name.toLowerCase().endsWith('.csv')) {
++            var reader = new FileReader();
++            reader.onload = function() { try { parseChimeCSV(reader.result); } catch (err) { toast('Error: ' + err.message); } };
++            reader.readAsText(file);
++        } else { toast('Please upload a CSV file.'); }
++    });
++})();
++
++/* ═══════════════════════════════════════
++   CHIME: RENDER ALL
++   ═══════════════════════════════════════ */
++function renderChimeAll() {
++    renderChimeSummary(); renderChimeBreakdown(); drawChimeChart(); renderChimeLog();
++}
++
+ /* ═══════════════════════════════════════
+    INIT
+    ═══════════════════════════════════════ */
+@@ -2398,6 +3008,7 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+ 
+ document.getElementById('entryDate').value = today();
+ document.getElementById('finDate').value = today();
++document.getElementById('chimeDate').value = today();
+ document.getElementById('footerYear').textContent = new Date().getFullYear();
+ renderAll();
+ renderFinanceAll();

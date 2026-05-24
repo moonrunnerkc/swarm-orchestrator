@@ -1,0 +1,220 @@
+diff --git a/docs/PORTING.md b/docs/PORTING.md
+index 58a8337..008769c 100644
+--- a/docs/PORTING.md
++++ b/docs/PORTING.md
+@@ -17,9 +17,21 @@
+   `chrome.storage` のようなブラウザ拡張 API は、別シェルで差し替えやすいよう
+   プラットフォーム端に寄せる。
+ 
++## iOS / Android シェルで差し替えるもの
++
++- `src/core` はそのまま再利用し、アプリシェルから直接プラットフォーム API を
++  渡さない。タスクの作成、正規化、並べ替え、完了切替などは core 関数だけで行う。
++- 保存は `TodoStorageAdapter` を実装したモジュールに閉じ込める。モバイル版では
++  SQLite、Key-Value Store、ファイル保存などを使ってよいが、アプリ側へ見せる
++  キーと JSON 互換の値形式は Chrome 版と同じにする。
++- UI は起動時に利用する storage アダプタを 1 箇所で選ぶ。画面コンポーネント内に
++  `chrome.storage` やモバイル固有の保存 API を直接書かない。
++- `subscribe` は別画面・別プロセスから変更通知を受けられる環境では通知を橋渡しし、
++  単一画面で不要な場合も同じ関数形の no-op unsubscribe を返す実装にする。
++
+ ## storage アダプタ追加時のチェックリスト
+ 
+-1. `TodoStorage` の `get`, `set`, `subscribe` を実装する。
++1. `TodoStorageAdapter` の `get`, `set`, `subscribe` を実装する。
+ 2. 保存キーと JSON 互換の値形式を維持する。
+ 3. オフライン前提を変える別判断がない限り、保存は端末ローカルに閉じる。
+ 4. Chrome 版に remote code、外部 CDN / 外部フォント、`eval`、新しい権限を
+diff --git a/src/newtab.ts b/src/newtab.ts
+index 36376c3..9b67261 100644
+--- a/src/newtab.ts
++++ b/src/newtab.ts
+@@ -10,7 +10,8 @@ import {
+     type HistoryItem,
+     type Task,
+ } from './core/tasks';
+-import { chromeTodoStorage } from './storage/chromeTodoStorage';
++import { createChromeTodoStorage } from './storage/chromeTodoStorage';
++import type { TodoStorageAdapter } from './storage/todoStorage';
+ 
+ type TaskControl = 'checkbox' | 'focus' | 'move-up' | 'move-down' | 'delete';
+ type TaskFocusControl = TaskControl | 'item';
+@@ -21,6 +22,7 @@ type PendingFocusTarget =
+ 
+ let pendingFocusTarget: PendingFocusTarget | null = null;
+ type SupportedLocale = 'ja' | 'en';
++const todoStorage: TodoStorageAdapter = createChromeTodoStorage();
+ 
+ function getRequiredElement<T extends HTMLElement>(id: string): T {
+     const element = document.getElementById(id);
+@@ -353,7 +355,7 @@ function renderTasks(tasks: Task[]) {
+ }
+ 
+ async function loadTasks() {
+-    const result = await chromeTodoStorage.get(['tasks', 'last_date', 'trial_start_ts', 'is_premium', 'history', 'theme']);
++    const result = await todoStorage.get(['tasks', 'last_date', 'trial_start_ts', 'is_premium', 'history', 'theme']);
+     const today = getTodayString();
+     const lastDate = result.last_date;
+     let trialStartTs = result.trial_start_ts;
+@@ -363,7 +365,7 @@ async function loadTasks() {
+ 
+     if (!trialStartTs) {
+         trialStartTs = Date.now();
+-        void chromeTodoStorage.set({ trial_start_ts: trialStartTs });
++        void todoStorage.set({ trial_start_ts: trialStartTs });
+     }
+ 
+     document.body.style.backgroundColor = theme;
+@@ -378,36 +380,36 @@ async function loadTasks() {
+     if (lastDate && lastDate !== today) {
+         // Date changed: carry over incomplete, reset completed
+         tasks = removeCompletedTasks(tasks);
+-        await chromeTodoStorage.set({ tasks, last_date: today });
++        await todoStorage.set({ tasks, last_date: today });
+         renderTasks(tasks);
+     } else {
+         if (!lastDate) {
+-            void chromeTodoStorage.set({ last_date: today });
++            void todoStorage.set({ last_date: today });
+         }
+         renderTasks(tasks);
+     }
+ }
+ 
+ async function moveTask(index: number, direction: -1 | 1) {
+-    const result = await chromeTodoStorage.get(['tasks']);
++    const result = await todoStorage.get(['tasks']);
+     const tasks = normalizeTasks(result.tasks);
+     const newTasks = moveTaskInList(tasks, index, direction);
+     if (newTasks) {
+-        await chromeTodoStorage.set({ tasks: newTasks });
++        await todoStorage.set({ tasks: newTasks });
+         renderTasks(newTasks);
+     }
+ }
+ 
+ async function deleteTask(index: number) {
+-    const result = await chromeTodoStorage.get(['tasks']);
++    const result = await todoStorage.get(['tasks']);
+     const tasks = normalizeTasks(result.tasks);
+     const newTasks = deleteTaskAt(tasks, index);
+-    await chromeTodoStorage.set({ tasks: newTasks });
++    await todoStorage.set({ tasks: newTasks });
+     renderTasks(newTasks);
+ }
+ 
+ async function toggleTask(index: number) {
+-    const result = await chromeTodoStorage.get(['tasks', 'is_premium', 'history']);
++    const result = await todoStorage.get(['tasks', 'is_premium', 'history']);
+     const tasks = normalizeTasks(result.tasks);
+     const isPremium = !!result.is_premium;
+     const history = result.history || [];
+@@ -418,18 +420,18 @@ async function toggleTask(index: number) {
+             ? [...history, { text: toggled.completedTask.text, completed_at: Date.now() }]
+             : history;
+ 
+-        await chromeTodoStorage.set({ tasks: toggled.tasks, history: newHistory.slice(-100) });
++        await todoStorage.set({ tasks: toggled.tasks, history: newHistory.slice(-100) });
+         renderTasks(toggled.tasks);
+         if (isPremium) renderHistory(newHistory);
+     }
+ }
+ 
+ async function toggleFocus(index: number) {
+-    const result = await chromeTodoStorage.get(['tasks']);
++    const result = await todoStorage.get(['tasks']);
+     const tasks = normalizeTasks(result.tasks);
+     const newTasks = toggleTaskFocus(tasks, index);
+     if (newTasks) {
+-        await chromeTodoStorage.set({ tasks: newTasks });
++        await todoStorage.set({ tasks: newTasks });
+         renderTasks(newTasks);
+     }
+ }
+@@ -438,10 +440,10 @@ async function addTask() {
+     const text = taskInput.value.trim();
+     if (!text) return;
+ 
+-    const result = await chromeTodoStorage.get(['tasks']);
++    const result = await todoStorage.get(['tasks']);
+     const tasks = normalizeTasks(result.tasks);
+     const newTasks: Task[] = [...tasks, createTask(text)];
+-    await chromeTodoStorage.set({ tasks: newTasks });
++    await todoStorage.set({ tasks: newTasks });
+     taskInput.value = '';
+     renderTasks(newTasks);
+ }
+@@ -457,12 +459,12 @@ emptyStateAction.addEventListener('click', () => {
+ 
+ themeColorInput.addEventListener('change', () => {
+     const theme = themeColorInput.value;
+-    void chromeTodoStorage.set({ theme }).then(() => {
++    void todoStorage.set({ theme }).then(() => {
+         document.body.style.backgroundColor = theme;
+     });
+ });
+ 
+-chromeTodoStorage.subscribe((changes) => {
++todoStorage.subscribe((changes) => {
+     if (changes.tasks || changes.last_date || changes.is_premium || changes.theme) {
+         void loadTasks();
+     }
+diff --git a/src/storage/chromeTodoStorage.ts b/src/storage/chromeTodoStorage.ts
+index bcd8831..e8bdd0a 100644
+--- a/src/storage/chromeTodoStorage.ts
++++ b/src/storage/chromeTodoStorage.ts
+@@ -1,9 +1,9 @@
+ import type {
+-    TodoStorage,
++    TodoStorageAdapter,
+     TodoStorageChangeListener,
+     TodoStorageChanges,
+     TodoStorageKey,
+-    TodoStorageValues,
++    TodoStorageSelection,
+ } from './todoStorage';
+ import { TODO_STORAGE_KEYS } from './todoStorage';
+ 
+@@ -11,12 +11,12 @@ function isTodoStorageKey(key: string): key is TodoStorageKey {
+     return (TODO_STORAGE_KEYS as readonly string[]).includes(key);
+ }
+ 
+-export function createChromeTodoStorage(): TodoStorage {
++export function createChromeTodoStorage(): TodoStorageAdapter {
+     return {
+         get<K extends TodoStorageKey>(keys: readonly K[]) {
+-            return new Promise<Pick<TodoStorageValues, K>>(resolve => {
++            return new Promise<TodoStorageSelection<K>>(resolve => {
+                 chrome.storage.local.get([...keys], result => {
+-                    resolve(result as Pick<TodoStorageValues, K>);
++                    resolve(result as TodoStorageSelection<K>);
+                 });
+             });
+         },
+@@ -51,5 +51,3 @@ export function createChromeTodoStorage(): TodoStorage {
+         },
+     };
+ }
+-
+-export const chromeTodoStorage = createChromeTodoStorage();
+diff --git a/src/storage/todoStorage.ts b/src/storage/todoStorage.ts
+index 0d4a75f..905485b 100644
+--- a/src/storage/todoStorage.ts
++++ b/src/storage/todoStorage.ts
+@@ -29,9 +29,13 @@ export type TodoStorageChanges = {
+ };
+ export type TodoStorageChangeListener = (changes: TodoStorageChanges) => void;
+ export type TodoStorageUnsubscribe = () => void;
++export type TodoStorageSelection<K extends TodoStorageKey> = Pick<TodoStorageValues, K>;
++export type TodoStoragePatch = Partial<TodoStorageValues>;
+ 
+-export interface TodoStorage {
+-    get<K extends TodoStorageKey>(keys: readonly K[]): Promise<Pick<TodoStorageValues, K>>;
+-    set(values: Partial<TodoStorageValues>): Promise<void>;
++export interface TodoStorageAdapter {
++    get<K extends TodoStorageKey>(keys: readonly K[]): Promise<TodoStorageSelection<K>>;
++    set(values: TodoStoragePatch): Promise<void>;
+     subscribe(listener: TodoStorageChangeListener): TodoStorageUnsubscribe;
+ }
++
++export type TodoStorage = TodoStorageAdapter;

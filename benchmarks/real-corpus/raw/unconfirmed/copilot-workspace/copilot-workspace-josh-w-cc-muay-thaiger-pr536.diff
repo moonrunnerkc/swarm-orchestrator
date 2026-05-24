@@ -1,0 +1,38 @@
+diff --git a/web/pages/Game/Header.module.css b/web/pages/Game/Header.module.css
+index ad8f43f..d860b0f 100644
+--- a/web/pages/Game/Header.module.css
++++ b/web/pages/Game/Header.module.css
+@@ -33,11 +33,14 @@
+ 
+ @media(max-width: 768px) {
+   .header {
+-    gap: var(--space-lg);
++    gap: var(--space-md);
+     justify-content: flex-start;
+     overflow-x: auto;
+     padding-inline: var(--space-md);
++    position: relative;
++    right: var(--space-xl);
+     scroll-snap-type: x mandatory;
++    width: calc(100% + var(--space-xl) * 2);
+   }
+ 
+   .navigationButton {
+diff --git a/web/pages/Game/Header.test.js b/web/pages/Game/Header.test.js
+index 3f75e1e..38660ec 100644
+--- a/web/pages/Game/Header.test.js
++++ b/web/pages/Game/Header.test.js
+@@ -76,7 +76,12 @@ describe('Header', () => {
+   it('defines horizontal mobile header scrolling with snap spacing', () => {
+     const directoryPath = path.dirname(fileURLToPath(import.meta.url));
+     const modulePath = path.join(directoryPath, 'Header.module.css');
+-    const mobileHeaderPattern = /@media\(max-width:\s*768px\)\s*{[\s\S]*\.header\s*{[\s\S]*overflow-x:\s*auto;[\s\S]*scroll-snap-type:\s*x mandatory;/s;
++    const mobileHeaderPattern = new RegExp(
++      '@media\\(max-width:\\s*768px\\)\\s*{[\\s\\S]*\\.header\\s*{[\\s\\S]*'
++      + 'overflow-x:\\s*auto;[\\s\\S]*right:\\s*var\\(--space-xl\\);[\\s\\S]*'
++      + 'scroll-snap-type:\\s*x mandatory;[\\s\\S]*width:\\s*calc\\(100% \\+ var\\(--space-xl\\) \\* 2\\);',
++      's',
++    );
+     const mobileNavigationButtonPattern = new RegExp(
+       '@media\\(max-width:\\s*768px\\)\\s*{[\\s\\S]*\\.navigationButton\\s*{[\\s\\S]*'
+       + 'flex:\\s*0 0 calc\\(100% - var\\(--space-md\\) \\* 2\\);[\\s\\S]*scroll-snap-align:\\s*center;',

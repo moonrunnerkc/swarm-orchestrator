@@ -1,0 +1,2055 @@
+diff --git a/README.md b/README.md
+index 90dbf29..a0401fe 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1,7 @@
+ # bow-diagnostico
++
++Arquivo final para importar no Typebot:
++
++- `typebot/diagnostico-bow360-esx-2026-importavel.json`
++
++O arquivo foi normalizado para o schema Typebot v6.1 com `events`, `groups`, `edges` e `variables` em formato de lista. Ele inclui captura de lead, 6 perguntas de maturidade em IA/automacao/marketing, pontuacao de 0 a 120, normalizacao para 0 a 100 e classificacao final em Inicial, Intermediario ou Avancado.
+diff --git a/typebot/diagnostico-bow360-esx-2026-importavel.json b/typebot/diagnostico-bow360-esx-2026-importavel.json
+new file mode 100644
+index 0000000..fe89896
+--- /dev/null
++++ b/typebot/diagnostico-bow360-esx-2026-importavel.json
+@@ -0,0 +1,2037 @@
++{
++  "version": "6.1",
++  "id": "diagnostico-bow360-esx-2026-importavel",
++  "name": "Diagnostico IA Bow360 - ESX 2026 (Importavel)",
++  "events": [
++    {
++      "id": "event-start",
++      "outgoingEdgeId": "edge-start-to-lead-name",
++      "graphCoordinates": {
++        "x": -300,
++        "y": 0
++      },
++      "type": "start"
++    }
++  ],
++  "groups": [
++    {
++      "id": "group-lead-name",
++      "title": "Boas-vindas e nome",
++      "graphCoordinates": {
++        "x": 0,
++        "y": 0
++      },
++      "blocks": [
++        {
++          "id": "txt-welcome-1",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Diagnostico IA Bow360 - ESX 2026"
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        {
++          "id": "txt-welcome-2",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Responda 6 perguntas rapidas para receber uma leitura de maturidade em IA, automacao e marketing."
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        {
++          "id": "txt-ask-name",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Para personalizar o resultado, qual e o seu nome?"
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        {
++          "id": "input-nome",
++          "outgoingEdgeId": "edge-name-to-email",
++          "type": "text input",
++          "options": {
++            "variableId": "var-nome"
++          }
++        }
++      ]
++    },
++    {
++      "id": "group-lead-email",
++      "title": "E-mail",
++      "graphCoordinates": {
++        "x": 360,
++        "y": 0
++      },
++      "blocks": [
++        {
++          "id": "txt-ask-email",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Perfeito, {{nome}}. Qual e o seu melhor e-mail?"
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        {
++          "id": "input-email",
++          "outgoingEdgeId": "edge-email-to-company",
++          "type": "email input",
++          "options": {
++            "variableId": "var-email"
++          }
++        }
++      ]
++    },
++    {
++      "id": "group-lead-phone",
++      "title": "Telefone/WhatsApp",
++      "graphCoordinates": {
++        "x": 540,
++        "y": 0
++      },
++      "blocks": [
++        {
++          "id": "txt-ask-phone",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Qual é o seu WhatsApp com DDD? Ex: 11999999999"
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        {
++          "id": "input-telefone",
++          "outgoingEdgeId": "edge-phone-to-company",
++          "type": "phone number input",
++          "options": {
++            "variableId": "var-telefone",
++            "defaultCountryCode": "BR"
++          }
++        }
++      ]
++    },
++    {
++      "id": "group-lead-company",
++      "title": "Empresa",
++      "graphCoordinates": {
++        "x": 900,
++        "y": 0
++      },
++      "blocks": [
++        {
++          "id": "txt-ask-company",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Qual e o nome da sua empresa?"
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        {
++          "id": "input-empresa",
++          "outgoingEdgeId": "edge-company-to-init-score",
++          "type": "text input",
++          "options": {
++            "variableId": "var-empresa"
++          }
++        }
++      ]
++    },
++    {
++      "id": "group-init-score",
++      "title": "Iniciar pontuacao",
++      "graphCoordinates": {
++        "x": 1260,
++        "y": 0
++      },
++      "blocks": [
++        {
++          "id": "set-pontuacao-zero",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "0"
++          },
++          "outgoingEdgeId": "edge-init-score-to-q1"
++        }
++      ]
++    },
++    {
++      "id": "group-q1",
++      "title": "Estrategia de IA",
++      "graphCoordinates": {
++        "x": 1620,
++        "y": 0
++      },
++      "blocks": [
++        {
++          "id": "txt-q1",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "1/6 - Como sua empresa usa IA hoje?"
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        {
++          "id": "choice-q1",
++          "type": "choice input",
++          "items": [
++            {
++              "id": "item-q1-0",
++              "outgoingEdgeId": "edge-q1-answer-0",
++              "content": "Ainda nao usamos IA de forma estruturada."
++            },
++            {
++              "id": "item-q1-10",
++              "outgoingEdgeId": "edge-q1-answer-10",
++              "content": "Temos testes pontuais com ferramentas como ChatGPT."
++            },
++            {
++              "id": "item-q1-20",
++              "outgoingEdgeId": "edge-q1-answer-20",
++              "content": "Temos IA conectada a processos, metas e indicadores."
++            }
++          ],
++          "options": {
++            "variableId": "var-resposta-q1"
++          }
++        }
++      ]
++    },
++    {
++      "id": "group-q1-score-0",
++      "title": "Estrategia de IA +0",
++      "graphCoordinates": {
++        "x": 1620,
++        "y": 280
++      },
++      "blocks": [
++        {
++          "id": "set-q1-score-0",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 0"
++          },
++          "outgoingEdgeId": "edge-q1-score-0-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-q1-score-10",
++      "title": "Estrategia de IA +10",
++      "graphCoordinates": {
++        "x": 1620,
++        "y": 330
++      },
++      "blocks": [
++        {
++          "id": "set-q1-score-10",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 10"
++          },
++          "outgoingEdgeId": "edge-q1-score-10-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-q1-score-20",
++      "title": "Estrategia de IA +20",
++      "graphCoordinates": {
++        "x": 1620,
++        "y": 380
++      },
++      "blocks": [
++        {
++          "id": "set-q1-score-20",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 20"
++          },
++          "outgoingEdgeId": "edge-q1-score-20-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-q2",
++      "title": "Automacao comercial",
++      "graphCoordinates": {
++        "x": 2060,
++        "y": 0
++      },
++      "blocks": [
++        {
++          "id": "txt-q2",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "2/6 - Como esta a automacao do atendimento e vendas?"
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        {
++          "id": "choice-q2",
++          "type": "choice input",
++          "items": [
++            {
++              "id": "item-q2-0",
++              "outgoingEdgeId": "edge-q2-answer-0",
++              "content": "Atendimento e follow-up sao quase totalmente manuais."
++            },
++            {
++              "id": "item-q2-10",
++              "outgoingEdgeId": "edge-q2-answer-10",
++              "content": "Temos algumas automacoes, mas sem integracao completa."
++            },
++            {
++              "id": "item-q2-20",
++              "outgoingEdgeId": "edge-q2-answer-20",
++              "content": "Leads, atendimento, CRM e follow-up trabalham integrados."
++            }
++          ],
++          "options": {
++            "variableId": "var-resposta-q2"
++          }
++        }
++      ]
++    },
++    {
++      "id": "group-q2-score-0",
++      "title": "Automacao comercial +0",
++      "graphCoordinates": {
++        "x": 2060,
++        "y": 280
++      },
++      "blocks": [
++        {
++          "id": "set-q2-score-0",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 0"
++          },
++          "outgoingEdgeId": "edge-q2-score-0-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-q2-score-10",
++      "title": "Automacao comercial +10",
++      "graphCoordinates": {
++        "x": 2060,
++        "y": 330
++      },
++      "blocks": [
++        {
++          "id": "set-q2-score-10",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 10"
++          },
++          "outgoingEdgeId": "edge-q2-score-10-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-q2-score-20",
++      "title": "Automacao comercial +20",
++      "graphCoordinates": {
++        "x": 2060,
++        "y": 380
++      },
++      "blocks": [
++        {
++          "id": "set-q2-score-20",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 20"
++          },
++          "outgoingEdgeId": "edge-q2-score-20-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-q3",
++      "title": "Dados e mensuracao",
++      "graphCoordinates": {
++        "x": 2500,
++        "y": 0
++      },
++      "blocks": [
++        {
++          "id": "txt-q3",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "3/6 - Qual e a qualidade dos dados para tomada de decisao?"
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        {
++          "id": "choice-q3",
++          "type": "choice input",
++          "items": [
++            {
++              "id": "item-q3-0",
++              "outgoingEdgeId": "edge-q3-answer-0",
++              "content": "Os dados ficam dispersos e quase nao viram decisao."
++            },
++            {
++              "id": "item-q3-10",
++              "outgoingEdgeId": "edge-q3-answer-10",
++              "content": "Temos dashboards ou planilhas, mas ainda com gaps."
++            },
++            {
++              "id": "item-q3-20",
++              "outgoingEdgeId": "edge-q3-answer-20",
++              "content": "Temos indicadores confiaveis por funil, campanha e receita."
++            }
++          ],
++          "options": {
++            "variableId": "var-resposta-q3"
++          }
++        }
++      ]
++    },
++    {
++      "id": "group-q3-score-0",
++      "title": "Dados e mensuracao +0",
++      "graphCoordinates": {
++        "x": 2500,
++        "y": 280
++      },
++      "blocks": [
++        {
++          "id": "set-q3-score-0",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 0"
++          },
++          "outgoingEdgeId": "edge-q3-score-0-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-q3-score-10",
++      "title": "Dados e mensuracao +10",
++      "graphCoordinates": {
++        "x": 2500,
++        "y": 330
++      },
++      "blocks": [
++        {
++          "id": "set-q3-score-10",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 10"
++          },
++          "outgoingEdgeId": "edge-q3-score-10-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-q3-score-20",
++      "title": "Dados e mensuracao +20",
++      "graphCoordinates": {
++        "x": 2500,
++        "y": 380
++      },
++      "blocks": [
++        {
++          "id": "set-q3-score-20",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 20"
++          },
++          "outgoingEdgeId": "edge-q3-score-20-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-q4",
++      "title": "Marketing e captacao",
++      "graphCoordinates": {
++        "x": 2940,
++        "y": 0
++      },
++      "blocks": [
++        {
++          "id": "txt-q4",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "4/6 - Como voce avalia a captacao e qualificacao de leads?"
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        {
++          "id": "choice-q4",
++          "type": "choice input",
++          "items": [
++            {
++              "id": "item-q4-0",
++              "outgoingEdgeId": "edge-q4-answer-0",
++              "content": "A captacao e irregular e a qualificacao e manual."
++            },
++            {
++              "id": "item-q4-10",
++              "outgoingEdgeId": "edge-q4-answer-10",
++              "content": "Geramos leads, mas a qualificacao ainda perde oportunidades."
++            },
++            {
++              "id": "item-q4-20",
++              "outgoingEdgeId": "edge-q4-answer-20",
++              "content": "Temos captacao previsivel, segmentacao e automacoes por perfil."
++            }
++          ],
++          "options": {
++            "variableId": "var-resposta-q4"
++          }
++        }
++      ]
++    },
++    {
++      "id": "group-q4-score-0",
++      "title": "Marketing e captacao +0",
++      "graphCoordinates": {
++        "x": 2940,
++        "y": 280
++      },
++      "blocks": [
++        {
++          "id": "set-q4-score-0",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 0"
++          },
++          "outgoingEdgeId": "edge-q4-score-0-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-q4-score-10",
++      "title": "Marketing e captacao +10",
++      "graphCoordinates": {
++        "x": 2940,
++        "y": 330
++      },
++      "blocks": [
++        {
++          "id": "set-q4-score-10",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 10"
++          },
++          "outgoingEdgeId": "edge-q4-score-10-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-q4-score-20",
++      "title": "Marketing e captacao +20",
++      "graphCoordinates": {
++        "x": 2940,
++        "y": 380
++      },
++      "blocks": [
++        {
++          "id": "set-q4-score-20",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 20"
++          },
++          "outgoingEdgeId": "edge-q4-score-20-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-q5",
++      "title": "Processos e produtividade",
++      "graphCoordinates": {
++        "x": 3380,
++        "y": 0
++      },
++      "blocks": [
++        {
++          "id": "txt-q5",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "5/6 - Quanto tempo o time perde com tarefas repetitivas?"
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        {
++          "id": "choice-q5",
++          "type": "choice input",
++          "items": [
++            {
++              "id": "item-q5-0",
++              "outgoingEdgeId": "edge-q5-answer-0",
++              "content": "Muito tempo; dependemos de atividades manuais diariamente."
++            },
++            {
++              "id": "item-q5-10",
++              "outgoingEdgeId": "edge-q5-answer-10",
++              "content": "Algumas rotinas foram otimizadas, mas ha muito retrabalho."
++            },
++            {
++              "id": "item-q5-20",
++              "outgoingEdgeId": "edge-q5-answer-20",
++              "content": "As principais rotinas repetitivas ja foram automatizadas."
++            }
++          ],
++          "options": {
++            "variableId": "var-resposta-q5"
++          }
++        }
++      ]
++    },
++    {
++      "id": "group-q5-score-0",
++      "title": "Processos e produtividade +0",
++      "graphCoordinates": {
++        "x": 3380,
++        "y": 280
++      },
++      "blocks": [
++        {
++          "id": "set-q5-score-0",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 0"
++          },
++          "outgoingEdgeId": "edge-q5-score-0-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-q5-score-10",
++      "title": "Processos e produtividade +10",
++      "graphCoordinates": {
++        "x": 3380,
++        "y": 330
++      },
++      "blocks": [
++        {
++          "id": "set-q5-score-10",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 10"
++          },
++          "outgoingEdgeId": "edge-q5-score-10-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-q5-score-20",
++      "title": "Processos e produtividade +20",
++      "graphCoordinates": {
++        "x": 3380,
++        "y": 380
++      },
++      "blocks": [
++        {
++          "id": "set-q5-score-20",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 20"
++          },
++          "outgoingEdgeId": "edge-q5-score-20-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-q6",
++      "title": "Prontidao para escalar",
++      "graphCoordinates": {
++        "x": 3820,
++        "y": 0
++      },
++      "blocks": [
++        {
++          "id": "txt-q6",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "6/6 - O quanto sua empresa esta pronta para escalar com IA?"
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        {
++          "id": "choice-q6",
++          "type": "choice input",
++          "items": [
++            {
++              "id": "item-q6-0",
++              "outgoingEdgeId": "edge-q6-answer-0",
++              "content": "Ainda precisamos organizar estrategia, dados e processos."
++            },
++            {
++              "id": "item-q6-10",
++              "outgoingEdgeId": "edge-q6-answer-10",
++              "content": "Temos base inicial, mas precisamos priorizar os proximos passos."
++            },
++            {
++              "id": "item-q6-20",
++              "outgoingEdgeId": "edge-q6-answer-20",
++              "content": "Temos maturidade para acelerar e escalar novas automacoes."
++            }
++          ],
++          "options": {
++            "variableId": "var-resposta-q6"
++          }
++        }
++      ]
++    },
++    {
++      "id": "group-q6-score-0",
++      "title": "Prontidao para escalar +0",
++      "graphCoordinates": {
++        "x": 3820,
++        "y": 280
++      },
++      "blocks": [
++        {
++          "id": "set-q6-score-0",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 0"
++          },
++          "outgoingEdgeId": "edge-q6-score-0-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-q6-score-10",
++      "title": "Prontidao para escalar +10",
++      "graphCoordinates": {
++        "x": 3820,
++        "y": 330
++      },
++      "blocks": [
++        {
++          "id": "set-q6-score-10",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 10"
++          },
++          "outgoingEdgeId": "edge-q6-score-10-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-q6-score-20",
++      "title": "Prontidao para escalar +20",
++      "graphCoordinates": {
++        "x": 3820,
++        "y": 380
++      },
++      "blocks": [
++        {
++          "id": "set-q6-score-20",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao",
++            "expressionToEvaluate": "{{pontuacao}} + 20"
++          },
++          "outgoingEdgeId": "edge-q6-score-20-to-next"
++        }
++      ]
++    },
++    {
++      "id": "group-open",
++      "title": "Pergunta aberta",
++      "graphCoordinates": {
++        "x": 4260,
++        "y": 0
++      },
++      "blocks": [
++        {
++          "id": "text-open",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Para fechar, qual e o principal desafio que voce quer resolver com IA ou automacao nos proximos meses?"
++                  }
++                ]
++              }
++            ]
++          }
++        },
++        {
++          "id": "input-open",
++          "outgoingEdgeId": "edge-open-to-normalize",
++          "type": "text input",
++          "options": {
++            "variableId": "var-resposta-aberta",
++            "isLong": true
++          }
++        }
++      ]
++    },
++    {
++      "id": "group-normalize",
++      "title": "Normalizar pontuacao",
++      "graphCoordinates": {
++        "x": 4680,
++        "y": 0
++      },
++      "blocks": [
++        {
++          "id": "set-pontuacao-normalizada",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-pontuacao-normalizada",
++            "expressionToEvaluate": "Math.round(({{pontuacao}} / 120) * 100)"
++          },
++          "outgoingEdgeId": "edge-normalize-to-condition"
++        }
++      ]
++    },
++    {
++      "id": "group-condition",
++      "title": "Classificar resultado",
++      "graphCoordinates": {
++        "x": 5100,
++        "y": 0
++      },
++      "blocks": [
++        {
++          "id": "result-condition",
++          "outgoingEdgeId": "edge-cond-default-iniciante",
++          "type": "Condition",
++          "items": [
++            {
++              "id": "cond-expert",
++              "outgoingEdgeId": "edge-cond-expert-to-result",
++              "content": {
++                "comparisons": [
++                  {
++                    "id": "comparison-expert",
++                    "variableId": "var-pontuacao-normalizada",
++                    "comparisonOperator": "Greater or equal to",
++                    "value": "90"
++                  }
++                ]
++              }
++            },
++            {
++              "id": "cond-avancado",
++              "outgoingEdgeId": "edge-cond-avancado-to-result",
++              "content": {
++                "comparisons": [
++                  {
++                    "id": "comparison-avancado",
++                    "variableId": "var-pontuacao-normalizada",
++                    "comparisonOperator": "Greater or equal to",
++                    "value": "75"
++                  }
++                ]
++              }
++            },
++            {
++              "id": "cond-inter",
++              "outgoingEdgeId": "edge-cond-inter-to-result",
++              "content": {
++                "comparisons": [
++                  {
++                    "id": "comparison-inter",
++                    "variableId": "var-pontuacao-normalizada",
++                    "comparisonOperator": "Greater or equal to",
++                    "value": "45"
++                  }
++                ]
++              }
++            }
++          ]
++        }
++      ]
++    },
++    {
++      "id": "group-result-expert",
++      "title": "Resultado - Expert",
++      "graphCoordinates": {
++        "x": 5520,
++        "y": -420
++      },
++      "blocks": [
++        {
++          "id": "set-nivel-expert",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-nivel",
++            "expressionToEvaluate": "Expert"
++          },
++          "outgoingEdgeId": "edge-set-nivel-expert-to-text"
++        },
++        {
++          "id": "text-result-expert",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "{{nome}}, seu resultado no Diagnostico IA Bow360 para {{empresa}} e: Expert."
++                  }
++                ]
++              },
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Pontuacao: {{pontuacao_normalizada}}/100."
++                  }
++                ]
++              },
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Nivel Expert: sua empresa esta pronta para operar IA como vantagem competitiva."
++                  }
++                ]
++              },
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Priorize agentes especializados, governanca de dados, integracoes profundas e mensuracao de ROI por processo."
++                  }
++                ]
++              }
++            ]
++          },
++          "outgoingEdgeId": "edge-result-expert-to-webhook"
++        }
++      ]
++    },
++    {
++      "id": "group-result-avancado",
++      "title": "Resultado - Avancado",
++      "graphCoordinates": {
++        "x": 5520,
++        "y": -140
++      },
++      "blocks": [
++        {
++          "id": "set-nivel-avancado",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-nivel",
++            "expressionToEvaluate": "Avancado"
++          },
++          "outgoingEdgeId": "edge-set-nivel-avancado-to-text"
++        },
++        {
++          "id": "text-result-avancado",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "{{nome}}, seu resultado no Diagnostico IA Bow360 para {{empresa}} e: Avancado."
++                  }
++                ]
++              },
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Pontuacao: {{pontuacao_normalizada}}/100."
++                  }
++                ]
++              },
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Nivel Avancado: sua empresa ja possui uma base forte para escalar IA e automacao."
++                  }
++                ]
++              },
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Priorize integracao entre CRM, marketing, atendimento e dashboards executivos para acelerar ganhos de receita."
++                  }
++                ]
++              }
++            ]
++          },
++          "outgoingEdgeId": "edge-result-avancado-to-webhook"
++        }
++      ]
++    },
++    {
++      "id": "group-result-inter",
++      "title": "Resultado - Intermediario",
++      "graphCoordinates": {
++        "x": 5520,
++        "y": 140
++      },
++      "blocks": [
++        {
++          "id": "set-nivel-inter",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-nivel",
++            "expressionToEvaluate": "Intermediario"
++          },
++          "outgoingEdgeId": "edge-set-nivel-inter-to-text"
++        },
++        {
++          "id": "text-result-inter",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "{{nome}}, seu resultado no Diagnostico IA Bow360 para {{empresa}} e: Intermediario."
++                  }
++                ]
++              },
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Pontuacao: {{pontuacao_normalizada}}/100."
++                  }
++                ]
++              },
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Nivel Intermediario: ha bons pontos em andamento, mas ainda existem gargalos de dados, processos e integracao."
++                  }
++                ]
++              },
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Priorize automacoes de follow-up, qualificacao de leads, padronizacao de playbooks e indicadores por funil."
++                  }
++                ]
++              }
++            ]
++          },
++          "outgoingEdgeId": "edge-result-inter-to-webhook"
++        }
++      ]
++    },
++    {
++      "id": "group-result-iniciante",
++      "title": "Resultado - Iniciante",
++      "graphCoordinates": {
++        "x": 5520,
++        "y": 420
++      },
++      "blocks": [
++        {
++          "id": "set-nivel-iniciante",
++          "type": "Set variable",
++          "options": {
++            "variableId": "var-nivel",
++            "expressionToEvaluate": "Iniciante"
++          },
++          "outgoingEdgeId": "edge-set-nivel-iniciante-to-text"
++        },
++        {
++          "id": "text-result-iniciante",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "{{nome}}, seu resultado no Diagnostico IA Bow360 para {{empresa}} e: Iniciante."
++                  }
++                ]
++              },
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Pontuacao: {{pontuacao_normalizada}}/100."
++                  }
++                ]
++              },
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Nivel Iniciante: sua empresa esta no comeco da jornada de IA e pode capturar ganhos rapidos com organizacao e automacoes simples."
++                  }
++                ]
++              },
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Priorize mapear tarefas repetitivas, organizar dados de leads e criar o primeiro fluxo automatizado com acompanhamento semanal."
++                  }
++                ]
++              }
++            ]
++          },
++          "outgoingEdgeId": "edge-result-iniciante-to-webhook"
++        }
++      ]
++    },
++    {
++      "id": "group-webhook",
++      "title": "Enviar diagnostico via Webhook",
++      "graphCoordinates": {
++        "x": 5960,
++        "y": 0
++      },
++      "blocks": [
++        {
++          "id": "webhook-submit",
++          "outgoingEdgeId": "edge-webhook-to-thanks",
++          "type": "Webhook",
++          "options": {
++            "variablesForTest": [
++              {
++                "id": "test-nome",
++                "variableId": "var-nome",
++                "value": "Lead Teste"
++              },
++              {
++                "id": "test-email",
++                "variableId": "var-email",
++                "value": "lead@exemplo.com"
++              },
++              {
++                "id": "test-telefone",
++                "variableId": "var-telefone",
++                "value": "11999999999"
++              },
++              {
++                "id": "test-empresa",
++                "variableId": "var-empresa",
++                "value": "Empresa Teste"
++              },
++              {
++                "id": "test-pontuacao",
++                "variableId": "var-pontuacao-normalizada",
++                "value": "82"
++              },
++              {
++                "id": "test-nivel",
++                "variableId": "var-nivel",
++                "value": "Avancado"
++              }
++            ],
++            "responseVariableMapping": [
++              {
++                "id": "map-webhook-resposta",
++                "variableId": "var-webhook-resposta",
++                "bodyPath": "status"
++              }
++            ],
++            "isAdvancedConfig": true,
++            "isCustomBody": true,
++            "webhook": {
++              "method": "POST",
++              "url": "[SUA_URL_N8N]/webhook/bow360-diagnostico",
++              "headers": [
++                {
++                  "id": "header-content-type",
++                  "key": "Content-Type",
++                  "value": "application/json"
++                }
++              ],
++              "body": "{\n  \"nome\": \"{{nome}}\",\n  \"email\": \"{{email}}\",\n  \"telefone\": \"{{telefone}}\",\n  \"empresa\": \"{{empresa}}\",\n  \"pontuacao\": \"{{pontuacao}}\",\n  \"pontuacao_normalizada\": \"{{pontuacao_normalizada}}\",\n  \"nivel\": \"{{nivel}}\",\n  \"resposta_aberta\": \"{{resposta_aberta}}\",\n  \"resposta_q1\": \"{{resposta_q1}}\",\n  \"resposta_q2\": \"{{resposta_q2}}\",\n  \"resposta_q3\": \"{{resposta_q3}}\",\n  \"resposta_q4\": \"{{resposta_q4}}\",\n  \"resposta_q5\": \"{{resposta_q5}}\",\n  \"resposta_q6\": \"{{resposta_q6}}\",\n  \"source\": \"ESX2026\",\n  \"source2\": \"diagnostico-ia\"\n}"
++            }
++          }
++        }
++      ]
++    },
++    {
++      "id": "group-thanks",
++      "title": "Agradecimento final",
++      "graphCoordinates": {
++        "x": 6400,
++        "y": 0
++      },
++      "blocks": [
++        {
++          "id": "text-thanks",
++          "type": "text",
++          "content": {
++            "richText": [
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Diagnóstico registrado, {{nome}}! 🎯"
++                  }
++                ]
++              },
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "Em instantes você recebe no WhatsApp o seu resultado"
++                  }
++                ]
++              },
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "completo com o plano de ação personalizado para"
++                  }
++                ]
++              },
++              {
++                "type": "p",
++                "children": [
++                  {
++                    "text": "{{empresa}}. Fique de olho nas mensagens!"
++                  }
++                ]
++              }
++            ]
++          }
++        }
++      ]
++    }
++  ],
++  "edges": [
++    {
++      "id": "edge-start-to-lead-name",
++      "from": {
++        "eventId": "event-start"
++      },
++      "to": {
++        "groupId": "group-lead-name"
++      }
++    },
++    {
++      "id": "edge-name-to-email",
++      "from": {
++        "blockId": "input-nome"
++      },
++      "to": {
++        "groupId": "group-lead-email"
++      }
++    },
++    {
++      "id": "edge-email-to-company",
++      "from": {
++        "blockId": "input-email"
++      },
++      "to": {
++        "groupId": "group-lead-phone"
++      }
++    },
++    {
++      "id": "edge-company-to-init-score",
++      "from": {
++        "blockId": "input-empresa"
++      },
++      "to": {
++        "groupId": "group-init-score"
++      }
++    },
++    {
++      "id": "edge-init-score-to-q1",
++      "from": {
++        "blockId": "set-pontuacao-zero"
++      },
++      "to": {
++        "groupId": "group-q1"
++      }
++    },
++    {
++      "id": "edge-q1-answer-0",
++      "from": {
++        "blockId": "choice-q1",
++        "itemId": "item-q1-0"
++      },
++      "to": {
++        "groupId": "group-q1-score-0"
++      }
++    },
++    {
++      "id": "edge-q1-score-0-to-next",
++      "from": {
++        "blockId": "set-q1-score-0"
++      },
++      "to": {
++        "groupId": "group-q2"
++      }
++    },
++    {
++      "id": "edge-q1-answer-10",
++      "from": {
++        "blockId": "choice-q1",
++        "itemId": "item-q1-10"
++      },
++      "to": {
++        "groupId": "group-q1-score-10"
++      }
++    },
++    {
++      "id": "edge-q1-score-10-to-next",
++      "from": {
++        "blockId": "set-q1-score-10"
++      },
++      "to": {
++        "groupId": "group-q2"
++      }
++    },
++    {
++      "id": "edge-q1-answer-20",
++      "from": {
++        "blockId": "choice-q1",
++        "itemId": "item-q1-20"
++      },
++      "to": {
++        "groupId": "group-q1-score-20"
++      }
++    },
++    {
++      "id": "edge-q1-score-20-to-next",
++      "from": {
++        "blockId": "set-q1-score-20"
++      },
++      "to": {
++        "groupId": "group-q2"
++      }
++    },
++    {
++      "id": "edge-q2-answer-0",
++      "from": {
++        "blockId": "choice-q2",
++        "itemId": "item-q2-0"
++      },
++      "to": {
++        "groupId": "group-q2-score-0"
++      }
++    },
++    {
++      "id": "edge-q2-score-0-to-next",
++      "from": {
++        "blockId": "set-q2-score-0"
++      },
++      "to": {
++        "groupId": "group-q3"
++      }
++    },
++    {
++      "id": "edge-q2-answer-10",
++      "from": {
++        "blockId": "choice-q2",
++        "itemId": "item-q2-10"
++      },
++      "to": {
++        "groupId": "group-q2-score-10"
++      }
++    },
++    {
++      "id": "edge-q2-score-10-to-next",
++      "from": {
++        "blockId": "set-q2-score-10"
++      },
++      "to": {
++        "groupId": "group-q3"
++      }
++    },
++    {
++      "id": "edge-q2-answer-20",
++      "from": {
++        "blockId": "choice-q2",
++        "itemId": "item-q2-20"
++      },
++      "to": {
++        "groupId": "group-q2-score-20"
++      }
++    },
++    {
++      "id": "edge-q2-score-20-to-next",
++      "from": {
++        "blockId": "set-q2-score-20"
++      },
++      "to": {
++        "groupId": "group-q3"
++      }
++    },
++    {
++      "id": "edge-q3-answer-0",
++      "from": {
++        "blockId": "choice-q3",
++        "itemId": "item-q3-0"
++      },
++      "to": {
++        "groupId": "group-q3-score-0"
++      }
++    },
++    {
++      "id": "edge-q3-score-0-to-next",
++      "from": {
++        "blockId": "set-q3-score-0"
++      },
++      "to": {
++        "groupId": "group-q4"
++      }
++    },
++    {
++      "id": "edge-q3-answer-10",
++      "from": {
++        "blockId": "choice-q3",
++        "itemId": "item-q3-10"
++      },
++      "to": {
++        "groupId": "group-q3-score-10"
++      }
++    },
++    {
++      "id": "edge-q3-score-10-to-next",
++      "from": {
++        "blockId": "set-q3-score-10"
++      },
++      "to": {
++        "groupId": "group-q4"
++      }
++    },
++    {
++      "id": "edge-q3-answer-20",
++      "from": {
++        "blockId": "choice-q3",
++        "itemId": "item-q3-20"
++      },
++      "to": {
++        "groupId": "group-q3-score-20"
++      }
++    },
++    {
++      "id": "edge-q3-score-20-to-next",
++      "from": {
++        "blockId": "set-q3-score-20"
++      },
++      "to": {
++        "groupId": "group-q4"
++      }
++    },
++    {
++      "id": "edge-q4-answer-0",
++      "from": {
++        "blockId": "choice-q4",
++        "itemId": "item-q4-0"
++      },
++      "to": {
++        "groupId": "group-q4-score-0"
++      }
++    },
++    {
++      "id": "edge-q4-score-0-to-next",
++      "from": {
++        "blockId": "set-q4-score-0"
++      },
++      "to": {
++        "groupId": "group-q5"
++      }
++    },
++    {
++      "id": "edge-q4-answer-10",
++      "from": {
++        "blockId": "choice-q4",
++        "itemId": "item-q4-10"
++      },
++      "to": {
++        "groupId": "group-q4-score-10"
++      }
++    },
++    {
++      "id": "edge-q4-score-10-to-next",
++      "from": {
++        "blockId": "set-q4-score-10"
++      },
++      "to": {
++        "groupId": "group-q5"
++      }
++    },
++    {
++      "id": "edge-q4-answer-20",
++      "from": {
++        "blockId": "choice-q4",
++        "itemId": "item-q4-20"
++      },
++      "to": {
++        "groupId": "group-q4-score-20"
++      }
++    },
++    {
++      "id": "edge-q4-score-20-to-next",
++      "from": {
++        "blockId": "set-q4-score-20"
++      },
++      "to": {
++        "groupId": "group-q5"
++      }
++    },
++    {
++      "id": "edge-q5-answer-0",
++      "from": {
++        "blockId": "choice-q5",
++        "itemId": "item-q5-0"
++      },
++      "to": {
++        "groupId": "group-q5-score-0"
++      }
++    },
++    {
++      "id": "edge-q5-score-0-to-next",
++      "from": {
++        "blockId": "set-q5-score-0"
++      },
++      "to": {
++        "groupId": "group-q6"
++      }
++    },
++    {
++      "id": "edge-q5-answer-10",
++      "from": {
++        "blockId": "choice-q5",
++        "itemId": "item-q5-10"
++      },
++      "to": {
++        "groupId": "group-q5-score-10"
++      }
++    },
++    {
++      "id": "edge-q5-score-10-to-next",
++      "from": {
++        "blockId": "set-q5-score-10"
++      },
++      "to": {
++        "groupId": "group-q6"
++      }
++    },
++    {
++      "id": "edge-q5-answer-20",
++      "from": {
++        "blockId": "choice-q5",
++        "itemId": "item-q5-20"
++      },
++      "to": {
++        "groupId": "group-q5-score-20"
++      }
++    },
++    {
++      "id": "edge-q5-score-20-to-next",
++      "from": {
++        "blockId": "set-q5-score-20"
++      },
++      "to": {
++        "groupId": "group-q6"
++      }
++    },
++    {
++      "id": "edge-q6-answer-0",
++      "from": {
++        "blockId": "choice-q6",
++        "itemId": "item-q6-0"
++      },
++      "to": {
++        "groupId": "group-q6-score-0"
++      }
++    },
++    {
++      "id": "edge-q6-score-0-to-next",
++      "from": {
++        "blockId": "set-q6-score-0"
++      },
++      "to": {
++        "groupId": "group-open"
++      }
++    },
++    {
++      "id": "edge-q6-answer-10",
++      "from": {
++        "blockId": "choice-q6",
++        "itemId": "item-q6-10"
++      },
++      "to": {
++        "groupId": "group-q6-score-10"
++      }
++    },
++    {
++      "id": "edge-q6-score-10-to-next",
++      "from": {
++        "blockId": "set-q6-score-10"
++      },
++      "to": {
++        "groupId": "group-open"
++      }
++    },
++    {
++      "id": "edge-q6-answer-20",
++      "from": {
++        "blockId": "choice-q6",
++        "itemId": "item-q6-20"
++      },
++      "to": {
++        "groupId": "group-q6-score-20"
++      }
++    },
++    {
++      "id": "edge-q6-score-20-to-next",
++      "from": {
++        "blockId": "set-q6-score-20"
++      },
++      "to": {
++        "groupId": "group-open"
++      }
++    },
++    {
++      "id": "edge-open-to-normalize",
++      "from": {
++        "blockId": "input-open"
++      },
++      "to": {
++        "groupId": "group-normalize",
++        "blockId": "set-pontuacao-normalizada"
++      }
++    },
++    {
++      "id": "edge-normalize-to-condition",
++      "from": {
++        "blockId": "set-pontuacao-normalizada"
++      },
++      "to": {
++        "groupId": "group-condition",
++        "blockId": "result-condition"
++      }
++    },
++    {
++      "id": "edge-cond-expert-to-result",
++      "from": {
++        "blockId": "result-condition",
++        "itemId": "cond-expert"
++      },
++      "to": {
++        "groupId": "group-result-expert"
++      }
++    },
++    {
++      "id": "edge-cond-avancado-to-result",
++      "from": {
++        "blockId": "result-condition",
++        "itemId": "cond-avancado"
++      },
++      "to": {
++        "groupId": "group-result-avancado"
++      }
++    },
++    {
++      "id": "edge-cond-inter-to-result",
++      "from": {
++        "blockId": "result-condition",
++        "itemId": "cond-inter"
++      },
++      "to": {
++        "groupId": "group-result-inter"
++      }
++    },
++    {
++      "id": "edge-cond-default-iniciante",
++      "from": {
++        "blockId": "result-condition"
++      },
++      "to": {
++        "groupId": "group-result-iniciante"
++      }
++    },
++    {
++      "id": "edge-set-nivel-expert-to-text",
++      "from": {
++        "blockId": "set-nivel-expert"
++      },
++      "to": {
++        "groupId": "group-result-expert",
++        "blockId": "text-result-expert"
++      }
++    },
++    {
++      "id": "edge-result-expert-to-webhook",
++      "from": {
++        "blockId": "text-result-expert"
++      },
++      "to": {
++        "groupId": "group-webhook",
++        "blockId": "webhook-submit"
++      }
++    },
++    {
++      "id": "edge-set-nivel-avancado-to-text",
++      "from": {
++        "blockId": "set-nivel-avancado"
++      },
++      "to": {
++        "groupId": "group-result-avancado",
++        "blockId": "text-result-avancado"
++      }
++    },
++    {
++      "id": "edge-result-avancado-to-webhook",
++      "from": {
++        "blockId": "text-result-avancado"
++      },
++      "to": {
++        "groupId": "group-webhook",
++        "blockId": "webhook-submit"
++      }
++    },
++    {
++      "id": "edge-set-nivel-inter-to-text",
++      "from": {
++        "blockId": "set-nivel-inter"
++      },
++      "to": {
++        "groupId": "group-result-inter",
++        "blockId": "text-result-inter"
++      }
++    },
++    {
++      "id": "edge-result-inter-to-webhook",
++      "from": {
++        "blockId": "text-result-inter"
++      },
++      "to": {
++        "groupId": "group-webhook",
++        "blockId": "webhook-submit"
++      }
++    },
++    {
++      "id": "edge-set-nivel-iniciante-to-text",
++      "from": {
++        "blockId": "set-nivel-iniciante"
++      },
++      "to": {
++        "groupId": "group-result-iniciante",
++        "blockId": "text-result-iniciante"
++      }
++    },
++    {
++      "id": "edge-result-iniciante-to-webhook",
++      "from": {
++        "blockId": "text-result-iniciante"
++      },
++      "to": {
++        "groupId": "group-webhook",
++        "blockId": "webhook-submit"
++      }
++    },
++    {
++      "id": "edge-webhook-to-thanks",
++      "from": {
++        "blockId": "webhook-submit"
++      },
++      "to": {
++        "groupId": "group-thanks",
++        "blockId": "text-thanks"
++      }
++    },
++    {
++      "id": "edge-phone-to-company",
++      "from": {
++        "blockId": "input-telefone"
++      },
++      "to": {
++        "groupId": "group-lead-company"
++      }
++    }
++  ],
++  "variables": [
++    {
++      "id": "var-nome",
++      "name": "nome",
++      "isSessionVariable": true
++    },
++    {
++      "id": "var-email",
++      "name": "email",
++      "isSessionVariable": true
++    },
++    {
++      "id": "var-telefone",
++      "name": "telefone",
++      "isSessionVariable": true
++    },
++    {
++      "id": "var-empresa",
++      "name": "empresa",
++      "isSessionVariable": true
++    },
++    {
++      "id": "var-pontuacao",
++      "name": "pontuacao",
++      "isSessionVariable": true
++    },
++    {
++      "id": "var-pontuacao-normalizada",
++      "name": "pontuacao_normalizada",
++      "isSessionVariable": true
++    },
++    {
++      "id": "var-nivel",
++      "name": "nivel",
++      "isSessionVariable": true
++    },
++    {
++      "id": "var-resposta-aberta",
++      "name": "resposta_aberta",
++      "isSessionVariable": true
++    },
++    {
++      "id": "var-webhook-resposta",
++      "name": "webhook_resposta",
++      "isSessionVariable": true
++    },
++    {
++      "id": "var-resposta-q1",
++      "name": "resposta_q1",
++      "isSessionVariable": true
++    },
++    {
++      "id": "var-resposta-q2",
++      "name": "resposta_q2",
++      "isSessionVariable": true
++    },
++    {
++      "id": "var-resposta-q3",
++      "name": "resposta_q3",
++      "isSessionVariable": true
++    },
++    {
++      "id": "var-resposta-q4",
++      "name": "resposta_q4",
++      "isSessionVariable": true
++    },
++    {
++      "id": "var-resposta-q5",
++      "name": "resposta_q5",
++      "isSessionVariable": true
++    },
++    {
++      "id": "var-resposta-q6",
++      "name": "resposta_q6",
++      "isSessionVariable": true
++    }
++  ],
++  "theme": {
++    "general": {
++      "font": "Inter",
++      "background": {
++        "type": "Color",
++        "content": "#0a0a0a"
++      },
++      "progressBar": {
++        "isEnabled": true,
++        "color": "#cffb03",
++        "backgroundColor": "#1a1a1a",
++        "placement": "Top"
++      }
++    },
++    "chat": {
++      "container": {
++        "maxWidth": "860px",
++        "maxHeight": "100%",
++        "backgroundColor": "transparent"
++      },
++      "hostAvatar": {
++        "isEnabled": false
++      },
++      "hostBubbles": {
++        "backgroundColor": "#000000",
++        "color": "#cffb03",
++        "shadow": "lg",
++        "border": {
++          "thickness": 1,
++          "color": "#cffb03",
++          "roundeness": "large",
++          "opacity": 0.4
++        }
++      },
++      "guestBubbles": {
++        "backgroundColor": "#ffffff",
++        "color": "#000000",
++        "shadow": "sm",
++        "border": {
++          "thickness": 1,
++          "color": "#e5e7eb",
++          "roundeness": "large"
++        }
++      },
++      "buttons": {
++        "backgroundColor": "#cffb03",
++        "color": "#000000",
++        "shadow": "md",
++        "border": {
++          "thickness": 2,
++          "color": "#000000",
++          "roundeness": "large"
++        }
++      },
++      "inputs": {
++        "backgroundColor": "#ffffff",
++        "color": "#000000",
++        "border": {
++          "thickness": 1,
++          "color": "#d1d5db",
++          "roundeness": "medium"
++        },
++        "placeholderColor": "#6b7280"
++      },
++      "buttonsInput": {
++        "layout": "vertical"
++      }
++    },
++    "customCss": "/* Bow360 - #cffb03 + #000000 */\n.typebot-container, [typebot-standard], .typebot-chat-view { font-family: Inter, system-ui, sans-serif !important; }\n.typebot-host-bubble { border-radius: 20px 20px 20px 4px !important; box-shadow: 0 8px 32px rgba(207, 251, 3, 0.15) !important; border: 1px solid rgba(207, 251, 3, 0.25) !important; }\n.typebot-button, button.typebot-button { border-radius: 14px !important; min-height: 54px !important; font-weight: 700 !important; box-shadow: 0 6px 0 #000000, 0 8px 24px rgba(207, 251, 3, 0.35) !important; border: 2px solid #000000 !important; }\n.typebot-progress-bar { background: linear-gradient(90deg, #cffb03, #cffb03) !important; box-shadow: 0 0 16px rgba(207, 251, 3, 0.6) !important; }"
++  },
++  "settings": {
++    "general": {
++      "isBrandingEnabled": false,
++      "isInputPrefillEnabled": true
++    },
++    "typingEmulation": {
++      "enabled": true,
++      "speed": 300,
++      "maxDelay": 1.5
++    },
++    "metadata": {
++      "title": "Diagnostico IA Bow360 - ESX 2026",
++      "description": "Diagnostico de maturidade em IA, Automacao e Marketing - Bow360"
++    }
++  },
++  "createdAt": "2026-05-19T19:32:08.719Z",
++  "updatedAt": "2026-05-24T03:03:16.558Z",
++  "icon": "🎯",
++  "publicId": "diagnostico-ia-bow360-esx-2026-importavel",
++  "workspaceId": "proWorkspace",
++  "isArchived": false,
++  "isClosed": false
++}

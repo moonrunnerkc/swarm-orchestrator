@@ -1,0 +1,26 @@
+{
+  "id": "devin-benjisho-windows-mtr-pr201",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 201,
+    "headSha": "c3c06b7ecdad843292080ac19d365ed552bd7e6a",
+    "baseSha": "5ad6c4dec57e314a7a0112ca7ca4371c80592cd0",
+    "title": "docs: fix stale roadmap, Docker tags, and status contradictions",
+    "body": "## Summary\n\nFix stale documentation across roadmap, status, README, and changelog that contradicts the actual project state. All changes are documentation-only accuracy corrections.\n\n## Why\n\nA docs accuracy audit found several contradictions between documentation files and the actual repo/release state:\n\n1. **Docker examples used `v1.0.0` tag** — current releases are v1.2.x (latest stable: v1.2.6)\n2. **ROADMAP claimed MSI Installer as simply \"Released\"** — MSI was v1.0.0 era; portable ZIP is the canonical method since v1.1.3+\n3. **ROADMAP claimed \"Versioned JSON & CSV export\" as \"In Progress\"** — CSV has zero implementation (no code exists); JSON output is released but versioned schema is not yet implemented\n4. **STATUS.md said security hardening was \"In Progress\"** — contradicts ROADMAP.md which correctly says \"Released v1.2.x\"; CI confirms cargo-deny, cargo-audit, and fuzz smoke are all active\n5. **CHANGELOG v1.1.3 referenced \"v2.0 capabilities\"** — project is at v1.x; should reference v1.1.3\n\n## Changes\n\n- [x] Documentation updated\n\nFiles changed:\n- `README.md` — update Docker pull examples from `v1.0.0` → `v1.2.6`\n- `docs/ROADMAP.md` — clarify MSI as superseded; correct CSV export status from In Progress to Planned\n- `docs/STATUS.md` — align security hardening status with ROADMAP (In Progress → Released v1.2.x)\n- `CHANGELOG.md` — fix stale \"v2.0\" version reference to \"v1.1.3\"\n\n## Testing\n\n```bash\ncargo check --workspace    # PASS (exit 0)\ncargo clippy --all-targets --all-features -- -D warnings  # PASS (exit 0)\n```\n\nNo code changes — documentation-only fixes.\n\n## Compatibility / Risk Notes\n\n- CLI compatibility impact: None\n- Output/report format impact: None\n- Operational risk and rollback plan: Zero risk, documentation-only\n\n## Security Considerations\n\nNone — documentation-only changes.\n\n## Checklist\n\n- [x] I followed the contribution guidelines in `CONTRIBUTING.md`\n- [x] I ran relevant checks locally\n- [x] I updated docs/changelog as needed\n- [x] I confirmed no sensitive data is included\n\nLink to Devin session: https://app.devin.ai/sessions/871fb66468ba497e98d69036cb2a90fc\nRequested by: @benjisho\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/benjisho/windows-mtr/pull/201\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779580002-docs-roadmap-accuracy-audit",
+    "repository": "benjisho/windows-mtr"
+  },
+  "diffRef": {
+    "repository": "benjisho/windows-mtr",
+    "headSha": "c3c06b7ecdad843292080ac19d365ed552bd7e6a",
+    "baseSha": "5ad6c4dec57e314a7a0112ca7ca4371c80592cd0"
+  },
+  "vendoredDiffPath": "devin/devin-benjisho-windows-mtr-pr201.diff",
+  "vendoredAt": "2026-05-24T03:04:38.951Z",
+  "collectedAt": "2026-05-24T03:04:38.951Z"
+}

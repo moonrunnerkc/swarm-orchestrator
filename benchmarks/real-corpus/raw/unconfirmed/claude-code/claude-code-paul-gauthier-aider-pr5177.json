@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-paul-gauthier-aider-pr5177",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer"
+  },
+  "pr": {
+    "number": 5177,
+    "headSha": "8113492fec5cd30444ae2123bedb99489ce933a9",
+    "baseSha": "5dc9490bb35f9729ef2c95d00a19ccd30c26339c",
+    "title": "fix: pass --no-verify-ssl to version check, fix SSL_VERIFY, add AIDER_TAGS_CACHE_DIR",
+    "body": "## Summary\n\nThree small fixes for enterprise/custom-environment users:\n\n### 1. Version check respects --no-verify-ssl (Fixes #664)\n\nThe version check (querying pypi.org) was always using default SSL verification, even when `--no-verify-ssl` was passed. This caused startup errors for users behind corporate firewalls with self-signed certificates.\n\n### 2. SSL_VERIFY env var fixed from \"\" to \"false\"\n\nLiteLLM checks `SSL_VERIFY` as a string. Empty string `\"\"` may not be recognized as \"disable SSL\". Changed to `\"false\"` for correct LiteLLM behavior.\n\n### 3. Configurable tags cache location (Fixes #2325)\n\nAdded support for `AIDER_TAGS_CACHE_DIR` environment variable. When set, the `.aider.tags.cache.v3` directory will be created at the specified path instead of the repo root. This allows a completely uncluttered repo when combined with existing `.env` support.\n\n## Changes\n\n- **`aider/versioncheck.py`**: Add `verify_ssl` parameter, pass to `requests.get()`\n- **`aider/main.py`**: Pass `args.verify_ssl` to `check_version()`, fix `SSL_VERIFY` env var\n- **`aider/repomap.py`**: Add `get_tags_cache_dir()` classmethod and `AIDER_TAGS_CACHE_DIR` env var support\n\n## Test plan\n\n- `--no-verify-ssl` now propagates to all HTTP requests including version check\n- `AIDER_TAGS_CACHE_DIR=/custom/path aider` creates cache at `/custom/path/.aider.tags.cache.v3`\n- All existing behavior unchanged with default settings\n\n## Risk\n\nLow. All changes are configuration-only and default to existing behavior.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "superShen0916",
+    "headRef": "fix/ssl-verify-version-check",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "8113492fec5cd30444ae2123bedb99489ce933a9",
+    "baseSha": "5dc9490bb35f9729ef2c95d00a19ccd30c26339c"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-paul-gauthier-aider-pr5177.diff",
+  "vendoredAt": "2026-05-24T03:18:54.702Z",
+  "collectedAt": "2026-05-24T03:18:54.702Z"
+}

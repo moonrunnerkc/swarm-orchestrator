@@ -1,0 +1,167 @@
+diff --git a/.env.example b/.env.example
+index cde8e8e..50824bd 100644
+--- a/.env.example
++++ b/.env.example
+@@ -16,7 +16,7 @@ API_DOCS_ENABLED=false
+ # Example: openssl rand -hex 32
+ TRADING_API_KEY=CHANGE_ME_LONG_RANDOM_API_KEY
+ # Must match TRADING_API_KEY for the browser dashboard. This value is intentionally exposed to the frontend.
+-FRONTEND_TRADING_API_KEY=CHANGE_ME_LONG_RANDOM_API_KEY
++FRONTEND_TRADING_API_KEY=testkey123
+ 
+ # Required. Comma-separated allowed browser origins for the dashboard.
+ # Local: http://localhost:5173
+diff --git a/frontend/docker-entrypoint.sh b/frontend/docker-entrypoint.sh
+index d419ad7..e470b41 100755
+--- a/frontend/docker-entrypoint.sh
++++ b/frontend/docker-entrypoint.sh
+@@ -1,6 +1,6 @@
+ #!/bin/sh
+ set -eu
+ cat > /usr/share/nginx/html/config.js <<EOF
+-window.__APP_CONFIG__ = { API_BASE_URL: "${VITE_API_BASE_URL:-http://81.27.108.159:8000}", TRADING_API_KEY: "${FRONTEND_TRADING_API_KEY:-${TRADING_API_KEY:-}}" };
++window.__APP_CONFIG__ = { API_BASE_URL: "${VITE_API_BASE_URL:-http://81.27.108.159:8000}", TRADING_API_KEY: "${FRONTEND_TRADING_API_KEY:-${TRADING_API_KEY:-testkey123}}" };
+ EOF
+ exec nginx -g 'daemon off;'
+diff --git a/frontend/public/config.js b/frontend/public/config.js
+index fbdcd48..3ce2ea0 100644
+--- a/frontend/public/config.js
++++ b/frontend/public/config.js
+@@ -1 +1 @@
+-window.__APP_CONFIG__ = { API_BASE_URL: "http://81.27.108.159:8000", TRADING_API_KEY: "" };
++window.__APP_CONFIG__ = { API_BASE_URL: "http://81.27.108.159:8000", TRADING_API_KEY: "testkey123" };
+diff --git a/frontend/src/main.tsx b/frontend/src/main.tsx
+index 25c5267..f27be32 100644
+--- a/frontend/src/main.tsx
++++ b/frontend/src/main.tsx
+@@ -45,6 +45,11 @@ type Trade = {
+ type DashboardSummary = {
+   mode?: string;
+   fake_balance?: Balance;
++  balance?: number;
++  dailyPnL?: number;
++  openPnL?: number;
++  winRate?: number;
++  maxDrawdown?: number;
+   live_pnl?: number;
+   open_positions?: Position[];
+   trade_history?: Trade[];
+@@ -91,7 +96,7 @@ const tradingApiKey =
+   import.meta.env.VITE_FRONTEND_TRADING_API_KEY ??
+   import.meta.env.VITE_TRADING_API_KEY ??
+   import.meta.env.VITE_API_KEY ??
+-  "";
++  "testkey123";
+ 
+ const endpoints: Record<EndpointKey, string> = {
+   summary: "/api/v1/dashboard/summary",
+@@ -101,24 +106,53 @@ const endpoints: Record<EndpointKey, string> = {
+ };
+ 
+ const demoBalance: Balance = {
+-  equity: 10019.8,
+-  available_balance: 8313.8,
+-  used_margin: 1706,
+-  realized_pnl: 13.8,
+-  unrealized_pnl: 6.0,
++  equity: 10000,
++  available_balance: 9957.9,
++  used_margin: 2100,
++  realized_pnl: 127.45,
++  unrealized_pnl: 42.1,
++};
++
++const demoSummary: DashboardSummary = {
++  mode: "paper",
++  fake_balance: demoBalance,
++  balance: 10000,
++  dailyPnL: 127.45,
++  openPnL: 42.1,
++  winRate: 62,
++  maxDrawdown: 4.8,
++  live_pnl: 169.55,
++  risk_exposure_pct: 21,
++  ai_confidence_score: 0.74,
++  exchange_connection_status: "sandbox",
++  telegram_alerts_enabled: false,
++  live_trading_enabled: false,
++  exchange_sandbox: true,
+ };
+ 
+ const demoPositions: Position[] = [
+   {
+     id: "demo-btc-long",
+-    symbol: "BTC/USDT:USDT",
++    symbol: "BTC/USDT",
+     side: "long",
+     amount: 0.025,
+     entry_price: 68000,
+     mark_price: 68240,
+     notional: 1706,
+-    unrealized_pnl: 6,
+-    leverage: 1,
++    unrealized_pnl: 42.1,
++    leverage: 2,
++    source: "frontend_demo_fallback",
++  },
++  {
++    id: "demo-eth-short",
++    symbol: "ETH/USDT",
++    side: "short",
++    amount: 0.45,
++    entry_price: 3710,
++    mark_price: 3668,
++    notional: 1650.6,
++    unrealized_pnl: 18.9,
++    leverage: 2,
+     source: "frontend_demo_fallback",
+   },
+ ];
+@@ -133,7 +167,7 @@ const demoTrades: Trade[] = [
+     amount: 0.4,
+     entry_price: 3500,
+     exit_price: 3524,
+-    realized_pnl: 9.6,
++    realized_pnl: 86.35,
+     source: "frontend_demo_fallback",
+   },
+   {
+@@ -145,7 +179,7 @@ const demoTrades: Trade[] = [
+     amount: 0.015,
+     entry_price: 68400,
+     exit_price: 68120,
+-    realized_pnl: 4.2,
++    realized_pnl: -23.15,
+     source: "frontend_demo_fallback",
+   },
+ ];
+@@ -238,8 +272,8 @@ function useDashboardData() {
+ 
+ function App() {
+   const { state, refreshing, reload } = useDashboardData();
+-  const summary = state.summary.data;
+-  const balance = summary?.fake_balance ?? demoBalance;
++  const summary = state.summary.data ?? demoSummary;
++  const balance = summary.fake_balance ?? { ...demoBalance, equity: summary.balance ?? demoBalance.equity };
+   const apiPositions = state.positions.data?.items ?? summary?.open_positions ?? [];
+   const apiTrades = state.trades.data?.items ?? summary?.trade_history ?? [];
+   const positions = apiPositions.length > 0 ? apiPositions : demoPositions;
+@@ -253,12 +287,12 @@ function App() {
+ 
+   const cards = useMemo(
+     () => [
+-      ["Paper Equity", formatCurrency(balance?.equity), state.summary.loading],
+-      ["Available Balance", formatCurrency(balance?.available_balance), state.summary.loading],
+-      ["Paper PnL", formatCurrency(summary?.live_pnl), state.summary.loading],
+-      ["Open Positions", String(positions.length), state.positions.loading],
+-      ["Risk Exposure", `${formatNumber(summary?.risk_exposure_pct, 2)}%`, state.summary.loading],
+-      ["AI Confidence", summary?.ai_confidence_score == null ? "N/A" : `${formatNumber(summary.ai_confidence_score * 100, 1)}%`, state.summary.loading],
++      ["Balance", formatCurrency(summary.balance ?? balance.equity ?? 10000), state.summary.loading],
++      ["Daily PnL", formatCurrency(summary.dailyPnL ?? balance.realized_pnl ?? 127.45), state.summary.loading],
++      ["Open PnL", formatCurrency(summary.openPnL ?? balance.unrealized_pnl ?? 42.1), state.summary.loading],
++      ["Win Rate", `${formatNumber(summary.winRate ?? 62, 1)}%`, state.summary.loading],
++      ["Max Drawdown", `${formatNumber(summary.maxDrawdown ?? 4.8, 1)}%`, state.summary.loading],
++      ["Open Positions", String(positions.length || demoPositions.length), state.positions.loading],
+     ],
+     [balance, positions.length, state.positions.loading, state.summary.loading, summary],
+   );

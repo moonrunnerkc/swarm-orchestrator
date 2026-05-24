@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14517",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14517,
+    "headSha": "467184dd84bdf42d59c23106b62de8bcb0964fc6",
+    "baseSha": "f4c76596fc2c0a2641fa384351a7c8d2514f956c",
+    "title": "BBDC: optionally post comments/reactions as a bot service account",
+    "body": "## What\r\n\r\nAdds an optional `BITBUCKET_DATA_CENTER_BOT_TOKEN` env var (an HTTP access token for a dedicated bot user account). When set, **all** of OpenHands' Bitbucket Data Center comments and reactions — the sign-up reply, the \"I'm on it\" reply, the 👀 reaction, and result replies — are posted as that bot, mirroring the GitHub App's `openhands[bot]` identity, instead of as the @-mentioning user or the per-repo webhook installer.\r\n\r\nWhen the token is unset, behavior is unchanged.\r\n\r\n## Why\r\n\r\nBBDC has no app/bot identity like GitHub Apps (where OpenHands posts as `openhands[bot]` via an installation token). Today every BBDC comment is authored by a real user's OAuth token — replies come from the @-mentioning user (a self-reply), and the sign-up message for an unenrolled user comes from the webhook installer. A dedicated bot service account gives the closest BBDC parallel: one uniform bot identity for everything OpenHands says.\r\n\r\n**Only the posting identity changes.** The resolver job still runs with the invoking user's own token (`start_job` is untouched), so commits and PRs stay attributed to the human. The bot token is never used to create conversations or touch the repo.\r\n\r\n## How\r\n\r\nA single `_posting_service()` helper picks the credential and is used at the two outbound call-sites (`send_message`, `_add_eyes_reaction`); the sign-up reply flows through `send_message`, so it's covered too. The permission check (`_commenter_has_write_access`) deliberately keeps using the installer's token.\r\n\r\nWhen the bot token is set, the helper builds the BBDC service and sets the **raw token directly** so `_get_headers` sends `Authorization: Bearer <token>`. It deliberately does **not** use the service's `token=` constructor arg: that rewrites a colon-less token to `x-token-auth:<token>` and sends it as HTTP **Basic** (a Bitbucket *Cloud* convention), which Bitbucket Data Center rejects with `401 Invalid bitbucket_data_center token`. BBDC HTTP access tokens authenticate via Bearer (verified against a live instance: Bearer → 201, x-token-auth Basic → 401).\r\n\r\n## Setup (operator)\r\n\r\nCreate a dedicated BBDC user (e.g. `openhands-bot`), grant it access to the relevant projects/repos, mint an **HTTP access token** for it, and set `BITBUCKET_DATA_CENTER_BOT_TOKEN`. (Wired through KOTS config in the OpenHands-Cloud chart in companion PR OpenHands/OpenHands-Cloud#649.)\r\n\r\n## Testing\r\n\r\nSuccessfully tested end to end on an OHE instance and a bitbucket data center instance:\r\n\r\n<img width=\"1674\" height=\"932\" alt=\"Screenshot 2026-05-21 at 1 55 11 PM\" src=\"https://github.com/user-attachments/assets/b97ef1cb-cd89-441c-bfad-3575bf0524d7\" />\r\n\r\nhttps://github.com/user-attachments/assets/a2e808ed-f5fd-45d8-9751-d9f322741083\r\n\r\n\r\n\r\n- `enterprise/tests/unit/integrations/bitbucket_data_center/` — passing, including new coverage that the posting service uses the bot token (raw, Bearer) when set and falls back to the per-user token when unset.\r\n- ruff check + format clean against the pinned `v0.4.1` config.\r\n- Verified live on a self-hosted Replicated install: unenrolled mention → sign-up reply posted by `openhands-bot`; enrolled mention → \"I'm on it\" + 👀 by `openhands-bot`; job still runs as the invoking user.",
+    "author": "ak684",
+    "headRef": "alona/bbdc-bot-account",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "467184dd84bdf42d59c23106b62de8bcb0964fc6",
+    "baseSha": "f4c76596fc2c0a2641fa384351a7c8d2514f956c"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14517.diff",
+  "vendoredAt": "2026-05-24T03:18:07.394Z",
+  "collectedAt": "2026-05-24T03:18:07.394Z"
+}

@@ -1,0 +1,353 @@
+diff --git a/docs/mockups/01-login-dashboard-menu.mp4 b/docs/mockups/01-login-dashboard-menu.mp4
+new file mode 100644
+index 00000000..b98bdfe2
+Binary files /dev/null and b/docs/mockups/01-login-dashboard-menu.mp4 differ
+diff --git a/docs/mockups/01-login-dashboard-menu.png b/docs/mockups/01-login-dashboard-menu.png
+new file mode 100644
+index 00000000..8586640c
+Binary files /dev/null and b/docs/mockups/01-login-dashboard-menu.png differ
+diff --git a/docs/mockups/02-resource-monitoring-security.mp4 b/docs/mockups/02-resource-monitoring-security.mp4
+new file mode 100644
+index 00000000..dc453f9f
+Binary files /dev/null and b/docs/mockups/02-resource-monitoring-security.mp4 differ
+diff --git a/docs/mockups/02-resource-monitoring-security.png b/docs/mockups/02-resource-monitoring-security.png
+new file mode 100644
+index 00000000..f50d2652
+Binary files /dev/null and b/docs/mockups/02-resource-monitoring-security.png differ
+diff --git a/docs/mockups/03-cluster-machine-wizard.mp4 b/docs/mockups/03-cluster-machine-wizard.mp4
+new file mode 100644
+index 00000000..c597a95d
+Binary files /dev/null and b/docs/mockups/03-cluster-machine-wizard.mp4 differ
+diff --git a/docs/mockups/03-cluster-machine-wizard.png b/docs/mockups/03-cluster-machine-wizard.png
+new file mode 100644
+index 00000000..6fc72b21
+Binary files /dev/null and b/docs/mockups/03-cluster-machine-wizard.png differ
+diff --git a/scripts/record-mockups.mjs b/scripts/record-mockups.mjs
+new file mode 100644
+index 00000000..5c23a669
+--- /dev/null
++++ b/scripts/record-mockups.mjs
+@@ -0,0 +1,163 @@
++import { chromium } from 'playwright';
++import { mkdir, rename, readdir, rm } from 'node:fs/promises';
++import { existsSync } from 'node:fs';
++import { join, dirname } from 'node:path';
++import { fileURLToPath } from 'node:url';
++
++const __dirname = dirname(fileURLToPath(import.meta.url));
++const ROOT = join(__dirname, '..');
++const OUT = join(ROOT, 'artifacts', 'mockups');
++const BASE_URL = process.env.BASE_URL || 'http://127.0.0.1:5173';
++
++const VIEWPORT = { width: 1440, height: 900 };
++const VIDEO_SIZE = { width: 1440, height: 900 };
++
++async function pause(ms) {
++  return new Promise((resolve) => setTimeout(resolve, ms));
++}
++
++async function newSession(name) {
++  const sessionDir = join(OUT, `_raw_${name}`);
++  if (existsSync(sessionDir)) await rm(sessionDir, { recursive: true, force: true });
++  await mkdir(sessionDir, { recursive: true });
++  const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
++  const context = await browser.newContext({
++    viewport: VIEWPORT,
++    recordVideo: { dir: sessionDir, size: VIDEO_SIZE },
++    deviceScaleFactor: 1,
++  });
++  const page = await context.newPage();
++  await page.goto(BASE_URL, { waitUntil: 'networkidle' });
++  return { browser, context, page, sessionDir };
++}
++
++async function finalize(name, ctx) {
++  await ctx.page.close();
++  await ctx.context.close();
++  await ctx.browser.close();
++  const files = (await readdir(ctx.sessionDir)).filter((f) => f.endsWith('.webm'));
++  if (files.length === 0) throw new Error(`No video produced for ${name}`);
++  const final = join(OUT, `${name}.webm`);
++  if (existsSync(final)) await rm(final);
++  await rename(join(ctx.sessionDir, files[0]), final);
++  await rm(ctx.sessionDir, { recursive: true, force: true });
++  console.log(`Recorded ${final}`);
++}
++
++async function loginAndLaunch(page) {
++  await page.getByPlaceholder('USER').fill('admin', { delay: 90 });
++  await pause(400);
++  await page.getByPlaceholder('PASSWORD').fill('demo', { delay: 90 });
++  await pause(400);
++  await page.getByRole('button', { name: /enter|elevating/i }).click();
++  await page.waitForSelector('.app-shell', { timeout: 15000 });
++  await pause(900);
++}
++
++async function recordLoginDashboardMenu() {
++  const name = '01-login-dashboard-menu';
++  const ctx = await newSession(name);
++  try {
++    await pause(1200);
++    await loginAndLaunch(ctx.page);
++    const menuButtons = ['HUD Dashboard', 'Resource Monitoring', 'Cluster Console', 'Machine Wizard', 'Manifest Wizard'];
++    for (const label of menuButtons) {
++      await ctx.page.getByRole('button', { name: label, exact: true }).click();
++      await pause(1300);
++    }
++    await ctx.page.getByRole('button', { name: 'HUD Dashboard', exact: true }).click();
++    await pause(1500);
++  } finally {
++    await finalize(name, ctx);
++  }
++}
++
++async function recordResourceMonitoringSecurity() {
++  const name = '02-resource-monitoring-security';
++  const ctx = await newSession(name);
++  try {
++    await pause(900);
++    await loginAndLaunch(ctx.page);
++    await ctx.page.getByRole('button', { name: 'Resource Monitoring', exact: true }).click();
++    await pause(1200);
++    const monitoringMenu = ctx.page.locator('.active-work-menu button');
++    const monitoringCount = await monitoringMenu.count();
++    for (let i = 0; i < Math.min(monitoringCount, 6); i++) {
++      await monitoringMenu.nth(i).hover();
++      await pause(450);
++    }
++    await ctx.page.mouse.wheel(0, 350);
++    await pause(900);
++    await ctx.page.mouse.wheel(0, 500);
++    await pause(900);
++    await ctx.page.mouse.wheel(0, -1200);
++    await pause(800);
++    const audits = ctx.page.locator('.security-audit-card');
++    const auditsCount = await audits.count();
++    for (let i = 0; i < Math.min(auditsCount, 4); i++) {
++      await audits.nth(i).hover();
++      await pause(500);
++    }
++    await pause(1200);
++  } finally {
++    await finalize(name, ctx);
++  }
++}
++
++async function recordClusterMachineWizard() {
++  const name = '03-cluster-machine-wizard';
++  const ctx = await newSession(name);
++  try {
++    await pause(800);
++    await loginAndLaunch(ctx.page);
++    await ctx.page.getByRole('button', { name: 'Cluster Console', exact: true }).click();
++    await pause(1500);
++    await ctx.page.mouse.wheel(0, 600);
++    await pause(900);
++    await ctx.page.mouse.wheel(0, -600);
++    await pause(600);
++
++    await ctx.page.getByRole('button', { name: 'Machine Wizard', exact: true }).click();
++    await pause(1300);
++    const hostNameInput = ctx.page.locator('.machine-wizard-form input').first();
++    await hostNameInput.click();
++    await hostNameInput.fill('');
++    await hostNameInput.type('nexus-edge-04', { delay: 60 });
++    await pause(700);
++
++    const installSelect = ctx.page.locator('.machine-wizard-form select').first();
++    await installSelect.selectOption('join');
++    await pause(800);
++    await installSelect.selectOption('create');
++    await pause(700);
++
++    await ctx.page.mouse.wheel(0, 500);
++    await pause(900);
++    await ctx.page.mouse.wheel(0, 500);
++    await pause(900);
++
++    await ctx.page.getByRole('button', { name: 'Manifest Wizard', exact: true }).click();
++    await pause(1400);
++    const steps = ['2. Storage', '3. Networking', '4. Security', '5. Monitoring', '6. GitOps', '7. Review'];
++    for (const step of steps) {
++      await ctx.page.getByRole('button', { name: step, exact: true }).click();
++      await pause(900);
++    }
++    await pause(1200);
++  } finally {
++    await finalize(name, ctx);
++  }
++}
++
++async function main() {
++  await mkdir(OUT, { recursive: true });
++  await recordLoginDashboardMenu();
++  await recordResourceMonitoringSecurity();
++  await recordClusterMachineWizard();
++  console.log('All mockup videos written to', OUT);
++}
++
++main().catch((error) => {
++  console.error(error);
++  process.exit(1);
++});
+diff --git a/src/App.tsx b/src/App.tsx
+index d8627266..d3f053b3 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -73,10 +73,11 @@ function App() {
+     <div className="app-shell">
+       <aside className="sidebar">
+         <div className="brand">
+-          <div className="brand-icon">NX</div>
+-          <div>
+-            <h1>Nexus</h1>
+-            <p>Dark-mode workload & storage manifest generator</p>
++          <div className="brand-icon">HX</div>
++          <div className="brand-wordmark">
++            <h1>Harvester</h1>
++            <span className="brand-sub">Nexus</span>
++            <p className="brand-tagline">Dark-mode workload & storage manifest generator</p>
+           </div>
+         </div>
+         <div className="step-list">
+diff --git a/src/components/LaunchSequence.tsx b/src/components/LaunchSequence.tsx
+index 8d7904ac..d62c676f 100644
+--- a/src/components/LaunchSequence.tsx
++++ b/src/components/LaunchSequence.tsx
+@@ -6,7 +6,10 @@ export function LaunchSequence() {
+   return (
+     <section className="launch-sequence" aria-label="Nexus interface loading sequence">
+       <div className="launch-grid" />
+-      <div className="launch-wordmark">ELEVATE</div>
++      <div className="launch-wordmark-group">
++        <div className="launch-wordmark">HARVESTER</div>
++        <div className="launch-subwordmark">NEXUS</div>
++      </div>
+       <div className="launch-meter-shell">
+         <div className="launch-meter">
+           <span />
+diff --git a/src/components/LoginScreen.tsx b/src/components/LoginScreen.tsx
+index 7e0d0c69..7ddcad0b 100644
+--- a/src/components/LoginScreen.tsx
++++ b/src/components/LoginScreen.tsx
+@@ -29,8 +29,13 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
+     <div className="login-screen">
+       <div className="login-container">
+         <div className="login-header">
+-          <div className="elevate-wordmark" aria-label="Elevate">
+-            {'ELEVATE'.split('').map((letter, index) => (
++          <div className="elevate-wordmark" aria-label="Harvester">
++            {'HARVESTER'.split('').map((letter, index) => (
++              <span key={`${letter}-${index}`}>{letter}</span>
++            ))}
++          </div>
++          <div className="elevate-subwordmark" aria-label="Nexus">
++            {'NEXUS'.split('').map((letter, index) => (
+               <span key={`${letter}-${index}`}>{letter}</span>
+             ))}
+           </div>
+diff --git a/src/styles.css b/src/styles.css
+index aabc7b9b..729cadfa 100644
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -84,7 +84,25 @@ textarea {
+ 
+ .brand h1 {
+   margin: 0;
+-  font-size: 1.35rem;
++  font-size: 1.45rem;
++  letter-spacing: 0.04em;
++}
++
++.brand .brand-sub {
++  display: block;
++  margin: 2px 0 0;
++  color: #1f7a52 !important;
++  font-size: 0.82rem;
++  font-weight: 600;
++  letter-spacing: 0.38em;
++  text-transform: uppercase;
++  text-shadow: 0 0 8px rgba(28, 122, 82, 0.5);
++}
++
++.brand .brand-tagline {
++  margin: 6px 0 0;
++  color: #8fa3c8;
++  font-size: 0.78rem;
+ }
+ 
+ .brand p {
+@@ -2384,6 +2402,35 @@ select option {
+ .elevate-wordmark span:nth-child(5) { animation-delay: 400ms; }
+ .elevate-wordmark span:nth-child(6) { animation-delay: 500ms; }
+ .elevate-wordmark span:nth-child(7) { animation-delay: 600ms; }
++.elevate-wordmark span:nth-child(8) { animation-delay: 700ms; }
++.elevate-wordmark span:nth-child(9) { animation-delay: 800ms; }
++
++.elevate-subwordmark {
++  display: flex;
++  justify-content: center;
++  gap: clamp(0.45rem, 1.4vw, 1.05rem);
++  margin-top: clamp(0.4rem, 1.1vw, 0.85rem);
++  color: #1f7a52;
++  font-family: 'Orbitron', 'Eurostile', 'Rajdhani', 'Arial Narrow', sans-serif;
++  font-size: clamp(0.85rem, 2.4vw, 1.65rem);
++  font-weight: 400;
++  letter-spacing: 0.42em;
++  text-indent: 0.42em;
++  line-height: 1;
++  text-shadow:
++    0 0 6px rgba(28, 122, 82, 0.55),
++    0 0 18px rgba(20, 92, 64, 0.35);
++}
++
++.elevate-subwordmark span {
++  position: relative;
++  animation: elevate-letter 4.2s ease-in-out infinite;
++}
++
++.elevate-subwordmark span:nth-child(2) { animation-delay: 140ms; }
++.elevate-subwordmark span:nth-child(3) { animation-delay: 280ms; }
++.elevate-subwordmark span:nth-child(4) { animation-delay: 420ms; }
++.elevate-subwordmark span:nth-child(5) { animation-delay: 560ms; }
+ 
+ .elevate-underlight {
+   width: min(50vw, 420px);
+@@ -2475,9 +2522,16 @@ select option {
+   animation: launch-grid-drift 8s linear infinite;
+ }
+ 
+-.launch-wordmark {
++.launch-wordmark-group {
+   position: absolute;
+-  top: 18vh;
++  top: 14vh;
++  display: grid;
++  justify-items: center;
++  gap: clamp(0.3rem, 1vw, 0.75rem);
++}
++
++.launch-wordmark {
++  position: relative;
+   color: rgba(255, 255, 255, 0.88);
+   font-size: clamp(2rem, 6vw, 5rem);
+   font-weight: 300;
+@@ -2486,6 +2540,17 @@ select option {
+   text-shadow: 0 0 26px rgba(51, 247, 255, 0.18);
+ }
+ 
++.launch-subwordmark {
++  color: #1f7a52;
++  font-size: clamp(0.85rem, 2vw, 1.45rem);
++  font-weight: 400;
++  letter-spacing: 0.6em;
++  text-indent: 0.6em;
++  text-shadow:
++    0 0 8px rgba(28, 122, 82, 0.55),
++    0 0 20px rgba(20, 92, 64, 0.3);
++}
++
+ .launch-meter-shell {
+   position: relative;
+   z-index: 1;

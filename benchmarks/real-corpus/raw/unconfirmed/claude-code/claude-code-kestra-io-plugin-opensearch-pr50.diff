@@ -1,0 +1,31 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.opensearch.md b/src/main/resources/doc/io.kestra.plugin.opensearch.md
+new file mode 100644
+index 0000000..135a7cd
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.opensearch.md
+@@ -0,0 +1,25 @@
++# How to use the OpenSearch plugin
++
++Search, index, bulk-load, and query OpenSearch clusters from Kestra flows.
++
++## Authentication
++
++Set `connection.hosts` to a list of OpenSearch node URLs (e.g. `["http://localhost:9200"]`). For basic auth, set `connection.basicAuth.username` and `connection.basicAuth.password`. Set `connection.trustAllSsl: true` for self-signed certificates. Store secrets in [secrets](https://kestra.io/docs/concepts/secret) and apply connection properties globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
++
++## Tasks
++
++`Search` runs a query against one or more `indexes` — set `request` as a JSON string or map. Control result handling with `fetchType` (default `FETCH`).
++
++`Scroll` retrieves large result sets using the OpenSearch scroll API — same properties as `Search` with no size limit per page.
++
++`Put` indexes a single document — set `index` and `value` (a JSON string or map). Optionally set `key` to control the document ID and `opType` to choose between index and create semantics.
++
++`Get` retrieves a single document by `index`, `key`, and `docVersion`.
++
++`Request` sends a raw HTTP request to OpenSearch — set `endpoint` (required) and `method` (default `GET`). Pass query `parameters` and a `body` as needed.
++
++`Bulk` performs bulk operations from a file in internal storage — set `from` to a `kestra://` URI. Control batch size with `chunk` (default 1000).
++
++`Load` bulk-indexes documents from a file — set `from`, `index`, and optionally `idKey` to use a field as the document ID (set `removeIdKey: true`, the default, to strip it from the indexed document).
++
++`Ppl` runs an OpenSearch PPL query set in `query`. Control result handling with `fetchType` (default `FETCH`) and response format with `format` (`JDBC` by default, also `CSV` or `RAW`).

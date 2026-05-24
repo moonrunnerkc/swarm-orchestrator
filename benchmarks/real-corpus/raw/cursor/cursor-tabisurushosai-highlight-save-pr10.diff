@@ -1,0 +1,195 @@
+diff --git a/docs/PORTING.md b/docs/PORTING.md
+index ea8a972..821182e 100644
+--- a/docs/PORTING.md
++++ b/docs/PORTING.md
+@@ -6,17 +6,21 @@ highlight-save keeps browser-specific code at the edge so the same saved data ca
+ 
+ - Keep pure highlight rules in `src/core`.
+ - `src/core` must not call `chrome.*`, browser extension APIs, DOM APIs, network APIs, or platform storage directly.
++- Keep storage key mapping and persisted-state normalization in `src/storage`, not in `src/core`.
+ - Shared data stays in the existing shape: `{ text, url, ts, tag? }` in the `highlights` array, plus `isPremium` and `trial_start_ts`.
+ 
+ ## Storage adapters
+ 
+ - App code should read and write saved data through the `HighlightStorageAdapter` interface in `src/storage/types.ts`.
+-- The Chrome extension implementations live in `src/storage/chromeStorage.ts` and `src/storage/contentChromeStorage.ts`, both mapping the adapter to `chrome.storage.local`.
+-- `contentChromeStorage.ts` is kept entry-local so the MV3 content script builds as a self-contained `content.js`.
++- `src/storage/adapter.ts` builds a `HighlightStorageAdapter` from a small async key-value area: `get(keys)` and `set(items)`.
++- The popup Chrome implementation in `src/storage/chromeStorage.ts` maps that adapter to `chrome.storage.local`.
++- `src/storage/schema.ts` owns the persisted keys and converts raw platform storage values into `HighlightStorageState` for reusable adapters.
++- `src/storage/contentChromeStorage.ts` implements the same adapter contract directly against `chrome.storage.local` so the MV3 content script builds as a self-contained `content.js`.
+ - Native ports should add their own adapter with the same interface and persist the same keys/data shape, for example:
+   - `highlights`
+   - `isPremium`
+   - `trial_start_ts`
++- If a native store already exposes async key-value access, prefer reusing `createHighlightStorageAdapter` with that store instead of duplicating conversion logic.
+ - Do not add remote sync or external APIs unless the product spec changes.
+ 
+ ## UI shell
+diff --git a/src/core/highlights.ts b/src/core/highlights.ts
+index 934944c..d2cadaa 100644
+--- a/src/core/highlights.ts
++++ b/src/core/highlights.ts
+@@ -17,14 +17,6 @@ export const TRIAL_DAYS = 7;
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+ 
+-export function toHighlightList(value: unknown): Highlight[] {
+-  return Array.isArray(value) ? (value as Highlight[]) : [];
+-}
+-
+-export function toPremiumFlag(value: unknown): boolean {
+-  return value === true;
+-}
+-
+ export function createHighlight(input: CreateHighlightInput): Highlight {
+   return {
+     text: input.text,
+diff --git a/src/storage/adapter.ts b/src/storage/adapter.ts
+new file mode 100644
+index 0000000..5f24234
+--- /dev/null
++++ b/src/storage/adapter.ts
+@@ -0,0 +1,30 @@
++import type { Highlight } from "../core/highlights";
++import {
++  getHighlightStorageKeys,
++  HIGHLIGHTS_KEY,
++  IS_PREMIUM_KEY,
++  toHighlightStorageState,
++  TRIAL_START_TS_KEY,
++} from "./schema";
++import type { HighlightStorageAdapter, KeyValueStorageArea } from "./types";
++
++export function createHighlightStorageAdapter(storageArea: KeyValueStorageArea): HighlightStorageAdapter {
++  return {
++    async load() {
++      const data = await storageArea.get(getHighlightStorageKeys());
++      return toHighlightStorageState(data);
++    },
++
++    async saveHighlights(highlights: Highlight[]): Promise<void> {
++      await storageArea.set({ [HIGHLIGHTS_KEY]: highlights });
++    },
++
++    async savePremium(isPremium: boolean): Promise<void> {
++      await storageArea.set({ [IS_PREMIUM_KEY]: isPremium });
++    },
++
++    async saveTrialStartTs(trialStartTs: number): Promise<void> {
++      await storageArea.set({ [TRIAL_START_TS_KEY]: trialStartTs });
++    },
++  };
++}
+diff --git a/src/storage/chromeStorage.ts b/src/storage/chromeStorage.ts
+index 8f4ee4f..264f3de 100644
+--- a/src/storage/chromeStorage.ts
++++ b/src/storage/chromeStorage.ts
+@@ -1,39 +1,3 @@
+-import { toHighlightList, toPremiumFlag } from "../core/highlights";
+-import type { Highlight } from "../core/highlights";
+-import type { HighlightStorageAdapter, HighlightStorageState } from "./types";
++import { createHighlightStorageAdapter } from "./adapter";
+ 
+-const HIGHLIGHTS_KEY = "highlights";
+-const IS_PREMIUM_KEY = "isPremium";
+-const TRIAL_START_TS_KEY = "trial_start_ts";
+-const STORAGE_KEYS = [HIGHLIGHTS_KEY, IS_PREMIUM_KEY, TRIAL_START_TS_KEY];
+-
+-interface ChromeStorageData {
+-  highlights?: unknown;
+-  isPremium?: unknown;
+-  trial_start_ts?: unknown;
+-}
+-
+-export const chromeHighlightStorage: HighlightStorageAdapter = {
+-  async load(): Promise<HighlightStorageState> {
+-    const data = (await chrome.storage.local.get(STORAGE_KEYS)) as ChromeStorageData;
+-    const trialStartTs = typeof data.trial_start_ts === "number" ? data.trial_start_ts : undefined;
+-
+-    return {
+-      highlights: toHighlightList(data.highlights),
+-      isPremium: toPremiumFlag(data.isPremium),
+-      trialStartTs,
+-    };
+-  },
+-
+-  async saveHighlights(highlights: Highlight[]): Promise<void> {
+-    await chrome.storage.local.set({ [HIGHLIGHTS_KEY]: highlights });
+-  },
+-
+-  async savePremium(isPremium: boolean): Promise<void> {
+-    await chrome.storage.local.set({ [IS_PREMIUM_KEY]: isPremium });
+-  },
+-
+-  async saveTrialStartTs(trialStartTs: number): Promise<void> {
+-    await chrome.storage.local.set({ [TRIAL_START_TS_KEY]: trialStartTs });
+-  },
+-};
++export const chromeHighlightStorage = createHighlightStorageAdapter(chrome.storage.local);
+diff --git a/src/storage/schema.ts b/src/storage/schema.ts
+new file mode 100644
+index 0000000..55dbd70
+--- /dev/null
++++ b/src/storage/schema.ts
+@@ -0,0 +1,44 @@
++import type { Highlight } from "../core/highlights";
++import type { HighlightStorageState } from "./types";
++
++export const HIGHLIGHTS_KEY = "highlights";
++export const IS_PREMIUM_KEY = "isPremium";
++export const TRIAL_START_TS_KEY = "trial_start_ts";
++
++const HIGHLIGHT_STORAGE_KEYS = [HIGHLIGHTS_KEY, IS_PREMIUM_KEY, TRIAL_START_TS_KEY];
++
++interface HighlightStorageRawData {
++  highlights?: unknown;
++  isPremium?: unknown;
++  trial_start_ts?: unknown;
++}
++
++function isRecord(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null;
++}
++
++function toHighlightList(value: unknown): Highlight[] {
++  return Array.isArray(value) ? (value as Highlight[]) : [];
++}
++
++function toPremiumFlag(value: unknown): boolean {
++  return value === true;
++}
++
++function toTrialStartTs(value: unknown): number | undefined {
++  return typeof value === "number" ? value : undefined;
++}
++
++export function getHighlightStorageKeys(): string[] {
++  return [...HIGHLIGHT_STORAGE_KEYS];
++}
++
++export function toHighlightStorageState(value: unknown): HighlightStorageState {
++  const data = isRecord(value) ? (value as HighlightStorageRawData) : {};
++
++  return {
++    highlights: toHighlightList(data.highlights),
++    isPremium: toPremiumFlag(data.isPremium),
++    trialStartTs: toTrialStartTs(data.trial_start_ts),
++  };
++}
+diff --git a/src/storage/types.ts b/src/storage/types.ts
+index 1e935bb..57054b4 100644
+--- a/src/storage/types.ts
++++ b/src/storage/types.ts
+@@ -6,6 +6,11 @@ export interface HighlightStorageState {
+   trialStartTs?: number;
+ }
+ 
++export interface KeyValueStorageArea {
++  get(keys: string[]): Promise<unknown>;
++  set(items: Record<string, unknown>): Promise<void>;
++}
++
+ export interface HighlightStorageAdapter {
+   load(): Promise<HighlightStorageState>;
+   saveHighlights(highlights: Highlight[]): Promise<void>;

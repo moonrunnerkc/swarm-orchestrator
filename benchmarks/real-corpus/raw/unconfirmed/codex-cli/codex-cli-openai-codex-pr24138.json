@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24138",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24138,
+    "headSha": "f053a08f4a12b90281d47e20691fac48245fc3f3",
+    "baseSha": "acd851e89f31a74c2140f167dcb922dc08becc44",
+    "title": "Harden Git workspace integration paths",
+    "body": "## Summary\n\n- apply consistent internal Git configuration isolation when collecting working-tree state and applying changes\n- route the TUI diff collection path through the same guarded configuration construction\n- stop automatically approving workspace-inspecting `git status` and `git diff` commands\n- use an `fsmonitor` override form that behaves consistently across supported system Git versions\n\n## Validation\n\n- `cargo fmt -- --config imports_granularity=Item`\n- `CARGO_TARGET_DIR=/tmp/codex-git-query-hardening-target CARGO_BUILD_JOBS=1 cargo clippy --fix --tests --allow-dirty -p codex-git-utils -p codex-shell-command -p codex-tui -p codex-core`\n- `CARGO_TARGET_DIR=/tmp/codex-git-query-hardening-target CARGO_BUILD_JOBS=1 cargo test -p codex-git-utils --lib`\n- `CARGO_TARGET_DIR=/tmp/codex-git-query-hardening-target CARGO_BUILD_JOBS=1 cargo test -p codex-shell-command --lib`\n- `CARGO_TARGET_DIR=/tmp/codex-git-query-hardening-target CARGO_BUILD_JOBS=1 cargo test -p codex-core --lib ignores_configured_filters`\n- `CARGO_TARGET_DIR=/tmp/codex-git-query-hardening-target CARGO_BUILD_JOBS=1 RUST_MIN_STACK=8388608 cargo test -p codex-tui --lib get_git_diff`\n",
+    "author": "bookholt-oai",
+    "headRef": "dev/bookholt/git-query-hardening",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "f053a08f4a12b90281d47e20691fac48245fc3f3",
+    "baseSha": "acd851e89f31a74c2140f167dcb922dc08becc44"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24138.diff",
+  "vendoredAt": "2026-05-24T03:20:59.687Z",
+  "collectedAt": "2026-05-24T03:20:59.687Z"
+}

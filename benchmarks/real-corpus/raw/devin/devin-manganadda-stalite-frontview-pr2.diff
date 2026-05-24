@@ -1,0 +1,2147 @@
+diff --git a/login_page.html b/login_page.html
+index f2b99c9..3cc7956 100644
+--- a/login_page.html
++++ b/login_page.html
+@@ -501,8 +501,8 @@
+ </div>
+ 
+ <script>
+-/* Clock */
+-function tick(){const n=new Date();document.getElementById('clk').textContent=String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');}
++/* Clock (no-op if there's no #clk element on this page) */
++function tick(){const el=document.getElementById('clk');if(!el)return;const n=new Date();el.textContent=String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');}
+ tick();setInterval(tick,30000);
+ 
+ /* Validation */
+diff --git a/ng_locations.js b/ng_locations.js
+deleted file mode 100644
+index 3765c00..0000000
+--- a/ng_locations.js
++++ /dev/null
+@@ -1,127 +0,0 @@
+-/* ──────────────────────────────────────────────────────────────────
+-   Shurafah — Nigerian location reference data
+-   - NG_ZONES : 15 zones used by the platform
+-   - NG_LGAS  : 36 states + FCT mapped to their Local Government Areas
+-   Used by register_page.html and user_profile_page.html.
+-─────────────────────────────────────────────────────────────────── */
+-(function (root) {
+-  const NG_ZONES = [
+-    "Rasulil Akram Kano",
+-    "Amirul Muuminin Zaria",
+-    "Sayyada Zahra Kaduna",
+-    "Imam Hussan Azare",
+-    "Imam Hussain Katsina",
+-    "Imam Aliyu Zainul'abidin Gombe",
+-    "Imam Muhammad Bakir Potiskum",
+-    "Imam Ja'afar Assadiq Lagos",
+-    "Imam Musa Kazim Jos",
+-    "Imam Aliyu Didah Sokoto",
+-    "Imam Muhammad Jawad Bauchi",
+-    "Imam Ali Alhadi Taraba",
+-    "Imam Hassan Alaskari Yola",
+-    "Imam Almahdi Alhujja Abuja",
+-    "Sayyid Zakzaky Funtua"
+-  ];
+-
+-  const NG_LGAS = {
+-    "Abia": ["Aba North","Aba South","Arochukwu","Bende","Ikwuano","Isiala Ngwa North","Isiala Ngwa South","Isuikwuato","Obi Ngwa","Ohafia","Osisioma","Ugwunagbo","Ukwa East","Ukwa West","Umuahia North","Umuahia South","Umu Nneochi"],
+-    "Adamawa": ["Demsa","Fufure","Ganye","Gayuk","Gombi","Grie","Hong","Jada","Lamurde","Madagali","Maiha","Mayo Belwa","Michika","Mubi North","Mubi South","Numan","Shelleng","Song","Toungo","Yola North","Yola South"],
+-    "Akwa Ibom": ["Abak","Eastern Obolo","Eket","Esit Eket","Essien Udim","Etim Ekpo","Etinan","Ibeno","Ibesikpo Asutan","Ibiono-Ibom","Ika","Ikono","Ikot Abasi","Ikot Ekpene","Ini","Itu","Mbo","Mkpat-Enin","Nsit-Atai","Nsit-Ibom","Nsit-Ubium","Obot Akara","Okobo","Onna","Oron","Oruk Anam","Udung-Uko","Ukanafun","Uruan","Urue-Offong/Oruko","Uyo"],
+-    "Anambra": ["Aguata","Anambra East","Anambra West","Anaocha","Awka North","Awka South","Ayamelum","Dunukofia","Ekwusigo","Idemili North","Idemili South","Ihiala","Njikoka","Nnewi North","Nnewi South","Ogbaru","Onitsha North","Onitsha South","Orumba North","Orumba South","Oyi"],
+-    "Bauchi": ["Alkaleri","Bauchi","Bogoro","Damban","Darazo","Dass","Gamawa","Ganjuwa","Giade","Itas/Gadau","Jama'are","Katagum","Kirfi","Misau","Ningi","Shira","Tafawa Balewa","Toro","Warji","Zaki"],
+-    "Bayelsa": ["Brass","Ekeremor","Kolokuma/Opokuma","Nembe","Ogbia","Sagbama","Southern Ijaw","Yenagoa"],
+-    "Benue": ["Ado","Agatu","Apa","Buruku","Gboko","Guma","Gwer East","Gwer West","Katsina-Ala","Konshisha","Kwande","Logo","Makurdi","Obi","Ogbadibo","Ohimini","Oju","Okpokwu","Otukpo","Tarka","Ukum","Ushongo","Vandeikya"],
+-    "Borno": ["Abadam","Askira/Uba","Bama","Bayo","Biu","Chibok","Damboa","Dikwa","Gubio","Guzamala","Gwoza","Hawul","Jere","Kaga","Kala/Balge","Konduga","Kukawa","Kwaya Kusar","Mafa","Magumeri","Maiduguri","Marte","Mobbar","Monguno","Ngala","Nganzai","Shani"],
+-    "Cross River": ["Abi","Akamkpa","Akpabuyo","Bakassi","Bekwarra","Biase","Boki","Calabar Municipal","Calabar South","Etung","Ikom","Obanliku","Obubra","Obudu","Odukpani","Ogoja","Yakuur","Yala"],
+-    "Delta": ["Aniocha North","Aniocha South","Bomadi","Burutu","Ethiope East","Ethiope West","Ika North East","Ika South","Isoko North","Isoko South","Ndokwa East","Ndokwa West","Okpe","Oshimili North","Oshimili South","Patani","Sapele","Udu","Ughelli North","Ughelli South","Ukwuani","Uvwie","Warri North","Warri South","Warri South West"],
+-    "Ebonyi": ["Abakaliki","Afikpo North","Afikpo South","Ebonyi","Ezza North","Ezza South","Ikwo","Ishielu","Ivo","Izzi","Ohaozara","Ohaukwu","Onicha"],
+-    "Edo": ["Akoko-Edo","Egor","Esan Central","Esan North-East","Esan South-East","Esan West","Etsako Central","Etsako East","Etsako West","Igueben","Ikpoba Okha","Oredo","Orhionmwon","Ovia North-East","Ovia South-West","Owan East","Owan West","Uhunmwonde"],
+-    "Ekiti": ["Ado Ekiti","Efon","Ekiti East","Ekiti South-West","Ekiti West","Emure","Gbonyin","Ido Osi","Ijero","Ikere","Ikole","Ilejemeje","Irepodun/Ifelodun","Ise/Orun","Moba","Oye"],
+-    "Enugu": ["Aninri","Awgu","Enugu East","Enugu North","Enugu South","Ezeagu","Igbo Etiti","Igbo Eze North","Igbo Eze South","Isi Uzo","Nkanu East","Nkanu West","Nsukka","Oji River","Udenu","Udi","Uzo Uwani"],
+-    "FCT — Abuja": ["Abaji","Bwari","Gwagwalada","Kuje","Kwali","Municipal Area Council"],
+-    "Gombe": ["Akko","Balanga","Billiri","Dukku","Funakaye","Gombe","Kaltungo","Kwami","Nafada","Shongom","Yamaltu/Deba"],
+-    "Imo": ["Aboh Mbaise","Ahiazu Mbaise","Ehime Mbano","Ezinihitte","Ideato North","Ideato South","Ihitte/Uboma","Ikeduru","Isiala Mbano","Isu","Mbaitoli","Ngor Okpala","Njaba","Nkwerre","Nwangele","Obowo","Oguta","Ohaji/Egbema","Okigwe","Orlu","Orsu","Oru East","Oru West","Owerri Municipal","Owerri North","Owerri West","Unuimo"],
+-    "Jigawa": ["Auyo","Babura","Biriniwa","Birnin Kudu","Buji","Dutse","Gagarawa","Garki","Gumel","Guri","Gwaram","Gwiwa","Hadejia","Jahun","Kafin Hausa","Kaugama","Kazaure","Kiri Kasama","Kiyawa","Maigatari","Malam Madori","Miga","Ringim","Roni","Sule Tankarkar","Taura","Yankwashi"],
+-    "Kaduna": ["Birnin Gwari","Chikun","Giwa","Igabi","Ikara","Jaba","Jema'a","Kachia","Kaduna North","Kaduna South","Kagarko","Kajuru","Kaura","Kauru","Kubau","Kudan","Lere","Makarfi","Sabon Gari","Sanga","Soba","Zangon Kataf","Zaria"],
+-    "Kano": ["Ajingi","Albasu","Bagwai","Bebeji","Bichi","Bunkure","Dala","Dambatta","Dawakin Kudu","Dawakin Tofa","Doguwa","Fagge","Gabasawa","Garko","Garun Mallam","Gaya","Gezawa","Gwale","Gwarzo","Kabo","Kano Municipal","Karaye","Kibiya","Kiru","Kumbotso","Kunchi","Kura","Madobi","Makoda","Minjibir","Nasarawa","Rano","Rimin Gado","Rogo","Shanono","Sumaila","Takai","Tarauni","Tofa","Tsanyawa","Tudun Wada","Ungogo","Warawa","Wudil"],
+-    "Katsina": ["Bakori","Batagarawa","Batsari","Baure","Bindawa","Charanchi","Dan Musa","Dandume","Danja","Daura","Dutsi","Dutsin Ma","Faskari","Funtua","Ingawa","Jibia","Kafur","Kaita","Kankara","Kankia","Katsina","Kurfi","Kusada","Mai'Adua","Malumfashi","Mani","Mashi","Matazu","Musawa","Rimi","Sabuwa","Safana","Sandamu","Zango"],
+-    "Kebbi": ["Aleiro","Arewa Dandi","Argungu","Augie","Bagudo","Birnin Kebbi","Bunza","Dandi","Fakai","Gwandu","Jega","Kalgo","Koko/Besse","Maiyama","Ngaski","Sakaba","Shanga","Suru","Wasagu/Danko","Yauri","Zuru"],
+-    "Kogi": ["Adavi","Ajaokuta","Ankpa","Bassa","Dekina","Ibaji","Idah","Igalamela-Odolu","Ijumu","Kabba/Bunu","Kogi","Lokoja","Mopa-Muro","Ofu","Ogori/Magongo","Okehi","Okene","Olamaboro","Omala","Yagba East","Yagba West"],
+-    "Kwara": ["Asa","Baruten","Edu","Ekiti (Kwara)","Ifelodun","Ilorin East","Ilorin South","Ilorin West","Irepodun","Isin","Kaiama","Moro","Offa","Oke Ero","Oyun","Pategi"],
+-    "Lagos": ["Agege","Ajeromi-Ifelodun","Alimosho","Amuwo-Odofin","Apapa","Badagry","Epe","Eti Osa","Ibeju-Lekki","Ifako-Ijaiye","Ikeja","Ikorodu","Kosofe","Lagos Island","Lagos Mainland","Mushin","Ojo","Oshodi-Isolo","Shomolu","Surulere"],
+-    "Nasarawa": ["Akwanga","Awe","Doma","Karu","Keana","Keffi","Kokona","Lafia","Nasarawa","Nasarawa Egon","Obi","Toto","Wamba"],
+-    "Niger": ["Agaie","Agwara","Bida","Borgu","Bosso","Chanchaga","Edati","Gbako","Gurara","Katcha","Kontagora","Lapai","Lavun","Magama","Mariga","Mashegu","Mokwa","Munya","Paikoro","Rafi","Rijau","Shiroro","Suleja","Tafa","Wushishi"],
+-    "Ogun": ["Abeokuta North","Abeokuta South","Ado-Odo/Ota","Egbado North (Yewa North)","Egbado South (Yewa South)","Ewekoro","Ifo","Ijebu East","Ijebu North","Ijebu North East","Ijebu Ode","Ikenne","Imeko Afon","Ipokia","Obafemi Owode","Odeda","Odogbolu","Ogun Waterside","Remo North","Sagamu"],
+-    "Ondo": ["Akoko North-East","Akoko North-West","Akoko South-East","Akoko South-West","Akure North","Akure South","Ese Odo","Idanre","Ifedore","Ilaje","Ile Oluji/Okeigbo","Irele","Odigbo","Okitipupa","Ondo East","Ondo West","Ose","Owo"],
+-    "Osun": ["Aiyedaade","Aiyedire","Atakunmosa East","Atakunmosa West","Boluwaduro","Boripe","Ede North","Ede South","Egbedore","Ejigbo","Ife Central","Ife East","Ife North","Ife South","Ifedayo","Ifelodun","Ila","Ilesa East","Ilesa West","Irepodun","Irewole","Isokan","Iwo","Obokun","Odo Otin","Ola Oluwa","Olorunda","Oriade","Orolu","Osogbo"],
+-    "Oyo": ["Afijio","Akinyele","Atiba","Atisbo","Egbeda","Ibadan North","Ibadan North-East","Ibadan North-West","Ibadan South-East","Ibadan South-West","Ibarapa Central","Ibarapa East","Ibarapa North","Ido","Irepo","Iseyin","Itesiwaju","Iwajowa","Kajola","Lagelu","Ogbomosho North","Ogbomosho South","Ogo Oluwa","Olorunsogo","Oluyole","Ona Ara","Orelope","Ori Ire","Oyo East","Oyo West","Saki East","Saki West","Surulere (Oyo)"],
+-    "Plateau": ["Barkin Ladi","Bassa","Bokkos","Jos East","Jos North","Jos South","Kanam","Kanke","Langtang North","Langtang South","Mangu","Mikang","Pankshin","Qua'an Pan","Riyom","Shendam","Wase"],
+-    "Rivers": ["Abua/Odual","Ahoada East","Ahoada West","Akuku-Toru","Andoni","Asari-Toru","Bonny","Degema","Eleme","Emuoha","Etche","Gokana","Ikwerre","Khana","Obio/Akpor","Ogba/Egbema/Ndoni","Ogu/Bolo","Okrika","Omuma","Opobo/Nkoro","Oyigbo","Port Harcourt","Tai"],
+-    "Sokoto": ["Binji","Bodinga","Dange Shuni","Gada","Goronyo","Gudu","Gwadabawa","Illela","Isa","Kebbe","Kware","Rabah","Sabon Birni","Shagari","Silame","Sokoto North","Sokoto South","Tambuwal","Tangaza","Tureta","Wamako","Wurno","Yabo"],
+-    "Taraba": ["Ardo Kola","Bali","Donga","Gashaka","Gassol","Ibi","Jalingo","Karim Lamido","Kumi","Lau","Sardauna","Takum","Ussa","Wukari","Yorro","Zing"],
+-    "Yobe": ["Bade","Bursari","Damaturu","Fika","Fune","Geidam","Gujba","Gulani","Jakusko","Karasuwa","Machina","Nangere","Nguru","Potiskum","Tarmuwa","Yunusari","Yusufari"],
+-    "Zamfara": ["Anka","Bakura","Birnin Magaji/Kiyaw","Bukkuyum","Bungudu","Gummi","Gusau","Kaura Namoda","Maradun","Maru","Shinkafi","Talata Mafara","Tsafe","Zurmi"]
+-  };
+-
+-  /* Ordered list of states matching the existing register-page dropdown */
+-  const NG_STATES = [
+-    "Abia","Adamawa","Akwa Ibom","Anambra","Bauchi","Bayelsa","Benue","Borno",
+-    "Cross River","Delta","Ebonyi","Edo","Ekiti","Enugu","FCT — Abuja","Gombe",
+-    "Imo","Jigawa","Kaduna","Kano","Katsina","Kebbi","Kogi","Kwara","Lagos",
+-    "Nasarawa","Niger","Ogun","Ondo","Osun","Oyo","Plateau","Rivers","Sokoto",
+-    "Taraba","Yobe","Zamfara"
+-  ];
+-
+-  /* Populate a <select> with state options */
+-  function populateStates(selectEl, placeholder) {
+-    if (!selectEl) return;
+-    selectEl.innerHTML = '';
+-    const ph = document.createElement('option');
+-    ph.value = ''; ph.textContent = placeholder || 'Select your state…';
+-    selectEl.appendChild(ph);
+-    NG_STATES.forEach(s => {
+-      const o = document.createElement('option');
+-      o.value = s; o.textContent = s;
+-      selectEl.appendChild(o);
+-    });
+-  }
+-
+-  /* Populate a <select> with zone options */
+-  function populateZones(selectEl, placeholder) {
+-    if (!selectEl) return;
+-    selectEl.innerHTML = '';
+-    const ph = document.createElement('option');
+-    ph.value = ''; ph.textContent = placeholder || 'Select your zone…';
+-    selectEl.appendChild(ph);
+-    NG_ZONES.forEach(z => {
+-      const o = document.createElement('option');
+-      o.value = z; o.textContent = z;
+-      selectEl.appendChild(o);
+-    });
+-  }
+-
+-  /* Populate a <select> with LGAs for the given state */
+-  function populateLgas(selectEl, state, placeholder) {
+-    if (!selectEl) return;
+-    selectEl.innerHTML = '';
+-    const ph = document.createElement('option');
+-    ph.value = '';
+-    ph.textContent = state ? (placeholder || ('Select LGA in ' + state + '…')) : 'Select state first…';
+-    selectEl.appendChild(ph);
+-    const list = (state && NG_LGAS[state]) ? NG_LGAS[state] : [];
+-    list.forEach(lga => {
+-      const o = document.createElement('option');
+-      o.value = lga; o.textContent = lga;
+-      selectEl.appendChild(o);
+-    });
+-  }
+-
+-  root.NG_ZONES = NG_ZONES;
+-  root.NG_LGAS = NG_LGAS;
+-  root.NG_STATES = NG_STATES;
+-  root.NG_LOC = {
+-    populateStates: populateStates,
+-    populateZones: populateZones,
+-    populateLgas: populateLgas
+-  };
+-})(window);
+diff --git a/register_page.html b/register_page.html
+index 95f3758..c6f7815 100644
+--- a/register_page.html
++++ b/register_page.html
+@@ -286,7 +286,6 @@
+   .login-link { margin-top:12px; }
+ }
+ </style>
+-<script src="ng_locations.js"></script>
+ </head>
+ <body>
+ 
+@@ -508,6 +507,21 @@
+           <svg class="field-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+           <select class="field-select" id="zoneSelect" onchange="onZoneChange()">
+             <option value="">Select your zone…</option>
++            <option value="Rasulil Akram Kano">Rasulil Akram Kano</option>
++            <option value="Amirul Muuminin Zaria">Amirul Muuminin Zaria</option>
++            <option value="Sayyada Zahra Kaduna">Sayyada Zahra Kaduna</option>
++            <option value="Imam Hussan Azare">Imam Hussan Azare</option>
++            <option value="Imam Hussain Katsina">Imam Hussain Katsina</option>
++            <option value="Imam Aliyu Zainul&#39;abidin Gombe">Imam Aliyu Zainul&#39;abidin Gombe</option>
++            <option value="Imam Muhammad Bakir Potiskum">Imam Muhammad Bakir Potiskum</option>
++            <option value="Imam Ja&#39;afar Assadiq Lagos">Imam Ja&#39;afar Assadiq Lagos</option>
++            <option value="Imam Musa Kazim Jos">Imam Musa Kazim Jos</option>
++            <option value="Imam Aliyu Didah Sokoto">Imam Aliyu Didah Sokoto</option>
++            <option value="Imam Muhammad Jawad Bauchi">Imam Muhammad Jawad Bauchi</option>
++            <option value="Imam Ali Alhadi Taraba">Imam Ali Alhadi Taraba</option>
++            <option value="Imam Hassan Alaskari Yola">Imam Hassan Alaskari Yola</option>
++            <option value="Imam Almahdi Alhujja Abuja">Imam Almahdi Alhujja Abuja</option>
++            <option value="Sayyid Zakzaky Funtua">Sayyid Zakzaky Funtua</option>
+           </select>
+           <div class="select-arrow"><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></div>
+         </div>
+@@ -522,6 +536,43 @@
+           <svg class="field-icon" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+           <select class="field-select" id="stateSelect" onchange="onStateChange()">
+             <option value="">Select your state…</option>
++            <option value="Abia">Abia</option>
++            <option value="Adamawa">Adamawa</option>
++            <option value="Akwa Ibom">Akwa Ibom</option>
++            <option value="Anambra">Anambra</option>
++            <option value="Bauchi">Bauchi</option>
++            <option value="Bayelsa">Bayelsa</option>
++            <option value="Benue">Benue</option>
++            <option value="Borno">Borno</option>
++            <option value="Cross River">Cross River</option>
++            <option value="Delta">Delta</option>
++            <option value="Ebonyi">Ebonyi</option>
++            <option value="Edo">Edo</option>
++            <option value="Ekiti">Ekiti</option>
++            <option value="Enugu">Enugu</option>
++            <option value="FCT — Abuja">FCT — Abuja</option>
++            <option value="Gombe">Gombe</option>
++            <option value="Imo">Imo</option>
++            <option value="Jigawa">Jigawa</option>
++            <option value="Kaduna">Kaduna</option>
++            <option value="Kano">Kano</option>
++            <option value="Katsina">Katsina</option>
++            <option value="Kebbi">Kebbi</option>
++            <option value="Kogi">Kogi</option>
++            <option value="Kwara">Kwara</option>
++            <option value="Lagos">Lagos</option>
++            <option value="Nasarawa">Nasarawa</option>
++            <option value="Niger">Niger</option>
++            <option value="Ogun">Ogun</option>
++            <option value="Ondo">Ondo</option>
++            <option value="Osun">Osun</option>
++            <option value="Oyo">Oyo</option>
++            <option value="Plateau">Plateau</option>
++            <option value="Rivers">Rivers</option>
++            <option value="Sokoto">Sokoto</option>
++            <option value="Taraba">Taraba</option>
++            <option value="Yobe">Yobe</option>
++            <option value="Zamfara">Zamfara</option>
+           </select>
+           <div class="select-arrow"><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></div>
+         </div>
+@@ -534,7 +585,855 @@
+         <div class="field-input-wrap">
+           <svg class="field-icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+           <select class="field-select" id="lgaSelect" onchange="onLgaChange()">
+-            <option value="">Select state first…</option>
++            <option value="">Select your LGA…</option>
++            <optgroup label="Abia" data-state="Abia">
++              <option value="Aba North" data-state="Abia">Aba North</option>
++              <option value="Aba South" data-state="Abia">Aba South</option>
++              <option value="Arochukwu" data-state="Abia">Arochukwu</option>
++              <option value="Bende" data-state="Abia">Bende</option>
++              <option value="Ikwuano" data-state="Abia">Ikwuano</option>
++              <option value="Isiala Ngwa North" data-state="Abia">Isiala Ngwa North</option>
++              <option value="Isiala Ngwa South" data-state="Abia">Isiala Ngwa South</option>
++              <option value="Isuikwuato" data-state="Abia">Isuikwuato</option>
++              <option value="Obi Ngwa" data-state="Abia">Obi Ngwa</option>
++              <option value="Ohafia" data-state="Abia">Ohafia</option>
++              <option value="Osisioma" data-state="Abia">Osisioma</option>
++              <option value="Ugwunagbo" data-state="Abia">Ugwunagbo</option>
++              <option value="Ukwa East" data-state="Abia">Ukwa East</option>
++              <option value="Ukwa West" data-state="Abia">Ukwa West</option>
++              <option value="Umuahia North" data-state="Abia">Umuahia North</option>
++              <option value="Umuahia South" data-state="Abia">Umuahia South</option>
++              <option value="Umu Nneochi" data-state="Abia">Umu Nneochi</option>
++            </optgroup>
++            <optgroup label="Adamawa" data-state="Adamawa">
++              <option value="Demsa" data-state="Adamawa">Demsa</option>
++              <option value="Fufure" data-state="Adamawa">Fufure</option>
++              <option value="Ganye" data-state="Adamawa">Ganye</option>
++              <option value="Gayuk" data-state="Adamawa">Gayuk</option>
++              <option value="Gombi" data-state="Adamawa">Gombi</option>
++              <option value="Grie" data-state="Adamawa">Grie</option>
++              <option value="Hong" data-state="Adamawa">Hong</option>
++              <option value="Jada" data-state="Adamawa">Jada</option>
++              <option value="Lamurde" data-state="Adamawa">Lamurde</option>
++              <option value="Madagali" data-state="Adamawa">Madagali</option>
++              <option value="Maiha" data-state="Adamawa">Maiha</option>
++              <option value="Mayo Belwa" data-state="Adamawa">Mayo Belwa</option>
++              <option value="Michika" data-state="Adamawa">Michika</option>
++              <option value="Mubi North" data-state="Adamawa">Mubi North</option>
++              <option value="Mubi South" data-state="Adamawa">Mubi South</option>
++              <option value="Numan" data-state="Adamawa">Numan</option>
++              <option value="Shelleng" data-state="Adamawa">Shelleng</option>
++              <option value="Song" data-state="Adamawa">Song</option>
++              <option value="Toungo" data-state="Adamawa">Toungo</option>
++              <option value="Yola North" data-state="Adamawa">Yola North</option>
++              <option value="Yola South" data-state="Adamawa">Yola South</option>
++            </optgroup>
++            <optgroup label="Akwa Ibom" data-state="Akwa Ibom">
++              <option value="Abak" data-state="Akwa Ibom">Abak</option>
++              <option value="Eastern Obolo" data-state="Akwa Ibom">Eastern Obolo</option>
++              <option value="Eket" data-state="Akwa Ibom">Eket</option>
++              <option value="Esit Eket" data-state="Akwa Ibom">Esit Eket</option>
++              <option value="Essien Udim" data-state="Akwa Ibom">Essien Udim</option>
++              <option value="Etim Ekpo" data-state="Akwa Ibom">Etim Ekpo</option>
++              <option value="Etinan" data-state="Akwa Ibom">Etinan</option>
++              <option value="Ibeno" data-state="Akwa Ibom">Ibeno</option>
++              <option value="Ibesikpo Asutan" data-state="Akwa Ibom">Ibesikpo Asutan</option>
++              <option value="Ibiono-Ibom" data-state="Akwa Ibom">Ibiono-Ibom</option>
++              <option value="Ika" data-state="Akwa Ibom">Ika</option>
++              <option value="Ikono" data-state="Akwa Ibom">Ikono</option>
++              <option value="Ikot Abasi" data-state="Akwa Ibom">Ikot Abasi</option>
++              <option value="Ikot Ekpene" data-state="Akwa Ibom">Ikot Ekpene</option>
++              <option value="Ini" data-state="Akwa Ibom">Ini</option>
++              <option value="Itu" data-state="Akwa Ibom">Itu</option>
++              <option value="Mbo" data-state="Akwa Ibom">Mbo</option>
++              <option value="Mkpat-Enin" data-state="Akwa Ibom">Mkpat-Enin</option>
++              <option value="Nsit-Atai" data-state="Akwa Ibom">Nsit-Atai</option>
++              <option value="Nsit-Ibom" data-state="Akwa Ibom">Nsit-Ibom</option>
++              <option value="Nsit-Ubium" data-state="Akwa Ibom">Nsit-Ubium</option>
++              <option value="Obot Akara" data-state="Akwa Ibom">Obot Akara</option>
++              <option value="Okobo" data-state="Akwa Ibom">Okobo</option>
++              <option value="Onna" data-state="Akwa Ibom">Onna</option>
++              <option value="Oron" data-state="Akwa Ibom">Oron</option>
++              <option value="Oruk Anam" data-state="Akwa Ibom">Oruk Anam</option>
++              <option value="Udung-Uko" data-state="Akwa Ibom">Udung-Uko</option>
++              <option value="Ukanafun" data-state="Akwa Ibom">Ukanafun</option>
++              <option value="Uruan" data-state="Akwa Ibom">Uruan</option>
++              <option value="Urue-Offong/Oruko" data-state="Akwa Ibom">Urue-Offong/Oruko</option>
++              <option value="Uyo" data-state="Akwa Ibom">Uyo</option>
++            </optgroup>
++            <optgroup label="Anambra" data-state="Anambra">
++              <option value="Aguata" data-state="Anambra">Aguata</option>
++              <option value="Anambra East" data-state="Anambra">Anambra East</option>
++              <option value="Anambra West" data-state="Anambra">Anambra West</option>
++              <option value="Anaocha" data-state="Anambra">Anaocha</option>
++              <option value="Awka North" data-state="Anambra">Awka North</option>
++              <option value="Awka South" data-state="Anambra">Awka South</option>
++              <option value="Ayamelum" data-state="Anambra">Ayamelum</option>
++              <option value="Dunukofia" data-state="Anambra">Dunukofia</option>
++              <option value="Ekwusigo" data-state="Anambra">Ekwusigo</option>
++              <option value="Idemili North" data-state="Anambra">Idemili North</option>
++              <option value="Idemili South" data-state="Anambra">Idemili South</option>
++              <option value="Ihiala" data-state="Anambra">Ihiala</option>
++              <option value="Njikoka" data-state="Anambra">Njikoka</option>
++              <option value="Nnewi North" data-state="Anambra">Nnewi North</option>
++              <option value="Nnewi South" data-state="Anambra">Nnewi South</option>
++              <option value="Ogbaru" data-state="Anambra">Ogbaru</option>
++              <option value="Onitsha North" data-state="Anambra">Onitsha North</option>
++              <option value="Onitsha South" data-state="Anambra">Onitsha South</option>
++              <option value="Orumba North" data-state="Anambra">Orumba North</option>
++              <option value="Orumba South" data-state="Anambra">Orumba South</option>
++              <option value="Oyi" data-state="Anambra">Oyi</option>
++            </optgroup>
++            <optgroup label="Bauchi" data-state="Bauchi">
++              <option value="Alkaleri" data-state="Bauchi">Alkaleri</option>
++              <option value="Bauchi" data-state="Bauchi">Bauchi</option>
++              <option value="Bogoro" data-state="Bauchi">Bogoro</option>
++              <option value="Damban" data-state="Bauchi">Damban</option>
++              <option value="Darazo" data-state="Bauchi">Darazo</option>
++              <option value="Dass" data-state="Bauchi">Dass</option>
++              <option value="Gamawa" data-state="Bauchi">Gamawa</option>
++              <option value="Ganjuwa" data-state="Bauchi">Ganjuwa</option>
++              <option value="Giade" data-state="Bauchi">Giade</option>
++              <option value="Itas/Gadau" data-state="Bauchi">Itas/Gadau</option>
++              <option value="Jama&#39;are" data-state="Bauchi">Jama&#39;are</option>
++              <option value="Katagum" data-state="Bauchi">Katagum</option>
++              <option value="Kirfi" data-state="Bauchi">Kirfi</option>
++              <option value="Misau" data-state="Bauchi">Misau</option>
++              <option value="Ningi" data-state="Bauchi">Ningi</option>
++              <option value="Shira" data-state="Bauchi">Shira</option>
++              <option value="Tafawa Balewa" data-state="Bauchi">Tafawa Balewa</option>
++              <option value="Toro" data-state="Bauchi">Toro</option>
++              <option value="Warji" data-state="Bauchi">Warji</option>
++              <option value="Zaki" data-state="Bauchi">Zaki</option>
++            </optgroup>
++            <optgroup label="Bayelsa" data-state="Bayelsa">
++              <option value="Brass" data-state="Bayelsa">Brass</option>
++              <option value="Ekeremor" data-state="Bayelsa">Ekeremor</option>
++              <option value="Kolokuma/Opokuma" data-state="Bayelsa">Kolokuma/Opokuma</option>
++              <option value="Nembe" data-state="Bayelsa">Nembe</option>
++              <option value="Ogbia" data-state="Bayelsa">Ogbia</option>
++              <option value="Sagbama" data-state="Bayelsa">Sagbama</option>
++              <option value="Southern Ijaw" data-state="Bayelsa">Southern Ijaw</option>
++              <option value="Yenagoa" data-state="Bayelsa">Yenagoa</option>
++            </optgroup>
++            <optgroup label="Benue" data-state="Benue">
++              <option value="Ado" data-state="Benue">Ado</option>
++              <option value="Agatu" data-state="Benue">Agatu</option>
++              <option value="Apa" data-state="Benue">Apa</option>
++              <option value="Buruku" data-state="Benue">Buruku</option>
++              <option value="Gboko" data-state="Benue">Gboko</option>
++              <option value="Guma" data-state="Benue">Guma</option>
++              <option value="Gwer East" data-state="Benue">Gwer East</option>
++              <option value="Gwer West" data-state="Benue">Gwer West</option>
++              <option value="Katsina-Ala" data-state="Benue">Katsina-Ala</option>
++              <option value="Konshisha" data-state="Benue">Konshisha</option>
++              <option value="Kwande" data-state="Benue">Kwande</option>
++              <option value="Logo" data-state="Benue">Logo</option>
++              <option value="Makurdi" data-state="Benue">Makurdi</option>
++              <option value="Obi" data-state="Benue">Obi</option>
++              <option value="Ogbadibo" data-state="Benue">Ogbadibo</option>
++              <option value="Ohimini" data-state="Benue">Ohimini</option>
++              <option value="Oju" data-state="Benue">Oju</option>
++              <option value="Okpokwu" data-state="Benue">Okpokwu</option>
++              <option value="Otukpo" data-state="Benue">Otukpo</option>
++              <option value="Tarka" data-state="Benue">Tarka</option>
++              <option value="Ukum" data-state="Benue">Ukum</option>
++              <option value="Ushongo" data-state="Benue">Ushongo</option>
++              <option value="Vandeikya" data-state="Benue">Vandeikya</option>
++            </optgroup>
++            <optgroup label="Borno" data-state="Borno">
++              <option value="Abadam" data-state="Borno">Abadam</option>
++              <option value="Askira/Uba" data-state="Borno">Askira/Uba</option>
++              <option value="Bama" data-state="Borno">Bama</option>
++              <option value="Bayo" data-state="Borno">Bayo</option>
++              <option value="Biu" data-state="Borno">Biu</option>
++              <option value="Chibok" data-state="Borno">Chibok</option>
++              <option value="Damboa" data-state="Borno">Damboa</option>
++              <option value="Dikwa" data-state="Borno">Dikwa</option>
++              <option value="Gubio" data-state="Borno">Gubio</option>
++              <option value="Guzamala" data-state="Borno">Guzamala</option>
++              <option value="Gwoza" data-state="Borno">Gwoza</option>
++              <option value="Hawul" data-state="Borno">Hawul</option>
++              <option value="Jere" data-state="Borno">Jere</option>
++              <option value="Kaga" data-state="Borno">Kaga</option>
++              <option value="Kala/Balge" data-state="Borno">Kala/Balge</option>
++              <option value="Konduga" data-state="Borno">Konduga</option>
++              <option value="Kukawa" data-state="Borno">Kukawa</option>
++              <option value="Kwaya Kusar" data-state="Borno">Kwaya Kusar</option>
++              <option value="Mafa" data-state="Borno">Mafa</option>
++              <option value="Magumeri" data-state="Borno">Magumeri</option>
++              <option value="Maiduguri" data-state="Borno">Maiduguri</option>
++              <option value="Marte" data-state="Borno">Marte</option>
++              <option value="Mobbar" data-state="Borno">Mobbar</option>
++              <option value="Monguno" data-state="Borno">Monguno</option>
++              <option value="Ngala" data-state="Borno">Ngala</option>
++              <option value="Nganzai" data-state="Borno">Nganzai</option>
++              <option value="Shani" data-state="Borno">Shani</option>
++            </optgroup>
++            <optgroup label="Cross River" data-state="Cross River">
++              <option value="Abi" data-state="Cross River">Abi</option>
++              <option value="Akamkpa" data-state="Cross River">Akamkpa</option>
++              <option value="Akpabuyo" data-state="Cross River">Akpabuyo</option>
++              <option value="Bakassi" data-state="Cross River">Bakassi</option>
++              <option value="Bekwarra" data-state="Cross River">Bekwarra</option>
++              <option value="Biase" data-state="Cross River">Biase</option>
++              <option value="Boki" data-state="Cross River">Boki</option>
++              <option value="Calabar Municipal" data-state="Cross River">Calabar Municipal</option>
++              <option value="Calabar South" data-state="Cross River">Calabar South</option>
++              <option value="Etung" data-state="Cross River">Etung</option>
++              <option value="Ikom" data-state="Cross River">Ikom</option>
++              <option value="Obanliku" data-state="Cross River">Obanliku</option>
++              <option value="Obubra" data-state="Cross River">Obubra</option>
++              <option value="Obudu" data-state="Cross River">Obudu</option>
++              <option value="Odukpani" data-state="Cross River">Odukpani</option>
++              <option value="Ogoja" data-state="Cross River">Ogoja</option>
++              <option value="Yakuur" data-state="Cross River">Yakuur</option>
++              <option value="Yala" data-state="Cross River">Yala</option>
++            </optgroup>
++            <optgroup label="Delta" data-state="Delta">
++              <option value="Aniocha North" data-state="Delta">Aniocha North</option>
++              <option value="Aniocha South" data-state="Delta">Aniocha South</option>
++              <option value="Bomadi" data-state="Delta">Bomadi</option>
++              <option value="Burutu" data-state="Delta">Burutu</option>
++              <option value="Ethiope East" data-state="Delta">Ethiope East</option>
++              <option value="Ethiope West" data-state="Delta">Ethiope West</option>
++              <option value="Ika North East" data-state="Delta">Ika North East</option>
++              <option value="Ika South" data-state="Delta">Ika South</option>
++              <option value="Isoko North" data-state="Delta">Isoko North</option>
++              <option value="Isoko South" data-state="Delta">Isoko South</option>
++              <option value="Ndokwa East" data-state="Delta">Ndokwa East</option>
++              <option value="Ndokwa West" data-state="Delta">Ndokwa West</option>
++              <option value="Okpe" data-state="Delta">Okpe</option>
++              <option value="Oshimili North" data-state="Delta">Oshimili North</option>
++              <option value="Oshimili South" data-state="Delta">Oshimili South</option>
++              <option value="Patani" data-state="Delta">Patani</option>
++              <option value="Sapele" data-state="Delta">Sapele</option>
++              <option value="Udu" data-state="Delta">Udu</option>
++              <option value="Ughelli North" data-state="Delta">Ughelli North</option>
++              <option value="Ughelli South" data-state="Delta">Ughelli South</option>
++              <option value="Ukwuani" data-state="Delta">Ukwuani</option>
++              <option value="Uvwie" data-state="Delta">Uvwie</option>
++              <option value="Warri North" data-state="Delta">Warri North</option>
++              <option value="Warri South" data-state="Delta">Warri South</option>
++              <option value="Warri South West" data-state="Delta">Warri South West</option>
++            </optgroup>
++            <optgroup label="Ebonyi" data-state="Ebonyi">
++              <option value="Abakaliki" data-state="Ebonyi">Abakaliki</option>
++              <option value="Afikpo North" data-state="Ebonyi">Afikpo North</option>
++              <option value="Afikpo South" data-state="Ebonyi">Afikpo South</option>
++              <option value="Ebonyi" data-state="Ebonyi">Ebonyi</option>
++              <option value="Ezza North" data-state="Ebonyi">Ezza North</option>
++              <option value="Ezza South" data-state="Ebonyi">Ezza South</option>
++              <option value="Ikwo" data-state="Ebonyi">Ikwo</option>
++              <option value="Ishielu" data-state="Ebonyi">Ishielu</option>
++              <option value="Ivo" data-state="Ebonyi">Ivo</option>
++              <option value="Izzi" data-state="Ebonyi">Izzi</option>
++              <option value="Ohaozara" data-state="Ebonyi">Ohaozara</option>
++              <option value="Ohaukwu" data-state="Ebonyi">Ohaukwu</option>
++              <option value="Onicha" data-state="Ebonyi">Onicha</option>
++            </optgroup>
++            <optgroup label="Edo" data-state="Edo">
++              <option value="Akoko-Edo" data-state="Edo">Akoko-Edo</option>
++              <option value="Egor" data-state="Edo">Egor</option>
++              <option value="Esan Central" data-state="Edo">Esan Central</option>
++              <option value="Esan North-East" data-state="Edo">Esan North-East</option>
++              <option value="Esan South-East" data-state="Edo">Esan South-East</option>
++              <option value="Esan West" data-state="Edo">Esan West</option>
++              <option value="Etsako Central" data-state="Edo">Etsako Central</option>
++              <option value="Etsako East" data-state="Edo">Etsako East</option>
++              <option value="Etsako West" data-state="Edo">Etsako West</option>
++              <option value="Igueben" data-state="Edo">Igueben</option>
++              <option value="Ikpoba Okha" data-state="Edo">Ikpoba Okha</option>
++              <option value="Oredo" data-state="Edo">Oredo</option>
++              <option value="Orhionmwon" data-state="Edo">Orhionmwon</option>
++              <option value="Ovia North-East" data-state="Edo">Ovia North-East</option>
++              <option value="Ovia South-West" data-state="Edo">Ovia South-West</option>
++              <option value="Owan East" data-state="Edo">Owan East</option>
++              <option value="Owan West" data-state="Edo">Owan West</option>
++              <option value="Uhunmwonde" data-state="Edo">Uhunmwonde</option>
++            </optgroup>
++            <optgroup label="Ekiti" data-state="Ekiti">
++              <option value="Ado Ekiti" data-state="Ekiti">Ado Ekiti</option>
++              <option value="Efon" data-state="Ekiti">Efon</option>
++              <option value="Ekiti East" data-state="Ekiti">Ekiti East</option>
++              <option value="Ekiti South-West" data-state="Ekiti">Ekiti South-West</option>
++              <option value="Ekiti West" data-state="Ekiti">Ekiti West</option>
++              <option value="Emure" data-state="Ekiti">Emure</option>
++              <option value="Gbonyin" data-state="Ekiti">Gbonyin</option>
++              <option value="Ido Osi" data-state="Ekiti">Ido Osi</option>
++              <option value="Ijero" data-state="Ekiti">Ijero</option>
++              <option value="Ikere" data-state="Ekiti">Ikere</option>
++              <option value="Ikole" data-state="Ekiti">Ikole</option>
++              <option value="Ilejemeje" data-state="Ekiti">Ilejemeje</option>
++              <option value="Irepodun/Ifelodun" data-state="Ekiti">Irepodun/Ifelodun</option>
++              <option value="Ise/Orun" data-state="Ekiti">Ise/Orun</option>
++              <option value="Moba" data-state="Ekiti">Moba</option>
++              <option value="Oye" data-state="Ekiti">Oye</option>
++            </optgroup>
++            <optgroup label="Enugu" data-state="Enugu">
++              <option value="Aninri" data-state="Enugu">Aninri</option>
++              <option value="Awgu" data-state="Enugu">Awgu</option>
++              <option value="Enugu East" data-state="Enugu">Enugu East</option>
++              <option value="Enugu North" data-state="Enugu">Enugu North</option>
++              <option value="Enugu South" data-state="Enugu">Enugu South</option>
++              <option value="Ezeagu" data-state="Enugu">Ezeagu</option>
++              <option value="Igbo Etiti" data-state="Enugu">Igbo Etiti</option>
++              <option value="Igbo Eze North" data-state="Enugu">Igbo Eze North</option>
++              <option value="Igbo Eze South" data-state="Enugu">Igbo Eze South</option>
++              <option value="Isi Uzo" data-state="Enugu">Isi Uzo</option>
++              <option value="Nkanu East" data-state="Enugu">Nkanu East</option>
++              <option value="Nkanu West" data-state="Enugu">Nkanu West</option>
++              <option value="Nsukka" data-state="Enugu">Nsukka</option>
++              <option value="Oji River" data-state="Enugu">Oji River</option>
++              <option value="Udenu" data-state="Enugu">Udenu</option>
++              <option value="Udi" data-state="Enugu">Udi</option>
++              <option value="Uzo Uwani" data-state="Enugu">Uzo Uwani</option>
++            </optgroup>
++            <optgroup label="FCT — Abuja" data-state="FCT — Abuja">
++              <option value="Abaji" data-state="FCT — Abuja">Abaji</option>
++              <option value="Bwari" data-state="FCT — Abuja">Bwari</option>
++              <option value="Gwagwalada" data-state="FCT — Abuja">Gwagwalada</option>
++              <option value="Kuje" data-state="FCT — Abuja">Kuje</option>
++              <option value="Kwali" data-state="FCT — Abuja">Kwali</option>
++              <option value="Municipal Area Council" data-state="FCT — Abuja">Municipal Area Council</option>
++            </optgroup>
++            <optgroup label="Gombe" data-state="Gombe">
++              <option value="Akko" data-state="Gombe">Akko</option>
++              <option value="Balanga" data-state="Gombe">Balanga</option>
++              <option value="Billiri" data-state="Gombe">Billiri</option>
++              <option value="Dukku" data-state="Gombe">Dukku</option>
++              <option value="Funakaye" data-state="Gombe">Funakaye</option>
++              <option value="Gombe" data-state="Gombe">Gombe</option>
++              <option value="Kaltungo" data-state="Gombe">Kaltungo</option>
++              <option value="Kwami" data-state="Gombe">Kwami</option>
++              <option value="Nafada" data-state="Gombe">Nafada</option>
++              <option value="Shongom" data-state="Gombe">Shongom</option>
++              <option value="Yamaltu/Deba" data-state="Gombe">Yamaltu/Deba</option>
++            </optgroup>
++            <optgroup label="Imo" data-state="Imo">
++              <option value="Aboh Mbaise" data-state="Imo">Aboh Mbaise</option>
++              <option value="Ahiazu Mbaise" data-state="Imo">Ahiazu Mbaise</option>
++              <option value="Ehime Mbano" data-state="Imo">Ehime Mbano</option>
++              <option value="Ezinihitte" data-state="Imo">Ezinihitte</option>
++              <option value="Ideato North" data-state="Imo">Ideato North</option>
++              <option value="Ideato South" data-state="Imo">Ideato South</option>
++              <option value="Ihitte/Uboma" data-state="Imo">Ihitte/Uboma</option>
++              <option value="Ikeduru" data-state="Imo">Ikeduru</option>
++              <option value="Isiala Mbano" data-state="Imo">Isiala Mbano</option>
++              <option value="Isu" data-state="Imo">Isu</option>
++              <option value="Mbaitoli" data-state="Imo">Mbaitoli</option>
++              <option value="Ngor Okpala" data-state="Imo">Ngor Okpala</option>
++              <option value="Njaba" data-state="Imo">Njaba</option>
++              <option value="Nkwerre" data-state="Imo">Nkwerre</option>
++              <option value="Nwangele" data-state="Imo">Nwangele</option>
++              <option value="Obowo" data-state="Imo">Obowo</option>
++              <option value="Oguta" data-state="Imo">Oguta</option>
++              <option value="Ohaji/Egbema" data-state="Imo">Ohaji/Egbema</option>
++              <option value="Okigwe" data-state="Imo">Okigwe</option>
++              <option value="Orlu" data-state="Imo">Orlu</option>
++              <option value="Orsu" data-state="Imo">Orsu</option>
++              <option value="Oru East" data-state="Imo">Oru East</option>
++              <option value="Oru West" data-state="Imo">Oru West</option>
++              <option value="Owerri Municipal" data-state="Imo">Owerri Municipal</option>
++              <option value="Owerri North" data-state="Imo">Owerri North</option>
++              <option value="Owerri West" data-state="Imo">Owerri West</option>
++              <option value="Unuimo" data-state="Imo">Unuimo</option>
++            </optgroup>
++            <optgroup label="Jigawa" data-state="Jigawa">
++              <option value="Auyo" data-state="Jigawa">Auyo</option>
++              <option value="Babura" data-state="Jigawa">Babura</option>
++              <option value="Biriniwa" data-state="Jigawa">Biriniwa</option>
++              <option value="Birnin Kudu" data-state="Jigawa">Birnin Kudu</option>
++              <option value="Buji" data-state="Jigawa">Buji</option>
++              <option value="Dutse" data-state="Jigawa">Dutse</option>
++              <option value="Gagarawa" data-state="Jigawa">Gagarawa</option>
++              <option value="Garki" data-state="Jigawa">Garki</option>
++              <option value="Gumel" data-state="Jigawa">Gumel</option>
++              <option value="Guri" data-state="Jigawa">Guri</option>
++              <option value="Gwaram" data-state="Jigawa">Gwaram</option>
++              <option value="Gwiwa" data-state="Jigawa">Gwiwa</option>
++              <option value="Hadejia" data-state="Jigawa">Hadejia</option>
++              <option value="Jahun" data-state="Jigawa">Jahun</option>
++              <option value="Kafin Hausa" data-state="Jigawa">Kafin Hausa</option>
++              <option value="Kaugama" data-state="Jigawa">Kaugama</option>
++              <option value="Kazaure" data-state="Jigawa">Kazaure</option>
++              <option value="Kiri Kasama" data-state="Jigawa">Kiri Kasama</option>
++              <option value="Kiyawa" data-state="Jigawa">Kiyawa</option>
++              <option value="Maigatari" data-state="Jigawa">Maigatari</option>
++              <option value="Malam Madori" data-state="Jigawa">Malam Madori</option>
++              <option value="Miga" data-state="Jigawa">Miga</option>
++              <option value="Ringim" data-state="Jigawa">Ringim</option>
++              <option value="Roni" data-state="Jigawa">Roni</option>
++              <option value="Sule Tankarkar" data-state="Jigawa">Sule Tankarkar</option>
++              <option value="Taura" data-state="Jigawa">Taura</option>
++              <option value="Yankwashi" data-state="Jigawa">Yankwashi</option>
++            </optgroup>
++            <optgroup label="Kaduna" data-state="Kaduna">
++              <option value="Birnin Gwari" data-state="Kaduna">Birnin Gwari</option>
++              <option value="Chikun" data-state="Kaduna">Chikun</option>
++              <option value="Giwa" data-state="Kaduna">Giwa</option>
++              <option value="Igabi" data-state="Kaduna">Igabi</option>
++              <option value="Ikara" data-state="Kaduna">Ikara</option>
++              <option value="Jaba" data-state="Kaduna">Jaba</option>
++              <option value="Jema&#39;a" data-state="Kaduna">Jema&#39;a</option>
++              <option value="Kachia" data-state="Kaduna">Kachia</option>
++              <option value="Kaduna North" data-state="Kaduna">Kaduna North</option>
++              <option value="Kaduna South" data-state="Kaduna">Kaduna South</option>
++              <option value="Kagarko" data-state="Kaduna">Kagarko</option>
++              <option value="Kajuru" data-state="Kaduna">Kajuru</option>
++              <option value="Kaura" data-state="Kaduna">Kaura</option>
++              <option value="Kauru" data-state="Kaduna">Kauru</option>
++              <option value="Kubau" data-state="Kaduna">Kubau</option>
++              <option value="Kudan" data-state="Kaduna">Kudan</option>
++              <option value="Lere" data-state="Kaduna">Lere</option>
++              <option value="Makarfi" data-state="Kaduna">Makarfi</option>
++              <option value="Sabon Gari" data-state="Kaduna">Sabon Gari</option>
++              <option value="Sanga" data-state="Kaduna">Sanga</option>
++              <option value="Soba" data-state="Kaduna">Soba</option>
++              <option value="Zangon Kataf" data-state="Kaduna">Zangon Kataf</option>
++              <option value="Zaria" data-state="Kaduna">Zaria</option>
++            </optgroup>
++            <optgroup label="Kano" data-state="Kano">
++              <option value="Ajingi" data-state="Kano">Ajingi</option>
++              <option value="Albasu" data-state="Kano">Albasu</option>
++              <option value="Bagwai" data-state="Kano">Bagwai</option>
++              <option value="Bebeji" data-state="Kano">Bebeji</option>
++              <option value="Bichi" data-state="Kano">Bichi</option>
++              <option value="Bunkure" data-state="Kano">Bunkure</option>
++              <option value="Dala" data-state="Kano">Dala</option>
++              <option value="Dambatta" data-state="Kano">Dambatta</option>
++              <option value="Dawakin Kudu" data-state="Kano">Dawakin Kudu</option>
++              <option value="Dawakin Tofa" data-state="Kano">Dawakin Tofa</option>
++              <option value="Doguwa" data-state="Kano">Doguwa</option>
++              <option value="Fagge" data-state="Kano">Fagge</option>
++              <option value="Gabasawa" data-state="Kano">Gabasawa</option>
++              <option value="Garko" data-state="Kano">Garko</option>
++              <option value="Garun Mallam" data-state="Kano">Garun Mallam</option>
++              <option value="Gaya" data-state="Kano">Gaya</option>
++              <option value="Gezawa" data-state="Kano">Gezawa</option>
++              <option value="Gwale" data-state="Kano">Gwale</option>
++              <option value="Gwarzo" data-state="Kano">Gwarzo</option>
++              <option value="Kabo" data-state="Kano">Kabo</option>
++              <option value="Kano Municipal" data-state="Kano">Kano Municipal</option>
++              <option value="Karaye" data-state="Kano">Karaye</option>
++              <option value="Kibiya" data-state="Kano">Kibiya</option>
++              <option value="Kiru" data-state="Kano">Kiru</option>
++              <option value="Kumbotso" data-state="Kano">Kumbotso</option>
++              <option value="Kunchi" data-state="Kano">Kunchi</option>
++              <option value="Kura" data-state="Kano">Kura</option>
++              <option value="Madobi" data-state="Kano">Madobi</option>
++              <option value="Makoda" data-state="Kano">Makoda</option>
++              <option value="Minjibir" data-state="Kano">Minjibir</option>
++              <option value="Nasarawa" data-state="Kano">Nasarawa</option>
++              <option value="Rano" data-state="Kano">Rano</option>
++              <option value="Rimin Gado" data-state="Kano">Rimin Gado</option>
++              <option value="Rogo" data-state="Kano">Rogo</option>
++              <option value="Shanono" data-state="Kano">Shanono</option>
++              <option value="Sumaila" data-state="Kano">Sumaila</option>
++              <option value="Takai" data-state="Kano">Takai</option>
++              <option value="Tarauni" data-state="Kano">Tarauni</option>
++              <option value="Tofa" data-state="Kano">Tofa</option>
++              <option value="Tsanyawa" data-state="Kano">Tsanyawa</option>
++              <option value="Tudun Wada" data-state="Kano">Tudun Wada</option>
++              <option value="Ungogo" data-state="Kano">Ungogo</option>
++              <option value="Warawa" data-state="Kano">Warawa</option>
++              <option value="Wudil" data-state="Kano">Wudil</option>
++            </optgroup>
++            <optgroup label="Katsina" data-state="Katsina">
++              <option value="Bakori" data-state="Katsina">Bakori</option>
++              <option value="Batagarawa" data-state="Katsina">Batagarawa</option>
++              <option value="Batsari" data-state="Katsina">Batsari</option>
++              <option value="Baure" data-state="Katsina">Baure</option>
++              <option value="Bindawa" data-state="Katsina">Bindawa</option>
++              <option value="Charanchi" data-state="Katsina">Charanchi</option>
++              <option value="Dan Musa" data-state="Katsina">Dan Musa</option>
++              <option value="Dandume" data-state="Katsina">Dandume</option>
++              <option value="Danja" data-state="Katsina">Danja</option>
++              <option value="Daura" data-state="Katsina">Daura</option>
++              <option value="Dutsi" data-state="Katsina">Dutsi</option>
++              <option value="Dutsin Ma" data-state="Katsina">Dutsin Ma</option>
++              <option value="Faskari" data-state="Katsina">Faskari</option>
++              <option value="Funtua" data-state="Katsina">Funtua</option>
++              <option value="Ingawa" data-state="Katsina">Ingawa</option>
++              <option value="Jibia" data-state="Katsina">Jibia</option>
++              <option value="Kafur" data-state="Katsina">Kafur</option>
++              <option value="Kaita" data-state="Katsina">Kaita</option>
++              <option value="Kankara" data-state="Katsina">Kankara</option>
++              <option value="Kankia" data-state="Katsina">Kankia</option>
++              <option value="Katsina" data-state="Katsina">Katsina</option>
++              <option value="Kurfi" data-state="Katsina">Kurfi</option>
++              <option value="Kusada" data-state="Katsina">Kusada</option>
++              <option value="Mai&#39;Adua" data-state="Katsina">Mai&#39;Adua</option>
++              <option value="Malumfashi" data-state="Katsina">Malumfashi</option>
++              <option value="Mani" data-state="Katsina">Mani</option>
++              <option value="Mashi" data-state="Katsina">Mashi</option>
++              <option value="Matazu" data-state="Katsina">Matazu</option>
++              <option value="Musawa" data-state="Katsina">Musawa</option>
++              <option value="Rimi" data-state="Katsina">Rimi</option>
++              <option value="Sabuwa" data-state="Katsina">Sabuwa</option>
++              <option value="Safana" data-state="Katsina">Safana</option>
++              <option value="Sandamu" data-state="Katsina">Sandamu</option>
++              <option value="Zango" data-state="Katsina">Zango</option>
++            </optgroup>
++            <optgroup label="Kebbi" data-state="Kebbi">
++              <option value="Aleiro" data-state="Kebbi">Aleiro</option>
++              <option value="Arewa Dandi" data-state="Kebbi">Arewa Dandi</option>
++              <option value="Argungu" data-state="Kebbi">Argungu</option>
++              <option value="Augie" data-state="Kebbi">Augie</option>
++              <option value="Bagudo" data-state="Kebbi">Bagudo</option>
++              <option value="Birnin Kebbi" data-state="Kebbi">Birnin Kebbi</option>
++              <option value="Bunza" data-state="Kebbi">Bunza</option>
++              <option value="Dandi" data-state="Kebbi">Dandi</option>
++              <option value="Fakai" data-state="Kebbi">Fakai</option>
++              <option value="Gwandu" data-state="Kebbi">Gwandu</option>
++              <option value="Jega" data-state="Kebbi">Jega</option>
++              <option value="Kalgo" data-state="Kebbi">Kalgo</option>
++              <option value="Koko/Besse" data-state="Kebbi">Koko/Besse</option>
++              <option value="Maiyama" data-state="Kebbi">Maiyama</option>
++              <option value="Ngaski" data-state="Kebbi">Ngaski</option>
++              <option value="Sakaba" data-state="Kebbi">Sakaba</option>
++              <option value="Shanga" data-state="Kebbi">Shanga</option>
++              <option value="Suru" data-state="Kebbi">Suru</option>
++              <option value="Wasagu/Danko" data-state="Kebbi">Wasagu/Danko</option>
++              <option value="Yauri" data-state="Kebbi">Yauri</option>
++              <option value="Zuru" data-state="Kebbi">Zuru</option>
++            </optgroup>
++            <optgroup label="Kogi" data-state="Kogi">
++              <option value="Adavi" data-state="Kogi">Adavi</option>
++              <option value="Ajaokuta" data-state="Kogi">Ajaokuta</option>
++              <option value="Ankpa" data-state="Kogi">Ankpa</option>
++              <option value="Bassa" data-state="Kogi">Bassa</option>
++              <option value="Dekina" data-state="Kogi">Dekina</option>
++              <option value="Ibaji" data-state="Kogi">Ibaji</option>
++              <option value="Idah" data-state="Kogi">Idah</option>
++              <option value="Igalamela-Odolu" data-state="Kogi">Igalamela-Odolu</option>
++              <option value="Ijumu" data-state="Kogi">Ijumu</option>
++              <option value="Kabba/Bunu" data-state="Kogi">Kabba/Bunu</option>
++              <option value="Kogi" data-state="Kogi">Kogi</option>
++              <option value="Lokoja" data-state="Kogi">Lokoja</option>
++              <option value="Mopa-Muro" data-state="Kogi">Mopa-Muro</option>
++              <option value="Ofu" data-state="Kogi">Ofu</option>
++              <option value="Ogori/Magongo" data-state="Kogi">Ogori/Magongo</option>
++              <option value="Okehi" data-state="Kogi">Okehi</option>
++              <option value="Okene" data-state="Kogi">Okene</option>
++              <option value="Olamaboro" data-state="Kogi">Olamaboro</option>
++              <option value="Omala" data-state="Kogi">Omala</option>
++              <option value="Yagba East" data-state="Kogi">Yagba East</option>
++              <option value="Yagba West" data-state="Kogi">Yagba West</option>
++            </optgroup>
++            <optgroup label="Kwara" data-state="Kwara">
++              <option value="Asa" data-state="Kwara">Asa</option>
++              <option value="Baruten" data-state="Kwara">Baruten</option>
++              <option value="Edu" data-state="Kwara">Edu</option>
++              <option value="Ekiti (Kwara)" data-state="Kwara">Ekiti (Kwara)</option>
++              <option value="Ifelodun" data-state="Kwara">Ifelodun</option>
++              <option value="Ilorin East" data-state="Kwara">Ilorin East</option>
++              <option value="Ilorin South" data-state="Kwara">Ilorin South</option>
++              <option value="Ilorin West" data-state="Kwara">Ilorin West</option>
++              <option value="Irepodun" data-state="Kwara">Irepodun</option>
++              <option value="Isin" data-state="Kwara">Isin</option>
++              <option value="Kaiama" data-state="Kwara">Kaiama</option>
++              <option value="Moro" data-state="Kwara">Moro</option>
++              <option value="Offa" data-state="Kwara">Offa</option>
++              <option value="Oke Ero" data-state="Kwara">Oke Ero</option>
++              <option value="Oyun" data-state="Kwara">Oyun</option>
++              <option value="Pategi" data-state="Kwara">Pategi</option>
++            </optgroup>
++            <optgroup label="Lagos" data-state="Lagos">
++              <option value="Agege" data-state="Lagos">Agege</option>
++              <option value="Ajeromi-Ifelodun" data-state="Lagos">Ajeromi-Ifelodun</option>
++              <option value="Alimosho" data-state="Lagos">Alimosho</option>
++              <option value="Amuwo-Odofin" data-state="Lagos">Amuwo-Odofin</option>
++              <option value="Apapa" data-state="Lagos">Apapa</option>
++              <option value="Badagry" data-state="Lagos">Badagry</option>
++              <option value="Epe" data-state="Lagos">Epe</option>
++              <option value="Eti Osa" data-state="Lagos">Eti Osa</option>
++              <option value="Ibeju-Lekki" data-state="Lagos">Ibeju-Lekki</option>
++              <option value="Ifako-Ijaiye" data-state="Lagos">Ifako-Ijaiye</option>
++              <option value="Ikeja" data-state="Lagos">Ikeja</option>
++              <option value="Ikorodu" data-state="Lagos">Ikorodu</option>
++              <option value="Kosofe" data-state="Lagos">Kosofe</option>
++              <option value="Lagos Island" data-state="Lagos">Lagos Island</option>
++              <option value="Lagos Mainland" data-state="Lagos">Lagos Mainland</option>
++              <option value="Mushin" data-state="Lagos">Mushin</option>
++              <option value="Ojo" data-state="Lagos">Ojo</option>
++              <option value="Oshodi-Isolo" data-state="Lagos">Oshodi-Isolo</option>
++              <option value="Shomolu" data-state="Lagos">Shomolu</option>
++              <option value="Surulere" data-state="Lagos">Surulere</option>
++            </optgroup>
++            <optgroup label="Nasarawa" data-state="Nasarawa">
++              <option value="Akwanga" data-state="Nasarawa">Akwanga</option>
++              <option value="Awe" data-state="Nasarawa">Awe</option>
++              <option value="Doma" data-state="Nasarawa">Doma</option>
++              <option value="Karu" data-state="Nasarawa">Karu</option>
++              <option value="Keana" data-state="Nasarawa">Keana</option>
++              <option value="Keffi" data-state="Nasarawa">Keffi</option>
++              <option value="Kokona" data-state="Nasarawa">Kokona</option>
++              <option value="Lafia" data-state="Nasarawa">Lafia</option>
++              <option value="Nasarawa" data-state="Nasarawa">Nasarawa</option>
++              <option value="Nasarawa Egon" data-state="Nasarawa">Nasarawa Egon</option>
++              <option value="Obi" data-state="Nasarawa">Obi</option>
++              <option value="Toto" data-state="Nasarawa">Toto</option>
++              <option value="Wamba" data-state="Nasarawa">Wamba</option>
++            </optgroup>
++            <optgroup label="Niger" data-state="Niger">
++              <option value="Agaie" data-state="Niger">Agaie</option>
++              <option value="Agwara" data-state="Niger">Agwara</option>
++              <option value="Bida" data-state="Niger">Bida</option>
++              <option value="Borgu" data-state="Niger">Borgu</option>
++              <option value="Bosso" data-state="Niger">Bosso</option>
++              <option value="Chanchaga" data-state="Niger">Chanchaga</option>
++              <option value="Edati" data-state="Niger">Edati</option>
++              <option value="Gbako" data-state="Niger">Gbako</option>
++              <option value="Gurara" data-state="Niger">Gurara</option>
++              <option value="Katcha" data-state="Niger">Katcha</option>
++              <option value="Kontagora" data-state="Niger">Kontagora</option>
++              <option value="Lapai" data-state="Niger">Lapai</option>
++              <option value="Lavun" data-state="Niger">Lavun</option>
++              <option value="Magama" data-state="Niger">Magama</option>
++              <option value="Mariga" data-state="Niger">Mariga</option>
++              <option value="Mashegu" data-state="Niger">Mashegu</option>
++              <option value="Mokwa" data-state="Niger">Mokwa</option>
++              <option value="Munya" data-state="Niger">Munya</option>
++              <option value="Paikoro" data-state="Niger">Paikoro</option>
++              <option value="Rafi" data-state="Niger">Rafi</option>
++              <option value="Rijau" data-state="Niger">Rijau</option>
++              <option value="Shiroro" data-state="Niger">Shiroro</option>
++              <option value="Suleja" data-state="Niger">Suleja</option>
++              <option value="Tafa" data-state="Niger">Tafa</option>
++              <option value="Wushishi" data-state="Niger">Wushishi</option>
++            </optgroup>
++            <optgroup label="Ogun" data-state="Ogun">
++              <option value="Abeokuta North" data-state="Ogun">Abeokuta North</option>
++              <option value="Abeokuta South" data-state="Ogun">Abeokuta South</option>
++              <option value="Ado-Odo/Ota" data-state="Ogun">Ado-Odo/Ota</option>
++              <option value="Egbado North (Yewa North)" data-state="Ogun">Egbado North (Yewa North)</option>
++              <option value="Egbado South (Yewa South)" data-state="Ogun">Egbado South (Yewa South)</option>
++              <option value="Ewekoro" data-state="Ogun">Ewekoro</option>
++              <option value="Ifo" data-state="Ogun">Ifo</option>
++              <option value="Ijebu East" data-state="Ogun">Ijebu East</option>
++              <option value="Ijebu North" data-state="Ogun">Ijebu North</option>
++              <option value="Ijebu North East" data-state="Ogun">Ijebu North East</option>
++              <option value="Ijebu Ode" data-state="Ogun">Ijebu Ode</option>
++              <option value="Ikenne" data-state="Ogun">Ikenne</option>
++              <option value="Imeko Afon" data-state="Ogun">Imeko Afon</option>
++              <option value="Ipokia" data-state="Ogun">Ipokia</option>
++              <option value="Obafemi Owode" data-state="Ogun">Obafemi Owode</option>
++              <option value="Odeda" data-state="Ogun">Odeda</option>
++              <option value="Odogbolu" data-state="Ogun">Odogbolu</option>
++              <option value="Ogun Waterside" data-state="Ogun">Ogun Waterside</option>
++              <option value="Remo North" data-state="Ogun">Remo North</option>
++              <option value="Sagamu" data-state="Ogun">Sagamu</option>
++            </optgroup>
++            <optgroup label="Ondo" data-state="Ondo">
++              <option value="Akoko North-East" data-state="Ondo">Akoko North-East</option>
++              <option value="Akoko North-West" data-state="Ondo">Akoko North-West</option>
++              <option value="Akoko South-East" data-state="Ondo">Akoko South-East</option>
++              <option value="Akoko South-West" data-state="Ondo">Akoko South-West</option>
++              <option value="Akure North" data-state="Ondo">Akure North</option>
++              <option value="Akure South" data-state="Ondo">Akure South</option>
++              <option value="Ese Odo" data-state="Ondo">Ese Odo</option>
++              <option value="Idanre" data-state="Ondo">Idanre</option>
++              <option value="Ifedore" data-state="Ondo">Ifedore</option>
++              <option value="Ilaje" data-state="Ondo">Ilaje</option>
++              <option value="Ile Oluji/Okeigbo" data-state="Ondo">Ile Oluji/Okeigbo</option>
++              <option value="Irele" data-state="Ondo">Irele</option>
++              <option value="Odigbo" data-state="Ondo">Odigbo</option>
++              <option value="Okitipupa" data-state="Ondo">Okitipupa</option>
++              <option value="Ondo East" data-state="Ondo">Ondo East</option>
++              <option value="Ondo West" data-state="Ondo">Ondo West</option>
++              <option value="Ose" data-state="Ondo">Ose</option>
++              <option value="Owo" data-state="Ondo">Owo</option>
++            </optgroup>
++            <optgroup label="Osun" data-state="Osun">
++              <option value="Aiyedaade" data-state="Osun">Aiyedaade</option>
++              <option value="Aiyedire" data-state="Osun">Aiyedire</option>
++              <option value="Atakunmosa East" data-state="Osun">Atakunmosa East</option>
++              <option value="Atakunmosa West" data-state="Osun">Atakunmosa West</option>
++              <option value="Boluwaduro" data-state="Osun">Boluwaduro</option>
++              <option value="Boripe" data-state="Osun">Boripe</option>
++              <option value="Ede North" data-state="Osun">Ede North</option>
++              <option value="Ede South" data-state="Osun">Ede South</option>
++              <option value="Egbedore" data-state="Osun">Egbedore</option>
++              <option value="Ejigbo" data-state="Osun">Ejigbo</option>
++              <option value="Ife Central" data-state="Osun">Ife Central</option>
++              <option value="Ife East" data-state="Osun">Ife East</option>
++              <option value="Ife North" data-state="Osun">Ife North</option>
++              <option value="Ife South" data-state="Osun">Ife South</option>
++              <option value="Ifedayo" data-state="Osun">Ifedayo</option>
++              <option value="Ifelodun" data-state="Osun">Ifelodun</option>
++              <option value="Ila" data-state="Osun">Ila</option>
++              <option value="Ilesa East" data-state="Osun">Ilesa East</option>
++              <option value="Ilesa West" data-state="Osun">Ilesa West</option>
++              <option value="Irepodun" data-state="Osun">Irepodun</option>
++              <option value="Irewole" data-state="Osun">Irewole</option>
++              <option value="Isokan" data-state="Osun">Isokan</option>
++              <option value="Iwo" data-state="Osun">Iwo</option>
++              <option value="Obokun" data-state="Osun">Obokun</option>
++              <option value="Odo Otin" data-state="Osun">Odo Otin</option>
++              <option value="Ola Oluwa" data-state="Osun">Ola Oluwa</option>
++              <option value="Olorunda" data-state="Osun">Olorunda</option>
++              <option value="Oriade" data-state="Osun">Oriade</option>
++              <option value="Orolu" data-state="Osun">Orolu</option>
++              <option value="Osogbo" data-state="Osun">Osogbo</option>
++            </optgroup>
++            <optgroup label="Oyo" data-state="Oyo">
++              <option value="Afijio" data-state="Oyo">Afijio</option>
++              <option value="Akinyele" data-state="Oyo">Akinyele</option>
++              <option value="Atiba" data-state="Oyo">Atiba</option>
++              <option value="Atisbo" data-state="Oyo">Atisbo</option>
++              <option value="Egbeda" data-state="Oyo">Egbeda</option>
++              <option value="Ibadan North" data-state="Oyo">Ibadan North</option>
++              <option value="Ibadan North-East" data-state="Oyo">Ibadan North-East</option>
++              <option value="Ibadan North-West" data-state="Oyo">Ibadan North-West</option>
++              <option value="Ibadan South-East" data-state="Oyo">Ibadan South-East</option>
++              <option value="Ibadan South-West" data-state="Oyo">Ibadan South-West</option>
++              <option value="Ibarapa Central" data-state="Oyo">Ibarapa Central</option>
++              <option value="Ibarapa East" data-state="Oyo">Ibarapa East</option>
++              <option value="Ibarapa North" data-state="Oyo">Ibarapa North</option>
++              <option value="Ido" data-state="Oyo">Ido</option>
++              <option value="Irepo" data-state="Oyo">Irepo</option>
++              <option value="Iseyin" data-state="Oyo">Iseyin</option>
++              <option value="Itesiwaju" data-state="Oyo">Itesiwaju</option>
++              <option value="Iwajowa" data-state="Oyo">Iwajowa</option>
++              <option value="Kajola" data-state="Oyo">Kajola</option>
++              <option value="Lagelu" data-state="Oyo">Lagelu</option>
++              <option value="Ogbomosho North" data-state="Oyo">Ogbomosho North</option>
++              <option value="Ogbomosho South" data-state="Oyo">Ogbomosho South</option>
++              <option value="Ogo Oluwa" data-state="Oyo">Ogo Oluwa</option>
++              <option value="Olorunsogo" data-state="Oyo">Olorunsogo</option>
++              <option value="Oluyole" data-state="Oyo">Oluyole</option>
++              <option value="Ona Ara" data-state="Oyo">Ona Ara</option>
++              <option value="Orelope" data-state="Oyo">Orelope</option>
++              <option value="Ori Ire" data-state="Oyo">Ori Ire</option>
++              <option value="Oyo East" data-state="Oyo">Oyo East</option>
++              <option value="Oyo West" data-state="Oyo">Oyo West</option>
++              <option value="Saki East" data-state="Oyo">Saki East</option>
++              <option value="Saki West" data-state="Oyo">Saki West</option>
++              <option value="Surulere (Oyo)" data-state="Oyo">Surulere (Oyo)</option>
++            </optgroup>
++            <optgroup label="Plateau" data-state="Plateau">
++              <option value="Barkin Ladi" data-state="Plateau">Barkin Ladi</option>
++              <option value="Bassa" data-state="Plateau">Bassa</option>
++              <option value="Bokkos" data-state="Plateau">Bokkos</option>
++              <option value="Jos East" data-state="Plateau">Jos East</option>
++              <option value="Jos North" data-state="Plateau">Jos North</option>
++              <option value="Jos South" data-state="Plateau">Jos South</option>
++              <option value="Kanam" data-state="Plateau">Kanam</option>
++              <option value="Kanke" data-state="Plateau">Kanke</option>
++              <option value="Langtang North" data-state="Plateau">Langtang North</option>
++              <option value="Langtang South" data-state="Plateau">Langtang South</option>
++              <option value="Mangu" data-state="Plateau">Mangu</option>
++              <option value="Mikang" data-state="Plateau">Mikang</option>
++              <option value="Pankshin" data-state="Plateau">Pankshin</option>
++              <option value="Qua&#39;an Pan" data-state="Plateau">Qua&#39;an Pan</option>
++              <option value="Riyom" data-state="Plateau">Riyom</option>
++              <option value="Shendam" data-state="Plateau">Shendam</option>
++              <option value="Wase" data-state="Plateau">Wase</option>
++            </optgroup>
++            <optgroup label="Rivers" data-state="Rivers">
++              <option value="Abua/Odual" data-state="Rivers">Abua/Odual</option>
++              <option value="Ahoada East" data-state="Rivers">Ahoada East</option>
++              <option value="Ahoada West" data-state="Rivers">Ahoada West</option>
++              <option value="Akuku-Toru" data-state="Rivers">Akuku-Toru</option>
++              <option value="Andoni" data-state="Rivers">Andoni</option>
++              <option value="Asari-Toru" data-state="Rivers">Asari-Toru</option>
++              <option value="Bonny" data-state="Rivers">Bonny</option>
++              <option value="Degema" data-state="Rivers">Degema</option>
++              <option value="Eleme" data-state="Rivers">Eleme</option>
++              <option value="Emuoha" data-state="Rivers">Emuoha</option>
++              <option value="Etche" data-state="Rivers">Etche</option>
++              <option value="Gokana" data-state="Rivers">Gokana</option>
++              <option value="Ikwerre" data-state="Rivers">Ikwerre</option>
++              <option value="Khana" data-state="Rivers">Khana</option>
++              <option value="Obio/Akpor" data-state="Rivers">Obio/Akpor</option>
++              <option value="Ogba/Egbema/Ndoni" data-state="Rivers">Ogba/Egbema/Ndoni</option>
++              <option value="Ogu/Bolo" data-state="Rivers">Ogu/Bolo</option>
++              <option value="Okrika" data-state="Rivers">Okrika</option>
++              <option value="Omuma" data-state="Rivers">Omuma</option>
++              <option value="Opobo/Nkoro" data-state="Rivers">Opobo/Nkoro</option>
++              <option value="Oyigbo" data-state="Rivers">Oyigbo</option>
++              <option value="Port Harcourt" data-state="Rivers">Port Harcourt</option>
++              <option value="Tai" data-state="Rivers">Tai</option>
++            </optgroup>
++            <optgroup label="Sokoto" data-state="Sokoto">
++              <option value="Binji" data-state="Sokoto">Binji</option>
++              <option value="Bodinga" data-state="Sokoto">Bodinga</option>
++              <option value="Dange Shuni" data-state="Sokoto">Dange Shuni</option>
++              <option value="Gada" data-state="Sokoto">Gada</option>
++              <option value="Goronyo" data-state="Sokoto">Goronyo</option>
++              <option value="Gudu" data-state="Sokoto">Gudu</option>
++              <option value="Gwadabawa" data-state="Sokoto">Gwadabawa</option>
++              <option value="Illela" data-state="Sokoto">Illela</option>
++              <option value="Isa" data-state="Sokoto">Isa</option>
++              <option value="Kebbe" data-state="Sokoto">Kebbe</option>
++              <option value="Kware" data-state="Sokoto">Kware</option>
++              <option value="Rabah" data-state="Sokoto">Rabah</option>
++              <option value="Sabon Birni" data-state="Sokoto">Sabon Birni</option>
++              <option value="Shagari" data-state="Sokoto">Shagari</option>
++              <option value="Silame" data-state="Sokoto">Silame</option>
++              <option value="Sokoto North" data-state="Sokoto">Sokoto North</option>
++              <option value="Sokoto South" data-state="Sokoto">Sokoto South</option>
++              <option value="Tambuwal" data-state="Sokoto">Tambuwal</option>
++              <option value="Tangaza" data-state="Sokoto">Tangaza</option>
++              <option value="Tureta" data-state="Sokoto">Tureta</option>
++              <option value="Wamako" data-state="Sokoto">Wamako</option>
++              <option value="Wurno" data-state="Sokoto">Wurno</option>
++              <option value="Yabo" data-state="Sokoto">Yabo</option>
++            </optgroup>
++            <optgroup label="Taraba" data-state="Taraba">
++              <option value="Ardo Kola" data-state="Taraba">Ardo Kola</option>
++              <option value="Bali" data-state="Taraba">Bali</option>
++              <option value="Donga" data-state="Taraba">Donga</option>
++              <option value="Gashaka" data-state="Taraba">Gashaka</option>
++              <option value="Gassol" data-state="Taraba">Gassol</option>
++              <option value="Ibi" data-state="Taraba">Ibi</option>
++              <option value="Jalingo" data-state="Taraba">Jalingo</option>
++              <option value="Karim Lamido" data-state="Taraba">Karim Lamido</option>
++              <option value="Kumi" data-state="Taraba">Kumi</option>
++              <option value="Lau" data-state="Taraba">Lau</option>
++              <option value="Sardauna" data-state="Taraba">Sardauna</option>
++              <option value="Takum" data-state="Taraba">Takum</option>
++              <option value="Ussa" data-state="Taraba">Ussa</option>
++              <option value="Wukari" data-state="Taraba">Wukari</option>
++              <option value="Yorro" data-state="Taraba">Yorro</option>
++              <option value="Zing" data-state="Taraba">Zing</option>
++            </optgroup>
++            <optgroup label="Yobe" data-state="Yobe">
++              <option value="Bade" data-state="Yobe">Bade</option>
++              <option value="Bursari" data-state="Yobe">Bursari</option>
++              <option value="Damaturu" data-state="Yobe">Damaturu</option>
++              <option value="Fika" data-state="Yobe">Fika</option>
++              <option value="Fune" data-state="Yobe">Fune</option>
++              <option value="Geidam" data-state="Yobe">Geidam</option>
++              <option value="Gujba" data-state="Yobe">Gujba</option>
++              <option value="Gulani" data-state="Yobe">Gulani</option>
++              <option value="Jakusko" data-state="Yobe">Jakusko</option>
++              <option value="Karasuwa" data-state="Yobe">Karasuwa</option>
++              <option value="Machina" data-state="Yobe">Machina</option>
++              <option value="Nangere" data-state="Yobe">Nangere</option>
++              <option value="Nguru" data-state="Yobe">Nguru</option>
++              <option value="Potiskum" data-state="Yobe">Potiskum</option>
++              <option value="Tarmuwa" data-state="Yobe">Tarmuwa</option>
++              <option value="Yunusari" data-state="Yobe">Yunusari</option>
++              <option value="Yusufari" data-state="Yobe">Yusufari</option>
++            </optgroup>
++            <optgroup label="Zamfara" data-state="Zamfara">
++              <option value="Anka" data-state="Zamfara">Anka</option>
++              <option value="Bakura" data-state="Zamfara">Bakura</option>
++              <option value="Birnin Magaji/Kiyaw" data-state="Zamfara">Birnin Magaji/Kiyaw</option>
++              <option value="Bukkuyum" data-state="Zamfara">Bukkuyum</option>
++              <option value="Bungudu" data-state="Zamfara">Bungudu</option>
++              <option value="Gummi" data-state="Zamfara">Gummi</option>
++              <option value="Gusau" data-state="Zamfara">Gusau</option>
++              <option value="Kaura Namoda" data-state="Zamfara">Kaura Namoda</option>
++              <option value="Maradun" data-state="Zamfara">Maradun</option>
++              <option value="Maru" data-state="Zamfara">Maru</option>
++              <option value="Shinkafi" data-state="Zamfara">Shinkafi</option>
++              <option value="Talata Mafara" data-state="Zamfara">Talata Mafara</option>
++              <option value="Tsafe" data-state="Zamfara">Tsafe</option>
++              <option value="Zurmi" data-state="Zamfara">Zurmi</option>
++            </optgroup>
+           </select>
+           <div class="select-arrow"><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></div>
+         </div>
+@@ -590,10 +1489,12 @@
+ </div>
+ 
+ <script>
+-/* ── Clock ── */
++/* ── Clock (no-op if there's no #clk element on this page) ── */
+ function tick(){
++  const el = document.getElementById('clk');
++  if (!el) return;
+   const n=new Date();
+-  document.getElementById('clk').textContent=String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');
++  el.textContent=String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');
+ }
+ tick(); setInterval(tick,30000);
+ 
+@@ -614,6 +1515,24 @@
+ }
+ 
+ /* ── Zone change ── */
++/* ── Show only the optgroup matching the selected state (or all if blank) ── */
++function filterLgaByState(state){
++  const sel = document.getElementById('lgaSelect');
++  if (!sel) return;
++  const groups = sel.querySelectorAll('optgroup');
++  if (!state) {
++    groups.forEach(g => { g.style.display=''; g.disabled=false; });
++    sel.querySelector('option[value=""]').textContent = 'Select your LGA…';
++  } else {
++    groups.forEach(g => {
++      const match = g.getAttribute('data-state') === state;
++      g.style.display = match ? '' : 'none';
++      g.disabled = !match;
++    });
++    sel.querySelector('option[value=""]').textContent = 'Select LGA in ' + state + '…';
++  }
++}
++
+ function onZoneChange(){
+   const v = document.getElementById('zoneSelect').value;
+   document.getElementById('zoneErr').classList.remove('show');
+@@ -627,7 +1546,7 @@
+   document.getElementById('stateSelect').className = v ? 'field-select valid' : 'field-select';
+   // Repopulate LGA list for the new state
+   const lgaSel = document.getElementById('lgaSelect');
+-  NG_LOC.populateLgas(lgaSel, v);
++  filterLgaByState(v); lgaSel.value="";
+   lgaSel.className='field-select';
+   document.getElementById('lgaErr').classList.remove('show');
+   document.getElementById('lgaHint').textContent = v
+@@ -655,7 +1574,7 @@
+   document.getElementById('zoneSelect').className='field-select';
+   document.getElementById('stateSelect').value='';
+   document.getElementById('stateSelect').className='field-select';
+-  NG_LOC.populateLgas(document.getElementById('lgaSelect'), '');
++  filterLgaByState(''); document.getElementById('lgaSelect').value='';
+   document.getElementById('lgaSelect').className='field-select';
+   document.getElementById('intStateInput').value='';
+   document.getElementById('intStateInput').className='field-input';
+@@ -864,10 +1783,8 @@
+   showToast('Dial code: '+dial+' ('+country+')','ok');
+ });
+ 
+-/* ── Init: populate zone & state dropdowns, show Nigeria fields ── */
+-NG_LOC.populateZones(document.getElementById('zoneSelect'));
+-NG_LOC.populateStates(document.getElementById('stateSelect'));
+-NG_LOC.populateLgas(document.getElementById('lgaSelect'), '');
++/* ── Init: filter LGAs by state, show Nigeria fields ── */
++filterLgaByState('');
+ applyLocationFields('Nigeria');
+ </script>
+ </body>
+diff --git a/user_profile_page.html b/user_profile_page.html
+index dfe9a11..2349773 100644
+--- a/user_profile_page.html
++++ b/user_profile_page.html
+@@ -477,7 +477,6 @@
+ @keyframes fup{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+ .phone>*{animation:fup 0.4s ease forwards;}
+ </style>
+-<script src="ng_locations.js"></script>
+ </head>
+ <body>
+ <div class="phone">
+@@ -1028,21 +1027,927 @@
+                 <div class="loc-field">
+                   <div class="loc-label">Zone</div>
+                   <div class="loc-select-wrap">
+-                    <select class="loc-select" id="profZoneSelect"><option value="">Select your zone…</option></select>
++                    <select class="loc-select" id="profZoneSelect">
++                      <option value="">Select your zone…</option>
++                      <option value="Rasulil Akram Kano">Rasulil Akram Kano</option>
++                      <option value="Amirul Muuminin Zaria">Amirul Muuminin Zaria</option>
++                      <option value="Sayyada Zahra Kaduna">Sayyada Zahra Kaduna</option>
++                      <option value="Imam Hussan Azare">Imam Hussan Azare</option>
++                      <option value="Imam Hussain Katsina">Imam Hussain Katsina</option>
++                      <option value="Imam Aliyu Zainul&#39;abidin Gombe">Imam Aliyu Zainul&#39;abidin Gombe</option>
++                      <option value="Imam Muhammad Bakir Potiskum">Imam Muhammad Bakir Potiskum</option>
++                      <option value="Imam Ja&#39;afar Assadiq Lagos">Imam Ja&#39;afar Assadiq Lagos</option>
++                      <option value="Imam Musa Kazim Jos">Imam Musa Kazim Jos</option>
++                      <option value="Imam Aliyu Didah Sokoto">Imam Aliyu Didah Sokoto</option>
++                      <option value="Imam Muhammad Jawad Bauchi">Imam Muhammad Jawad Bauchi</option>
++                      <option value="Imam Ali Alhadi Taraba">Imam Ali Alhadi Taraba</option>
++                      <option value="Imam Hassan Alaskari Yola">Imam Hassan Alaskari Yola</option>
++                      <option value="Imam Almahdi Alhujja Abuja">Imam Almahdi Alhujja Abuja</option>
++                      <option value="Sayyid Zakzaky Funtua">Sayyid Zakzaky Funtua</option>
++                    </select>
+                     <div class="loc-arrow"><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></div>
+                   </div>
+                 </div>
+                 <div class="loc-field">
+                   <div class="loc-label">State</div>
+                   <div class="loc-select-wrap">
+-                    <select class="loc-select" id="profStateSelect"><option value="">Select your state…</option></select>
++                    <select class="loc-select" id="profStateSelect">
++                      <option value="">Select your state…</option>
++                      <option value="Abia">Abia</option>
++                      <option value="Adamawa">Adamawa</option>
++                      <option value="Akwa Ibom">Akwa Ibom</option>
++                      <option value="Anambra">Anambra</option>
++                      <option value="Bauchi">Bauchi</option>
++                      <option value="Bayelsa">Bayelsa</option>
++                      <option value="Benue">Benue</option>
++                      <option value="Borno">Borno</option>
++                      <option value="Cross River">Cross River</option>
++                      <option value="Delta">Delta</option>
++                      <option value="Ebonyi">Ebonyi</option>
++                      <option value="Edo">Edo</option>
++                      <option value="Ekiti">Ekiti</option>
++                      <option value="Enugu">Enugu</option>
++                      <option value="FCT — Abuja">FCT — Abuja</option>
++                      <option value="Gombe">Gombe</option>
++                      <option value="Imo">Imo</option>
++                      <option value="Jigawa">Jigawa</option>
++                      <option value="Kaduna">Kaduna</option>
++                      <option value="Kano">Kano</option>
++                      <option value="Katsina">Katsina</option>
++                      <option value="Kebbi">Kebbi</option>
++                      <option value="Kogi">Kogi</option>
++                      <option value="Kwara">Kwara</option>
++                      <option value="Lagos">Lagos</option>
++                      <option value="Nasarawa">Nasarawa</option>
++                      <option value="Niger">Niger</option>
++                      <option value="Ogun">Ogun</option>
++                      <option value="Ondo">Ondo</option>
++                      <option value="Osun">Osun</option>
++                      <option value="Oyo">Oyo</option>
++                      <option value="Plateau">Plateau</option>
++                      <option value="Rivers">Rivers</option>
++                      <option value="Sokoto">Sokoto</option>
++                      <option value="Taraba">Taraba</option>
++                      <option value="Yobe">Yobe</option>
++                      <option value="Zamfara">Zamfara</option>
++                    </select>
+                     <div class="loc-arrow"><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></div>
+                   </div>
+                 </div>
+                 <div class="loc-field">
+                   <div class="loc-label">Local Government Area (LGA)</div>
+                   <div class="loc-select-wrap">
+-                    <select class="loc-select" id="profLgaSelect"><option value="">Select state first…</option></select>
++                    <select class="loc-select" id="profLgaSelect">
++                      <option value="">Select your LGA…</option>
++                      <optgroup label="Abia" data-state="Abia">
++                        <option value="Aba North" data-state="Abia">Aba North</option>
++                        <option value="Aba South" data-state="Abia">Aba South</option>
++                        <option value="Arochukwu" data-state="Abia">Arochukwu</option>
++                        <option value="Bende" data-state="Abia">Bende</option>
++                        <option value="Ikwuano" data-state="Abia">Ikwuano</option>
++                        <option value="Isiala Ngwa North" data-state="Abia">Isiala Ngwa North</option>
++                        <option value="Isiala Ngwa South" data-state="Abia">Isiala Ngwa South</option>
++                        <option value="Isuikwuato" data-state="Abia">Isuikwuato</option>
++                        <option value="Obi Ngwa" data-state="Abia">Obi Ngwa</option>
++                        <option value="Ohafia" data-state="Abia">Ohafia</option>
++                        <option value="Osisioma" data-state="Abia">Osisioma</option>
++                        <option value="Ugwunagbo" data-state="Abia">Ugwunagbo</option>
++                        <option value="Ukwa East" data-state="Abia">Ukwa East</option>
++                        <option value="Ukwa West" data-state="Abia">Ukwa West</option>
++                        <option value="Umuahia North" data-state="Abia">Umuahia North</option>
++                        <option value="Umuahia South" data-state="Abia">Umuahia South</option>
++                        <option value="Umu Nneochi" data-state="Abia">Umu Nneochi</option>
++                      </optgroup>
++                      <optgroup label="Adamawa" data-state="Adamawa">
++                        <option value="Demsa" data-state="Adamawa">Demsa</option>
++                        <option value="Fufure" data-state="Adamawa">Fufure</option>
++                        <option value="Ganye" data-state="Adamawa">Ganye</option>
++                        <option value="Gayuk" data-state="Adamawa">Gayuk</option>
++                        <option value="Gombi" data-state="Adamawa">Gombi</option>
++                        <option value="Grie" data-state="Adamawa">Grie</option>
++                        <option value="Hong" data-state="Adamawa">Hong</option>
++                        <option value="Jada" data-state="Adamawa">Jada</option>
++                        <option value="Lamurde" data-state="Adamawa">Lamurde</option>
++                        <option value="Madagali" data-state="Adamawa">Madagali</option>
++                        <option value="Maiha" data-state="Adamawa">Maiha</option>
++                        <option value="Mayo Belwa" data-state="Adamawa">Mayo Belwa</option>
++                        <option value="Michika" data-state="Adamawa">Michika</option>
++                        <option value="Mubi North" data-state="Adamawa">Mubi North</option>
++                        <option value="Mubi South" data-state="Adamawa">Mubi South</option>
++                        <option value="Numan" data-state="Adamawa">Numan</option>
++                        <option value="Shelleng" data-state="Adamawa">Shelleng</option>
++                        <option value="Song" data-state="Adamawa">Song</option>
++                        <option value="Toungo" data-state="Adamawa">Toungo</option>
++                        <option value="Yola North" data-state="Adamawa">Yola North</option>
++                        <option value="Yola South" data-state="Adamawa">Yola South</option>
++                      </optgroup>
++                      <optgroup label="Akwa Ibom" data-state="Akwa Ibom">
++                        <option value="Abak" data-state="Akwa Ibom">Abak</option>
++                        <option value="Eastern Obolo" data-state="Akwa Ibom">Eastern Obolo</option>
++                        <option value="Eket" data-state="Akwa Ibom">Eket</option>
++                        <option value="Esit Eket" data-state="Akwa Ibom">Esit Eket</option>
++                        <option value="Essien Udim" data-state="Akwa Ibom">Essien Udim</option>
++                        <option value="Etim Ekpo" data-state="Akwa Ibom">Etim Ekpo</option>
++                        <option value="Etinan" data-state="Akwa Ibom">Etinan</option>
++                        <option value="Ibeno" data-state="Akwa Ibom">Ibeno</option>
++                        <option value="Ibesikpo Asutan" data-state="Akwa Ibom">Ibesikpo Asutan</option>
++                        <option value="Ibiono-Ibom" data-state="Akwa Ibom">Ibiono-Ibom</option>
++                        <option value="Ika" data-state="Akwa Ibom">Ika</option>
++                        <option value="Ikono" data-state="Akwa Ibom">Ikono</option>
++                        <option value="Ikot Abasi" data-state="Akwa Ibom">Ikot Abasi</option>
++                        <option value="Ikot Ekpene" data-state="Akwa Ibom">Ikot Ekpene</option>
++                        <option value="Ini" data-state="Akwa Ibom">Ini</option>
++                        <option value="Itu" data-state="Akwa Ibom">Itu</option>
++                        <option value="Mbo" data-state="Akwa Ibom">Mbo</option>
++                        <option value="Mkpat-Enin" data-state="Akwa Ibom">Mkpat-Enin</option>
++                        <option value="Nsit-Atai" data-state="Akwa Ibom">Nsit-Atai</option>
++                        <option value="Nsit-Ibom" data-state="Akwa Ibom">Nsit-Ibom</option>
++                        <option value="Nsit-Ubium" data-state="Akwa Ibom">Nsit-Ubium</option>
++                        <option value="Obot Akara" data-state="Akwa Ibom">Obot Akara</option>
++                        <option value="Okobo" data-state="Akwa Ibom">Okobo</option>
++                        <option value="Onna" data-state="Akwa Ibom">Onna</option>
++                        <option value="Oron" data-state="Akwa Ibom">Oron</option>
++                        <option value="Oruk Anam" data-state="Akwa Ibom">Oruk Anam</option>
++                        <option value="Udung-Uko" data-state="Akwa Ibom">Udung-Uko</option>
++                        <option value="Ukanafun" data-state="Akwa Ibom">Ukanafun</option>
++                        <option value="Uruan" data-state="Akwa Ibom">Uruan</option>
++                        <option value="Urue-Offong/Oruko" data-state="Akwa Ibom">Urue-Offong/Oruko</option>
++                        <option value="Uyo" data-state="Akwa Ibom">Uyo</option>
++                      </optgroup>
++                      <optgroup label="Anambra" data-state="Anambra">
++                        <option value="Aguata" data-state="Anambra">Aguata</option>
++                        <option value="Anambra East" data-state="Anambra">Anambra East</option>
++                        <option value="Anambra West" data-state="Anambra">Anambra West</option>
++                        <option value="Anaocha" data-state="Anambra">Anaocha</option>
++                        <option value="Awka North" data-state="Anambra">Awka North</option>
++                        <option value="Awka South" data-state="Anambra">Awka South</option>
++                        <option value="Ayamelum" data-state="Anambra">Ayamelum</option>
++                        <option value="Dunukofia" data-state="Anambra">Dunukofia</option>
++                        <option value="Ekwusigo" data-state="Anambra">Ekwusigo</option>
++                        <option value="Idemili North" data-state="Anambra">Idemili North</option>
++                        <option value="Idemili South" data-state="Anambra">Idemili South</option>
++                        <option value="Ihiala" data-state="Anambra">Ihiala</option>
++                        <option value="Njikoka" data-state="Anambra">Njikoka</option>
++                        <option value="Nnewi North" data-state="Anambra">Nnewi North</option>
++                        <option value="Nnewi South" data-state="Anambra">Nnewi South</option>
++                        <option value="Ogbaru" data-state="Anambra">Ogbaru</option>
++                        <option value="Onitsha North" data-state="Anambra">Onitsha North</option>
++                        <option value="Onitsha South" data-state="Anambra">Onitsha South</option>
++                        <option value="Orumba North" data-state="Anambra">Orumba North</option>
++                        <option value="Orumba South" data-state="Anambra">Orumba South</option>
++                        <option value="Oyi" data-state="Anambra">Oyi</option>
++                      </optgroup>
++                      <optgroup label="Bauchi" data-state="Bauchi">
++                        <option value="Alkaleri" data-state="Bauchi">Alkaleri</option>
++                        <option value="Bauchi" data-state="Bauchi">Bauchi</option>
++                        <option value="Bogoro" data-state="Bauchi">Bogoro</option>
++                        <option value="Damban" data-state="Bauchi">Damban</option>
++                        <option value="Darazo" data-state="Bauchi">Darazo</option>
++                        <option value="Dass" data-state="Bauchi">Dass</option>
++                        <option value="Gamawa" data-state="Bauchi">Gamawa</option>
++                        <option value="Ganjuwa" data-state="Bauchi">Ganjuwa</option>
++                        <option value="Giade" data-state="Bauchi">Giade</option>
++                        <option value="Itas/Gadau" data-state="Bauchi">Itas/Gadau</option>
++                        <option value="Jama&#39;are" data-state="Bauchi">Jama&#39;are</option>
++                        <option value="Katagum" data-state="Bauchi">Katagum</option>
++                        <option value="Kirfi" data-state="Bauchi">Kirfi</option>
++                        <option value="Misau" data-state="Bauchi">Misau</option>
++                        <option value="Ningi" data-state="Bauchi">Ningi</option>
++                        <option value="Shira" data-state="Bauchi">Shira</option>
++                        <option value="Tafawa Balewa" data-state="Bauchi">Tafawa Balewa</option>
++                        <option value="Toro" data-state="Bauchi">Toro</option>
++                        <option value="Warji" data-state="Bauchi">Warji</option>
++                        <option value="Zaki" data-state="Bauchi">Zaki</option>
++                      </optgroup>
++                      <optgroup label="Bayelsa" data-state="Bayelsa">
++                        <option value="Brass" data-state="Bayelsa">Brass</option>
++                        <option value="Ekeremor" data-state="Bayelsa">Ekeremor</option>
++                        <option value="Kolokuma/Opokuma" data-state="Bayelsa">Kolokuma/Opokuma</option>
++                        <option value="Nembe" data-state="Bayelsa">Nembe</option>
++                        <option value="Ogbia" data-state="Bayelsa">Ogbia</option>
++                        <option value="Sagbama" data-state="Bayelsa">Sagbama</option>
++                        <option value="Southern Ijaw" data-state="Bayelsa">Southern Ijaw</option>
++                        <option value="Yenagoa" data-state="Bayelsa">Yenagoa</option>
++                      </optgroup>
++                      <optgroup label="Benue" data-state="Benue">
++                        <option value="Ado" data-state="Benue">Ado</option>
++                        <option value="Agatu" data-state="Benue">Agatu</option>
++                        <option value="Apa" data-state="Benue">Apa</option>
++                        <option value="Buruku" data-state="Benue">Buruku</option>
++                        <option value="Gboko" data-state="Benue">Gboko</option>
++                        <option value="Guma" data-state="Benue">Guma</option>
++                        <option value="Gwer East" data-state="Benue">Gwer East</option>
++                        <option value="Gwer West" data-state="Benue">Gwer West</option>
++                        <option value="Katsina-Ala" data-state="Benue">Katsina-Ala</option>
++                        <option value="Konshisha" data-state="Benue">Konshisha</option>
++                        <option value="Kwande" data-state="Benue">Kwande</option>
++                        <option value="Logo" data-state="Benue">Logo</option>
++                        <option value="Makurdi" data-state="Benue">Makurdi</option>
++                        <option value="Obi" data-state="Benue">Obi</option>
++                        <option value="Ogbadibo" data-state="Benue">Ogbadibo</option>
++                        <option value="Ohimini" data-state="Benue">Ohimini</option>
++                        <option value="Oju" data-state="Benue">Oju</option>
++                        <option value="Okpokwu" data-state="Benue">Okpokwu</option>
++                        <option value="Otukpo" data-state="Benue">Otukpo</option>
++                        <option value="Tarka" data-state="Benue">Tarka</option>
++                        <option value="Ukum" data-state="Benue">Ukum</option>
++                        <option value="Ushongo" data-state="Benue">Ushongo</option>
++                        <option value="Vandeikya" data-state="Benue">Vandeikya</option>
++                      </optgroup>
++                      <optgroup label="Borno" data-state="Borno">
++                        <option value="Abadam" data-state="Borno">Abadam</option>
++                        <option value="Askira/Uba" data-state="Borno">Askira/Uba</option>
++                        <option value="Bama" data-state="Borno">Bama</option>
++                        <option value="Bayo" data-state="Borno">Bayo</option>
++                        <option value="Biu" data-state="Borno">Biu</option>
++                        <option value="Chibok" data-state="Borno">Chibok</option>
++                        <option value="Damboa" data-state="Borno">Damboa</option>
++                        <option value="Dikwa" data-state="Borno">Dikwa</option>
++                        <option value="Gubio" data-state="Borno">Gubio</option>
++                        <option value="Guzamala" data-state="Borno">Guzamala</option>
++                        <option value="Gwoza" data-state="Borno">Gwoza</option>
++                        <option value="Hawul" data-state="Borno">Hawul</option>
++                        <option value="Jere" data-state="Borno">Jere</option>
++                        <option value="Kaga" data-state="Borno">Kaga</option>
++                        <option value="Kala/Balge" data-state="Borno">Kala/Balge</option>
++                        <option value="Konduga" data-state="Borno">Konduga</option>
++                        <option value="Kukawa" data-state="Borno">Kukawa</option>
++                        <option value="Kwaya Kusar" data-state="Borno">Kwaya Kusar</option>
++                        <option value="Mafa" data-state="Borno">Mafa</option>
++                        <option value="Magumeri" data-state="Borno">Magumeri</option>
++                        <option value="Maiduguri" data-state="Borno">Maiduguri</option>
++                        <option value="Marte" data-state="Borno">Marte</option>
++                        <option value="Mobbar" data-state="Borno">Mobbar</option>
++                        <option value="Monguno" data-state="Borno">Monguno</option>
++                        <option value="Ngala" data-state="Borno">Ngala</option>
++                        <option value="Nganzai" data-state="Borno">Nganzai</option>
++                        <option value="Shani" data-state="Borno">Shani</option>
++                      </optgroup>
++                      <optgroup label="Cross River" data-state="Cross River">
++                        <option value="Abi" data-state="Cross River">Abi</option>
++                        <option value="Akamkpa" data-state="Cross River">Akamkpa</option>
++                        <option value="Akpabuyo" data-state="Cross River">Akpabuyo</option>
++                        <option value="Bakassi" data-state="Cross River">Bakassi</option>
++                        <option value="Bekwarra" data-state="Cross River">Bekwarra</option>
++                        <option value="Biase" data-state="Cross River">Biase</option>
++                        <option value="Boki" data-state="Cross River">Boki</option>
++                        <option value="Calabar Municipal" data-state="Cross River">Calabar Municipal</option>
++                        <option value="Calabar South" data-state="Cross River">Calabar South</option>
++                        <option value="Etung" data-state="Cross River">Etung</option>
++                        <option value="Ikom" data-state="Cross River">Ikom</option>
++                        <option value="Obanliku" data-state="Cross River">Obanliku</option>
++                        <option value="Obubra" data-state="Cross River">Obubra</option>
++                        <option value="Obudu" data-state="Cross River">Obudu</option>
++                        <option value="Odukpani" data-state="Cross River">Odukpani</option>
++                        <option value="Ogoja" data-state="Cross River">Ogoja</option>
++                        <option value="Yakuur" data-state="Cross River">Yakuur</option>
++                        <option value="Yala" data-state="Cross River">Yala</option>
++                      </optgroup>
++                      <optgroup label="Delta" data-state="Delta">
++                        <option value="Aniocha North" data-state="Delta">Aniocha North</option>
++                        <option value="Aniocha South" data-state="Delta">Aniocha South</option>
++                        <option value="Bomadi" data-state="Delta">Bomadi</option>
++                        <option value="Burutu" data-state="Delta">Burutu</option>
++                        <option value="Ethiope East" data-state="Delta">Ethiope East</option>
++                        <option value="Ethiope West" data-state="Delta">Ethiope West</option>
++                        <option value="Ika North East" data-state="Delta">Ika North East</option>
++                        <option value="Ika South" data-state="Delta">Ika South</option>
++                        <option value="Isoko North" data-state="Delta">Isoko North</option>
++                        <option value="Isoko South" data-state="Delta">Isoko South</option>
++                        <option value="Ndokwa East" data-state="Delta">Ndokwa East</option>
++                        <option value="Ndokwa West" data-state="Delta">Ndokwa West</option>
++                        <option value="Okpe" data-state="Delta">Okpe</option>
++                        <option value="Oshimili North" data-state="Delta">Oshimili North</option>
++                        <option value="Oshimili South" data-state="Delta">Oshimili South</option>
++                        <option value="Patani" data-state="Delta">Patani</option>
++                        <option value="Sapele" data-state="Delta">Sapele</option>
++                        <option value="Udu" data-state="Delta">Udu</option>
++                        <option value="Ughelli North" data-state="Delta">Ughelli North</option>
++                        <option value="Ughelli South" data-state="Delta">Ughelli South</option>
++                        <option value="Ukwuani" data-state="Delta">Ukwuani</option>
++                        <option value="Uvwie" data-state="Delta">Uvwie</option>
++                        <option value="Warri North" data-state="Delta">Warri North</option>
++                        <option value="Warri South" data-state="Delta">Warri South</option>
++                        <option value="Warri South West" data-state="Delta">Warri South West</option>
++                      </optgroup>
++                      <optgroup label="Ebonyi" data-state="Ebonyi">
++                        <option value="Abakaliki" data-state="Ebonyi">Abakaliki</option>
++                        <option value="Afikpo North" data-state="Ebonyi">Afikpo North</option>
++                        <option value="Afikpo South" data-state="Ebonyi">Afikpo South</option>
++                        <option value="Ebonyi" data-state="Ebonyi">Ebonyi</option>
++                        <option value="Ezza North" data-state="Ebonyi">Ezza North</option>
++                        <option value="Ezza South" data-state="Ebonyi">Ezza South</option>
++                        <option value="Ikwo" data-state="Ebonyi">Ikwo</option>
++                        <option value="Ishielu" data-state="Ebonyi">Ishielu</option>
++                        <option value="Ivo" data-state="Ebonyi">Ivo</option>
++                        <option value="Izzi" data-state="Ebonyi">Izzi</option>
++                        <option value="Ohaozara" data-state="Ebonyi">Ohaozara</option>
++                        <option value="Ohaukwu" data-state="Ebonyi">Ohaukwu</option>
++                        <option value="Onicha" data-state="Ebonyi">Onicha</option>
++                      </optgroup>
++                      <optgroup label="Edo" data-state="Edo">
++                        <option value="Akoko-Edo" data-state="Edo">Akoko-Edo</option>
++                        <option value="Egor" data-state="Edo">Egor</option>
++                        <option value="Esan Central" data-state="Edo">Esan Central</option>
++                        <option value="Esan North-East" data-state="Edo">Esan North-East</option>
++                        <option value="Esan South-East" data-state="Edo">Esan South-East</option>
++                        <option value="Esan West" data-state="Edo">Esan West</option>
++                        <option value="Etsako Central" data-state="Edo">Etsako Central</option>
++                        <option value="Etsako East" data-state="Edo">Etsako East</option>
++                        <option value="Etsako West" data-state="Edo">Etsako West</option>
++                        <option value="Igueben" data-state="Edo">Igueben</option>
++                        <option value="Ikpoba Okha" data-state="Edo">Ikpoba Okha</option>
++                        <option value="Oredo" data-state="Edo">Oredo</option>
++                        <option value="Orhionmwon" data-state="Edo">Orhionmwon</option>
++                        <option value="Ovia North-East" data-state="Edo">Ovia North-East</option>
++                        <option value="Ovia South-West" data-state="Edo">Ovia South-West</option>
++                        <option value="Owan East" data-state="Edo">Owan East</option>
++                        <option value="Owan West" data-state="Edo">Owan West</option>
++                        <option value="Uhunmwonde" data-state="Edo">Uhunmwonde</option>
++                      </optgroup>
++                      <optgroup label="Ekiti" data-state="Ekiti">
++                        <option value="Ado Ekiti" data-state="Ekiti">Ado Ekiti</option>
++                        <option value="Efon" data-state="Ekiti">Efon</option>
++                        <option value="Ekiti East" data-state="Ekiti">Ekiti East</option>
++                        <option value="Ekiti South-West" data-state="Ekiti">Ekiti South-West</option>
++                        <option value="Ekiti West" data-state="Ekiti">Ekiti West</option>
++                        <option value="Emure" data-state="Ekiti">Emure</option>
++                        <option value="Gbonyin" data-state="Ekiti">Gbonyin</option>
++                        <option value="Ido Osi" data-state="Ekiti">Ido Osi</option>
++                        <option value="Ijero" data-state="Ekiti">Ijero</option>
++                        <option value="Ikere" data-state="Ekiti">Ikere</option>
++                        <option value="Ikole" data-state="Ekiti">Ikole</option>
++                        <option value="Ilejemeje" data-state="Ekiti">Ilejemeje</option>
++                        <option value="Irepodun/Ifelodun" data-state="Ekiti">Irepodun/Ifelodun</option>
++                        <option value="Ise/Orun" data-state="Ekiti">Ise/Orun</option>
++                        <option value="Moba" data-state="Ekiti">Moba</option>
++                        <option value="Oye" data-state="Ekiti">Oye</option>
++                      </optgroup>
++                      <optgroup label="Enugu" data-state="Enugu">
++                        <option value="Aninri" data-state="Enugu">Aninri</option>
++                        <option value="Awgu" data-state="Enugu">Awgu</option>
++                        <option value="Enugu East" data-state="Enugu">Enugu East</option>
++                        <option value="Enugu North" data-state="Enugu">Enugu North</option>
++                        <option value="Enugu South" data-state="Enugu">Enugu South</option>
++                        <option value="Ezeagu" data-state="Enugu">Ezeagu</option>
++                        <option value="Igbo Etiti" data-state="Enugu">Igbo Etiti</option>
++                        <option value="Igbo Eze North" data-state="Enugu">Igbo Eze North</option>
++                        <option value="Igbo Eze South" data-state="Enugu">Igbo Eze South</option>
++                        <option value="Isi Uzo" data-state="Enugu">Isi Uzo</option>
++                        <option value="Nkanu East" data-state="Enugu">Nkanu East</option>
++                        <option value="Nkanu West" data-state="Enugu">Nkanu West</option>
++                        <option value="Nsukka" data-state="Enugu">Nsukka</option>
++                        <option value="Oji River" data-state="Enugu">Oji River</option>
++                        <option value="Udenu" data-state="Enugu">Udenu</option>
++                        <option value="Udi" data-state="Enugu">Udi</option>
++                        <option value="Uzo Uwani" data-state="Enugu">Uzo Uwani</option>
++                      </optgroup>
++                      <optgroup label="FCT — Abuja" data-state="FCT — Abuja">
++                        <option value="Abaji" data-state="FCT — Abuja">Abaji</option>
++                        <option value="Bwari" data-state="FCT — Abuja">Bwari</option>
++                        <option value="Gwagwalada" data-state="FCT — Abuja">Gwagwalada</option>
++                        <option value="Kuje" data-state="FCT — Abuja">Kuje</option>
++                        <option value="Kwali" data-state="FCT — Abuja">Kwali</option>
++                        <option value="Municipal Area Council" data-state="FCT — Abuja">Municipal Area Council</option>
++                      </optgroup>
++                      <optgroup label="Gombe" data-state="Gombe">
++                        <option value="Akko" data-state="Gombe">Akko</option>
++                        <option value="Balanga" data-state="Gombe">Balanga</option>
++                        <option value="Billiri" data-state="Gombe">Billiri</option>
++                        <option value="Dukku" data-state="Gombe">Dukku</option>
++                        <option value="Funakaye" data-state="Gombe">Funakaye</option>
++                        <option value="Gombe" data-state="Gombe">Gombe</option>
++                        <option value="Kaltungo" data-state="Gombe">Kaltungo</option>
++                        <option value="Kwami" data-state="Gombe">Kwami</option>
++                        <option value="Nafada" data-state="Gombe">Nafada</option>
++                        <option value="Shongom" data-state="Gombe">Shongom</option>
++                        <option value="Yamaltu/Deba" data-state="Gombe">Yamaltu/Deba</option>
++                      </optgroup>
++                      <optgroup label="Imo" data-state="Imo">
++                        <option value="Aboh Mbaise" data-state="Imo">Aboh Mbaise</option>
++                        <option value="Ahiazu Mbaise" data-state="Imo">Ahiazu Mbaise</option>
++                        <option value="Ehime Mbano" data-state="Imo">Ehime Mbano</option>
++                        <option value="Ezinihitte" data-state="Imo">Ezinihitte</option>
++                        <option value="Ideato North" data-state="Imo">Ideato North</option>
++                        <option value="Ideato South" data-state="Imo">Ideato South</option>
++                        <option value="Ihitte/Uboma" data-state="Imo">Ihitte/Uboma</option>
++                        <option value="Ikeduru" data-state="Imo">Ikeduru</option>
++                        <option value="Isiala Mbano" data-state="Imo">Isiala Mbano</option>
++                        <option value="Isu" data-state="Imo">Isu</option>
++                        <option value="Mbaitoli" data-state="Imo">Mbaitoli</option>
++                        <option value="Ngor Okpala" data-state="Imo">Ngor Okpala</option>
++                        <option value="Njaba" data-state="Imo">Njaba</option>
++                        <option value="Nkwerre" data-state="Imo">Nkwerre</option>
++                        <option value="Nwangele" data-state="Imo">Nwangele</option>
++                        <option value="Obowo" data-state="Imo">Obowo</option>
++                        <option value="Oguta" data-state="Imo">Oguta</option>
++                        <option value="Ohaji/Egbema" data-state="Imo">Ohaji/Egbema</option>
++                        <option value="Okigwe" data-state="Imo">Okigwe</option>
++                        <option value="Orlu" data-state="Imo">Orlu</option>
++                        <option value="Orsu" data-state="Imo">Orsu</option>
++                        <option value="Oru East" data-state="Imo">Oru East</option>
++                        <option value="Oru West" data-state="Imo">Oru West</option>
++                        <option value="Owerri Municipal" data-state="Imo">Owerri Municipal</option>
++                        <option value="Owerri North" data-state="Imo">Owerri North</option>
++                        <option value="Owerri West" data-state="Imo">Owerri West</option>
++                        <option value="Unuimo" data-state="Imo">Unuimo</option>
++                      </optgroup>
++                      <optgroup label="Jigawa" data-state="Jigawa">
++                        <option value="Auyo" data-state="Jigawa">Auyo</option>
++                        <option value="Babura" data-state="Jigawa">Babura</option>
++                        <option value="Biriniwa" data-state="Jigawa">Biriniwa</option>
++                        <option value="Birnin Kudu" data-state="Jigawa">Birnin Kudu</option>
++                        <option value="Buji" data-state="Jigawa">Buji</option>
++                        <option value="Dutse" data-state="Jigawa">Dutse</option>
++                        <option value="Gagarawa" data-state="Jigawa">Gagarawa</option>
++                        <option value="Garki" data-state="Jigawa">Garki</option>
++                        <option value="Gumel" data-state="Jigawa">Gumel</option>
++                        <option value="Guri" data-state="Jigawa">Guri</option>
++                        <option value="Gwaram" data-state="Jigawa">Gwaram</option>
++                        <option value="Gwiwa" data-state="Jigawa">Gwiwa</option>
++                        <option value="Hadejia" data-state="Jigawa">Hadejia</option>
++                        <option value="Jahun" data-state="Jigawa">Jahun</option>
++                        <option value="Kafin Hausa" data-state="Jigawa">Kafin Hausa</option>
++                        <option value="Kaugama" data-state="Jigawa">Kaugama</option>
++                        <option value="Kazaure" data-state="Jigawa">Kazaure</option>
++                        <option value="Kiri Kasama" data-state="Jigawa">Kiri Kasama</option>
++                        <option value="Kiyawa" data-state="Jigawa">Kiyawa</option>
++                        <option value="Maigatari" data-state="Jigawa">Maigatari</option>
++                        <option value="Malam Madori" data-state="Jigawa">Malam Madori</option>
++                        <option value="Miga" data-state="Jigawa">Miga</option>
++                        <option value="Ringim" data-state="Jigawa">Ringim</option>
++                        <option value="Roni" data-state="Jigawa">Roni</option>
++                        <option value="Sule Tankarkar" data-state="Jigawa">Sule Tankarkar</option>
++                        <option value="Taura" data-state="Jigawa">Taura</option>
++                        <option value="Yankwashi" data-state="Jigawa">Yankwashi</option>
++                      </optgroup>
++                      <optgroup label="Kaduna" data-state="Kaduna">
++                        <option value="Birnin Gwari" data-state="Kaduna">Birnin Gwari</option>
++                        <option value="Chikun" data-state="Kaduna">Chikun</option>
++                        <option value="Giwa" data-state="Kaduna">Giwa</option>
++                        <option value="Igabi" data-state="Kaduna">Igabi</option>
++                        <option value="Ikara" data-state="Kaduna">Ikara</option>
++                        <option value="Jaba" data-state="Kaduna">Jaba</option>
++                        <option value="Jema&#39;a" data-state="Kaduna">Jema&#39;a</option>
++                        <option value="Kachia" data-state="Kaduna">Kachia</option>
++                        <option value="Kaduna North" data-state="Kaduna">Kaduna North</option>
++                        <option value="Kaduna South" data-state="Kaduna">Kaduna South</option>
++                        <option value="Kagarko" data-state="Kaduna">Kagarko</option>
++                        <option value="Kajuru" data-state="Kaduna">Kajuru</option>
++                        <option value="Kaura" data-state="Kaduna">Kaura</option>
++                        <option value="Kauru" data-state="Kaduna">Kauru</option>
++                        <option value="Kubau" data-state="Kaduna">Kubau</option>
++                        <option value="Kudan" data-state="Kaduna">Kudan</option>
++                        <option value="Lere" data-state="Kaduna">Lere</option>
++                        <option value="Makarfi" data-state="Kaduna">Makarfi</option>
++                        <option value="Sabon Gari" data-state="Kaduna">Sabon Gari</option>
++                        <option value="Sanga" data-state="Kaduna">Sanga</option>
++                        <option value="Soba" data-state="Kaduna">Soba</option>
++                        <option value="Zangon Kataf" data-state="Kaduna">Zangon Kataf</option>
++                        <option value="Zaria" data-state="Kaduna">Zaria</option>
++                      </optgroup>
++                      <optgroup label="Kano" data-state="Kano">
++                        <option value="Ajingi" data-state="Kano">Ajingi</option>
++                        <option value="Albasu" data-state="Kano">Albasu</option>
++                        <option value="Bagwai" data-state="Kano">Bagwai</option>
++                        <option value="Bebeji" data-state="Kano">Bebeji</option>
++                        <option value="Bichi" data-state="Kano">Bichi</option>
++                        <option value="Bunkure" data-state="Kano">Bunkure</option>
++                        <option value="Dala" data-state="Kano">Dala</option>
++                        <option value="Dambatta" data-state="Kano">Dambatta</option>
++                        <option value="Dawakin Kudu" data-state="Kano">Dawakin Kudu</option>
++                        <option value="Dawakin Tofa" data-state="Kano">Dawakin Tofa</option>
++                        <option value="Doguwa" data-state="Kano">Doguwa</option>
++                        <option value="Fagge" data-state="Kano">Fagge</option>
++                        <option value="Gabasawa" data-state="Kano">Gabasawa</option>
++                        <option value="Garko" data-state="Kano">Garko</option>
++                        <option value="Garun Mallam" data-state="Kano">Garun Mallam</option>
++                        <option value="Gaya" data-state="Kano">Gaya</option>
++                        <option value="Gezawa" data-state="Kano">Gezawa</option>
++                        <option value="Gwale" data-state="Kano">Gwale</option>
++                        <option value="Gwarzo" data-state="Kano">Gwarzo</option>
++                        <option value="Kabo" data-state="Kano">Kabo</option>
++                        <option value="Kano Municipal" data-state="Kano">Kano Municipal</option>
++                        <option value="Karaye" data-state="Kano">Karaye</option>
++                        <option value="Kibiya" data-state="Kano">Kibiya</option>
++                        <option value="Kiru" data-state="Kano">Kiru</option>
++                        <option value="Kumbotso" data-state="Kano">Kumbotso</option>
++                        <option value="Kunchi" data-state="Kano">Kunchi</option>
++                        <option value="Kura" data-state="Kano">Kura</option>
++                        <option value="Madobi" data-state="Kano">Madobi</option>
++                        <option value="Makoda" data-state="Kano">Makoda</option>
++                        <option value="Minjibir" data-state="Kano">Minjibir</option>
++                        <option value="Nasarawa" data-state="Kano">Nasarawa</option>
++                        <option value="Rano" data-state="Kano">Rano</option>
++                        <option value="Rimin Gado" data-state="Kano">Rimin Gado</option>
++                        <option value="Rogo" data-state="Kano">Rogo</option>
++                        <option value="Shanono" data-state="Kano">Shanono</option>
++                        <option value="Sumaila" data-state="Kano">Sumaila</option>
++                        <option value="Takai" data-state="Kano">Takai</option>
++                        <option value="Tarauni" data-state="Kano">Tarauni</option>
++                        <option value="Tofa" data-state="Kano">Tofa</option>
++                        <option value="Tsanyawa" data-state="Kano">Tsanyawa</option>
++                        <option value="Tudun Wada" data-state="Kano">Tudun Wada</option>
++                        <option value="Ungogo" data-state="Kano">Ungogo</option>
++                        <option value="Warawa" data-state="Kano">Warawa</option>
++                        <option value="Wudil" data-state="Kano">Wudil</option>
++                      </optgroup>
++                      <optgroup label="Katsina" data-state="Katsina">
++                        <option value="Bakori" data-state="Katsina">Bakori</option>
++                        <option value="Batagarawa" data-state="Katsina">Batagarawa</option>
++                        <option value="Batsari" data-state="Katsina">Batsari</option>
++                        <option value="Baure" data-state="Katsina">Baure</option>
++                        <option value="Bindawa" data-state="Katsina">Bindawa</option>
++                        <option value="Charanchi" data-state="Katsina">Charanchi</option>
++                        <option value="Dan Musa" data-state="Katsina">Dan Musa</option>
++                        <option value="Dandume" data-state="Katsina">Dandume</option>
++                        <option value="Danja" data-state="Katsina">Danja</option>
++                        <option value="Daura" data-state="Katsina">Daura</option>
++                        <option value="Dutsi" data-state="Katsina">Dutsi</option>
++                        <option value="Dutsin Ma" data-state="Katsina">Dutsin Ma</option>
++                        <option value="Faskari" data-state="Katsina">Faskari</option>
++                        <option value="Funtua" data-state="Katsina">Funtua</option>
++                        <option value="Ingawa" data-state="Katsina">Ingawa</option>
++                        <option value="Jibia" data-state="Katsina">Jibia</option>
++                        <option value="Kafur" data-state="Katsina">Kafur</option>
++                        <option value="Kaita" data-state="Katsina">Kaita</option>
++                        <option value="Kankara" data-state="Katsina">Kankara</option>
++                        <option value="Kankia" data-state="Katsina">Kankia</option>
++                        <option value="Katsina" data-state="Katsina">Katsina</option>
++                        <option value="Kurfi" data-state="Katsina">Kurfi</option>
++                        <option value="Kusada" data-state="Katsina">Kusada</option>
++                        <option value="Mai&#39;Adua" data-state="Katsina">Mai&#39;Adua</option>
++                        <option value="Malumfashi" data-state="Katsina">Malumfashi</option>
++                        <option value="Mani" data-state="Katsina">Mani</option>
++                        <option value="Mashi" data-state="Katsina">Mashi</option>
++                        <option value="Matazu" data-state="Katsina">Matazu</option>
++                        <option value="Musawa" data-state="Katsina">Musawa</option>
++                        <option value="Rimi" data-state="Katsina">Rimi</option>
++                        <option value="Sabuwa" data-state="Katsina">Sabuwa</option>
++                        <option value="Safana" data-state="Katsina">Safana</option>
++                        <option value="Sandamu" data-state="Katsina">Sandamu</option>
++                        <option value="Zango" data-state="Katsina">Zango</option>
++                      </optgroup>
++                      <optgroup label="Kebbi" data-state="Kebbi">
++                        <option value="Aleiro" data-state="Kebbi">Aleiro</option>
++                        <option value="Arewa Dandi" data-state="Kebbi">Arewa Dandi</option>
++                        <option value="Argungu" data-state="Kebbi">Argungu</option>
++                        <option value="Augie" data-state="Kebbi">Augie</option>
++                        <option value="Bagudo" data-state="Kebbi">Bagudo</option>
++                        <option value="Birnin Kebbi" data-state="Kebbi">Birnin Kebbi</option>
++                        <option value="Bunza" data-state="Kebbi">Bunza</option>
++                        <option value="Dandi" data-state="Kebbi">Dandi</option>
++                        <option value="Fakai" data-state="Kebbi">Fakai</option>
++                        <option value="Gwandu" data-state="Kebbi">Gwandu</option>
++                        <option value="Jega" data-state="Kebbi">Jega</option>
++                        <option value="Kalgo" data-state="Kebbi">Kalgo</option>
++                        <option value="Koko/Besse" data-state="Kebbi">Koko/Besse</option>
++                        <option value="Maiyama" data-state="Kebbi">Maiyama</option>
++                        <option value="Ngaski" data-state="Kebbi">Ngaski</option>
++                        <option value="Sakaba" data-state="Kebbi">Sakaba</option>
++                        <option value="Shanga" data-state="Kebbi">Shanga</option>
++                        <option value="Suru" data-state="Kebbi">Suru</option>
++                        <option value="Wasagu/Danko" data-state="Kebbi">Wasagu/Danko</option>
++                        <option value="Yauri" data-state="Kebbi">Yauri</option>
++                        <option value="Zuru" data-state="Kebbi">Zuru</option>
++                      </optgroup>
++                      <optgroup label="Kogi" data-state="Kogi">
++                        <option value="Adavi" data-state="Kogi">Adavi</option>
++                        <option value="Ajaokuta" data-state="Kogi">Ajaokuta</option>
++                        <option value="Ankpa" data-state="Kogi">Ankpa</option>
++                        <option value="Bassa" data-state="Kogi">Bassa</option>
++                        <option value="Dekina" data-state="Kogi">Dekina</option>
++                        <option value="Ibaji" data-state="Kogi">Ibaji</option>
++                        <option value="Idah" data-state="Kogi">Idah</option>
++                        <option value="Igalamela-Odolu" data-state="Kogi">Igalamela-Odolu</option>
++                        <option value="Ijumu" data-state="Kogi">Ijumu</option>
++                        <option value="Kabba/Bunu" data-state="Kogi">Kabba/Bunu</option>
++                        <option value="Kogi" data-state="Kogi">Kogi</option>
++                        <option value="Lokoja" data-state="Kogi">Lokoja</option>
++                        <option value="Mopa-Muro" data-state="Kogi">Mopa-Muro</option>
++                        <option value="Ofu" data-state="Kogi">Ofu</option>
++                        <option value="Ogori/Magongo" data-state="Kogi">Ogori/Magongo</option>
++                        <option value="Okehi" data-state="Kogi">Okehi</option>
++                        <option value="Okene" data-state="Kogi">Okene</option>
++                        <option value="Olamaboro" data-state="Kogi">Olamaboro</option>
++                        <option value="Omala" data-state="Kogi">Omala</option>
++                        <option value="Yagba East" data-state="Kogi">Yagba East</option>
++                        <option value="Yagba West" data-state="Kogi">Yagba West</option>
++                      </optgroup>
++                      <optgroup label="Kwara" data-state="Kwara">
++                        <option value="Asa" data-state="Kwara">Asa</option>
++                        <option value="Baruten" data-state="Kwara">Baruten</option>
++                        <option value="Edu" data-state="Kwara">Edu</option>
++                        <option value="Ekiti (Kwara)" data-state="Kwara">Ekiti (Kwara)</option>
++                        <option value="Ifelodun" data-state="Kwara">Ifelodun</option>
++                        <option value="Ilorin East" data-state="Kwara">Ilorin East</option>
++                        <option value="Ilorin South" data-state="Kwara">Ilorin South</option>
++                        <option value="Ilorin West" data-state="Kwara">Ilorin West</option>
++                        <option value="Irepodun" data-state="Kwara">Irepodun</option>
++                        <option value="Isin" data-state="Kwara">Isin</option>
++                        <option value="Kaiama" data-state="Kwara">Kaiama</option>
++                        <option value="Moro" data-state="Kwara">Moro</option>
++                        <option value="Offa" data-state="Kwara">Offa</option>
++                        <option value="Oke Ero" data-state="Kwara">Oke Ero</option>
++                        <option value="Oyun" data-state="Kwara">Oyun</option>
++                        <option value="Pategi" data-state="Kwara">Pategi</option>
++                      </optgroup>
++                      <optgroup label="Lagos" data-state="Lagos">
++                        <option value="Agege" data-state="Lagos">Agege</option>
++                        <option value="Ajeromi-Ifelodun" data-state="Lagos">Ajeromi-Ifelodun</option>
++                        <option value="Alimosho" data-state="Lagos">Alimosho</option>
++                        <option value="Amuwo-Odofin" data-state="Lagos">Amuwo-Odofin</option>
++                        <option value="Apapa" data-state="Lagos">Apapa</option>
++                        <option value="Badagry" data-state="Lagos">Badagry</option>
++                        <option value="Epe" data-state="Lagos">Epe</option>
++                        <option value="Eti Osa" data-state="Lagos">Eti Osa</option>
++                        <option value="Ibeju-Lekki" data-state="Lagos">Ibeju-Lekki</option>
++                        <option value="Ifako-Ijaiye" data-state="Lagos">Ifako-Ijaiye</option>
++                        <option value="Ikeja" data-state="Lagos">Ikeja</option>
++                        <option value="Ikorodu" data-state="Lagos">Ikorodu</option>
++                        <option value="Kosofe" data-state="Lagos">Kosofe</option>
++                        <option value="Lagos Island" data-state="Lagos">Lagos Island</option>
++                        <option value="Lagos Mainland" data-state="Lagos">Lagos Mainland</option>
++                        <option value="Mushin" data-state="Lagos">Mushin</option>
++                        <option value="Ojo" data-state="Lagos">Ojo</option>
++                        <option value="Oshodi-Isolo" data-state="Lagos">Oshodi-Isolo</option>
++                        <option value="Shomolu" data-state="Lagos">Shomolu</option>
++                        <option value="Surulere" data-state="Lagos">Surulere</option>
++                      </optgroup>
++                      <optgroup label="Nasarawa" data-state="Nasarawa">
++                        <option value="Akwanga" data-state="Nasarawa">Akwanga</option>
++                        <option value="Awe" data-state="Nasarawa">Awe</option>
++                        <option value="Doma" data-state="Nasarawa">Doma</option>
++                        <option value="Karu" data-state="Nasarawa">Karu</option>
++                        <option value="Keana" data-state="Nasarawa">Keana</option>
++                        <option value="Keffi" data-state="Nasarawa">Keffi</option>
++                        <option value="Kokona" data-state="Nasarawa">Kokona</option>
++                        <option value="Lafia" data-state="Nasarawa">Lafia</option>
++                        <option value="Nasarawa" data-state="Nasarawa">Nasarawa</option>
++                        <option value="Nasarawa Egon" data-state="Nasarawa">Nasarawa Egon</option>
++                        <option value="Obi" data-state="Nasarawa">Obi</option>
++                        <option value="Toto" data-state="Nasarawa">Toto</option>
++                        <option value="Wamba" data-state="Nasarawa">Wamba</option>
++                      </optgroup>
++                      <optgroup label="Niger" data-state="Niger">
++                        <option value="Agaie" data-state="Niger">Agaie</option>
++                        <option value="Agwara" data-state="Niger">Agwara</option>
++                        <option value="Bida" data-state="Niger">Bida</option>
++                        <option value="Borgu" data-state="Niger">Borgu</option>
++                        <option value="Bosso" data-state="Niger">Bosso</option>
++                        <option value="Chanchaga" data-state="Niger">Chanchaga</option>
++                        <option value="Edati" data-state="Niger">Edati</option>
++                        <option value="Gbako" data-state="Niger">Gbako</option>
++                        <option value="Gurara" data-state="Niger">Gurara</option>
++                        <option value="Katcha" data-state="Niger">Katcha</option>
++                        <option value="Kontagora" data-state="Niger">Kontagora</option>
++                        <option value="Lapai" data-state="Niger">Lapai</option>
++                        <option value="Lavun" data-state="Niger">Lavun</option>
++                        <option value="Magama" data-state="Niger">Magama</option>
++                        <option value="Mariga" data-state="Niger">Mariga</option>
++                        <option value="Mashegu" data-state="Niger">Mashegu</option>
++                        <option value="Mokwa" data-state="Niger">Mokwa</option>
++                        <option value="Munya" data-state="Niger">Munya</option>
++                        <option value="Paikoro" data-state="Niger">Paikoro</option>
++                        <option value="Rafi" data-state="Niger">Rafi</option>
++                        <option value="Rijau" data-state="Niger">Rijau</option>
++                        <option value="Shiroro" data-state="Niger">Shiroro</option>
++                        <option value="Suleja" data-state="Niger">Suleja</option>
++                        <option value="Tafa" data-state="Niger">Tafa</option>
++                        <option value="Wushishi" data-state="Niger">Wushishi</option>
++                      </optgroup>
++                      <optgroup label="Ogun" data-state="Ogun">
++                        <option value="Abeokuta North" data-state="Ogun">Abeokuta North</option>
++                        <option value="Abeokuta South" data-state="Ogun">Abeokuta South</option>
++                        <option value="Ado-Odo/Ota" data-state="Ogun">Ado-Odo/Ota</option>
++                        <option value="Egbado North (Yewa North)" data-state="Ogun">Egbado North (Yewa North)</option>
++                        <option value="Egbado South (Yewa South)" data-state="Ogun">Egbado South (Yewa South)</option>
++                        <option value="Ewekoro" data-state="Ogun">Ewekoro</option>
++                        <option value="Ifo" data-state="Ogun">Ifo</option>
++                        <option value="Ijebu East" data-state="Ogun">Ijebu East</option>
++                        <option value="Ijebu North" data-state="Ogun">Ijebu North</option>
++                        <option value="Ijebu North East" data-state="Ogun">Ijebu North East</option>
++                        <option value="Ijebu Ode" data-state="Ogun">Ijebu Ode</option>
++                        <option value="Ikenne" data-state="Ogun">Ikenne</option>
++                        <option value="Imeko Afon" data-state="Ogun">Imeko Afon</option>
++                        <option value="Ipokia" data-state="Ogun">Ipokia</option>
++                        <option value="Obafemi Owode" data-state="Ogun">Obafemi Owode</option>
++                        <option value="Odeda" data-state="Ogun">Odeda</option>
++                        <option value="Odogbolu" data-state="Ogun">Odogbolu</option>
++                        <option value="Ogun Waterside" data-state="Ogun">Ogun Waterside</option>
++                        <option value="Remo North" data-state="Ogun">Remo North</option>
++                        <option value="Sagamu" data-state="Ogun">Sagamu</option>
++                      </optgroup>
++                      <optgroup label="Ondo" data-state="Ondo">
++                        <option value="Akoko North-East" data-state="Ondo">Akoko North-East</option>
++                        <option value="Akoko North-West" data-state="Ondo">Akoko North-West</option>
++                        <option value="Akoko South-East" data-state="Ondo">Akoko South-East</option>
++                        <option value="Akoko South-West" data-state="Ondo">Akoko South-West</option>
++                        <option value="Akure North" data-state="Ondo">Akure North</option>
++                        <option value="Akure South" data-state="Ondo">Akure South</option>
++                        <option value="Ese Odo" data-state="Ondo">Ese Odo</option>
++                        <option value="Idanre" data-state="Ondo">Idanre</option>
++                        <option value="Ifedore" data-state="Ondo">Ifedore</option>
++                        <option value="Ilaje" data-state="Ondo">Ilaje</option>
++                        <option value="Ile Oluji/Okeigbo" data-state="Ondo">Ile Oluji/Okeigbo</option>
++                        <option value="Irele" data-state="Ondo">Irele</option>
++                        <option value="Odigbo" data-state="Ondo">Odigbo</option>
++                        <option value="Okitipupa" data-state="Ondo">Okitipupa</option>
++                        <option value="Ondo East" data-state="Ondo">Ondo East</option>
++                        <option value="Ondo West" data-state="Ondo">Ondo West</option>
++                        <option value="Ose" data-state="Ondo">Ose</option>
++                        <option value="Owo" data-state="Ondo">Owo</option>
++                      </optgroup>
++                      <optgroup label="Osun" data-state="Osun">
++                        <option value="Aiyedaade" data-state="Osun">Aiyedaade</option>
++                        <option value="Aiyedire" data-state="Osun">Aiyedire</option>
++                        <option value="Atakunmosa East" data-state="Osun">Atakunmosa East</option>
++                        <option value="Atakunmosa West" data-state="Osun">Atakunmosa West</option>
++                        <option value="Boluwaduro" data-state="Osun">Boluwaduro</option>
++                        <option value="Boripe" data-state="Osun">Boripe</option>
++                        <option value="Ede North" data-state="Osun">Ede North</option>
++                        <option value="Ede South" data-state="Osun">Ede South</option>
++                        <option value="Egbedore" data-state="Osun">Egbedore</option>
++                        <option value="Ejigbo" data-state="Osun">Ejigbo</option>
++                        <option value="Ife Central" data-state="Osun">Ife Central</option>
++                        <option value="Ife East" data-state="Osun">Ife East</option>
++                        <option value="Ife North" data-state="Osun">Ife North</option>
++                        <option value="Ife South" data-state="Osun">Ife South</option>
++                        <option value="Ifedayo" data-state="Osun">Ifedayo</option>
++                        <option value="Ifelodun" data-state="Osun">Ifelodun</option>
++                        <option value="Ila" data-state="Osun">Ila</option>
++                        <option value="Ilesa East" data-state="Osun">Ilesa East</option>
++                        <option value="Ilesa West" data-state="Osun">Ilesa West</option>
++                        <option value="Irepodun" data-state="Osun">Irepodun</option>
++                        <option value="Irewole" data-state="Osun">Irewole</option>
++                        <option value="Isokan" data-state="Osun">Isokan</option>
++                        <option value="Iwo" data-state="Osun">Iwo</option>
++                        <option value="Obokun" data-state="Osun">Obokun</option>
++                        <option value="Odo Otin" data-state="Osun">Odo Otin</option>
++                        <option value="Ola Oluwa" data-state="Osun">Ola Oluwa</option>
++                        <option value="Olorunda" data-state="Osun">Olorunda</option>
++                        <option value="Oriade" data-state="Osun">Oriade</option>
++                        <option value="Orolu" data-state="Osun">Orolu</option>
++                        <option value="Osogbo" data-state="Osun">Osogbo</option>
++                      </optgroup>
++                      <optgroup label="Oyo" data-state="Oyo">
++                        <option value="Afijio" data-state="Oyo">Afijio</option>
++                        <option value="Akinyele" data-state="Oyo">Akinyele</option>
++                        <option value="Atiba" data-state="Oyo">Atiba</option>
++                        <option value="Atisbo" data-state="Oyo">Atisbo</option>
++                        <option value="Egbeda" data-state="Oyo">Egbeda</option>
++                        <option value="Ibadan North" data-state="Oyo">Ibadan North</option>
++                        <option value="Ibadan North-East" data-state="Oyo">Ibadan North-East</option>
++                        <option value="Ibadan North-West" data-state="Oyo">Ibadan North-West</option>
++                        <option value="Ibadan South-East" data-state="Oyo">Ibadan South-East</option>
++                        <option value="Ibadan South-West" data-state="Oyo">Ibadan South-West</option>
++                        <option value="Ibarapa Central" data-state="Oyo">Ibarapa Central</option>
++                        <option value="Ibarapa East" data-state="Oyo">Ibarapa East</option>
++                        <option value="Ibarapa North" data-state="Oyo">Ibarapa North</option>
++                        <option value="Ido" data-state="Oyo">Ido</option>
++                        <option value="Irepo" data-state="Oyo">Irepo</option>
++                        <option value="Iseyin" data-state="Oyo">Iseyin</option>
++                        <option value="Itesiwaju" data-state="Oyo">Itesiwaju</option>
++                        <option value="Iwajowa" data-state="Oyo">Iwajowa</option>
++                        <option value="Kajola" data-state="Oyo">Kajola</option>
++                        <option value="Lagelu" data-state="Oyo">Lagelu</option>
++                        <option value="Ogbomosho North" data-state="Oyo">Ogbomosho North</option>
++                        <option value="Ogbomosho South" data-state="Oyo">Ogbomosho South</option>
++                        <option value="Ogo Oluwa" data-state="Oyo">Ogo Oluwa</option>
++                        <option value="Olorunsogo" data-state="Oyo">Olorunsogo</option>
++                        <option value="Oluyole" data-state="Oyo">Oluyole</option>
++                        <option value="Ona Ara" data-state="Oyo">Ona Ara</option>
++                        <option value="Orelope" data-state="Oyo">Orelope</option>
++                        <option value="Ori Ire" data-state="Oyo">Ori Ire</option>
++                        <option value="Oyo East" data-state="Oyo">Oyo East</option>
++                        <option value="Oyo West" data-state="Oyo">Oyo West</option>
++                        <option value="Saki East" data-state="Oyo">Saki East</option>
++                        <option value="Saki West" data-state="Oyo">Saki West</option>
++                        <option value="Surulere (Oyo)" data-state="Oyo">Surulere (Oyo)</option>
++                      </optgroup>
++                      <optgroup label="Plateau" data-state="Plateau">
++                        <option value="Barkin Ladi" data-state="Plateau">Barkin Ladi</option>
++                        <option value="Bassa" data-state="Plateau">Bassa</option>
++                        <option value="Bokkos" data-state="Plateau">Bokkos</option>
++                        <option value="Jos East" data-state="Plateau">Jos East</option>
++                        <option value="Jos North" data-state="Plateau">Jos North</option>
++                        <option value="Jos South" data-state="Plateau">Jos South</option>
++                        <option value="Kanam" data-state="Plateau">Kanam</option>
++                        <option value="Kanke" data-state="Plateau">Kanke</option>
++                        <option value="Langtang North" data-state="Plateau">Langtang North</option>
++                        <option value="Langtang South" data-state="Plateau">Langtang South</option>
++                        <option value="Mangu" data-state="Plateau">Mangu</option>
++                        <option value="Mikang" data-state="Plateau">Mikang</option>
++                        <option value="Pankshin" data-state="Plateau">Pankshin</option>
++                        <option value="Qua&#39;an Pan" data-state="Plateau">Qua&#39;an Pan</option>
++                        <option value="Riyom" data-state="Plateau">Riyom</option>
++                        <option value="Shendam" data-state="Plateau">Shendam</option>
++                        <option value="Wase" data-state="Plateau">Wase</option>
++                      </optgroup>
++                      <optgroup label="Rivers" data-state="Rivers">
++                        <option value="Abua/Odual" data-state="Rivers">Abua/Odual</option>
++                        <option value="Ahoada East" data-state="Rivers">Ahoada East</option>
++                        <option value="Ahoada West" data-state="Rivers">Ahoada West</option>
++                        <option value="Akuku-Toru" data-state="Rivers">Akuku-Toru</option>
++                        <option value="Andoni" data-state="Rivers">Andoni</option>
++                        <option value="Asari-Toru" data-state="Rivers">Asari-Toru</option>
++                        <option value="Bonny" data-state="Rivers">Bonny</option>
++                        <option value="Degema" data-state="Rivers">Degema</option>
++                        <option value="Eleme" data-state="Rivers">Eleme</option>
++                        <option value="Emuoha" data-state="Rivers">Emuoha</option>
++                        <option value="Etche" data-state="Rivers">Etche</option>
++                        <option value="Gokana" data-state="Rivers">Gokana</option>
++                        <option value="Ikwerre" data-state="Rivers">Ikwerre</option>
++                        <option value="Khana" data-state="Rivers">Khana</option>
++                        <option value="Obio/Akpor" data-state="Rivers">Obio/Akpor</option>
++                        <option value="Ogba/Egbema/Ndoni" data-state="Rivers">Ogba/Egbema/Ndoni</option>
++                        <option value="Ogu/Bolo" data-state="Rivers">Ogu/Bolo</option>
++                        <option value="Okrika" data-state="Rivers">Okrika</option>
++                        <option value="Omuma" data-state="Rivers">Omuma</option>
++                        <option value="Opobo/Nkoro" data-state="Rivers">Opobo/Nkoro</option>
++                        <option value="Oyigbo" data-state="Rivers">Oyigbo</option>
++                        <option value="Port Harcourt" data-state="Rivers">Port Harcourt</option>
++                        <option value="Tai" data-state="Rivers">Tai</option>
++                      </optgroup>
++                      <optgroup label="Sokoto" data-state="Sokoto">
++                        <option value="Binji" data-state="Sokoto">Binji</option>
++                        <option value="Bodinga" data-state="Sokoto">Bodinga</option>
++                        <option value="Dange Shuni" data-state="Sokoto">Dange Shuni</option>
++                        <option value="Gada" data-state="Sokoto">Gada</option>
++                        <option value="Goronyo" data-state="Sokoto">Goronyo</option>
++                        <option value="Gudu" data-state="Sokoto">Gudu</option>
++                        <option value="Gwadabawa" data-state="Sokoto">Gwadabawa</option>
++                        <option value="Illela" data-state="Sokoto">Illela</option>
++                        <option value="Isa" data-state="Sokoto">Isa</option>
++                        <option value="Kebbe" data-state="Sokoto">Kebbe</option>
++                        <option value="Kware" data-state="Sokoto">Kware</option>
++                        <option value="Rabah" data-state="Sokoto">Rabah</option>
++                        <option value="Sabon Birni" data-state="Sokoto">Sabon Birni</option>
++                        <option value="Shagari" data-state="Sokoto">Shagari</option>
++                        <option value="Silame" data-state="Sokoto">Silame</option>
++                        <option value="Sokoto North" data-state="Sokoto">Sokoto North</option>
++                        <option value="Sokoto South" data-state="Sokoto">Sokoto South</option>
++                        <option value="Tambuwal" data-state="Sokoto">Tambuwal</option>
++                        <option value="Tangaza" data-state="Sokoto">Tangaza</option>
++                        <option value="Tureta" data-state="Sokoto">Tureta</option>
++                        <option value="Wamako" data-state="Sokoto">Wamako</option>
++                        <option value="Wurno" data-state="Sokoto">Wurno</option>
++                        <option value="Yabo" data-state="Sokoto">Yabo</option>
++                      </optgroup>
++                      <optgroup label="Taraba" data-state="Taraba">
++                        <option value="Ardo Kola" data-state="Taraba">Ardo Kola</option>
++                        <option value="Bali" data-state="Taraba">Bali</option>
++                        <option value="Donga" data-state="Taraba">Donga</option>
++                        <option value="Gashaka" data-state="Taraba">Gashaka</option>
++                        <option value="Gassol" data-state="Taraba">Gassol</option>
++                        <option value="Ibi" data-state="Taraba">Ibi</option>
++                        <option value="Jalingo" data-state="Taraba">Jalingo</option>
++                        <option value="Karim Lamido" data-state="Taraba">Karim Lamido</option>
++                        <option value="Kumi" data-state="Taraba">Kumi</option>
++                        <option value="Lau" data-state="Taraba">Lau</option>
++                        <option value="Sardauna" data-state="Taraba">Sardauna</option>
++                        <option value="Takum" data-state="Taraba">Takum</option>
++                        <option value="Ussa" data-state="Taraba">Ussa</option>
++                        <option value="Wukari" data-state="Taraba">Wukari</option>
++                        <option value="Yorro" data-state="Taraba">Yorro</option>
++                        <option value="Zing" data-state="Taraba">Zing</option>
++                      </optgroup>
++                      <optgroup label="Yobe" data-state="Yobe">
++                        <option value="Bade" data-state="Yobe">Bade</option>
++                        <option value="Bursari" data-state="Yobe">Bursari</option>
++                        <option value="Damaturu" data-state="Yobe">Damaturu</option>
++                        <option value="Fika" data-state="Yobe">Fika</option>
++                        <option value="Fune" data-state="Yobe">Fune</option>
++                        <option value="Geidam" data-state="Yobe">Geidam</option>
++                        <option value="Gujba" data-state="Yobe">Gujba</option>
++                        <option value="Gulani" data-state="Yobe">Gulani</option>
++                        <option value="Jakusko" data-state="Yobe">Jakusko</option>
++                        <option value="Karasuwa" data-state="Yobe">Karasuwa</option>
++                        <option value="Machina" data-state="Yobe">Machina</option>
++                        <option value="Nangere" data-state="Yobe">Nangere</option>
++                        <option value="Nguru" data-state="Yobe">Nguru</option>
++                        <option value="Potiskum" data-state="Yobe">Potiskum</option>
++                        <option value="Tarmuwa" data-state="Yobe">Tarmuwa</option>
++                        <option value="Yunusari" data-state="Yobe">Yunusari</option>
++                        <option value="Yusufari" data-state="Yobe">Yusufari</option>
++                      </optgroup>
++                      <optgroup label="Zamfara" data-state="Zamfara">
++                        <option value="Anka" data-state="Zamfara">Anka</option>
++                        <option value="Bakura" data-state="Zamfara">Bakura</option>
++                        <option value="Birnin Magaji/Kiyaw" data-state="Zamfara">Birnin Magaji/Kiyaw</option>
++                        <option value="Bukkuyum" data-state="Zamfara">Bukkuyum</option>
++                        <option value="Bungudu" data-state="Zamfara">Bungudu</option>
++                        <option value="Gummi" data-state="Zamfara">Gummi</option>
++                        <option value="Gusau" data-state="Zamfara">Gusau</option>
++                        <option value="Kaura Namoda" data-state="Zamfara">Kaura Namoda</option>
++                        <option value="Maradun" data-state="Zamfara">Maradun</option>
++                        <option value="Maru" data-state="Zamfara">Maru</option>
++                        <option value="Shinkafi" data-state="Zamfara">Shinkafi</option>
++                        <option value="Talata Mafara" data-state="Zamfara">Talata Mafara</option>
++                        <option value="Tsafe" data-state="Zamfara">Tsafe</option>
++                        <option value="Zurmi" data-state="Zamfara">Zurmi</option>
++                      </optgroup>
++                    </select>
+                     <div class="loc-arrow"><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></div>
+                   </div>
+                 </div>
+@@ -1252,27 +2157,42 @@
+ }
+ 
+ // Location dropdowns (Zone / State / LGA) in Settings tab
+-if (window.NG_LOC) {
+-  NG_LOC.populateZones(document.getElementById('profZoneSelect'));
+-  NG_LOC.populateStates(document.getElementById('profStateSelect'));
+-  NG_LOC.populateLgas(document.getElementById('profLgaSelect'), '');
+-
++(function () {
+   const profZone  = document.getElementById('profZoneSelect');
+   const profState = document.getElementById('profStateSelect');
+   const profLga   = document.getElementById('profLgaSelect');
++  if (!profZone || !profState || !profLga) return;
++
++  function filterProfLgaByState(state){
++    const groups = profLga.querySelectorAll('optgroup');
++    const placeholder = profLga.querySelector('option[value=""]');
++    if (!state) {
++      groups.forEach(g => { g.style.display=''; g.disabled=false; });
++      if (placeholder) placeholder.textContent = 'Select your LGA…';
++    } else {
++      groups.forEach(g => {
++        const match = g.getAttribute('data-state') === state;
++        g.style.display = match ? '' : 'none';
++        g.disabled = !match;
++      });
++      if (placeholder) placeholder.textContent = 'Select LGA in ' + state + '…';
++    }
++  }
++  filterProfLgaByState('');
+ 
+   profZone.addEventListener('change', () => {
+     profZone.classList.toggle('valid', !!profZone.value);
+   });
+   profState.addEventListener('change', () => {
+     profState.classList.toggle('valid', !!profState.value);
+-    NG_LOC.populateLgas(profLga, profState.value);
++    filterProfLgaByState(profState.value);
++    profLga.value = '';
+     profLga.classList.remove('valid');
+   });
+   profLga.addEventListener('change', () => {
+     profLga.classList.toggle('valid', !!profLga.value);
+   });
+-}
++})();
+ function saveProfileLocation(){
+   const zone  = document.getElementById('profZoneSelect').value;
+   const state = document.getElementById('profStateSelect').value;

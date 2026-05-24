@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-digitalocean-droplet-1-clicks-pr316",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "commit=codex-cli-footer"
+  },
+  "pr": {
+    "number": 316,
+    "headSha": "d8fd2f414d16c088da4014c859215e9b04ba6141",
+    "baseSha": "6425391165a7ab983bdbac156b43f3cd0361e639",
+    "title": "Add codex cli 24 04",
+    "body": "## Summary\r\n\r\n- Adds a new **Codex CLI** 1-Click image for **Ubuntu 24.04**, installing Codex CLI v0.133.0 from GitHub releases with the bwrap sandbox helper and pre-configuring **DigitalOcean Gradient AI** as the inference provider.\r\n- Supports three ways to configure a Gradient model access key: **droplet environment variables** (`GRADIENT_KEY` / optional `GRADIENT_MODEL`), **`/opt/codex-cli.env`**, or an **interactive first-login setup wizard** — first boot auto-configures when a key is preset and skips the wizard.\r\n- Ships Gradient-specific defaults: **GPT-5.5** as the default model, a bundled **`gradient-models.json`** catalog, disabled Codex features unsupported by Gradient (`tool_search`, `multi_agent`), and a wrapper script that loads `MODEL_ACCESS_KEY` from `/etc/profile.d/codex-gradient.sh`.\r\n\r\n## What's included\r\n\r\n| Component | Purpose |\r\n|-----------|---------|\r\n| `template.json` | Packer builder (Ubuntu 24.04, s-1vcpu-1gb) |\r\n| `scripts/010-codex-cli.sh` | Install Codex + bwrap, deploy config and helper scripts |\r\n| `files/opt/apply-gradient-from-env.sh` | Apply `GRADIENT_KEY`/`GRADIENT_MODEL` on boot |\r\n| `files/opt/codex-cli.env` | Droplet env template |\r\n| `files/opt/setup-codex-cli.sh` | Interactive setup wizard (fallback) |\r\n| `files/opt/update-codex-cli.sh` | Update to latest GitHub release |\r\n| `files/root/.codex/config.toml` | Pre-configured Gradient provider |\r\n| `files/root/.codex/gradient-models.json` | Gradient model catalog |\r\n| `files/var/lib/cloud/scripts/per-instance/001_onboot` | First-boot: apply env or hook wizard |\r\n| `listing.md` / `README.md` | Marketplace listing and builder docs |\r\n\r\n",
+    "author": "scott",
+    "headRef": "add-codex-cli-24-04",
+    "repository": "digitalocean/droplet-1-clicks"
+  },
+  "diffRef": {
+    "repository": "digitalocean/droplet-1-clicks",
+    "headSha": "d8fd2f414d16c088da4014c859215e9b04ba6141",
+    "baseSha": "6425391165a7ab983bdbac156b43f3cd0361e639"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-digitalocean-droplet-1-clicks-pr316.diff",
+  "vendoredAt": "2026-05-24T03:12:34.700Z",
+  "collectedAt": "2026-05-24T03:12:34.700Z"
+}

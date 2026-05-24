@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24159",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24159,
+    "headSha": "c175f5c1d49d1a64137d61d50a3a5ee608e3c71f",
+    "baseSha": "7924743c38e9a28795c1533ab5143dceea5ca566",
+    "title": "code-mode: merge stored values by key",
+    "body": "## Summary\r\n\r\nChange code-mode stored value updates to merge writes by key instead of replacing the session's complete stored-value map after each cell completes.\r\n\r\nPreviously, each cell received a snapshot of stored values and returned the complete resulting map. When multiple cells ran concurrently, a later completion could overwrite values written by another cell because it committed an older snapshot.\r\n\r\nThis change moves stored-value ownership into `CodeModeService`:\r\n\r\n- Each runtime starts from the service's current stored values.\r\n- Runtime completion reports only keys written by that cell.\r\n- The service merges those writes into the current stored-value map on successful completion.\r\n- Core no longer replaces its stored-value state from a cell result.\r\n\r\nAs a result, concurrently executing cells can update different stored keys without clobbering one another.\r\n\r\nThe move into CodeModeService is motivated by a desire to have this lifetime tied to a new lifetime object on that side in a subsequent PR.\r\n",
+    "author": "cconger",
+    "headRef": "cconger/code-mode-session-storage",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "c175f5c1d49d1a64137d61d50a3a5ee608e3c71f",
+    "baseSha": "7924743c38e9a28795c1533ab5143dceea5ca566"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24159.diff",
+  "vendoredAt": "2026-05-24T03:20:48.855Z",
+  "collectedAt": "2026-05-24T03:20:48.855Z"
+}

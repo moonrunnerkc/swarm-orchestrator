@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "PR adds MediaType plumbing end-to-end as the body claims. internal/domain/call/entity.go adds validMediaTypes map and ValidMediaType() function over the existing MediaTypeAudio/MediaTypeVideo enums. service.go adds ErrInvalidMediaType, resolveMediaType() (defaults '' to MediaTypeAudio, rejects unknown), and replaces the hardcoded `MediaType: MediaTypeAudio` in CreateInboundCall/CreateOutboundCall/CreateInternalCall with `MediaType: mt` from the resolver, propagating the user's MediaType while preserving the audio default. repository.go adds MediaType to CallListFilter, mock_repo.go and infrastructure/mysql/call_repo.go both honor it (mock with `continue` filter, MySQL with `AND media_type = ?` clause). HTTP handler reads `media_type` from JSON body for Dial/InternalDial and from `?media_type=` query for List. FreeSWITCH verto.conf.xml adds outbound/inbound-video-codec-string VP8,H264 to both WS and WSS profiles. Six new tests (CreateVideoInbound/Outbound/Internal, DefaultMediaType_Audio, ValidMediaType cases, InvalidMediaType_Rejected, ListCalls_FilterMediaType) make real assertions, including the audio default and the totals after filtering. Backward-compat preserved (empty MediaType → audio).",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T14:00:00.000Z"
+}

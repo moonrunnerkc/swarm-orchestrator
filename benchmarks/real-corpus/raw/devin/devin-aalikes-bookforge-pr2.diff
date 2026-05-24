@@ -1,0 +1,2139 @@
+diff --git a/.env.example b/.env.example
+index 4e3d04b..d26dd66 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1,6 +1,10 @@
+ # Server
+ PORT=3000
+ 
++# Goodreads Integration
++# Find your user ID in your Goodreads profile URL: goodreads.com/user/show/YOUR_ID
++GOODREADS_USER_ID=your_goodreads_user_id_here
++
+ # Readwise Integration
+ READWISE_ACCESS_TOKEN=your_readwise_token_here
+ 
+diff --git a/lib/database.js b/lib/database.js
+index 1d716e1..c29057c 100644
+--- a/lib/database.js
++++ b/lib/database.js
+@@ -34,6 +34,12 @@ function initialize() {
+       file_name TEXT NOT NULL,
+       file_size INTEGER DEFAULT 0,
+       format TEXT NOT NULL,
++      reading_status TEXT DEFAULT 'to-read',
++      my_rating INTEGER DEFAULT 0,
++      goodreads_id TEXT DEFAULT '',
++      pages INTEGER DEFAULT 0,
++      date_read TEXT DEFAULT '',
++      review TEXT DEFAULT '',
+       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+     );
+@@ -54,6 +60,7 @@ function initialize() {
+       chapter_index INTEGER DEFAULT 0,
+       position REAL DEFAULT 0,
+       color TEXT DEFAULT '#ffeb3b',
++      source TEXT DEFAULT 'bookforge',
+       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+     );
+ 
+@@ -77,10 +84,34 @@ function initialize() {
+     CREATE INDEX IF NOT EXISTS idx_tags_book ON tags(book_id);
+     CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
+     CREATE INDEX IF NOT EXISTS idx_audio_book ON audio_files(book_id);
++    CREATE INDEX IF NOT EXISTS idx_books_status ON books(reading_status);
++    CREATE INDEX IF NOT EXISTS idx_books_goodreads ON books(goodreads_id);
+   `);
++
++  // Migration: add new columns to existing databases
++  const columns = conn.pragma('table_info(books)').map(c => c.name);
++  const migrations = [
++    ['reading_status', "ALTER TABLE books ADD COLUMN reading_status TEXT DEFAULT 'to-read'"],
++    ['my_rating', 'ALTER TABLE books ADD COLUMN my_rating INTEGER DEFAULT 0'],
++    ['goodreads_id', "ALTER TABLE books ADD COLUMN goodreads_id TEXT DEFAULT ''"],
++    ['pages', 'ALTER TABLE books ADD COLUMN pages INTEGER DEFAULT 0'],
++    ['date_read', "ALTER TABLE books ADD COLUMN date_read TEXT DEFAULT ''"],
++    ['review', "ALTER TABLE books ADD COLUMN review TEXT DEFAULT ''"]
++  ];
++
++  for (const [col, sql] of migrations) {
++    if (!columns.includes(col)) {
++      try { conn.exec(sql); } catch (e) { /* column may already exist */ }
++    }
++  }
++
++  const hlColumns = conn.pragma('table_info(highlights)').map(c => c.name);
++  if (!hlColumns.includes('source')) {
++    try { conn.exec("ALTER TABLE highlights ADD COLUMN source TEXT DEFAULT 'bookforge'"); } catch (e) { /* */ }
++  }
+ }
+ 
+-function getBooks({ search, tag, sort, order } = {}) {
++function getBooks({ search, tag, sort, order, status } = {}) {
+   const conn = getDb();
+   let query = `
+     SELECT b.*, GROUP_CONCAT(t.tag) as tags
+@@ -100,13 +131,18 @@ function getBooks({ search, tag, sort, order } = {}) {
+     params.push(tag);
+   }
+ 
++  if (status) {
++    conditions.push('b.reading_status = ?');
++    params.push(status);
++  }
++
+   if (conditions.length > 0) {
+     query += ' WHERE ' + conditions.join(' AND ');
+   }
+ 
+   query += ' GROUP BY b.id';
+ 
+-  const sortCol = ['title', 'author', 'created_at', 'file_size'].includes(sort) ? sort : 'created_at';
++  const sortCol = ['title', 'author', 'created_at', 'file_size', 'my_rating', 'reading_status'].includes(sort) ? sort : 'created_at';
+   const sortOrder = order === 'asc' ? 'ASC' : 'DESC';
+   query += ` ORDER BY b.${sortCol} ${sortOrder}`;
+ 
+@@ -126,17 +162,33 @@ function getBook(id) {
+   return { ...book, tags };
+ }
+ 
++function findBookByGoodreadsId(goodreadsId) {
++  if (!goodreadsId) return null;
++  const conn = getDb();
++  return conn.prepare('SELECT * FROM books WHERE goodreads_id = ?').get(goodreadsId);
++}
++
++function findBookByTitle(title) {
++  if (!title) return null;
++  const conn = getDb();
++  return conn.prepare('SELECT * FROM books WHERE title = ? COLLATE NOCASE').get(title);
++}
++
+ function addBook(bookData) {
+   const conn = getDb();
+   const stmt = conn.prepare(`
+-    INSERT INTO books (id, title, author, description, language, publisher, published_date, cover_path, file_path, file_name, file_size, format)
+-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
++    INSERT INTO books (id, title, author, description, language, publisher, published_date, cover_path,
++      file_path, file_name, file_size, format, reading_status, my_rating, goodreads_id, pages, date_read, review)
++    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+   `);
+   stmt.run(
+-    bookData.id, bookData.title, bookData.author, bookData.description,
+-    bookData.language, bookData.publisher, bookData.published_date,
+-    bookData.cover_path, bookData.file_path, bookData.file_name,
+-    bookData.file_size, bookData.format
++    bookData.id, bookData.title, bookData.author, bookData.description || '',
++    bookData.language || 'en', bookData.publisher || '', bookData.published_date || '',
++    bookData.cover_path || '', bookData.file_path, bookData.file_name,
++    bookData.file_size || 0, bookData.format,
++    bookData.reading_status || 'to-read', bookData.my_rating || 0,
++    bookData.goodreads_id || '', bookData.pages || 0,
++    bookData.date_read || '', bookData.review || ''
+   );
+   return getBook(bookData.id);
+ }
+@@ -146,7 +198,8 @@ function updateBook(id, updates) {
+   const existing = getBook(id);
+   if (!existing) return null;
+ 
+-  const allowed = ['title', 'author', 'description', 'language', 'publisher', 'published_date'];
++  const allowed = ['title', 'author', 'description', 'language', 'publisher',
++    'published_date', 'reading_status', 'my_rating', 'goodreads_id', 'pages', 'date_read', 'review'];
+   const sets = [];
+   const params = [];
+ 
+@@ -198,9 +251,10 @@ function getHighlights(bookId) {
+ function addHighlight(data) {
+   const conn = getDb();
+   conn.prepare(`
+-    INSERT INTO highlights (id, book_id, text, note, chapter_index, position, color)
+-    VALUES (?, ?, ?, ?, ?, ?, ?)
+-  `).run(data.id, data.book_id, data.text, data.note, data.chapter_index, data.position, data.color);
++    INSERT INTO highlights (id, book_id, text, note, chapter_index, position, color, source)
++    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
++  `).run(data.id, data.book_id, data.text, data.note, data.chapter_index || 0,
++    data.position || 0, data.color || '#ffeb3b', data.source || 'bookforge');
+   return conn.prepare('SELECT * FROM highlights WHERE id = ?').get(data.id);
+ }
+ 
+@@ -242,10 +296,30 @@ function getAudioFiles(bookId) {
+   return conn.prepare('SELECT * FROM audio_files WHERE book_id = ? ORDER BY chapter_index').all(bookId);
+ }
+ 
++function getReadingStats() {
++  const conn = getDb();
++  const total = conn.prepare('SELECT COUNT(*) as count FROM books').get().count;
++  const byStatus = conn.prepare(`
++    SELECT reading_status, COUNT(*) as count FROM books GROUP BY reading_status
++  `).all();
++  const rated = conn.prepare(`
++    SELECT COUNT(*) as count, AVG(my_rating) as avg_rating FROM books WHERE my_rating > 0
++  `).get();
++
++  return {
++    total,
++    byStatus: byStatus.reduce((acc, r) => { acc[r.reading_status] = r.count; return acc; }, {}),
++    rated: rated.count,
++    averageRating: rated.avg_rating ? parseFloat(rated.avg_rating.toFixed(1)) : 0
++  };
++}
++
+ module.exports = {
+   initialize,
+   getBooks,
+   getBook,
++  findBookByGoodreadsId,
++  findBookByTitle,
+   addBook,
+   updateBook,
+   deleteBook,
+@@ -259,5 +333,6 @@ module.exports = {
+   addTag,
+   removeTag,
+   addAudioFile,
+-  getAudioFiles
++  getAudioFiles,
++  getReadingStats
+ };
+diff --git a/lib/integrations/goodreads.js b/lib/integrations/goodreads.js
+new file mode 100644
+index 0000000..02e7ea2
+--- /dev/null
++++ b/lib/integrations/goodreads.js
+@@ -0,0 +1,170 @@
++const fetch = require('node-fetch');
++const { parse } = require('csv-parse/sync');
++const { parseStringPromise } = require('xml2js');
++
++/**
++ * Goodreads Integration
++ *
++ * Since Goodreads retired their API (Dec 2020), we support:
++ * 1. CSV import — user exports from goodreads.com/review/import
++ * 2. RSS feed — pull shelves via public RSS (goodreads.com/review/list_rss/USER_ID)
++ * 3. Profile scrape — basic shelf counts from public profile
++ */
++
++const RSS_BASE = 'https://www.goodreads.com/review/list_rss';
++
++/**
++ * Parse a Goodreads CSV export into structured book data.
++ * Goodreads CSV columns: Book Id, Title, Author, Author l-f, Additional Authors,
++ * ISBN, ISBN13, My Rating, Average Rating, Publisher, Binding, Number of Pages,
++ * Year Published, Original Publication Year, Date Read, Date Added, Bookshelves,
++ * Bookshelves with positions, Exclusive Shelf, My Review, Spoiler, Private Notes,
++ * Read Count, Owned Copies
++ */
++function parseCSV(csvContent) {
++  // Goodreads exports ISBNs as ="VALUE" which confuses CSV parsers.
++  // Strip the leading = before parsing.
++  const cleaned = csvContent.replace(/="([^"]*)"/g, '"$1"');
++
++  const records = parse(cleaned, {
++    columns: true,
++    skip_empty_lines: true,
++    trim: true,
++    relax_column_count: true,
++    relax_quotes: true
++  });
++
++  return records.map(row => ({
++    goodreads_id: row['Book Id'] || '',
++    title: row['Title'] || 'Unknown',
++    author: row['Author'] || row['Author l-f'] || 'Unknown',
++    isbn: (row['ISBN'] || '').replace(/[="]/g, ''),
++    isbn13: (row['ISBN13'] || '').replace(/[="]/g, ''),
++    my_rating: parseInt(row['My Rating']) || 0,
++    average_rating: parseFloat(row['Average Rating']) || 0,
++    publisher: row['Publisher'] || '',
++    pages: parseInt(row['Number of Pages']) || 0,
++    year_published: row['Year Published'] || row['Original Publication Year'] || '',
++    date_read: row['Date Read'] || '',
++    date_added: row['Date Added'] || '',
++    shelves: (row['Bookshelves'] || '').split(',').map(s => s.trim()).filter(Boolean),
++    exclusive_shelf: row['Exclusive Shelf'] || '',
++    review: row['My Review'] || '',
++    private_notes: row['Private Notes'] || '',
++    read_count: parseInt(row['Read Count']) || 0,
++    reading_status: mapShelfToStatus(row['Exclusive Shelf'] || '')
++  }));
++}
++
++function mapShelfToStatus(shelf) {
++  switch (shelf.toLowerCase().trim()) {
++    case 'read': return 'finished';
++    case 'currently-reading': return 'currently-reading';
++    case 'to-read': return 'to-read';
++    default: return 'to-read';
++  }
++}
++
++/**
++ * Fetch a user's shelf via Goodreads RSS feed.
++ * @param {string} userId - Goodreads user ID (numeric)
++ * @param {string} shelf - Shelf name: read, currently-reading, to-read, or custom
++ * @param {number} page - Page number (default 1, 200 items per page)
++ */
++async function fetchShelfRSS(userId, shelf = 'read', page = 1) {
++  if (!userId) throw new Error('GOODREADS_USER_ID not configured');
++
++  const url = `${RSS_BASE}/${userId}?shelf=${encodeURIComponent(shelf)}&page=${page}&per_page=200`;
++  const response = await fetch(url, {
++    headers: { 'User-Agent': 'BookForge/1.0' }
++  });
++
++  if (!response.ok) {
++    throw new Error(`Goodreads RSS error: ${response.status} — check if user ID ${userId} is valid and profile is public`);
++  }
++
++  const xml = await response.text();
++  const parsed = await parseStringPromise(xml, { explicitArray: false });
++  const channel = parsed.rss && parsed.rss.channel;
++  if (!channel || !channel.item) return [];
++
++  const items = Array.isArray(channel.item) ? channel.item : [channel.item];
++
++  return items.map(item => ({
++    goodreads_id: item.book_id || '',
++    title: cleanTitle(item.title || ''),
++    author: item.author_name || 'Unknown',
++    isbn: (item.isbn || '').trim(),
++    pages: parseInt(item.num_pages) || 0,
++    average_rating: parseFloat(item.average_rating) || 0,
++    my_rating: parseInt(item.user_rating) || 0,
++    date_read: item.user_read_at || '',
++    date_added: item.user_date_added || '',
++    shelves: (item.user_shelves || '').split(',').map(s => s.trim()).filter(Boolean),
++    description: stripHtml(item.book_description || ''),
++    cover_url: item.book_large_image_url || item.book_medium_image_url || item.book_small_image_url || '',
++    goodreads_url: item.link || '',
++    reading_status: mapShelfToStatus(shelf),
++    review: stripHtml(item.user_review || '')
++  }));
++}
++
++/**
++ * Fetch all shelves for a user (read, currently-reading, to-read).
++ */
++async function fetchAllShelves(userId) {
++  const shelves = ['read', 'currently-reading', 'to-read'];
++  const allBooks = [];
++  const seen = new Set();
++
++  for (const shelf of shelves) {
++    try {
++      const books = await fetchShelfRSS(userId, shelf);
++      for (const book of books) {
++        const key = book.goodreads_id || book.title;
++        if (!seen.has(key)) {
++          seen.add(key);
++          allBooks.push(book);
++        }
++      }
++    } catch (err) {
++      console.warn(`Failed to fetch shelf "${shelf}":`, err.message);
++    }
++  }
++
++  return allBooks;
++}
++
++/**
++ * Get reading stats summary from imported Goodreads data.
++ */
++function getStats(books) {
++  const byStatus = { 'finished': 0, 'currently-reading': 0, 'to-read': 0 };
++  let totalPages = 0;
++  let totalRated = 0;
++  let ratingSum = 0;
++
++  for (const b of books) {
++    if (byStatus[b.reading_status] !== undefined) byStatus[b.reading_status]++;
++    if (b.pages) totalPages += b.pages;
++    if (b.my_rating > 0) { totalRated++; ratingSum += b.my_rating; }
++  }
++
++  return {
++    total: books.length,
++    byStatus,
++    totalPages,
++    averageRating: totalRated > 0 ? (ratingSum / totalRated).toFixed(1) : 0,
++    totalRated
++  };
++}
++
++function cleanTitle(title) {
++  return title.replace(/<!\[CDATA\[(.*?)\]\]>/gs, '$1').trim();
++}
++
++function stripHtml(html) {
++  return (html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
++}
++
++module.exports = { parseCSV, fetchShelfRSS, fetchAllShelves, getStats, mapShelfToStatus };
+diff --git a/lib/integrations/index.js b/lib/integrations/index.js
+index 419cd65..2440c6a 100644
+--- a/lib/integrations/index.js
++++ b/lib/integrations/index.js
+@@ -2,18 +2,24 @@ const readwise = require('./readwise');
+ const notion = require('./notion');
+ const github = require('./github');
+ const obsidian = require('./obsidian');
++const goodreads = require('./goodreads');
+ 
+ function getStatus() {
+   return {
++    goodreads: {
++      configured: !!process.env.GOODREADS_USER_ID,
++      name: 'Goodreads',
++      description: 'Import shelves, ratings, and reading status from Goodreads'
++    },
+     readwise: {
+       configured: !!process.env.READWISE_ACCESS_TOKEN,
+       name: 'Readwise',
+-      description: 'Sync highlights and reading progress'
++      description: 'Sync highlights and reading progress bidirectionally'
+     },
+     notion: {
+       configured: !!(process.env.NOTION_API_KEY && process.env.NOTION_DATABASE_ID),
+       name: 'Notion',
+-      description: 'Sync book data and notes to a Notion database'
++      description: 'Sync book data, highlights, and reading status to a Notion database'
+     },
+     github: {
+       configured: !!(process.env.GITHUB_TOKEN && process.env.GITHUB_REPO),
+@@ -67,4 +73,38 @@ async function syncAll(book, highlights, progress) {
+   return results;
+ }
+ 
+-module.exports = { readwise, notion, github, obsidian, getStatus, syncAll };
++/**
++ * Readwise → Notion pipeline: pull highlights from Readwise and push to Notion.
++ */
++async function readwiseToNotion() {
++  const booksWithHighlights = await readwise.getBooksWithHighlights();
++  const results = [];
++
++  for (const { book, highlights } of booksWithHighlights) {
++    if (highlights.length === 0) continue;
++    try {
++      const result = await notion.syncReadwiseHighlights(book, highlights);
++      results.push({ title: book.title, ...result });
++    } catch (err) {
++      results.push({ title: book.title, success: false, error: err.message });
++    }
++  }
++
++  return {
++    success: true,
++    booksProcessed: results.length,
++    totalHighlights: booksWithHighlights.reduce((sum, bh) => sum + bh.highlights.length, 0),
++    results
++  };
++}
++
++module.exports = {
++  readwise,
++  notion,
++  github,
++  obsidian,
++  goodreads,
++  getStatus,
++  syncAll,
++  readwiseToNotion
++};
+diff --git a/lib/integrations/notion.js b/lib/integrations/notion.js
+index 9a841b4..0275467 100644
+--- a/lib/integrations/notion.js
++++ b/lib/integrations/notion.js
+@@ -13,11 +13,14 @@ function getHeaders() {
+   };
+ }
+ 
++/**
++ * Sync a book to Notion with rich properties.
++ * Creates or updates a page in the configured database.
++ */
+ async function syncBook(book, highlights, progress) {
+   const databaseId = process.env.NOTION_DATABASE_ID;
+   if (!databaseId) throw new Error('NOTION_DATABASE_ID not configured');
+ 
+-  // Check if page already exists for this book
+   const existing = await findExistingPage(databaseId, book.title);
+ 
+   const properties = {
+@@ -31,43 +34,151 @@ async function syncBook(book, highlights, progress) {
+     properties['Progress'] = { number: progress.percentage || 0 };
+   }
+ 
++  if (book.reading_status) {
++    properties['Status'] = { select: { name: formatStatus(book.reading_status) } };
++  }
++
++  if (book.my_rating && book.my_rating > 0) {
++    properties['Rating'] = { number: book.my_rating };
++  }
++
++  if (book.pages) {
++    properties['Pages'] = { number: book.pages };
++  }
++
++  if (highlights && highlights.length > 0) {
++    properties['Highlights'] = { number: highlights.length };
++  }
++
++  if (book.date_read) {
++    try {
++      const d = new Date(book.date_read);
++      if (!isNaN(d.getTime())) {
++        properties['Date Read'] = { date: { start: d.toISOString().split('T')[0] } };
++      }
++    } catch (e) { /* skip invalid dates */ }
++  }
++
++  const children = buildPageContent(book, highlights);
++
++  let result;
++  if (existing) {
++    result = await fetch(`${API_BASE}/pages/${existing.id}`, {
++      method: 'PATCH',
++      headers: getHeaders(),
++      body: JSON.stringify({ properties })
++    });
++
++    if (children.length > 0) {
++      await appendBlocks(existing.id, children);
++    }
++  } else {
++    result = await fetch(`${API_BASE}/pages`, {
++      method: 'POST',
++      headers: getHeaders(),
++      body: JSON.stringify({
++        parent: { database_id: databaseId },
++        properties,
++        children: children.slice(0, 100)
++      })
++    });
++  }
++
++  if (!result.ok) {
++    const text = await result.text();
++    throw new Error(`Notion API error: ${result.status} - ${text}`);
++  }
++
++  const data = await result.json();
++  return { success: true, pageId: data.id, updated: !!existing };
++}
++
++/**
++ * Sync Readwise highlights for a book directly to Notion.
++ * Creates a rich page with all highlights organized by book.
++ */
++async function syncReadwiseHighlights(bookData, highlights) {
++  const databaseId = process.env.NOTION_DATABASE_ID;
++  if (!databaseId) throw new Error('NOTION_DATABASE_ID not configured');
++
++  const existing = await findExistingPage(databaseId, bookData.title);
++
++  const properties = {
++    'Title': { title: [{ text: { content: bookData.title } }] },
++    'Author': { rich_text: [{ text: { content: bookData.author || 'Unknown' } }] },
++    'Highlights': { number: highlights.length },
++    'Source': { rich_text: [{ text: { content: bookData.source || 'Readwise' } }] }
++  };
++
++  if (bookData.category) {
++    properties['Category'] = { select: { name: bookData.category } };
++  }
++
+   const children = [];
+ 
+-  if (book.description) {
++  children.push({
++    object: 'block',
++    type: 'callout',
++    callout: {
++      icon: { emoji: '📚' },
++      rich_text: [{
++        text: {
++          content: `${highlights.length} highlight${highlights.length !== 1 ? 's' : ''} imported from Readwise`
++        }
++      }]
++    }
++  });
++
++  if (bookData.cover_url) {
+     children.push({
+       object: 'block',
+       type: 'paragraph',
+       paragraph: {
+-        rich_text: [{ text: { content: book.description.slice(0, 2000) } }]
++        rich_text: [{ text: { content: `Cover: ${bookData.cover_url}` } }]
+       }
+     });
+   }
+ 
+-  if (highlights && highlights.length > 0) {
++  children.push({
++    object: 'block',
++    type: 'heading_2',
++    heading_2: { rich_text: [{ text: { content: 'Highlights' } }] }
++  });
++
++  for (const h of highlights.slice(0, 80)) {
+     children.push({
+       object: 'block',
+-      type: 'heading_2',
+-      heading_2: { rich_text: [{ text: { content: 'Highlights' } }] }
++      type: 'quote',
++      quote: {
++        rich_text: [{ text: { content: h.text.slice(0, 2000) } }],
++        color: mapHighlightColor(h.color)
++      }
+     });
+ 
+-    for (const h of highlights.slice(0, 50)) {
++    if (h.note) {
+       children.push({
+         object: 'block',
+-        type: 'quote',
+-        quote: {
+-          rich_text: [{ text: { content: h.text.slice(0, 2000) } }]
++        type: 'paragraph',
++        paragraph: {
++          rich_text: [{
++            text: { content: `💭 ${h.note.slice(0, 2000)}` },
++            annotations: { italic: true, color: 'gray' }
++          }]
+         }
+       });
++    }
+ 
+-      if (h.note) {
+-        children.push({
+-          object: 'block',
+-          type: 'paragraph',
+-          paragraph: {
+-            rich_text: [{ text: { content: `Note: ${h.note.slice(0, 2000)}` } }]
+-          }
+-        });
+-      }
++    if (h.tags && h.tags.length > 0) {
++      children.push({
++        object: 'block',
++        type: 'paragraph',
++        paragraph: {
++          rich_text: [{
++            text: { content: `🏷️ ${h.tags.join(', ')}` },
++            annotations: { color: 'gray' }
++          }]
++        }
++      });
+     }
+   }
+ 
+@@ -78,6 +189,7 @@ async function syncBook(book, highlights, progress) {
+       headers: getHeaders(),
+       body: JSON.stringify({ properties })
+     });
++    await appendBlocks(existing.id, children);
+   } else {
+     result = await fetch(`${API_BASE}/pages`, {
+       method: 'POST',
+@@ -96,7 +208,107 @@ async function syncBook(book, highlights, progress) {
+   }
+ 
+   const data = await result.json();
+-  return { success: true, pageId: data.id, updated: !!existing };
++  return { success: true, pageId: data.id, updated: !!existing, highlightCount: highlights.length };
++}
++
++/**
++ * Query all pages from the Notion database (for import back to BookForge).
++ */
++async function getPages() {
++  const databaseId = process.env.NOTION_DATABASE_ID;
++  if (!databaseId) throw new Error('NOTION_DATABASE_ID not configured');
++
++  const allPages = [];
++  let startCursor;
++
++  do {
++    const body = { page_size: 100 };
++    if (startCursor) body.start_cursor = startCursor;
++
++    const response = await fetch(`${API_BASE}/databases/${databaseId}/query`, {
++      method: 'POST',
++      headers: getHeaders(),
++      body: JSON.stringify(body)
++    });
++
++    if (!response.ok) throw new Error(`Notion API error: ${response.status}`);
++    const data = await response.json();
++    allPages.push(...(data.results || []));
++    startCursor = data.has_more ? data.next_cursor : null;
++  } while (startCursor);
++
++  return allPages.map(page => ({
++    notion_id: page.id,
++    title: extractTitle(page.properties),
++    author: extractText(page.properties, 'Author'),
++    status: extractSelect(page.properties, 'Status'),
++    rating: extractNumber(page.properties, 'Rating'),
++    progress: extractNumber(page.properties, 'Progress'),
++    highlights_count: extractNumber(page.properties, 'Highlights'),
++    last_edited: page.last_edited_time
++  }));
++}
++
++// Helper functions
++
++function buildPageContent(book, highlights) {
++  const children = [];
++
++  if (book.description) {
++    children.push({
++      object: 'block',
++      type: 'paragraph',
++      paragraph: {
++        rich_text: [{ text: { content: book.description.slice(0, 2000) } }]
++      }
++    });
++  }
++
++  if (highlights && highlights.length > 0) {
++    children.push({
++      object: 'block',
++      type: 'heading_2',
++      heading_2: { rich_text: [{ text: { content: 'Highlights' } }] }
++    });
++
++    for (const h of highlights.slice(0, 50)) {
++      children.push({
++        object: 'block',
++        type: 'quote',
++        quote: { rich_text: [{ text: { content: h.text.slice(0, 2000) } }] }
++      });
++      if (h.note) {
++        children.push({
++          object: 'block',
++          type: 'paragraph',
++          paragraph: {
++            rich_text: [{ text: { content: `Note: ${h.note.slice(0, 2000)}` } }]
++          }
++        });
++      }
++    }
++  }
++
++  return children;
++}
++
++async function appendBlocks(pageId, blocks) {
++  const batches = [];
++  for (let i = 0; i < blocks.length; i += 100) {
++    batches.push(blocks.slice(i, i + 100));
++  }
++
++  for (const batch of batches) {
++    const response = await fetch(`${API_BASE}/blocks/${pageId}/children`, {
++      method: 'PATCH',
++      headers: getHeaders(),
++      body: JSON.stringify({ children: batch })
++    });
++    if (!response.ok) {
++      const text = await response.text();
++      console.warn(`Notion append blocks warning: ${response.status} - ${text}`);
++    }
++  }
+ }
+ 
+ async function findExistingPage(databaseId, title) {
+@@ -104,10 +316,7 @@ async function findExistingPage(databaseId, title) {
+     method: 'POST',
+     headers: getHeaders(),
+     body: JSON.stringify({
+-      filter: {
+-        property: 'Title',
+-        title: { equals: title }
+-      },
++      filter: { property: 'Title', title: { equals: title } },
+       page_size: 1
+     })
+   });
+@@ -117,4 +326,46 @@ async function findExistingPage(databaseId, title) {
+   return data.results && data.results.length > 0 ? data.results[0] : null;
+ }
+ 
+-module.exports = { syncBook };
++function formatStatus(status) {
++  switch (status) {
++    case 'finished': return 'Finished';
++    case 'currently-reading': return 'Currently Reading';
++    case 'to-read': return 'To Read';
++    case 'abandoned': return 'Abandoned';
++    default: return status;
++  }
++}
++
++function mapHighlightColor(color) {
++  const map = {
++    'yellow': 'yellow_background',
++    'blue': 'blue_background',
++    'pink': 'pink_background',
++    'orange': 'orange_background'
++  };
++  return map[(color || '').toLowerCase()] || 'default';
++}
++
++function extractTitle(properties) {
++  const p = properties['Title'];
++  if (!p || !p.title || p.title.length === 0) return '';
++  return p.title.map(t => t.plain_text).join('');
++}
++
++function extractText(properties, name) {
++  const p = properties[name];
++  if (!p || !p.rich_text || p.rich_text.length === 0) return '';
++  return p.rich_text.map(t => t.plain_text).join('');
++}
++
++function extractSelect(properties, name) {
++  const p = properties[name];
++  return (p && p.select && p.select.name) || '';
++}
++
++function extractNumber(properties, name) {
++  const p = properties[name];
++  return (p && typeof p.number === 'number') ? p.number : 0;
++}
++
++module.exports = { syncBook, syncReadwiseHighlights, getPages };
+diff --git a/lib/integrations/readwise.js b/lib/integrations/readwise.js
+index 01f3878..db806df 100644
+--- a/lib/integrations/readwise.js
++++ b/lib/integrations/readwise.js
+@@ -2,10 +2,23 @@ const fetch = require('node-fetch');
+ 
+ const API_BASE = 'https://readwise.io/api/v2';
+ 
+-async function syncHighlights(book, highlights) {
++function getToken() {
+   const token = process.env.READWISE_ACCESS_TOKEN;
+   if (!token) throw new Error('READWISE_ACCESS_TOKEN not configured');
++  return token;
++}
+ 
++function headers() {
++  return {
++    'Authorization': `Token ${getToken()}`,
++    'Content-Type': 'application/json'
++  };
++}
++
++/**
++ * Push highlights from BookForge to Readwise.
++ */
++async function syncHighlights(book, highlights) {
+   if (!highlights || highlights.length === 0) {
+     return { success: true, message: 'No highlights to sync', count: 0 };
+   }
+@@ -24,10 +37,7 @@ async function syncHighlights(book, highlights) {
+ 
+   const response = await fetch(`${API_BASE}/highlights/`, {
+     method: 'POST',
+-    headers: {
+-      'Authorization': `Token ${token}`,
+-      'Content-Type': 'application/json'
+-    },
++    headers: headers(),
+     body: JSON.stringify(payload)
+   });
+ 
+@@ -40,16 +50,100 @@ async function syncHighlights(book, highlights) {
+   return { success: true, count: highlights.length, response: data };
+ }
+ 
+-async function getBooks() {
+-  const token = process.env.READWISE_ACCESS_TOKEN;
+-  if (!token) throw new Error('READWISE_ACCESS_TOKEN not configured');
++/**
++ * Get all books from Readwise library (paginated).
++ */
++async function getBooks(category) {
++  const allBooks = [];
++  let nextUrl = `${API_BASE}/books/?page_size=100${category ? `&category=${category}` : ''}`;
+ 
+-  const response = await fetch(`${API_BASE}/books/`, {
+-    headers: { 'Authorization': `Token ${token}` }
+-  });
++  while (nextUrl) {
++    const response = await fetch(nextUrl, { headers: headers() });
++    if (!response.ok) throw new Error(`Readwise API error: ${response.status}`);
++    const data = await response.json();
++    allBooks.push(...(data.results || []));
++    nextUrl = data.next;
++  }
++
++  return allBooks;
++}
++
++/**
++ * Pull all highlights from Readwise (paginated).
++ * Optionally filter by book_id.
++ */
++async function getHighlights(bookId) {
++  const allHighlights = [];
++  let nextUrl = `${API_BASE}/highlights/?page_size=100${bookId ? `&book_id=${bookId}` : ''}`;
+ 
+-  if (!response.ok) throw new Error(`Readwise API error: ${response.status}`);
+-  return response.json();
++  while (nextUrl) {
++    const response = await fetch(nextUrl, { headers: headers() });
++    if (!response.ok) throw new Error(`Readwise API error: ${response.status}`);
++    const data = await response.json();
++    allHighlights.push(...(data.results || []));
++    nextUrl = data.next;
++  }
++
++  return allHighlights;
++}
++
++/**
++ * Get books with their highlights from Readwise.
++ * Returns array of { book, highlights } objects.
++ */
++async function getBooksWithHighlights() {
++  const books = await getBooks('books');
++  const allHighlights = await getHighlights();
++
++  const highlightsByBook = {};
++  for (const h of allHighlights) {
++    const bid = h.book_id;
++    if (!highlightsByBook[bid]) highlightsByBook[bid] = [];
++    highlightsByBook[bid].push({
++      id: h.id,
++      text: h.text,
++      note: h.note || '',
++      location: h.location || 0,
++      location_type: h.location_type || '',
++      highlighted_at: h.highlighted_at,
++      color: h.color || '',
++      tags: (h.tags || []).map(t => t.name)
++    });
++  }
++
++  return books.map(b => ({
++    book: {
++      readwise_id: b.id,
++      title: b.title,
++      author: b.author,
++      category: b.category,
++      source: b.source,
++      cover_url: b.cover_image_url,
++      highlights_count: b.num_highlights,
++      last_highlight_at: b.last_highlight_at
++    },
++    highlights: highlightsByBook[b.id] || []
++  }));
++}
++
++/**
++ * Import Readwise highlights into BookForge's highlight store.
++ * Returns summary of what was imported.
++ */
++async function importHighlights() {
++  const booksWithHighlights = await getBooksWithHighlights();
++  return {
++    success: true,
++    books: booksWithHighlights.length,
++    totalHighlights: booksWithHighlights.reduce((sum, bh) => sum + bh.highlights.length, 0),
++    data: booksWithHighlights
++  };
+ }
+ 
+-module.exports = { syncHighlights, getBooks };
++module.exports = {
++  syncHighlights,
++  getBooks,
++  getHighlights,
++  getBooksWithHighlights,
++  importHighlights
++};
+diff --git a/package-lock.json b/package-lock.json
+index 40c000d..55cbcb2 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -10,6 +10,7 @@
+       "license": "MIT",
+       "dependencies": {
+         "better-sqlite3": "^11.0.0",
++        "csv-parse": "^6.2.1",
+         "dotenv": "^16.4.0",
+         "epub2": "^3.0.2",
+         "express": "^4.21.0",
+@@ -642,6 +643,12 @@
+         "node": ">= 8"
+       }
+     },
++    "node_modules/csv-parse": {
++      "version": "6.2.1",
++      "resolved": "https://registry.npmjs.org/csv-parse/-/csv-parse-6.2.1.tgz",
++      "integrity": "sha512-LRLMV+UCyfMokp8Wb411duBf1gaBKJfOfBWU9eHMJ+b+cJYZsNu3AFmjJf3+yPGd59Exz1TsMjaSFyxnYB9+IQ==",
++      "license": "MIT"
++    },
+     "node_modules/debug": {
+       "version": "4.4.3",
+       "resolved": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz",
+diff --git a/package.json b/package.json
+index c15629a..d3e667b 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "bookforge",
+-  "version": "1.0.0",
++  "version": "1.1.0",
+   "description": "Modern web-based e-book management hub with audiobook generation and reading platform integrations",
+   "main": "server.js",
+   "scripts": {
+@@ -16,12 +16,14 @@
+     "readwise",
+     "notion",
+     "obsidian",
+-    "calibre"
++    "calibre",
++    "goodreads"
+   ],
+   "author": "Shah Saint-Cyr",
+   "license": "MIT",
+   "dependencies": {
+     "better-sqlite3": "^11.0.0",
++    "csv-parse": "^6.2.1",
+     "dotenv": "^16.4.0",
+     "epub2": "^3.0.2",
+     "express": "^4.21.0",
+diff --git a/public/css/styles.css b/public/css/styles.css
+index f61b414..d7b24b1 100644
+--- a/public/css/styles.css
++++ b/public/css/styles.css
+@@ -1137,6 +1137,9 @@ a:hover { color: var(--accent-hover); }
+ .integration-card[data-integration="github"]::before {
+   background: linear-gradient(90deg, #333, #666);
+ }
++.integration-card[data-integration="goodreads"]::before {
++  background: linear-gradient(90deg, #553b08, #8b6914);
++}
+ .integration-card[data-integration="obsidian"]::before {
+   background: linear-gradient(90deg, #7c3aed, #a78bfa);
+ }
+@@ -1161,10 +1164,12 @@ a:hover { color: var(--accent-hover); }
+   box-shadow: var(--shadow-sm);
+ }
+ 
++.goodreads-icon { background: linear-gradient(135deg, #553b08, #8b6914); color: #f4e2a6; font-size: 0.85rem; }
+ .readwise-icon { background: linear-gradient(135deg, #5C3D2E, #7a5040); color: #FCA311; }
+ .notion-icon { background: #fff; color: #000; }
+ .github-icon { background: linear-gradient(135deg, #24292e, #444); color: #fff; }
+ .obsidian-icon { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; }
++.bookforge-icon { background: linear-gradient(135deg, var(--accent), var(--accent-hover)); color: #fff; }
+ 
+ .integration-header h3 {
+   font-size: 1rem;
+@@ -1401,6 +1406,273 @@ a:hover { color: var(--accent-hover); }
+ }
+ ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+ 
++/* ============================================================
++   Pipelines
++   ============================================================ */
++.pipelines-section {
++  margin-bottom: 2rem;
++}
++
++.section-title {
++  font-size: 1.1rem;
++  font-weight: 700;
++  margin-bottom: 1rem;
++  color: var(--text-primary);
++}
++
++.pipeline-cards {
++  display: grid;
++  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
++  gap: 1.25rem;
++  margin-bottom: 2rem;
++}
++
++.pipeline-card {
++  background: var(--bg-card);
++  border: 1px solid var(--border);
++  border-radius: var(--radius);
++  padding: 1.5rem;
++  cursor: pointer;
++  transition: all var(--transition);
++  position: relative;
++  overflow: hidden;
++}
++.pipeline-card::before {
++  content: '';
++  position: absolute;
++  top: 0;
++  left: 0;
++  right: 0;
++  height: 3px;
++  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
++  opacity: 0;
++  transition: opacity var(--transition);
++}
++.pipeline-card:hover {
++  border-color: var(--accent);
++  box-shadow: var(--shadow-sm);
++}
++.pipeline-card:hover::before {
++  opacity: 1;
++}
++
++.pipeline-flow {
++  display: flex;
++  align-items: center;
++  gap: 0.75rem;
++  margin-bottom: 1rem;
++}
++
++.pipeline-node {
++  width: 38px;
++  height: 38px;
++  border-radius: var(--radius-sm);
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  font-weight: 800;
++  font-size: 1rem;
++  box-shadow: var(--shadow-sm);
++}
++
++.pipeline-arrow {
++  font-size: 1.5rem;
++  color: var(--accent);
++  font-weight: 300;
++}
++
++.pipeline-card h4 {
++  font-size: 0.95rem;
++  font-weight: 700;
++  margin-bottom: 0.35rem;
++}
++
++.pipeline-card p {
++  font-size: 0.78rem;
++  color: var(--text-muted);
++  margin-bottom: 1rem;
++  line-height: 1.5;
++}
++
++/* ============================================================
++   Reading Status & Rating
++   ============================================================ */
++.status-selector {
++  display: flex;
++  gap: 0.4rem;
++  flex-wrap: wrap;
++  margin-bottom: 0.85rem;
++}
++
++.status-btn {
++  padding: 0.3rem 0.7rem;
++  border-radius: 999px;
++  border: 1px solid var(--border);
++  background: var(--bg-tertiary);
++  color: var(--text-muted);
++  font-size: 0.72rem;
++  font-weight: 600;
++  cursor: pointer;
++  transition: all var(--transition);
++  font-family: var(--font-sans);
++}
++.status-btn:hover {
++  border-color: var(--accent);
++  color: var(--accent);
++}
++.status-btn.active {
++  background: var(--accent-muted);
++  color: var(--accent);
++  border-color: var(--accent);
++}
++
++.rating-stars {
++  display: flex;
++  align-items: center;
++  gap: 0.2rem;
++  margin-bottom: 0.85rem;
++}
++.rating-stars .star {
++  font-size: 1.4rem;
++  cursor: pointer;
++  color: var(--border);
++  transition: color 0.15s;
++}
++.rating-stars .star:hover,
++.rating-stars .star.filled {
++  color: #f59e0b;
++}
++.rating-stars .rating-text {
++  margin-left: 0.5rem;
++  font-size: 0.82rem;
++  color: var(--text-muted);
++  font-weight: 600;
++}
++
++/* ============================================================
++   Goodreads Import Modal
++   ============================================================ */
++.import-tabs {
++  display: flex;
++  gap: 0.5rem;
++  margin-bottom: 1.5rem;
++  border-bottom: 1px solid var(--border);
++  padding-bottom: 0.5rem;
++}
++
++.tab-btn {
++  padding: 0.5rem 1.25rem;
++  border: none;
++  background: none;
++  color: var(--text-muted);
++  font-size: 0.88rem;
++  font-weight: 600;
++  cursor: pointer;
++  border-bottom: 2px solid transparent;
++  transition: all var(--transition);
++  font-family: var(--font-sans);
++}
++.tab-btn:hover {
++  color: var(--text-primary);
++}
++.tab-btn.active {
++  color: var(--accent);
++  border-bottom-color: var(--accent);
++}
++
++.import-tab {
++  display: none;
++}
++.import-tab.active {
++  display: block;
++}
++
++.import-tab p {
++  font-size: 0.85rem;
++  color: var(--text-secondary);
++  margin-bottom: 1rem;
++  line-height: 1.6;
++}
++
++.form-group {
++  margin-bottom: 1rem;
++}
++.form-group label {
++  display: block;
++  font-size: 0.82rem;
++  font-weight: 600;
++  margin-bottom: 0.35rem;
++  color: var(--text-primary);
++}
++.form-group small {
++  display: block;
++  margin-top: 0.25rem;
++  font-size: 0.72rem;
++  color: var(--text-muted);
++}
++
++.form-input {
++  width: 100%;
++  padding: 0.55rem 0.85rem;
++  background: var(--bg-tertiary);
++  border: 1px solid var(--border);
++  border-radius: var(--radius-xs);
++  color: var(--text-primary);
++  font-size: 0.88rem;
++  font-family: var(--font-sans);
++  outline: none;
++  transition: all var(--transition);
++}
++.form-input:focus {
++  border-color: var(--accent);
++  box-shadow: 0 0 0 3px var(--accent-glow);
++}
++
++.import-status {
++  margin-top: 1rem;
++  padding: 1rem;
++  background: var(--bg-tertiary);
++  border-radius: var(--radius-sm);
++  font-size: 0.85rem;
++  line-height: 1.6;
++}
++
++.import-results h4 {
++  font-size: 1rem;
++  font-weight: 700;
++  margin-bottom: 0.75rem;
++  color: var(--success);
++}
++
++.stats-grid {
++  display: grid;
++  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
++  gap: 0.75rem;
++  margin-bottom: 0.75rem;
++}
++
++.stat {
++  text-align: center;
++  padding: 0.5rem;
++  background: var(--bg-card);
++  border-radius: var(--radius-xs);
++  border: 1px solid var(--border);
++}
++.stat .stat-value {
++  display: block;
++  font-size: 1.35rem;
++  font-weight: 800;
++  color: var(--accent);
++}
++.stat .stat-label {
++  display: block;
++  font-size: 0.68rem;
++  color: var(--text-muted);
++  font-weight: 600;
++  text-transform: uppercase;
++  letter-spacing: 0.03em;
++}
++
+ /* ============================================================
+    Responsive
+    ============================================================ */
+diff --git a/public/index.html b/public/index.html
+index 1090d42..b36408d 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -177,14 +177,62 @@ <h4>Now Playing</h4>
+       <header class="view-header">
+         <h2>Integrations</h2>
+       </header>
++
++      <!-- Pipelines Section -->
++      <div class="pipelines-section">
++        <h3 class="section-title">Pipelines</h3>
++        <div class="pipeline-cards">
++          <div class="pipeline-card" onclick="app.runReadwiseToNotion()">
++            <div class="pipeline-flow">
++              <span class="pipeline-node readwise-icon">R</span>
++              <span class="pipeline-arrow">→</span>
++              <span class="pipeline-node notion-icon">N</span>
++            </div>
++            <h4>Readwise → Notion</h4>
++            <p>Pull all highlights from Readwise and sync them to your Notion reading database</p>
++            <button class="btn btn-sm btn-primary">Run Pipeline</button>
++          </div>
++          <div class="pipeline-card" onclick="app.importReadwiseHighlights()">
++            <div class="pipeline-flow">
++              <span class="pipeline-node readwise-icon">R</span>
++              <span class="pipeline-arrow">→</span>
++              <span class="pipeline-node bookforge-icon">B</span>
++            </div>
++            <h4>Readwise → BookForge</h4>
++            <p>Import all your Readwise highlights into BookForge's local library</p>
++            <button class="btn btn-sm btn-primary">Import Highlights</button>
++          </div>
++        </div>
++      </div>
++
++      <h3 class="section-title">Connected Services</h3>
+       <div class="integrations-grid" id="integrations-grid">
++        <!-- Goodreads -->
++        <div class="integration-card" data-integration="goodreads">
++          <div class="integration-header">
++            <div class="integration-icon goodreads-icon">GR</div>
++            <div>
++              <h3>Goodreads</h3>
++              <p>Import shelves, ratings, and reading status</p>
++            </div>
++          </div>
++          <div class="integration-status" id="status-goodreads">
++            <span class="status-dot"></span>
++            <span class="status-text">Checking...</span>
++          </div>
++          <div class="integration-actions">
++            <button class="btn btn-sm btn-primary" onclick="app.openGoodreadsImport()">Import Library</button>
++            <button class="btn btn-sm" onclick="app.importGoodreadsRSS()">Sync via RSS</button>
++          </div>
++        </div>
++
+         <!-- Readwise -->
+         <div class="integration-card" data-integration="readwise">
+           <div class="integration-header">
+             <div class="integration-icon readwise-icon">R</div>
+             <div>
+               <h3>Readwise</h3>
+-              <p>Sync highlights and reading progress</p>
++              <p>Sync highlights bidirectionally</p>
+             </div>
+           </div>
+           <div class="integration-status" id="status-readwise">
+@@ -192,7 +240,8 @@ <h3>Readwise</h3>
+             <span class="status-text">Checking...</span>
+           </div>
+           <div class="integration-actions">
+-            <button class="btn btn-sm" onclick="app.syncIntegration('readwise')">Sync All Books</button>
++            <button class="btn btn-sm" onclick="app.syncIntegration('readwise')">Push Highlights</button>
++            <button class="btn btn-sm" onclick="app.importReadwiseHighlights()">Pull Highlights</button>
+           </div>
+         </div>
+ 
+@@ -202,7 +251,7 @@ <h3>Readwise</h3>
+             <div class="integration-icon notion-icon">N</div>
+             <div>
+               <h3>Notion</h3>
+-              <p>Sync book data and notes to a Notion database</p>
++              <p>Sync books, highlights, and status to Notion database</p>
+             </div>
+           </div>
+           <div class="integration-status" id="status-notion">
+@@ -211,6 +260,7 @@ <h3>Notion</h3>
+           </div>
+           <div class="integration-actions">
+             <button class="btn btn-sm" onclick="app.syncIntegration('notion')">Sync All Books</button>
++            <button class="btn btn-sm" onclick="app.runReadwiseToNotion()">Readwise → Notion</button>
+           </div>
+         </div>
+ 
+@@ -254,9 +304,14 @@ <h3>Obsidian</h3>
+       <div class="integration-help">
+         <h3>Setup Guide</h3>
+         <div class="help-cards">
++          <div class="help-card">
++            <h4>Goodreads</h4>
++            <p><strong>CSV Import:</strong> Go to <a href="https://www.goodreads.com/review/import" target="_blank">goodreads.com/review/import</a>, click "Export Library", and upload the CSV.</p>
++            <p><strong>RSS Sync:</strong> Set <code>GOODREADS_USER_ID</code> in your <code>.env</code>. Find your ID in your Goodreads profile URL.</p>
++          </div>
+           <div class="help-card">
+             <h4>Readwise</h4>
+-            <p>Get your access token from <a href="https://readwise.io/access_token" target="_blank">readwise.io/access_token</a> and add it to your <code>.env</code> file.</p>
++            <p>Get your access token from <a href="https://readwise.io/access_token" target="_blank">readwise.io/access_token</a> and add it to your <code>.env</code> file as <code>READWISE_ACCESS_TOKEN</code>.</p>
+           </div>
+           <div class="help-card">
+             <h4>Notion</h4>
+@@ -272,6 +327,53 @@ <h4>Obsidian</h4>
+           </div>
+         </div>
+       </div>
++
++      <!-- Goodreads Import Modal -->
++      <div id="goodreads-import-modal" class="modal hidden">
++        <div class="modal-overlay" onclick="app.closeGoodreadsImport()"></div>
++        <div class="modal-content">
++          <div class="modal-header">
++            <h3>Import from Goodreads</h3>
++            <button class="modal-close" onclick="app.closeGoodreadsImport()">&times;</button>
++          </div>
++          <div class="modal-body">
++            <div class="import-tabs">
++              <button class="tab-btn active" onclick="app.switchImportTab('csv')">CSV Import</button>
++              <button class="tab-btn" onclick="app.switchImportTab('rss')">RSS Sync</button>
++            </div>
++            <div id="import-tab-csv" class="import-tab active">
++              <p>Export your Goodreads library from <a href="https://www.goodreads.com/review/import" target="_blank">goodreads.com/review/import</a>, then upload the CSV file below.</p>
++              <div class="upload-drop-area" id="goodreads-csv-drop">
++                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
++                <p>Drop your Goodreads CSV here</p>
++                <span>or</span>
++                <button class="btn btn-primary" onclick="document.getElementById('goodreads-csv-input').click()">Choose CSV File</button>
++                <input type="file" id="goodreads-csv-input" accept=".csv" hidden>
++              </div>
++              <div id="goodreads-import-status" class="import-status hidden"></div>
++            </div>
++            <div id="import-tab-rss" class="import-tab hidden">
++              <p>Enter your Goodreads User ID to sync shelves via RSS. Your profile must be public.</p>
++              <div class="form-group">
++                <label>Goodreads User ID</label>
++                <input type="text" id="goodreads-user-id" placeholder="e.g., 12345678" class="form-input">
++                <small>Find this in your Goodreads profile URL: goodreads.com/user/show/<strong>12345678</strong></small>
++              </div>
++              <div class="form-group">
++                <label>Shelf to import</label>
++                <select id="goodreads-shelf" class="sort-select">
++                  <option value="all">All Shelves</option>
++                  <option value="read">Read</option>
++                  <option value="currently-reading">Currently Reading</option>
++                  <option value="to-read">To Read</option>
++                </select>
++              </div>
++              <button class="btn btn-primary" onclick="app.importGoodreadsRSS()">Import from Goodreads</button>
++              <div id="goodreads-rss-status" class="import-status hidden"></div>
++            </div>
++          </div>
++        </div>
++      </div>
+     </section>
+   </main>
+ 
+diff --git a/public/js/app.js b/public/js/app.js
+index 5f37809..ea4c86d 100644
+--- a/public/js/app.js
++++ b/public/js/app.js
+@@ -301,6 +301,10 @@ const app = {
+       document.getElementById('modal-book-title').textContent = book.title;
+       const body = document.getElementById('book-detail-body');
+ 
++      const statusOptions = ['to-read', 'currently-reading', 'finished', 'abandoned'];
++      const currentStatus = book.reading_status || 'to-read';
++      const currentRating = book.my_rating || 0;
++
+       body.innerHTML = `
+         <div class="book-detail">
+           <div class="book-detail-cover">
+@@ -314,11 +318,32 @@ const app = {
+             <p>${this.escape(book.author)}</p>
+ 
+             <h4>Format</h4>
+-            <p>${book.format} · ${this.formatBytes(book.file_size)}</p>
++            <p>${book.format}${book.file_size ? ' · ' + this.formatBytes(book.file_size) : ''}${book.pages ? ' · ' + book.pages + ' pages' : ''}</p>
++
++            <h4>Reading Status</h4>
++            <div class="status-selector">
++              ${statusOptions.map(s => `
++                <button class="status-btn ${s === currentStatus ? 'active' : ''}"
++                  onclick="app.updateReadingStatus('${book.id}', '${s}')">
++                  ${this.formatStatusLabel(s)}
++                </button>
++              `).join('')}
++            </div>
++
++            <h4>Rating</h4>
++            <div class="rating-stars">
++              ${[1,2,3,4,5].map(n => `
++                <span class="star ${n <= currentRating ? 'filled' : ''}"
++                  onclick="app.updateRating('${book.id}', ${n})">&#9733;</span>
++              `).join('')}
++              ${currentRating > 0 ? `<span class="rating-text">${currentRating}/5</span>` : ''}
++            </div>
+ 
+             ${book.language ? `<h4>Language</h4><p>${book.language}</p>` : ''}
+             ${book.publisher ? `<h4>Publisher</h4><p>${this.escape(book.publisher)}</p>` : ''}
+             ${book.description ? `<h4>Description</h4><p class="description-text">${this.escape(book.description).slice(0, 300)}</p>` : ''}
++            ${book.date_read ? `<h4>Date Read</h4><p>${book.date_read}</p>` : ''}
++            ${book.review ? `<h4>Review</h4><p class="description-text">${this.escape(book.review).slice(0, 500)}</p>` : ''}
+ 
+             <h4>Tags</h4>
+             <div class="book-tags" id="detail-tags">
+@@ -340,7 +365,7 @@ const app = {
+                 ? `<button class="btn btn-ghost" onclick="app.openAudiobook('${book.id}')">Audiobook</button>`
+                 : ''
+               }
+-              <button class="btn btn-ghost" onclick="app.downloadBook('${book.id}')">Download</button>
++              ${book.file_size > 0 ? `<button class="btn btn-ghost" onclick="app.downloadBook('${book.id}')">Download</button>` : ''}
+               <button class="btn btn-ghost" onclick="app.syncBook('${book.id}')">Sync All</button>
+               <button class="btn btn-danger" onclick="app.deleteBook('${book.id}')">Delete</button>
+             </div>
+@@ -688,6 +713,204 @@ const app = {
+     }
+   },
+ 
++  // ============================================================
++  // Goodreads Import
++  // ============================================================
++  openGoodreadsImport() {
++    document.getElementById('goodreads-import-modal').classList.remove('hidden');
++
++    const csvInput = document.getElementById('goodreads-csv-input');
++    csvInput.addEventListener('change', (e) => {
++      if (e.target.files.length > 0) this.importGoodreadsCSV(e.target.files[0]);
++    });
++
++    const dropArea = document.getElementById('goodreads-csv-drop');
++    dropArea.addEventListener('dragover', (e) => { e.preventDefault(); dropArea.classList.add('drag-over'); });
++    dropArea.addEventListener('dragleave', () => dropArea.classList.remove('drag-over'));
++    dropArea.addEventListener('drop', (e) => {
++      e.preventDefault();
++      dropArea.classList.remove('drag-over');
++      if (e.dataTransfer.files.length > 0) this.importGoodreadsCSV(e.dataTransfer.files[0]);
++    });
++  },
++
++  closeGoodreadsImport() {
++    document.getElementById('goodreads-import-modal').classList.add('hidden');
++  },
++
++  switchImportTab(tab) {
++    document.querySelectorAll('.import-tab').forEach(t => t.classList.add('hidden'));
++    document.querySelectorAll('.import-tab').forEach(t => t.classList.remove('active'));
++    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
++
++    document.getElementById(`import-tab-${tab}`).classList.remove('hidden');
++    document.getElementById(`import-tab-${tab}`).classList.add('active');
++    event.target.classList.add('active');
++  },
++
++  async importGoodreadsCSV(file) {
++    const statusEl = document.getElementById('goodreads-import-status');
++    statusEl.classList.remove('hidden');
++    statusEl.innerHTML = '<p>Importing your Goodreads library...</p>';
++
++    try {
++      const formData = new FormData();
++      formData.append('book', file);
++
++      const res = await fetch('/api/integrations/goodreads/import-csv', {
++        method: 'POST',
++        body: formData
++      });
++
++      const data = await res.json();
++      if (data.error) throw new Error(data.error);
++
++      statusEl.innerHTML = `
++        <div class="import-results">
++          <h4>Import Complete!</h4>
++          <div class="stats-grid">
++            <div class="stat"><span class="stat-value">${data.total}</span><span class="stat-label">Total Books</span></div>
++            <div class="stat"><span class="stat-value">${data.imported}</span><span class="stat-label">New Imports</span></div>
++            <div class="stat"><span class="stat-value">${data.updated}</span><span class="stat-label">Updated</span></div>
++          </div>
++          ${data.stats ? `
++          <div class="stats-grid">
++            <div class="stat"><span class="stat-value">${data.stats.byStatus['finished'] || 0}</span><span class="stat-label">Finished</span></div>
++            <div class="stat"><span class="stat-value">${data.stats.byStatus['currently-reading'] || 0}</span><span class="stat-label">Reading</span></div>
++            <div class="stat"><span class="stat-value">${data.stats.byStatus['to-read'] || 0}</span><span class="stat-label">To Read</span></div>
++            <div class="stat"><span class="stat-value">${data.stats.averageRating}</span><span class="stat-label">Avg Rating</span></div>
++          </div>` : ''}
++        </div>
++      `;
++
++      this.toast(`Imported ${data.imported} books from Goodreads`, 'success');
++      this.loadBooks();
++      this.loadTags();
++    } catch (err) {
++      statusEl.innerHTML = `<p style="color: var(--danger);">Error: ${err.message}</p>`;
++      this.toast('Goodreads import failed', 'error');
++    }
++  },
++
++  async importGoodreadsRSS() {
++    const userIdInput = document.getElementById('goodreads-user-id');
++    const shelfSelect = document.getElementById('goodreads-shelf');
++    const userId = userIdInput ? userIdInput.value.trim() : '';
++    const shelf = shelfSelect ? shelfSelect.value : 'read';
++
++    if (!userId) {
++      this.openGoodreadsImport();
++      this.switchImportTab('rss');
++      return;
++    }
++
++    const statusEl = document.getElementById('goodreads-rss-status');
++    statusEl.classList.remove('hidden');
++    statusEl.innerHTML = '<p>Fetching your Goodreads shelves...</p>';
++
++    try {
++      let url, body;
++      if (shelf === 'all') {
++        url = '/api/integrations/goodreads/import-all';
++        body = { user_id: userId };
++      } else {
++        url = '/api/integrations/goodreads/import-rss';
++        body = { user_id: userId, shelf };
++      }
++
++      const res = await fetch(url, {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify(body)
++      });
++
++      const data = await res.json();
++      if (data.error) throw new Error(data.error);
++
++      statusEl.innerHTML = `
++        <div class="import-results">
++          <h4>Import Complete!</h4>
++          <p>${data.imported} new books imported, ${data.updated} updated from ${data.total} total.</p>
++        </div>
++      `;
++
++      this.toast(`Imported ${data.imported} books from Goodreads`, 'success');
++      this.loadBooks();
++      this.loadTags();
++    } catch (err) {
++      statusEl.innerHTML = `<p style="color: var(--danger);">Error: ${err.message}</p>`;
++      this.toast('Goodreads RSS import failed', 'error');
++    }
++  },
++
++  // ============================================================
++  // Readwise Import & Pipeline
++  // ============================================================
++  async importReadwiseHighlights() {
++    this.toast('Importing highlights from Readwise...', 'info');
++
++    try {
++      const res = await fetch('/api/integrations/readwise/import', { method: 'POST' });
++      const data = await res.json();
++      if (data.error) throw new Error(data.error);
++
++      this.toast(`Imported ${data.importedHighlights} highlights from ${data.books} books`, 'success');
++      this.loadBooks();
++    } catch (err) {
++      this.toast(`Readwise import failed: ${err.message}`, 'error');
++    }
++  },
++
++  async runReadwiseToNotion() {
++    this.toast('Running Readwise → Notion pipeline...', 'info');
++
++    try {
++      const res = await fetch('/api/integrations/readwise-to-notion', { method: 'POST' });
++      const data = await res.json();
++      if (data.error) throw new Error(data.error);
++
++      this.toast(
++        `Pipeline complete: ${data.booksProcessed} books, ${data.totalHighlights} highlights synced to Notion`,
++        'success'
++      );
++    } catch (err) {
++      this.toast(`Pipeline failed: ${err.message}`, 'error');
++    }
++  },
++
++  // ============================================================
++  // Reading Status
++  // ============================================================
++  async updateReadingStatus(bookId, status) {
++    try {
++      const res = await fetch(`/api/books/${bookId}/status`, {
++        method: 'PUT',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({ reading_status: status })
++      });
++      if (!res.ok) throw new Error('Failed to update status');
++      this.toast(`Status updated to ${status}`, 'success');
++      this.openBookDetail(bookId);
++    } catch (err) {
++      this.toast('Failed to update status', 'error');
++    }
++  },
++
++  async updateRating(bookId, rating) {
++    try {
++      const res = await fetch(`/api/books/${bookId}/rating`, {
++        method: 'PUT',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({ my_rating: rating })
++      });
++      if (!res.ok) throw new Error('Failed to update rating');
++      this.toast(`Rating updated to ${rating}/5`, 'success');
++      this.openBookDetail(bookId);
++    } catch (err) {
++      this.toast('Failed to update rating', 'error');
++    }
++  },
++
+   // ============================================================
+   // Utilities
+   // ============================================================
+@@ -712,6 +935,16 @@ const app = {
+     const sizes = ['B', 'KB', 'MB', 'GB'];
+     const i = Math.floor(Math.log(bytes) / Math.log(1024));
+     return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
++  },
++
++  formatStatusLabel(status) {
++    const labels = {
++      'to-read': 'To Read',
++      'currently-reading': 'Reading',
++      'finished': 'Finished',
++      'abandoned': 'Abandoned'
++    };
++    return labels[status] || status;
+   }
+ };
+ 
+diff --git a/server.js b/server.js
+index ae18bce..f3c23a7 100644
+--- a/server.js
++++ b/server.js
+@@ -36,7 +36,7 @@ const storage = multer.diskStorage({
+ const upload = multer({
+   storage,
+   fileFilter: (req, file, cb) => {
+-    const allowed = ['.epub', '.pdf', '.mobi', '.txt', '.html', '.htm'];
++    const allowed = ['.epub', '.pdf', '.mobi', '.txt', '.html', '.htm', '.csv'];
+     const ext = path.extname(file.originalname).toLowerCase();
+     cb(null, allowed.includes(ext));
+   },
+@@ -50,7 +50,7 @@ db.initialize();
+ // Health Check
+ // ============================================================
+ app.get('/api/health', (req, res) => {
+-  res.json({ status: 'ok', version: '1.0.0' });
++  res.json({ status: 'ok', version: '1.1.0' });
+ });
+ 
+ // ============================================================
+@@ -58,14 +58,22 @@ app.get('/api/health', (req, res) => {
+ // ============================================================
+ app.get('/api/books', (req, res) => {
+   try {
+-    const { search, tag, sort, order } = req.query;
+-    const books = db.getBooks({ search, tag, sort, order });
++    const { search, tag, sort, order, status } = req.query;
++    const books = db.getBooks({ search, tag, sort, order, status });
+     res.json(books);
+   } catch (err) {
+     res.status(500).json({ error: err.message });
+   }
+ });
+ 
++app.get('/api/books/stats', (req, res) => {
++  try {
++    res.json(db.getReadingStats());
++  } catch (err) {
++    res.status(500).json({ error: err.message });
++  }
++});
++
+ app.get('/api/books/:id', (req, res) => {
+   try {
+     const book = db.getBook(req.params.id);
+@@ -131,6 +139,35 @@ app.put('/api/books/:id', (req, res) => {
+   }
+ });
+ 
++app.put('/api/books/:id/status', (req, res) => {
++  try {
++    const { reading_status } = req.body;
++    const valid = ['to-read', 'currently-reading', 'finished', 'abandoned'];
++    if (!valid.includes(reading_status)) {
++      return res.status(400).json({ error: `Invalid status. Valid: ${valid.join(', ')}` });
++    }
++    const book = db.updateBook(req.params.id, { reading_status });
++    if (!book) return res.status(404).json({ error: 'Book not found' });
++    res.json(book);
++  } catch (err) {
++    res.status(500).json({ error: err.message });
++  }
++});
++
++app.put('/api/books/:id/rating', (req, res) => {
++  try {
++    const { my_rating } = req.body;
++    if (my_rating < 0 || my_rating > 5) {
++      return res.status(400).json({ error: 'Rating must be 0-5' });
++    }
++    const book = db.updateBook(req.params.id, { my_rating });
++    if (!book) return res.status(404).json({ error: 'Book not found' });
++    res.json(book);
++  } catch (err) {
++    res.status(500).json({ error: err.message });
++  }
++});
++
+ app.delete('/api/books/:id', (req, res) => {
+   try {
+     const book = db.getBook(req.params.id);
+@@ -342,6 +379,199 @@ app.get('/api/integrations/status', (req, res) => {
+   res.json(integrations.getStatus());
+ });
+ 
++// --- Goodreads ---
++app.post('/api/integrations/goodreads/import-csv', upload.single('book'), async (req, res) => {
++  try {
++    if (!req.file) return res.status(400).json({ error: 'No CSV file uploaded' });
++
++    const csvContent = fs.readFileSync(req.file.path, 'utf-8');
++    const books = integrations.goodreads.parseCSV(csvContent);
++
++    let imported = 0;
++    let updated = 0;
++    let skipped = 0;
++
++    for (const grBook of books) {
++      const existing = db.findBookByGoodreadsId(grBook.goodreads_id) ||
++                       db.findBookByTitle(grBook.title);
++
++      if (existing) {
++        db.updateBook(existing.id, {
++          reading_status: grBook.reading_status,
++          my_rating: grBook.my_rating,
++          goodreads_id: grBook.goodreads_id,
++          pages: grBook.pages,
++          date_read: grBook.date_read,
++          review: grBook.review
++        });
++        if (grBook.shelves.length > 0) {
++          for (const shelf of grBook.shelves) {
++            db.addTag(existing.id, shelf);
++          }
++        }
++        updated++;
++      } else {
++        const bookId = uuidv4();
++        db.addBook({
++          id: bookId,
++          title: grBook.title,
++          author: grBook.author,
++          description: grBook.review || '',
++          publisher: grBook.publisher,
++          file_path: 'goodreads-import',
++          file_name: `${grBook.title}.goodreads`,
++          file_size: 0,
++          format: 'GOODREADS',
++          reading_status: grBook.reading_status,
++          my_rating: grBook.my_rating,
++          goodreads_id: grBook.goodreads_id,
++          pages: grBook.pages,
++          date_read: grBook.date_read,
++          review: grBook.review
++        });
++        if (grBook.shelves.length > 0) {
++          for (const shelf of grBook.shelves) {
++            db.addTag(bookId, shelf);
++          }
++        }
++        imported++;
++      }
++    }
++
++    // Clean up the uploaded CSV
++    try { fs.unlinkSync(req.file.path); } catch (e) { /* ok */ }
++
++    res.json({
++      success: true,
++      imported,
++      updated,
++      skipped,
++      total: books.length,
++      stats: integrations.goodreads.getStats(books)
++    });
++  } catch (err) {
++    res.status(500).json({ error: err.message });
++  }
++});
++
++app.post('/api/integrations/goodreads/import-rss', async (req, res) => {
++  try {
++    const userId = req.body.user_id || process.env.GOODREADS_USER_ID;
++    if (!userId) return res.status(400).json({ error: 'Goodreads user ID required' });
++
++    const shelf = req.body.shelf || 'read';
++    const books = await integrations.goodreads.fetchShelfRSS(userId, shelf);
++
++    let imported = 0;
++    let updated = 0;
++
++    for (const grBook of books) {
++      const existing = db.findBookByGoodreadsId(grBook.goodreads_id) ||
++                       db.findBookByTitle(grBook.title);
++
++      if (existing) {
++        db.updateBook(existing.id, {
++          reading_status: grBook.reading_status,
++          my_rating: grBook.my_rating,
++          goodreads_id: grBook.goodreads_id,
++          pages: grBook.pages,
++          date_read: grBook.date_read,
++          review: grBook.review
++        });
++        updated++;
++      } else {
++        const bookId = uuidv4();
++        db.addBook({
++          id: bookId,
++          title: grBook.title,
++          author: grBook.author,
++          description: grBook.description || '',
++          file_path: 'goodreads-import',
++          file_name: `${grBook.title}.goodreads`,
++          file_size: 0,
++          format: 'GOODREADS',
++          reading_status: grBook.reading_status,
++          my_rating: grBook.my_rating,
++          goodreads_id: grBook.goodreads_id,
++          pages: grBook.pages,
++          date_read: grBook.date_read,
++          review: grBook.review
++        });
++        imported++;
++      }
++    }
++
++    res.json({
++      success: true,
++      shelf,
++      imported,
++      updated,
++      total: books.length,
++      stats: integrations.goodreads.getStats(books)
++    });
++  } catch (err) {
++    res.status(500).json({ error: err.message });
++  }
++});
++
++app.post('/api/integrations/goodreads/import-all', async (req, res) => {
++  try {
++    const userId = req.body.user_id || process.env.GOODREADS_USER_ID;
++    if (!userId) return res.status(400).json({ error: 'Goodreads user ID required' });
++
++    const allBooks = await integrations.goodreads.fetchAllShelves(userId);
++
++    let imported = 0;
++    let updated = 0;
++
++    for (const grBook of allBooks) {
++      const existing = db.findBookByGoodreadsId(grBook.goodreads_id) ||
++                       db.findBookByTitle(grBook.title);
++
++      if (existing) {
++        db.updateBook(existing.id, {
++          reading_status: grBook.reading_status,
++          my_rating: grBook.my_rating,
++          goodreads_id: grBook.goodreads_id,
++          pages: grBook.pages,
++          date_read: grBook.date_read
++        });
++        updated++;
++      } else {
++        const bookId = uuidv4();
++        db.addBook({
++          id: bookId,
++          title: grBook.title,
++          author: grBook.author,
++          description: grBook.description || '',
++          file_path: 'goodreads-import',
++          file_name: `${grBook.title}.goodreads`,
++          file_size: 0,
++          format: 'GOODREADS',
++          reading_status: grBook.reading_status,
++          my_rating: grBook.my_rating,
++          goodreads_id: grBook.goodreads_id,
++          pages: grBook.pages,
++          date_read: grBook.date_read,
++          review: grBook.review || ''
++        });
++        imported++;
++      }
++    }
++
++    res.json({
++      success: true,
++      imported,
++      updated,
++      total: allBooks.length,
++      stats: integrations.goodreads.getStats(allBooks)
++    });
++  } catch (err) {
++    res.status(500).json({ error: err.message });
++  }
++});
++
++// --- Readwise ---
+ app.post('/api/integrations/readwise/sync', async (req, res) => {
+   try {
+     const { book_id } = req.body;
+@@ -356,6 +586,67 @@ app.post('/api/integrations/readwise/sync', async (req, res) => {
+   }
+ });
+ 
++app.post('/api/integrations/readwise/import', async (req, res) => {
++  try {
++    const result = await integrations.readwise.importHighlights();
++
++    let importedHighlights = 0;
++    for (const { book, highlights } of result.data) {
++      let existingBook = db.findBookByTitle(book.title);
++      if (!existingBook) {
++        const bookId = uuidv4();
++        db.addBook({
++          id: bookId,
++          title: book.title,
++          author: book.author || 'Unknown',
++          description: '',
++          file_path: 'readwise-import',
++          file_name: `${book.title}.readwise`,
++          file_size: 0,
++          format: 'READWISE'
++        });
++        existingBook = db.getBook(bookId);
++      }
++
++      for (const h of highlights) {
++        try {
++          db.addHighlight({
++            id: uuidv4(),
++            book_id: existingBook.id,
++            text: h.text,
++            note: h.note || '',
++            chapter_index: 0,
++            position: h.location || 0,
++            color: h.color || '#ffeb3b',
++            source: 'readwise'
++          });
++          importedHighlights++;
++        } catch (e) { /* skip duplicate highlights */ }
++      }
++    }
++
++    res.json({
++      success: true,
++      books: result.books,
++      totalHighlights: result.totalHighlights,
++      importedHighlights
++    });
++  } catch (err) {
++    res.status(500).json({ error: err.message });
++  }
++});
++
++// --- Readwise → Notion Pipeline ---
++app.post('/api/integrations/readwise-to-notion', async (req, res) => {
++  try {
++    const result = await integrations.readwiseToNotion();
++    res.json(result);
++  } catch (err) {
++    res.status(500).json({ error: err.message });
++  }
++});
++
++// --- Notion ---
+ app.post('/api/integrations/notion/sync', async (req, res) => {
+   try {
+     const { book_id } = req.body;
+@@ -371,6 +662,16 @@ app.post('/api/integrations/notion/sync', async (req, res) => {
+   }
+ });
+ 
++app.get('/api/integrations/notion/pages', async (req, res) => {
++  try {
++    const pages = await integrations.notion.getPages();
++    res.json(pages);
++  } catch (err) {
++    res.status(500).json({ error: err.message });
++  }
++});
++
++// --- GitHub ---
+ app.post('/api/integrations/github/sync', async (req, res) => {
+   try {
+     const { book_id } = req.body;
+@@ -386,6 +687,7 @@ app.post('/api/integrations/github/sync', async (req, res) => {
+   }
+ });
+ 
++// --- Obsidian ---
+ app.post('/api/integrations/obsidian/sync', async (req, res) => {
+   try {
+     const { book_id } = req.body;

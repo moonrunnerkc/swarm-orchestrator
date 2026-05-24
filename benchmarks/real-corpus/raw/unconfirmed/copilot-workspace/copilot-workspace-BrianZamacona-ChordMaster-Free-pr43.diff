@@ -1,0 +1,1146 @@
+diff --git a/assets/data/scale_patterns_coordinates.json b/assets/data/scale_patterns_coordinates.json
+deleted file mode 100644
+index f134641..0000000
+--- a/assets/data/scale_patterns_coordinates.json
++++ /dev/null
+@@ -1,18 +0,0 @@
+-[
+-  {
+-    "scale_name": "Major",
+-    "root": "C",
+-    "pattern_type": "CAGED",
+-    "position_name": "Forma de A",
+-    "starting_fret": 2,
+-    "frets_span": 4,
+-    "coordinates": [
+-      {"string": 5, "fret": 3, "interval": "1", "note": "C", "is_root": true, "finger": 2},
+-      {"string": 5, "fret": 5, "interval": "2", "note": "D", "is_root": false, "finger": 4},
+-      {"string": 4, "fret": 2, "interval": "3", "note": "E", "is_root": false, "finger": 1},
+-      {"string": 4, "fret": 5, "interval": "5", "note": "G", "is_root": false, "finger": 4},
+-      {"string": 3, "fret": 2, "interval": "6", "note": "A", "is_root": false, "finger": 1},
+-      {"string": 2, "fret": 3, "interval": "1", "note": "C", "is_root": true, "finger": 2}
+-    ]
+-  }
+-]
+diff --git a/lib/core/widgets/scale_fretboard_diagram.dart b/lib/core/widgets/scale_fretboard_diagram.dart
+index eba4087..1a02011 100644
+--- a/lib/core/widgets/scale_fretboard_diagram.dart
++++ b/lib/core/widgets/scale_fretboard_diagram.dart
+@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
+ 
+ import '../../models/scale.dart';
+ 
+-/// Visual fretboard renderer for [ScalePattern] position strings.
++/// Visual fretboard renderer for [ScaleFingering] position strings.
+ class ScaleFretboardDiagram extends StatelessWidget {
+   const ScaleFretboardDiagram({
+     super.key,
+@@ -12,7 +12,7 @@ class ScaleFretboardDiagram extends StatelessWidget {
+     required this.accentColor,
+   });
+ 
+-  final ScalePattern pattern;
++  final ScaleFingering pattern;
+   final Color accentColor;
+ 
+   @override
+@@ -41,7 +41,7 @@ class _ParsedScalePattern {
+     required this.maxFret,
+   });
+ 
+-  factory _ParsedScalePattern.from(ScalePattern pattern) {
++  factory _ParsedScalePattern.from(ScaleFingering pattern) {
+     if (pattern.notes.isNotEmpty) {
+       final strings = <int, List<int>>{};
+       var minFret = 99;
+diff --git a/lib/features/scales/data/models/note_coordinate.dart b/lib/features/scales/data/models/note_coordinate.dart
+index e80d0c5..877291f 100644
+--- a/lib/features/scales/data/models/note_coordinate.dart
++++ b/lib/features/scales/data/models/note_coordinate.dart
+@@ -1,101 +1,75 @@
+-/// Single note coordinate for a fretboard diagram position.
+ class NoteCoordinate {
+-  /// Creates a strongly-typed note coordinate.
+   const NoteCoordinate({
+     required this.string,
+     required this.fret,
+-    required this.interval,
+-    required this.note,
+     required this.isRoot,
++    this.note = '',
++    this.interval = '',
+     this.finger,
+   });
+ 
+-  /// Parses [NoteCoordinate] from strict JSON contract.
++  /// String number: 1 = low E, 6 = high e.
++  final int string;
++
++  /// Absolute fret number (0 = open string).
++  final int fret;
++
++  /// true if this note is the tonic/root.
++  final bool isRoot;
++
++  /// Note name: "C", "D#", "A#", etc.
++  final String note;
++
++  /// Interval name: "1", "b3", "5", "b7", etc.
++  final String interval;
++
++  /// Suggested fretting finger (1=index … 4=pinky). null if not specified.
++  final int? finger;
++
+   factory NoteCoordinate.fromJson(Map<String, dynamic> json) {
+-    final string = _readRequiredInt(json, 'string');
+-    final fret = _readRequiredInt(json, 'fret');
+-    final interval = _readRequiredString(json, 'interval');
+-    final note = _readRequiredString(json, 'note');
+-    final isRoot = _readRequiredBool(json, 'is_root');
+-    final finger = _readOptionalInt(json, 'finger');
++    final stringNum = (json['string'] as num?)?.toInt();
++    final fret = (json['fret'] as num?)?.toInt();
+ 
+-    if (string < 1 || string > 6) {
+-      throw const FormatException('string must be between 1 and 6');
++    if (stringNum == null || stringNum < 1 || stringNum > 6) {
++      throw const FormatException('string must be 1..6');
+     }
+-    if (fret < 0) {
+-      throw const FormatException('fret must be greater than or equal to 0');
++    if (fret == null || fret < 0 || fret > 24) {
++      throw const FormatException('fret must be 0..24');
+     }
++
++    final finger = (json['finger'] as num?)?.toInt();
+     if (finger != null && (finger < 1 || finger > 4)) {
+-      throw const FormatException('finger must be between 1 and 4');
++      throw const FormatException('finger must be 1..4');
+     }
+ 
+     return NoteCoordinate(
+-      string: string,
++      string: stringNum,
+       fret: fret,
+-      interval: interval,
+-      note: note,
+-      isRoot: isRoot,
++      isRoot: json['is_root'] as bool? ?? false,
++      note: json['note'] as String? ?? '',
++      interval: json['interval'] as String? ?? '',
+       finger: finger,
+     );
+   }
+ 
+-  /// Guitar string number (1..6), where 1 is high E and 6 is low E.
+-  final int string;
+-
+-  /// Absolute fret number in the instrument.
+-  final int fret;
+-
+-  /// Interval label relative to root (e.g. "1", "b3", "5").
+-  final String interval;
+-
+-  /// Note label (e.g. "C", "F#").
+-  final String note;
+-
+-  /// Whether this coordinate is tonic/root.
+-  final bool isRoot;
+-
+-  /// Suggested left-hand finger (1..4).
+-  final int? finger;
+-
+   Map<String, dynamic> toJson() => {
+         'string': string,
+         'fret': fret,
+-        'interval': interval,
+-        'note': note,
+         'is_root': isRoot,
++        if (note.isNotEmpty) 'note': note,
++        if (interval.isNotEmpty) 'interval': interval,
+         if (finger != null) 'finger': finger,
+       };
+ 
+-  static int _readRequiredInt(Map<String, dynamic> json, String key) {
+-    final value = json[key];
+-    if (value is! num) {
+-      throw FormatException('$key must be a number');
+-    }
+-    return value.toInt();
+-  }
+-
+-  static int? _readOptionalInt(Map<String, dynamic> json, String key) {
+-    final value = json[key];
+-    if (value == null) return null;
+-    if (value is! num) {
+-      throw FormatException('$key must be a number');
+-    }
+-    return value.toInt();
+-  }
++  @override
++  bool operator ==(Object other) =>
++      identical(this, other) ||
++      other is NoteCoordinate && other.string == string && other.fret == fret;
+ 
+-  static String _readRequiredString(Map<String, dynamic> json, String key) {
+-    final value = json[key];
+-    if (value is! String || value.trim().isEmpty) {
+-      throw FormatException('$key must be a non-empty string');
+-    }
+-    return value;
+-  }
++  @override
++  int get hashCode => Object.hash(string, fret);
+ 
+-  static bool _readRequiredBool(Map<String, dynamic> json, String key) {
+-    final value = json[key];
+-    if (value is! bool) {
+-      throw FormatException('$key must be a boolean');
+-    }
+-    return value;
+-  }
++  @override
++  String toString() =>
++      'NoteCoordinate(s:$string f:$fret note:$note interval:$interval root:$isRoot)';
+ }
+diff --git a/lib/features/scales/data/models/scale_pattern.dart b/lib/features/scales/data/models/scale_pattern.dart
+index 39486b3..338d0d6 100644
+--- a/lib/features/scales/data/models/scale_pattern.dart
++++ b/lib/features/scales/data/models/scale_pattern.dart
+@@ -1,8 +1,8 @@
+ import 'note_coordinate.dart';
+ 
+-/// Strongly-typed scale shape with strict fretboard coordinates.
++/// A guitar fingering pattern for a scale, with strict fretboard coordinates.
++/// Coordinates are generated algorithmically — never written by hand.
+ class ScalePattern {
+-  /// Creates a scale pattern with precomputed coordinates.
+   const ScalePattern({
+     required this.scaleName,
+     required this.root,
+@@ -13,66 +13,48 @@ class ScalePattern {
+     required this.coordinates,
+   });
+ 
+-  /// Parses [ScalePattern] from strict JSON contract.
+   factory ScalePattern.fromJson(Map<String, dynamic> json) {
+-    final scaleName = _readRequiredString(json, 'scale_name');
+-    final root = _readRequiredString(json, 'root');
+-    final patternType = _readRequiredString(json, 'pattern_type');
+-    final positionName = _readRequiredString(json, 'position_name');
+-    final startingFret = _readRequiredInt(json, 'starting_fret');
+-    final fretsSpan = _readRequiredInt(json, 'frets_span');
+-
+-    if (startingFret < 0) {
+-      throw const FormatException('starting_fret must be >= 0');
+-    }
+-    if (fretsSpan < 1) {
+-      throw const FormatException('frets_span must be >= 1');
+-    }
+-
+-    final rawCoordinates = json['coordinates'];
+-    if (rawCoordinates is! List) {
+-      throw const FormatException('coordinates must be a list');
+-    }
+-
+-    final coordinates = rawCoordinates
+-        .map((entry) {
+-          if (entry is! Map) {
+-            throw const FormatException('coordinates must contain objects');
+-          }
+-          return NoteCoordinate.fromJson(Map<String, dynamic>.from(entry));
+-        })
+-        .toList(growable: false);
++    final startingFret = _readInt(json, 'starting_fret');
++    final fretsSpan = _readInt(json, 'frets_span');
++
++    if (startingFret < 0) throw const FormatException('starting_fret must be >= 0');
++    if (fretsSpan < 1) throw const FormatException('frets_span must be >= 1');
++
++    final rawCoords = json['coordinates'];
++    if (rawCoords is! List) throw const FormatException('coordinates must be a list');
+ 
+     return ScalePattern(
+-      scaleName: scaleName,
+-      root: root,
+-      patternType: patternType,
+-      positionName: positionName,
++      scaleName: _readString(json, 'scale_name'),
++      root: _readString(json, 'root'),
++      patternType: _readString(json, 'pattern_type'),
++      positionName: _readString(json, 'position_name'),
+       startingFret: startingFret,
+       fretsSpan: fretsSpan,
+-      coordinates: coordinates,
++      coordinates: rawCoords
++          .map((e) => NoteCoordinate.fromJson(Map<String, dynamic>.from(e as Map)))
++          .toList(growable: false),
+     );
+   }
+ 
+-  /// Human-readable scale label (e.g. "Major").
++  /// Human-readable scale label (e.g. "Major", "Pentatonic Minor").
+   final String scaleName;
+ 
+-  /// Root note for this shape (e.g. "C").
++  /// Root note for this shape (e.g. "C", "F#").
+   final String root;
+ 
+-  /// Pattern family (e.g. "CAGED", "3NPS").
++  /// Fingering system (e.g. "CAGED", "3NPS", "Berklee", "Posicional").
+   final String patternType;
+ 
+-  /// Position/shape display name.
++  /// Display name for this specific position/shape.
+   final String positionName;
+ 
+-  /// First absolute fret displayed by the diagram grid.
++  /// First fret shown in the diagram grid.
+   final int startingFret;
+ 
+-  /// Number of fret spaces to render from [startingFret].
++  /// Number of fret spaces rendered from [startingFret].
+   final int fretsSpan;
+ 
+-  /// Strict note coordinates to draw.
++  /// Computed note positions to draw on the fretboard.
+   final List<NoteCoordinate> coordinates;
+ 
+   Map<String, dynamic> toJson() => {
+@@ -82,22 +64,53 @@ class ScalePattern {
+         'position_name': positionName,
+         'starting_fret': startingFret,
+         'frets_span': fretsSpan,
+-        'coordinates': coordinates.map((entry) => entry.toJson()).toList(),
++        'coordinates': coordinates.map((c) => c.toJson()).toList(),
+       };
+ 
+-  static String _readRequiredString(Map<String, dynamic> json, String key) {
+-    final value = json[key];
+-    if (value is! String || value.trim().isEmpty) {
+-      throw FormatException('$key must be a non-empty string');
+-    }
+-    return value;
++  ScalePattern copyWith({
++    String? scaleName,
++    String? root,
++    String? patternType,
++    String? positionName,
++    int? startingFret,
++    int? fretsSpan,
++    List<NoteCoordinate>? coordinates,
++  }) =>
++      ScalePattern(
++        scaleName: scaleName ?? this.scaleName,
++        root: root ?? this.root,
++        patternType: patternType ?? this.patternType,
++        positionName: positionName ?? this.positionName,
++        startingFret: startingFret ?? this.startingFret,
++        fretsSpan: fretsSpan ?? this.fretsSpan,
++        coordinates: coordinates ?? this.coordinates,
++      );
++
++  @override
++  bool operator ==(Object other) =>
++      identical(this, other) ||
++      other is ScalePattern &&
++          other.scaleName == scaleName &&
++          other.root == root &&
++          other.patternType == patternType &&
++          other.positionName == positionName;
++
++  @override
++  int get hashCode => Object.hash(scaleName, root, patternType, positionName);
++
++  @override
++  String toString() =>
++      'ScalePattern($patternType | $root $scaleName | $positionName | fret $startingFret–${startingFret + fretsSpan})';
++
++  static String _readString(Map<String, dynamic> json, String key) {
++    final v = json[key];
++    if (v is! String || v.trim().isEmpty) throw FormatException('$key must be a non-empty string');
++    return v;
+   }
+ 
+-  static int _readRequiredInt(Map<String, dynamic> json, String key) {
+-    final value = json[key];
+-    if (value is! num) {
+-      throw FormatException('$key must be a number');
+-    }
+-    return value.toInt();
++  static int _readInt(Map<String, dynamic> json, String key) {
++    final v = json[key];
++    if (v is! num) throw FormatException('$key must be a number');
++    return v.toInt();
+   }
+ }
+diff --git a/lib/features/scales/data/scale_pattern_generator.dart b/lib/features/scales/data/scale_pattern_generator.dart
+new file mode 100644
+index 0000000..7d214fe
+--- /dev/null
++++ b/lib/features/scales/data/scale_pattern_generator.dart
+@@ -0,0 +1,332 @@
++import 'models/note_coordinate.dart';
++import 'models/scale_pattern.dart';
++
++// Standard tuning: open string semitone for each string.
++// Index 0 = string 1 (low E = 4 semitones from C).
++const List<int> _standardTuning = [4, 9, 2, 7, 11, 4];
++
++const List<String> _noteNames = [
++  'C', 'C#', 'D', 'D#', 'E', 'F',
++  'F#', 'G', 'G#', 'A', 'A#', 'B',
++];
++
++const Map<int, String> _intervalNames = {
++  0: '1',   1: 'b2',  2: '2',   3: 'b3',
++  4: '3',   5: '4',   6: 'b5',  7: '5',
++  8: 'b6',  9: '6',  10: 'b7', 11: '7',
++};
++
++int _noteAt(int stringNum, int fret) =>
++    (_standardTuning[stringNum - 1] + fret) % 12;
++
++int _rootSemitone(String root) {
++  final idx = _noteNames.indexOf(root);
++  if (idx == -1) throw ArgumentError('Unknown root: $root');
++  return idx;
++}
++
++String _noteName(int semitone) => _noteNames[semitone % 12];
++String _intervalName(int semitone) => _intervalNames[semitone % 12] ?? '?';
++
++NoteCoordinate? _coord(
++  int stringNum,
++  int fret,
++  int rootNote,
++  Set<int> scaleSet,
++  List<int> intervals,
++) {
++  final note = _noteAt(stringNum, fret);
++  if (!scaleSet.contains(note)) return null;
++  final semitoneFromRoot = (note - rootNote + 12) % 12;
++  return NoteCoordinate(
++    string: stringNum,
++    fret: fret,
++    isRoot: note == rootNote,
++    note: _noteName(note),
++    interval: _intervalName(semitoneFromRoot),
++  );
++}
++
++({int startingFret, int fretsSpan}) _bounds(List<NoteCoordinate> coords) {
++  if (coords.isEmpty) return (startingFret: 0, fretsSpan: 4);
++  final frets = coords.map((c) => c.fret);
++  final min = frets.reduce((a, b) => a < b ? a : b);
++  final max = frets.reduce((a, b) => a > b ? a : b);
++  return (startingFret: min, fretsSpan: (max - min).clamp(1, 24));
++}
++
++class ScalePatternGenerator {
++  ScalePatternGenerator._();
++
++  // 1. POSITIONAL — base for all systems
++  static ScalePattern positional({
++    required String scaleName,
++    required String root,
++    required List<int> intervals,
++    required int startFret,
++    int fretsSpan = 4,
++    String patternType = 'Posicional',
++    String positionName = '',
++  }) {
++    final rootNote = _rootSemitone(root);
++    final scaleSet = intervals.map((i) => (rootNote + i) % 12).toSet();
++    final coords = <NoteCoordinate>[];
++
++    for (var s = 1; s <= 6; s++) {
++      for (var f = startFret; f <= startFret + fretsSpan; f++) {
++        final c = _coord(s, f, rootNote, scaleSet, intervals);
++        if (c != null) coords.add(c);
++      }
++    }
++
++    return ScalePattern(
++      scaleName: scaleName,
++      root: root,
++      patternType: patternType,
++      positionName: positionName.isEmpty
++          ? '$root $scaleName — fret $startFret'
++          : positionName,
++      startingFret: startFret,
++      fretsSpan: fretsSpan,
++      coordinates: coords,
++    );
++  }
++
++  // 2. CAGED — 5 shapes
++  static List<ScalePattern> caged({
++    required String scaleName,
++    required String root,
++    required List<int> intervals,
++  }) {
++    final rootNote = _rootSemitone(root);
++    const cagedOffsets = [0, 2, 5, 7, 10];
++    const cagedNames = ['C', 'A', 'G', 'E', 'D'];
++
++    return List.generate(5, (i) {
++      var startFret = (cagedOffsets[i] + rootNote) % 12;
++      if (startFret == 0) startFret = 12;
++      if (startFret > 12) startFret -= 12;
++
++      return positional(
++        scaleName: scaleName,
++        root: root,
++        intervals: intervals,
++        startFret: startFret,
++        fretsSpan: 4,
++        patternType: 'CAGED',
++        positionName: 'Forma ${cagedNames[i]} — traste $startFret',
++      );
++    });
++  }
++
++  // 3. THREE NOTES PER STRING (3NPS) — single pattern
++  static ScalePattern threeNps({
++    required String scaleName,
++    required String root,
++    required List<int> intervals,
++    required int startFret,
++    String positionName = '',
++  }) {
++    final rootNote = _rootSemitone(root);
++    final scaleSet = intervals.map((i) => (rootNote + i) % 12).toSet();
++    final coords = <NoteCoordinate>[];
++
++    for (var s = 1; s <= 6; s++) {
++      var count = 0;
++      for (var f = startFret; f <= startFret + 8 && count < 3; f++) {
++        final c = _coord(s, f, rootNote, scaleSet, intervals);
++        if (c != null) { coords.add(c); count++; }
++      }
++    }
++
++    final b = _bounds(coords);
++    return ScalePattern(
++      scaleName: scaleName,
++      root: root,
++      patternType: '3NPS',
++      positionName: positionName.isEmpty
++          ? '$root $scaleName — 3NPS fret $startFret'
++          : positionName,
++      startingFret: b.startingFret,
++      fretsSpan: b.fretsSpan,
++      coordinates: coords,
++    );
++  }
++
++  // 4. SEVEN PATTERNS (complete 3NPS system)
++  static List<ScalePattern> sevenPatterns({
++    required String scaleName,
++    required String root,
++    required List<int> intervals,
++  }) {
++    final rootNote = _rootSemitone(root);
++    final startFrets = <int>[];
++
++    for (var fret = 0; fret <= 12; fret++) {
++      final note = _noteAt(1, fret);
++      final semitoneFromRoot = (note - rootNote + 12) % 12;
++      if (intervals.contains(semitoneFromRoot) && startFrets.length < 7) {
++        startFrets.add(fret);
++      }
++    }
++
++    const degreeRomans = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
++
++    return List.generate(startFrets.length, (i) {
++      final roman = degreeRomans[i < degreeRomans.length ? i : i % degreeRomans.length];
++      final p = threeNps(
++        scaleName: scaleName,
++        root: root,
++        intervals: intervals,
++        startFret: startFrets[i],
++        positionName: '$roman — $root $scaleName fret ${startFrets[i]}',
++      );
++      return p.copyWith(patternType: '7 Patrones');
++    });
++  }
++
++  // 5. FOUR NOTES PER STRING (4NPS)
++  static ScalePattern fourNps({
++    required String scaleName,
++    required String root,
++    required List<int> intervals,
++    required int startFret,
++    String positionName = '',
++  }) {
++    final rootNote = _rootSemitone(root);
++    final scaleSet = intervals.map((i) => (rootNote + i) % 12).toSet();
++    final coords = <NoteCoordinate>[];
++
++    for (var s = 1; s <= 6; s++) {
++      var count = 0;
++      for (var f = startFret; f <= startFret + 10 && count < 4; f++) {
++        final c = _coord(s, f, rootNote, scaleSet, intervals);
++        if (c != null) { coords.add(c); count++; }
++      }
++    }
++
++    final b = _bounds(coords);
++    return ScalePattern(
++      scaleName: scaleName,
++      root: root,
++      patternType: '4NPS',
++      positionName: positionName.isEmpty
++          ? '$root $scaleName — 4NPS fret $startFret'
++          : positionName,
++      startingFret: b.startingFret,
++      fretsSpan: b.fretsSpan,
++      coordinates: coords,
++    );
++  }
++
++  // 6. PENTATONIC BOXES (5 classic boxes)
++  static List<ScalePattern> pentatonicBoxes({
++    required String scaleName,
++    required String root,
++    required List<int> intervals,
++  }) {
++    final rootNote = _rootSemitone(root);
++    final startFrets = <int>[];
++
++    for (var fret = 0; fret <= 12; fret++) {
++      final note = _noteAt(1, fret);
++      final semitoneFromRoot = (note - rootNote + 12) % 12;
++      if (intervals.contains(semitoneFromRoot)) {
++        startFrets.add(fret);
++        if (startFrets.length == 5) break;
++      }
++    }
++
++    return List.generate(startFrets.length, (i) => positional(
++      scaleName: scaleName,
++      root: root,
++      intervals: intervals,
++      startFret: startFrets[i],
++      fretsSpan: 4,
++      patternType: 'Pentatónica',
++      positionName: 'Caja ${i + 1} — traste ${startFrets[i]}',
++    ));
++  }
++
++  // 7. BERKLEE POSITIONAL — 7 positions
++  static List<ScalePattern> berklee({
++    required String scaleName,
++    required String root,
++    required List<int> intervals,
++  }) {
++    final rootNote = _rootSemitone(root);
++    final anchorFrets = <int>[];
++
++    for (var fret = 0; fret <= 12; fret++) {
++      final note = _noteAt(1, fret);
++      final semitoneFromRoot = (note - rootNote + 12) % 12;
++      if (intervals.contains(semitoneFromRoot)) anchorFrets.add(fret);
++    }
++
++    const degreeRomans = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
++
++    return List.generate(anchorFrets.length.clamp(0, 7), (i) {
++      final startFret = anchorFrets[i] == 0 ? 0 : anchorFrets[i] - 1;
++      final roman = degreeRomans[i < degreeRomans.length ? i : i % degreeRomans.length];
++      return positional(
++        scaleName: scaleName,
++        root: root,
++        intervals: intervals,
++        startFret: startFret,
++        fretsSpan: 4,
++        patternType: 'Berklee',
++        positionName: 'Posición $roman — traste ${anchorFrets[i]}',
++      );
++    });
++  }
++
++  // 8. FULL NECK — user-configurable range
++  static ScalePattern fullNeck({
++    required String scaleName,
++    required String root,
++    required List<int> intervals,
++    int fromFret = 0,
++    int toFret = 12,
++  }) {
++    assert(fromFret >= 0 && toFret <= 24 && fromFret < toFret);
++    return positional(
++      scaleName: scaleName,
++      root: root,
++      intervals: intervals,
++      startFret: fromFret,
++      fretsSpan: toFret - fromFret,
++      patternType: 'Mástil completo',
++      positionName: '$root $scaleName — fret $fromFret–$toFret',
++    );
++  }
++
++  // 9. ALL SYSTEMS at once
++  static Map<String, List<ScalePattern>> allSystems({
++    required String scaleName,
++    required String root,
++    required List<int> intervals,
++    int userStartFret = 0,
++    int userEndFret = 12,
++  }) {
++    final isPentatonic = intervals.length <= 5;
++    return {
++      'CAGED': caged(scaleName: scaleName, root: root, intervals: intervals),
++      '3NPS': List.generate(
++        intervals.length.clamp(5, 7),
++        (i) => threeNps(scaleName: scaleName, root: root, intervals: intervals, startFret: i * 2),
++      ),
++      '4NPS': List.generate(
++        intervals.length.clamp(4, 6),
++        (i) => fourNps(scaleName: scaleName, root: root, intervals: intervals, startFret: i * 3),
++      ),
++      '7 Patrones': sevenPatterns(scaleName: scaleName, root: root, intervals: intervals),
++      if (isPentatonic)
++        'Pentatónica': pentatonicBoxes(scaleName: scaleName, root: root, intervals: intervals),
++      'Berklee': berklee(scaleName: scaleName, root: root, intervals: intervals),
++      'Mástil completo': [
++        fullNeck(scaleName: scaleName, root: root, intervals: intervals,
++            fromFret: userStartFret, toFret: userEndFret),
++      ],
++    };
++  }
++}
+diff --git a/lib/features/scales/data/scale_repository.dart b/lib/features/scales/data/scale_repository.dart
+index 72f106c..86078e4 100644
+--- a/lib/features/scales/data/scale_repository.dart
++++ b/lib/features/scales/data/scale_repository.dart
+@@ -1,48 +1,137 @@
+ import 'dart:convert';
+-
+ import 'package:flutter/services.dart';
+ import 'package:flutter_riverpod/flutter_riverpod.dart';
+-
+ import 'models/scale_pattern.dart';
++import 'scale_pattern_generator.dart';
+ 
+-/// Provider for loading strict-coordinate scale patterns from local assets.
+ final scaleRepositoryProvider = Provider<ScaleRepository>((ref) {
+   ref.keepAlive();
+   return ScaleRepository();
+ });
+ 
+-/// Reads scale diagram patterns from static JSON assets.
+ class ScaleRepository {
+-  /// Creates repository with [AssetBundle] and JSON [assetPath].
+   ScaleRepository({
+     AssetBundle? bundle,
+-    this.assetPath = 'assets/data/scale_patterns_coordinates.json',
++    this.scalesAssetPath = 'assets/data/scales.json',
+   }) : bundle = bundle ?? rootBundle;
+ 
+   final AssetBundle bundle;
+-  final String assetPath;
+-
+-  /// Loads and parses all strict-coordinate [ScalePattern] entries.
+-  Future<List<ScalePattern>> loadScalePatterns() async {
+-    final rawJson = await bundle.loadString(assetPath);
+-    final decoded = json.decode(rawJson);
+-
+-    final List<dynamic> rawList;
+-    if (decoded is List) {
+-      rawList = decoded;
+-    } else if (decoded is Map<String, dynamic> && decoded['patterns'] is List) {
+-      rawList = decoded['patterns'] as List<dynamic>;
+-    } else {
+-      throw const FormatException(
+-        'Expected a JSON array or object with "patterns" array',
++  final String scalesAssetPath;
++  List<_ScaleTheory>? _cache;
++
++  Future<List<ScalePattern>> loadPatterns({
++    required String scaleName,
++    required String root,
++    required String system,
++    int userStartFret = 0,
++    int userEndFret = 12,
++  }) async {
++    final theory = await _find(scaleName, root);
++    if (theory == null) return [];
++    return _generate(theory: theory, system: system,
++        userStartFret: userStartFret, userEndFret: userEndFret);
++  }
++
++  Future<Map<String, List<ScalePattern>>> loadAllSystems({
++    required String scaleName,
++    required String root,
++    int userStartFret = 0,
++    int userEndFret = 12,
++  }) async {
++    final theory = await _find(scaleName, root);
++    if (theory == null) return {};
++    return ScalePatternGenerator.allSystems(
++      scaleName: theory.name, root: theory.root, intervals: theory.intervals,
++      userStartFret: userStartFret, userEndFret: userEndFret,
++    );
++  }
++
++  Future<ScalePattern?> loadPositional({
++    required String scaleName,
++    required String root,
++    required int startFret,
++    int fretsSpan = 4,
++  }) async {
++    final theory = await _find(scaleName, root);
++    if (theory == null) return null;
++    return ScalePatternGenerator.positional(
++      scaleName: theory.name, root: theory.root,
++      intervals: theory.intervals, startFret: startFret, fretsSpan: fretsSpan,
++    );
++  }
++
++  Future<_ScaleTheory?> _find(String scaleName, String root) async {
++    final scales = await _loadAll();
++    try {
++      return scales.firstWhere((s) =>
++          s.root == root &&
++          (s.name.toLowerCase().contains(scaleName.toLowerCase()) ||
++           s.type.toLowerCase() == scaleName.toLowerCase()));
++    } catch (_) { return null; }
++  }
++
++  Future<List<_ScaleTheory>> _loadAll() async {
++    if (_cache != null) return _cache!;
++    final raw = await bundle.loadString(scalesAssetPath);
++    final list = json.decode(raw) as List<dynamic>;
++    _cache = list.map((e) {
++      final m = Map<String, dynamic>.from(e as Map);
++      return _ScaleTheory(
++        name: m['name'] as String,
++        root: m['root'] as String,
++        type: m['type'] as String,
++        intervals: List<int>.from((m['intervals'] as List).map((x) => (x as num).toInt())),
+       );
+-    }
++    }).toList();
++    return _cache!;
++  }
+ 
+-    return rawList.map((entry) {
+-      if (entry is! Map) {
+-        throw const FormatException('Pattern entry must be a JSON object');
+-      }
+-      return ScalePattern.fromJson(Map<String, dynamic>.from(entry));
+-    }).toList(growable: false);
++  List<ScalePattern> _generate({
++    required _ScaleTheory theory,
++    required String system,
++    required int userStartFret,
++    required int userEndFret,
++  }) {
++    switch (system) {
++      case 'CAGED':
++        return ScalePatternGenerator.caged(
++            scaleName: theory.name, root: theory.root, intervals: theory.intervals);
++      case '3NPS':
++        return List.generate(theory.intervals.length.clamp(5, 7), (i) =>
++            ScalePatternGenerator.threeNps(
++                scaleName: theory.name, root: theory.root,
++                intervals: theory.intervals, startFret: i * 2));
++      case '4NPS':
++        return List.generate(theory.intervals.length.clamp(4, 6), (i) =>
++            ScalePatternGenerator.fourNps(
++                scaleName: theory.name, root: theory.root,
++                intervals: theory.intervals, startFret: i * 3));
++      case '7 Patrones':
++        return ScalePatternGenerator.sevenPatterns(
++            scaleName: theory.name, root: theory.root, intervals: theory.intervals);
++      case 'Pentatónica':
++        return ScalePatternGenerator.pentatonicBoxes(
++            scaleName: theory.name, root: theory.root, intervals: theory.intervals);
++      case 'Berklee':
++        return ScalePatternGenerator.berklee(
++            scaleName: theory.name, root: theory.root, intervals: theory.intervals);
++      case 'Mástil completo':
++        return [ScalePatternGenerator.fullNeck(
++            scaleName: theory.name, root: theory.root, intervals: theory.intervals,
++            fromFret: userStartFret, toFret: userEndFret)];
++      default:
++        return [ScalePatternGenerator.positional(
++            scaleName: theory.name, root: theory.root, intervals: theory.intervals,
++            startFret: userStartFret, fretsSpan: userEndFret - userStartFret)];
++    }
+   }
+ }
++
++class _ScaleTheory {
++  const _ScaleTheory({required this.name, required this.root,
++      required this.type, required this.intervals});
++  final String name;
++  final String root;
++  final String type;
++  final List<int> intervals;
++}
+diff --git a/lib/features/scales/presentation/widgets/fretboard_diagram.dart b/lib/features/scales/presentation/widgets/fretboard_diagram.dart
+index cf47050..9554457 100644
+--- a/lib/features/scales/presentation/widgets/fretboard_diagram.dart
++++ b/lib/features/scales/presentation/widgets/fretboard_diagram.dart
+@@ -168,10 +168,35 @@ class _FretboardDiagramPainter extends CustomPainter {
+         ..color = coordinate.isRoot ? rootColor : noteColor;
+ 
+       canvas.drawCircle(Offset(x, y), markerRadius, markerPaint);
++      if (coordinate.note.isNotEmpty) {
++        _drawText(
++          canvas,
++          coordinate.note,
++          Offset(x - markerRadius * 0.6, y - markerRadius * 0.5),
++          coordinate.isRoot ? Colors.white : Colors.white,
++          fontSize: markerRadius * 0.85,
++        );
++      }
+     }
+     canvas.restore();
+   }
+ 
++  void _drawText(Canvas canvas, String text, Offset offset, Color color,
++      {double fontSize = 10}) {
++    final painter = TextPainter(
++      text: TextSpan(
++        text: text,
++        style: TextStyle(
++          fontSize: fontSize,
++          fontWeight: FontWeight.w700,
++          color: color,
++        ),
++      ),
++      textDirection: TextDirection.ltr,
++    )..layout();
++    painter.paint(canvas, offset);
++  }
++
+   void _drawCenteredText(
+     Canvas canvas,
+     String text,
+diff --git a/lib/features/scales/scale_pattern_validator.dart b/lib/features/scales/scale_pattern_validator.dart
+index d9a79c8..fd1e6ec 100644
+--- a/lib/features/scales/scale_pattern_validator.dart
++++ b/lib/features/scales/scale_pattern_validator.dart
+@@ -18,7 +18,7 @@ class ScalePatternValidationResult {
+     required this.issues,
+   });
+ 
+-  final List<ScalePattern> validPatterns;
++  final List<ScaleFingering> validPatterns;
+   final List<ScalePatternValidationIssue> issues;
+ }
+ 
+@@ -27,10 +27,10 @@ class ScalePatternValidator {
+ 
+   ScalePatternValidationResult validate({
+     required Scale scale,
+-    required List<ScalePattern> patterns,
++    required List<ScaleFingering> patterns,
+     required ScalePatternSystem system,
+   }) {
+-    final valid = <ScalePattern>[];
++    final valid = <ScaleFingering>[];
+     final issues = <ScalePatternValidationIssue>[];
+ 
+     for (final pattern in patterns) {
+@@ -142,7 +142,7 @@ class ScalePatternValidator {
+     return ScalePatternValidationResult(validPatterns: valid, issues: issues);
+   }
+ 
+-  List<ScalePatternNote> _extractPatternNotes(ScalePattern pattern) {
++  List<ScalePatternNote> _extractPatternNotes(ScaleFingering pattern) {
+     if (pattern.notes.isNotEmpty) {
+       return pattern.notes;
+     }
+diff --git a/lib/features/scales/scales_screen.dart b/lib/features/scales/scales_screen.dart
+index 0148223..cbeef2b 100644
+--- a/lib/features/scales/scales_screen.dart
++++ b/lib/features/scales/scales_screen.dart
+@@ -402,7 +402,7 @@ class _FingeringSection extends StatelessWidget {
+   });
+ 
+   final String title;
+-  final List<ScalePattern> patterns;
++  final List<ScaleFingering> patterns;
+ 
+   @override
+   Widget build(BuildContext context) {
+diff --git a/lib/models/scale.dart b/lib/models/scale.dart
+index 866cd40..29b7148 100644
+--- a/lib/models/scale.dart
++++ b/lib/models/scale.dart
+@@ -60,13 +60,13 @@ class Scale {
+   final String commonUsage;
+ 
+   /// Position-based block fingerings for guitar practice.
+-  final List<ScalePattern> blockFingerings;
++  final List<ScaleFingering> blockFingerings;
+ 
+   /// Three-notes-per-string (3NPS) fingering patterns.
+-  final List<ScalePattern> threeNotePerStringFingerings;
++  final List<ScaleFingering> threeNotePerStringFingerings;
+ 
+   /// CAGED-oriented fingering patterns.
+-  final List<ScalePattern> cagedFingerings;
++  final List<ScaleFingering> cagedFingerings;
+ 
+   /// Harmonized triads by degree for this scale.
+   final List<HarmonizedChord> harmonizedChords;
+@@ -96,9 +96,9 @@ class Scale {
+     String? description,
+     List<String>? relatedChords,
+     String? commonUsage,
+-    List<ScalePattern>? blockFingerings,
+-    List<ScalePattern>? threeNotePerStringFingerings,
+-    List<ScalePattern>? cagedFingerings,
++    List<ScaleFingering>? blockFingerings,
++    List<ScaleFingering>? threeNotePerStringFingerings,
++    List<ScaleFingering>? cagedFingerings,
+     List<HarmonizedChord>? harmonizedChords,
+   }) =>
+       Scale(
+@@ -175,7 +175,7 @@ class Scale {
+     }).toList(growable: false);
+   }
+ 
+-  static List<ScalePattern> _optionalPatternList(
++  static List<ScaleFingering> _optionalPatternList(
+       Map<String, dynamic> json, String key) {
+     final value = json[key];
+     if (value == null) return const [];
+@@ -184,7 +184,7 @@ class Scale {
+     }
+     return value
+         .map((entry) =>
+-            ScalePattern.fromJson(Map<String, dynamic>.from(entry as Map)))
++            ScaleFingering.fromJson(Map<String, dynamic>.from(entry as Map)))
+         .toList(growable: false);
+   }
+ 
+@@ -203,8 +203,8 @@ class Scale {
+ }
+ 
+ /// A reusable guitar fingering pattern representation for a scale.
+-class ScalePattern {
+-  const ScalePattern({
++class ScaleFingering {
++  const ScaleFingering({
+     required this.name,
+     this.id,
+     this.system = ScalePatternSystem.custom,
+@@ -218,7 +218,7 @@ class ScalePattern {
+     this.description,
+   });
+ 
+-  factory ScalePattern.fromJson(Map<String, dynamic> json) {
++  factory ScaleFingering.fromJson(Map<String, dynamic> json) {
+     final rawSystem = json['system'] as String?;
+     final rawStatus = json['status'] as String?;
+     final positions = _optionalPatternStringList(json, 'positions');
+@@ -229,7 +229,7 @@ class ScalePattern {
+       );
+     }
+ 
+-    return ScalePattern(
++    return ScaleFingering(
+       id: json['id'] as String?,
+       name: _requirePatternString(json, 'name'),
+       system: ScalePatternSystemX.fromJson(rawSystem),
+diff --git a/test/features/scales/data/scale_repository_test.dart b/test/features/scales/data/scale_repository_test.dart
+index 20b1679..47aa129 100644
+--- a/test/features/scales/data/scale_repository_test.dart
++++ b/test/features/scales/data/scale_repository_test.dart
+@@ -24,31 +24,49 @@ class _FakeAssetBundle extends CachingAssetBundle {
+ 
+ void main() {
+   group('ScaleRepository', () {
+-    test('loads and maps patterns from asset JSON list', () async {
++    late ScaleRepository repository;
++
++    setUp(() {
+       final bundle = _FakeAssetBundle({
+-        'assets/data/scale_patterns_coordinates.json':
+-            '[{"scale_name":"Major","root":"C","pattern_type":"CAGED","position_name":"Forma de A","starting_fret":2,"frets_span":4,"coordinates":[{"string":5,"fret":3,"interval":"1","note":"C","is_root":true,"finger":2}]}]'
++        'assets/data/scales.json':
++            '[{"name":"Major","root":"C","type":"major","intervals":[0,2,4,5,7,9,11]}]'
+       });
++      repository = ScaleRepository(bundle: bundle);
++    });
+ 
+-      final repository = ScaleRepository(bundle: bundle);
+-      final result = await repository.loadScalePatterns();
++    test('loadPatterns generates requested system patterns', () async {
++      final result = await repository.loadPatterns(
++        scaleName: 'major',
++        root: 'C',
++        system: 'CAGED',
++      );
+ 
+-      expect(result, hasLength(1));
+-      expect(result.first.scaleName, 'Major');
+-      expect(result.first.coordinates.first.note, 'C');
++      expect(result, isNotEmpty);
++      expect(result.first.patternType, 'CAGED');
++      expect(result.first.coordinates, isNotEmpty);
+     });
+ 
+-    test('supports root object with patterns key', () async {
+-      final bundle = _FakeAssetBundle({
+-        'assets/data/scale_patterns_coordinates.json':
+-            '{"patterns":[{"scale_name":"Major","root":"C","pattern_type":"CAGED","position_name":"Forma de A","starting_fret":2,"frets_span":4,"coordinates":[{"string":5,"fret":3,"interval":"1","note":"C","is_root":true,"finger":2}]}]}'
+-      });
++    test('loadAllSystems returns generated map for known scale', () async {
++      final result = await repository.loadAllSystems(
++        scaleName: 'major',
++        root: 'C',
++      );
++
++      expect(result, isNotEmpty);
++      expect(result['CAGED'], isNotEmpty);
++      expect(result['Berklee'], isNotEmpty);
++    });
+ 
+-      final repository = ScaleRepository(bundle: bundle);
+-      final result = await repository.loadScalePatterns();
++    test('loadPositional returns a positional pattern', () async {
++      final pattern = await repository.loadPositional(
++        scaleName: 'major',
++        root: 'C',
++        startFret: 3,
++      );
+ 
+-      expect(result, hasLength(1));
+-      expect(result.first.positionName, 'Forma de A');
++      expect(pattern, isNotNull);
++      expect(pattern!.patternType, 'Posicional');
++      expect(pattern.startingFret, 3);
+     });
+   });
+ }
+diff --git a/test/features/scales/scale_pattern_validator_test.dart b/test/features/scales/scale_pattern_validator_test.dart
+index 30ab749..890c93e 100644
+--- a/test/features/scales/scale_pattern_validator_test.dart
++++ b/test/features/scales/scale_pattern_validator_test.dart
+@@ -36,7 +36,7 @@ void main() {
+         relatedChords: ['C', 'Dm', 'Em'],
+         commonUsage: 'usage',
+         blockFingerings: [
+-          ScalePattern(
++          ScaleFingering(
+             name: 'Validated block',
+             status: ScalePatternStatus.validated,
+             system: ScalePatternSystem.block,
+@@ -69,7 +69,7 @@ void main() {
+         relatedChords: ['C', 'Dm', 'Em'],
+         commonUsage: 'usage',
+         blockFingerings: [
+-          ScalePattern(
++          ScaleFingering(
+             name: 'Draft block',
+             system: ScalePatternSystem.block,
+             notes: [

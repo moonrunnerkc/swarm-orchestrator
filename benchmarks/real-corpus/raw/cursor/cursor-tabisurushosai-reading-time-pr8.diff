@@ -1,0 +1,240 @@
+diff --git a/_locales/en/messages.json b/_locales/en/messages.json
+index 724b106..a3df603 100644
+--- a/_locales/en/messages.json
++++ b/_locales/en/messages.json
+@@ -53,6 +53,9 @@
+       }
+     }
+   },
++  "emptyReadingTimeResult": {
++    "message": "No readable text yet"
++  },
+   "errorOccurred": {
+     "message": "Could not read this page"
+   },
+@@ -65,6 +68,15 @@
+   "emptyStatus": {
+     "message": "No readable text found"
+   },
++  "emptyStateHelp": {
++    "message": "Open this on a page with article text to estimate automatically. Switch the display language if needed."
++  },
++  "errorStateHelp": {
++    "message": "Reload the page, then open the extension again."
++  },
++  "onboardingGuide": {
++    "message": "Automatically estimates the reading time for the page you are viewing."
++  },
+   "trialStatusOne": {
+     "message": "Trial: $DAYS$ day remaining",
+     "placeholders": {
+diff --git a/_locales/ja/messages.json b/_locales/ja/messages.json
+index c4ce09f..df02cb6 100644
+--- a/_locales/ja/messages.json
++++ b/_locales/ja/messages.json
+@@ -53,6 +53,9 @@
+       }
+     }
+   },
++  "emptyReadingTimeResult": {
++    "message": "読める本文がありません"
++  },
+   "errorOccurred": {
+     "message": "ページを読み取れませんでした"
+   },
+@@ -65,6 +68,15 @@
+   "emptyStatus": {
+     "message": "本文テキストが見つかりません"
+   },
++  "emptyStateHelp": {
++    "message": "記事本文のあるページで開くと自動で見積もります。必要なら表示言語を切り替えて確認してください。"
++  },
++  "errorStateHelp": {
++    "message": "ページを再読み込みしてから、もう一度拡張機能を開いてください。"
++  },
++  "onboardingGuide": {
++    "message": "今見ているページの読了時間を自動で見積もります。"
++  },
+   "trialStatusOne": {
+     "message": "試用期間: 残り$DAYS$日",
+     "placeholders": {
+diff --git a/popup.html b/popup.html
+index bfa77db..a08afd6 100644
+--- a/popup.html
++++ b/popup.html
+@@ -82,6 +82,8 @@
+ 
+     .status-label,
+     .stats,
++    .help-text,
++    .onboarding-guide,
+     .premium-area {
+       color: var(--muted);
+       font-size: 12px;
+@@ -102,6 +104,19 @@
+       letter-spacing: -0.03em;
+     }
+ 
++    .help-text,
++    .onboarding-guide {
++      margin: 0;
++    }
++
++    .onboarding-guide {
++      padding: 10px 12px;
++      border: 1px solid var(--border);
++      border-radius: 12px;
++      background: var(--surface);
++      font-weight: 600;
++    }
++
+     .controls,
+     .settings {
+       padding: 12px;
+@@ -232,10 +247,13 @@
+       <h1 id="app-title">よむ時間めやす</h1>
+     </header>
+ 
+-    <section id="result-card" class="card result-card is-loading" aria-live="polite" aria-atomic="true" aria-busy="true" aria-labelledby="status-label" aria-describedby="stats">
++    <p id="onboarding-guide" class="onboarding-guide" hidden>今見ているページの読了時間を自動で見積もります。</p>
++
++    <section id="result-card" class="card result-card is-loading" aria-live="polite" aria-atomic="true" aria-busy="true" aria-labelledby="status-label" aria-describedby="stats result-help">
+       <div id="status-label" class="status-label">読み込み中</div>
+       <div id="reading-time" class="result">…</div>
+       <div id="stats" class="stats">…</div>
++      <p id="result-help" class="help-text" hidden></p>
+     </section>
+ 
+     <fieldset class="card controls control-group">
+diff --git a/src/core/settings.ts b/src/core/settings.ts
+index 458f22f..9981b84 100644
+--- a/src/core/settings.ts
++++ b/src/core/settings.ts
+@@ -10,12 +10,14 @@ export interface StoredSettings extends Partial<ReadingSpeeds> {
+   isPremium?: boolean;
+   trialStartTs?: number;
+   siteSpeeds?: SiteSpeeds;
++  hasSeenOnboarding?: boolean;
+ }
+ 
+ export interface EffectiveSettings extends ReadingSpeeds {
+   isPremium: boolean;
+   trialStartTs: number;
+   siteSpeeds: SiteSpeeds;
++  hasSeenOnboarding: boolean;
+ }
+ 
+ function normalizeSpeed(value: unknown, fallback: number): number {
+@@ -42,6 +44,7 @@ export function normalizeStoredSettings(
+     isPremium: Boolean(stored.isPremium),
+     trialStartTs: stored.trialStartTs || defaultTrialStartTs,
+     siteSpeeds: normalizeSiteSpeeds(stored.siteSpeeds),
++    hasSeenOnboarding: Boolean(stored.hasSeenOnboarding),
+   };
+ }
+ 
+diff --git a/src/popup.ts b/src/popup.ts
+index 1ea04f5..a728915 100644
+--- a/src/popup.ts
++++ b/src/popup.ts
+@@ -25,6 +25,7 @@ let currentDomain: string | undefined;
+ let isPremium = false;
+ let trialStartTs = 0;
+ let siteSpeeds: SiteSpeeds = {};
++let hasSeenOnboarding = false;
+ 
+ type ResultState = "loading" | "ready" | "empty" | "error";
+ 
+@@ -35,6 +36,11 @@ const resultStateMessageKeys: Record<ResultState, string> = {
+   error: "errorOccurred",
+ };
+ 
++const resultStateHelpMessageKeys: Partial<Record<ResultState, string>> = {
++  empty: "emptyStateHelp",
++  error: "errorStateHelp",
++};
++
+ const uiLocale = chrome.i18n.getUILanguage().toLowerCase().startsWith("ja")
+   ? "ja-JP"
+   : "en-US";
+@@ -78,6 +84,7 @@ function getTrialStatusMessage(trialRemainingDays: number): string {
+ function setResultState(state: ResultState) {
+   const card = document.getElementById("result-card");
+   const statusLabel = document.getElementById("status-label");
++  const helpText = document.getElementById("result-help");
+ 
+   if (card) {
+     card.classList.remove("is-loading", "is-ready", "is-empty", "is-error");
+@@ -88,6 +95,20 @@ function setResultState(state: ResultState) {
+   if (statusLabel) {
+     statusLabel.innerText = chrome.i18n.getMessage(resultStateMessageKeys[state]);
+   }
++
++  if (helpText) {
++    const helpMessageKey = resultStateHelpMessageKeys[state];
++    helpText.innerText = helpMessageKey ? chrome.i18n.getMessage(helpMessageKey) : "";
++    helpText.hidden = !helpMessageKey;
++  }
++}
++
++function updateOnboardingGuide(shouldShow: boolean) {
++  const guide = document.getElementById("onboarding-guide");
++
++  if (!guide) return;
++
++  guide.hidden = !shouldShow;
+ }
+ 
+ async function loadSettings() {
+@@ -97,6 +118,7 @@ async function loadSettings() {
+   isPremium = settings.isPremium;
+   trialStartTs = settings.trialStartTs;
+   siteSpeeds = settings.siteSpeeds;
++  hasSeenOnboarding = settings.hasSeenOnboarding;
+ 
+   if (!storedSettings.trialStartTs) {
+     await chromeLocalStorageAdapter.set({ trialStartTs });
+@@ -118,6 +140,12 @@ async function loadSettings() {
+ 
+   localizeUI();
+   updatePremiumUI();
++  updateOnboardingGuide(!hasSeenOnboarding);
++
++  if (!hasSeenOnboarding) {
++    hasSeenOnboarding = true;
++    await chromeLocalStorageAdapter.set({ hasSeenOnboarding });
++  }
+ }
+ 
+ function updatePremiumUI() {
+@@ -156,6 +184,7 @@ function localizeUI() {
+     "unit-speed-ja": "unitCharsPerMin",
+     "unit-speed-en": "unitWordsPerMin",
+     "upgrade-btn": "upgradeButton",
++    "onboarding-guide": "onboardingGuide",
+   };
+ 
+   for (const [id, key] of Object.entries(elements)) {
+@@ -235,7 +264,9 @@ function updateDisplay() {
+   if (!stats || !readingTime) return;
+ 
+   const minutes = estimateReadingMinutes(textStats, lang, speeds);
+-  readingTime.innerText = chrome.i18n.getMessage("readingTimeResult", [formatDisplayNumber(minutes)]);
++  readingTime.innerText = minutes > 0
++    ? chrome.i18n.getMessage("readingTimeResult", [formatDisplayNumber(minutes)])
++    : chrome.i18n.getMessage("emptyReadingTimeResult");
+ 
+   if (lang === "ja") {
+     stats.innerText = chrome.i18n.getMessage("charCount", [formatDisplayNumber(textStats.charCount)]);
+diff --git a/src/storage/settingsStorage.ts b/src/storage/settingsStorage.ts
+index d7494d9..b91d81c 100644
+--- a/src/storage/settingsStorage.ts
++++ b/src/storage/settingsStorage.ts
+@@ -17,6 +17,7 @@ export const SETTINGS_STORAGE_KEYS = [
+   "isPremium",
+   "trialStartTs",
+   "siteSpeeds",
++  "hasSeenOnboarding",
+ ] as const satisfies readonly SettingsStorageKey[];
+ 
+ export function normalizeSettingsStorageKeys(

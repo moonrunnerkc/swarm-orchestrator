@@ -1,0 +1,26 @@
+{
+  "id": "devin-g2void2-byte-garant-pr232",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 232,
+    "headSha": "ecd0ae3175a8ff76259529ddc971ae9cdfa85711",
+    "baseSha": "2a27c4029ec5ac7686d32b327a18157711ad7e8f",
+    "title": "feat(deals): commission-via-invoice (P10) + drop Treasury (P5)",
+    "body": "## Summary\n\nCompletes the combined P5/P10 branch for dropping the platform Treasury accumulator and moving deal commission payment into the deposit-invoice topup flow.\n\n- Backend: removed Treasury models/routes/schemas/tests, dropped per-deal `pay_commission`, added `pending_topup`, `topup_deposit_id`, `commission_paid`, deal-topup deposits, expiry sweep, buyer cancel endpoint, and inlined `topup_invoice` recovery data.\n- Frontend: updated manual DTOs/hooks/query keys, switched deal creation to `POST /api/deals/with-topup`, added invoice preview after create, added pending-topup detail banner with pay/cancel actions, removed Treasury admin route/menu/page/hooks, and surfaced `pending_topup_expiry_hours` in admin settings.\n- Tests: updated frontend unit/e2e fixtures/contracts for `pending_topup` and removed `pay_commission`/Treasury references; added backend topup scenarios and retuned existing balance assertions for principal-only locks/refunds.\n\n## Review & Testing Checklist for Human\n\n- [ ] Create a buyer deal via `/deals/new` and confirm the invoice preview shows missing principal, commission, total, and opens the provider pay URL.\n- [ ] Reload a `pending_topup` deal detail page and confirm the inlined invoice banner can reopen the invoice and buyer cancellation expires the topup.\n- [ ] In admin, confirm the Treasury page/menu are gone and the settings page can view/update `pending_topup_expiry_hours`.\n- [ ] Run a provider-paid round trip on staging: create deal with topup → pay invoice → verify transition to seller confirmation and correct buyer/seller balances.\n\n### Notes\n\nLocal verification run:\n\n- `cd frontend && npm run lint`\n- `cd frontend && npm run typecheck`\n- `cd frontend && npm run test:run` — 497 passed\n- `cd frontend && npm run build`\n- `FRONTEND_DIST_DIR=/nonexistent python -m pytest tests/ --no-cov` — 748 passed\n\n`python -m pytest tests/ --no-cov` without `FRONTEND_DIST_DIR=/nonexistent` fails after a local frontend build because the built SPA fallback turns `GET /api/auth/whoami` into `200` in `test_v5_c_3_get_under_api_auth_still_passes_via_readonly`; with frontend dist disabled it passes.\n\nLink to Devin session: https://app.devin.ai/sessions/fb59eadf8fdd479aba8712711a0c32aa\nRequested by: @g2void2-byte",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "feat/commission-via-invoice",
+    "repository": "g2void2-byte/garant"
+  },
+  "diffRef": {
+    "repository": "g2void2-byte/garant",
+    "headSha": "ecd0ae3175a8ff76259529ddc971ae9cdfa85711",
+    "baseSha": "2a27c4029ec5ac7686d32b327a18157711ad7e8f"
+  },
+  "vendoredDiffPath": "devin/devin-g2void2-byte-garant-pr232.diff",
+  "vendoredAt": "2026-05-24T03:04:42.237Z",
+  "collectedAt": "2026-05-24T03:04:42.237Z"
+}

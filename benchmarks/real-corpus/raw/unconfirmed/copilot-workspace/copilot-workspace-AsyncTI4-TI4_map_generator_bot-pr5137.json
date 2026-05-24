@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-AsyncTI4-TI4_map_generator_bot-pr5137",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 5137,
+    "headSha": "efeb1e580fec514b3d71b83c3cf61e7c6af12fb2",
+    "baseSha": "07d307596fb6b2fc173fdec95bab855e37ef552f",
+    "title": "Move False Flag button flow into ActionCardDeck2ButtonHandler",
+    "body": "False Flag needed a button-driven resolution flow, and that flow should live with the rest of the Action Card Deck 2 handlers. This change relocates the False Flag interaction chain into `ActionCardDeck2ButtonHandler` without changing the user-facing flow.\n\n- **Handler ownership**\n  - Moves the `False Flag` button handlers from `ButtonHelperActionCards` to `ActionCardDeck2ButtonHandler`\n  - Keeps Deck 2 action-card resolution logic co-located with other ACD2-specific handlers\n\n- **False Flag interaction flow**\n  - Preserves the full multi-step resolution:\n    1. choose an eligible opponent with command tokens on the board\n    2. choose the source system\n    3. choose a destination system containing the acting player’s units\n    4. move the selected command token\n\n- **Supporting logic**\n  - Moves the helper methods used to:\n    - find targetable players\n    - enumerate source systems with the target player’s command tokens\n    - enumerate valid destination systems\n  - Retains the existing re-validation at resolution time before moving the token\n\n- **Code cleanup**\n  - Removes the relocated False Flag-specific logic and imports from `ButtonHelperActionCards`\n  - Leaves the action-card automation entrypoint unchanged; only handler placement changed\n\n```java\n@ButtonHandler(\"falseFlagStep4_\")\npublic static void resolveFalseFlagStep4(Player player, Game game, ButtonInteractionEvent event, String buttonID) {\n    RemoveCommandCounterService.fromTile(target.getColor(), sourceTile, game);\n    CommandCounterHelper.addCC(event, target, destinationTile);\n}\n```",
+    "author": "Copilot",
+    "headRef": "copilot/add-button-handler-false-flag",
+    "repository": "AsyncTI4/TI4_map_generator_bot"
+  },
+  "diffRef": {
+    "repository": "AsyncTI4/TI4_map_generator_bot",
+    "headSha": "efeb1e580fec514b3d71b83c3cf61e7c6af12fb2",
+    "baseSha": "07d307596fb6b2fc173fdec95bab855e37ef552f"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-AsyncTI4-TI4_map_generator_bot-pr5137.diff",
+  "vendoredAt": "2026-05-24T03:05:29.331Z",
+  "collectedAt": "2026-05-24T03:05:29.331Z"
+}

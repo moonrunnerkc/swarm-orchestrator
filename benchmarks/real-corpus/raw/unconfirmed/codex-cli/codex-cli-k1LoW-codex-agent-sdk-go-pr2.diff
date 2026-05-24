@@ -1,0 +1,109 @@
+diff --git a/README.md b/README.md
+index 5ba7954..8bcbaf9 100644
+--- a/README.md
++++ b/README.md
+@@ -40,6 +40,12 @@ func main() {
+ 
+ ``` go
+ for evt, err := range codex.Query(ctx, "Hello",
++	codex.WithOptions(
++		codex.WithConfig(map[string]string{
++			"model":           "gpt-5.4",
++			"approval_policy": "on-request",
++		}),
++	),
+ 	codex.WithThreadOptions(
+ 		codex.WithModel("o3"),
+ 		codex.WithApprovalPolicy("full-auto"),
+diff --git a/options.go b/options.go
+index ff50e68..e8118bb 100644
+--- a/options.go
++++ b/options.go
+@@ -3,6 +3,7 @@ package codex
+ // Options holds top-level configuration for the SDK.
+ type Options struct {
+ 	CLIPath string
++	Config  map[string]string
+ 	Env     map[string]string
+ 	Stderr  func(string)
+ 
+@@ -23,6 +24,11 @@ func WithCLIPath(path string) Option {
+ 	return func(o *Options) { o.CLIPath = path }
+ }
+ 
++// WithConfig sets temporary Codex CLI config overrides.
++func WithConfig(config map[string]string) Option {
++	return func(o *Options) { o.Config = config }
++}
++
+ // WithEnv sets environment variables for the CLI process.
+ func WithEnv(env map[string]string) Option {
+ 	return func(o *Options) { o.Env = env }
+diff --git a/subprocess.go b/subprocess.go
+index 466f72d..76b9477 100644
+--- a/subprocess.go
++++ b/subprocess.go
+@@ -9,6 +9,7 @@ import (
+ 	"os/exec"
+ 	"path/filepath"
+ 	"runtime"
++	"sort"
+ 	"strings"
+ 	"sync"
+ 	"time"
+@@ -210,5 +211,19 @@ func (t *subprocessTransport) findCLI() (string, error) {
+ }
+ 
+ func (t *subprocessTransport) buildArgs() []string {
+-	return []string{"app-server", "--listen", "stdio://"}
++	args := []string{"app-server", "--listen", "stdio://"}
++	if len(t.options.Config) == 0 {
++		return args
++	}
++
++	keys := make([]string, 0, len(t.options.Config))
++	for key := range t.options.Config {
++		keys = append(keys, key)
++	}
++	sort.Strings(keys)
++
++	for _, key := range keys {
++		args = append(args, "-c", key+"="+t.options.Config[key])
++	}
++	return args
+ }
+diff --git a/subprocess_test.go b/subprocess_test.go
+new file mode 100644
+index 0000000..579ff61
+--- /dev/null
++++ b/subprocess_test.go
+@@ -0,0 +1,29 @@
++package codex
++
++import (
++	"reflect"
++	"testing"
++)
++
++func TestSubprocessTransportBuildArgsWithConfig(t *testing.T) {
++	transport := newSubprocessTransport(&Options{
++		Config: map[string]string{
++			"model":             "gpt-5.4",
++			"sandbox_mode":      "workspace-write",
++			"approval_policy":   "on-request",
++			"model_provider.id": "openai",
++		},
++	})
++
++	got := transport.buildArgs()
++	want := []string{
++		"app-server", "--listen", "stdio://",
++		"-c", "approval_policy=on-request",
++		"-c", "model=gpt-5.4",
++		"-c", "model_provider.id=openai",
++		"-c", "sandbox_mode=workspace-write",
++	}
++	if !reflect.DeepEqual(got, want) {
++		t.Errorf("buildArgs() = %#v, want %#v", got, want)
++	}
++}

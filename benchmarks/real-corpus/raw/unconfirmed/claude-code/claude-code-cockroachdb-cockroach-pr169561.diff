@@ -1,0 +1,16 @@
+diff --git a/pkg/cmd/roachprod/cli/update.go b/pkg/cmd/roachprod/cli/update.go
+index 5e0bb763589a..95a2e95ce99d 100644
+--- a/pkg/cmd/roachprod/cli/update.go
++++ b/pkg/cmd/roachprod/cli/update.go
+@@ -91,10 +91,10 @@ func DownloadLatestRoachprod(toFile string, branch string, osName string, arch s
+ 	if err != nil {
+ 		return errors.Wrapf(err, "unable to create destination file: %q", toFile)
+ 	}
++	defer func() { _ = f.Close() }()
+ 	if err := f.Chmod(0700); err != nil {
+ 		return errors.Wrapf(err, "unable to chmod destination file: %q", toFile)
+ 	}
+-	defer func() { _ = f.Close() }()
+ 	if _, err := io.Copy(f, r); err != nil {
+ 		return errors.Wrapf(err, "unable to copy blob: %q to the destination file: %q", binObj.ObjectName(), toFile)
+ 	}

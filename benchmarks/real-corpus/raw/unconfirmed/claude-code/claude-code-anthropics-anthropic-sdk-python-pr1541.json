@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1541",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1541,
+    "headSha": "664e53154469b0bb8b6d045cbdf70e228cbbf644",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824",
+    "title": "fix: only suppress auto-append when caller explicitly provides a tool result",
+    "body": "## Summary\n\nFixes #1536.\n\nCalling `runner.append_messages()` with a plain user message inside the tool runner loop caused an infinite loop. Any call to `append_messages()` unconditionally set `_messages_modified = True`, which the runner interpreted as the caller manually handling the tool result. It would skip its own auto-append of the assistant message and tool result, so the next iteration sent a request with no tool result in history — Claude saw the original question unanswered, re-issued the same tool call, and the loop never terminated.\n\n## Root cause\n\n`_messages_modified` was serving two distinct purposes with no way to tell them apart:\n\n1. **Caller is adding extra context** (e.g. `append_messages({\"role\": \"user\", \"content\": \"be concise\"})`) — runner should still auto-append the tool result\n2. **Caller is manually providing the tool result** (e.g. `append_messages(assistant_msg, tool_result_msg)`) — runner should skip auto-append\n\nBoth paths set the flag, so the runner always skipped auto-append regardless of intent.\n\n## Fix\n\n`_messages_modified` is now only set when at least one of the appended messages contains a `tool_result` content block — the unambiguous signal that the caller is handling the tool result themselves. Appending messages without tool results leaves the flag untouched and the loop continues correctly.\n\n## What this affects\n\n- Sync runner (`BetaToolRunner`) ✅\n- Async runner (`BetaAsyncToolRunner`) ✅ — both share the same `append_messages()` on the base class\n- The working \"Modifying tool results\" pattern (passing both assistant message + tool result) continues to work unchanged\n- `set_messages_params()` is unaffected — it never touches the flag\n\n## Tests\n\nAdded `test_append_messages_non_tool_result_does_not_suppress_auto_append` — a pure unit test (no API calls required) that directly asserts the flag behaviour for both the plain-message case and the tool-result case.\n\nThe existing `test_custom_message_handling` (marked `xfail`) is a related but separate issue and remains untouched.",
+    "author": "Echolonius",
+    "headRef": "fix/append-messages-infinite-loop",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "664e53154469b0bb8b6d045cbdf70e228cbbf644",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1541.diff",
+  "vendoredAt": "2026-05-24T03:17:32.065Z",
+  "collectedAt": "2026-05-24T03:17:32.065Z"
+}

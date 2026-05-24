@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-Renumics-spotlight-pr557",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 557,
+    "headSha": "a75085f3e442c710c90d63d9ed4dbe588f9b211c",
+    "baseSha": "1a533cfdf7438c338abd8c45f4907262a5924e62",
+    "title": "Add daily security triage automation for Dependabot and code-scanning alerts",
+    "body": "This PR introduces a daily security triage workflow that evaluates open Dependabot and code-scanning alerts from the last 24 hours, prioritizes high-impact reachable risk, and drives remediation/reporting actions automatically. It implements the required behavior to only produce a `Daily Security Report` issue when relevant blast radius exists, while skipping low-risk/unreachable findings.\n\n- **Workflow automation**\n  - Adds `.github/workflows/daily-security-report.yml` (scheduled + manual trigger).\n  - Runs a dedicated Python triage script with repo-scoped permissions for issues, PRs, and security events.\n\n- **Alert ingestion + prioritization**\n  - Adds `scripts/daily_security_report.py` to:\n    - fetch open Dependabot + code-scanning alerts,\n    - filter alerts to the last 24h (`created_at`/`updated_at`),\n    - prioritize by severity and reachable blast radius.\n\n- **Blast-radius and reachability assessment**\n  - Implements package/rule path analysis to classify production reachability.\n  - Distinguishes production vs dev/optional scope from `package.json` and `pyproject.toml`.\n  - Excludes low blast-radius/unreachable entries from report output.\n\n- **Automated actioning**\n  - For reachable Dependabot alerts with fix versions: prepares dependency bump PRs against default branch.\n  - For reachable Dependabot alerts without fixes: posts alert comments indicating real exposure and no available patch.\n  - Creates or updates a single `Daily Security Report` issue only when relevant alerts exist.\n\n- **Focused unit coverage**\n  - Adds `tests/unit/test_daily_security_report.py` for scope detection, blast-radius filtering, manifest update behavior, and report formatting.\n\n```yaml\n# .github/workflows/daily-security-report.yml\non:\n  schedule:\n    - cron: '0 6 * * *'\n  workflow_dispatch:\n```",
+    "author": "Copilot",
+    "headRef": "copilot/daily-security-report-24-hour-alerts",
+    "repository": "Renumics/spotlight"
+  },
+  "diffRef": {
+    "repository": "Renumics/spotlight",
+    "headSha": "a75085f3e442c710c90d63d9ed4dbe588f9b211c",
+    "baseSha": "1a533cfdf7438c338abd8c45f4907262a5924e62"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/copilot-workspace/copilot-workspace-Renumics-spotlight-pr557.diff",
+  "vendoredAt": "2026-05-24T04:28:36.650Z",
+  "collectedAt": "2026-05-24T04:28:36.650Z"
+}

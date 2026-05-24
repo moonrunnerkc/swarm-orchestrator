@@ -1,0 +1,40 @@
+diff --git a/web/utils/formatHugeNumber.js b/web/utils/formatHugeNumber.js
+index 9e97f4e..7426198 100644
+--- a/web/utils/formatHugeNumber.js
++++ b/web/utils/formatHugeNumber.js
+@@ -25,12 +25,12 @@ function formatIntegerString(value) {
+     return digits;
+   }
+ 
+-  return `${digits[0]}.${digits.slice(1, 3).padEnd(2, '0')}e+${digits.length - 1}`;
++  return `${digits[0]}.${digits.slice(1, 3).padEnd(2, '0')}e${digits.length - 1}`;
+ }
+ 
+ function formatNumber(value) {
+   if(Math.abs(value) > 99999) {
+-    return value.toExponential(2);
++    return value.toExponential(2).replace('e+', 'e');
+   }
+ 
+   return value;
+diff --git a/web/utils/formatHugeNumber.test.js b/web/utils/formatHugeNumber.test.js
+index ff2c695..0fe94a4 100644
+--- a/web/utils/formatHugeNumber.test.js
++++ b/web/utils/formatHugeNumber.test.js
+@@ -7,13 +7,13 @@ describe('formatHugeNumber', () => {
+   });
+ 
+   it('formats positive integers above five digits in scientific notation', () => {
+-    expect(formatHugeNumber(100000)).toBe('1.00e+5');
++    expect(formatHugeNumber(100000)).toBe('1.00e5');
+   });
+ 
+   it('supports positive integer strings without using number precision', () => {
+     expect(formatHugeNumber('99999')).toBe('99999');
+-    expect(formatHugeNumber('100000')).toBe('1.00e+5');
+-    expect(formatHugeNumber('12345678901234567890')).toBe('1.23e+19');
++    expect(formatHugeNumber('100000')).toBe('1.00e5');
++    expect(formatHugeNumber('12345678901234567890')).toBe('1.23e19');
+     expect(formatHugeNumber('+00123')).toBe('123');
+   });
+ 

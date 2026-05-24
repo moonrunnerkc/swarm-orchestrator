@@ -1,0 +1,1676 @@
+diff --git a/app/src/main/java/app/eob/me/data/EobModels.kt b/app/src/main/java/app/eob/me/data/EobModels.kt
+index 27f4c59..5cd37eb 100644
+--- a/app/src/main/java/app/eob/me/data/EobModels.kt
++++ b/app/src/main/java/app/eob/me/data/EobModels.kt
+@@ -20,7 +20,6 @@ data class UserProfile(
+     val firstName: String = "",
+     val lastName: String = "",
+     val email: String = "",
+-    val password: String = "",
+     val city: String = "",
+     val state: String = "",
+     val insuranceName: String = "",
+@@ -32,15 +31,21 @@ data class UserProfile(
+         get() = firstName.isNotBlank() &&
+             lastName.isNotBlank() &&
+             email.isNotBlank() &&
+-            isPasswordValid &&
+             city.isNotBlank() &&
+             state.isNotBlank()
+ 
++    val fullName: String
++        get() = listOf(firstName, lastName).filter { it.isNotBlank() }.joinToString(" ")
++}
++
++data class RegistrationCredentials(val email: String = "", val password: String = "") {
+     val isPasswordValid: Boolean
+         get() = password.length >= 8 && password.any { it.isDigit() }
+ 
+-    val fullName: String
+-        get() = listOf(firstName, lastName).filter { it.isNotBlank() }.joinToString(" ")
++    fun isReadyForSignIn(): Boolean = email.isNotBlank() && password.isNotBlank()
++
++    fun isReadyForSignUp(profile: UserProfile): Boolean =
++        profile.isComplete && profile.email.isNotBlank() && isPasswordValid
+ }
+ 
+ data class CptInfo(
+diff --git a/app/src/main/java/app/eob/me/data/EobStrings.kt b/app/src/main/java/app/eob/me/data/EobStrings.kt
+index f09d540..b09661c 100644
+--- a/app/src/main/java/app/eob/me/data/EobStrings.kt
++++ b/app/src/main/java/app/eob/me/data/EobStrings.kt
+@@ -69,7 +69,7 @@ object EobStrings {
+         "forgotUsernameHelp" to "Your EOBme username is your email address. Check your inbox for EOBme or contact support if you no longer know which email you used.",
+         "passwordResetSent" to "Password reset email sent if the account exists.",
+         "profileRequired" to "Create your profile",
+-        "profileRequiredHelp" to "First name, last name, email, password, city, and state are required. Insurance ID and insurance name are optional.",
++        "profileRequiredHelp" to "First name, last name, email, city, and state are required. Password is collected only during sign-in or account creation. Insurance ID and insurance name are optional.",
+         "passwordRule" to "Password must be at least 8 characters and include at least 1 number.",
+         "home" to "Home",
+         "analysis" to "EOB History",
+diff --git a/app/src/main/java/app/eob/me/data/FirebaseEobMapper.kt b/app/src/main/java/app/eob/me/data/FirebaseEobMapper.kt
+index a10adad..9a9d80a 100644
+--- a/app/src/main/java/app/eob/me/data/FirebaseEobMapper.kt
++++ b/app/src/main/java/app/eob/me/data/FirebaseEobMapper.kt
+@@ -20,12 +20,11 @@ object FirebaseEobMapper {
+         )
+     }
+ 
+-    fun profileFromMap(data: Map<String, Any?>, currentPassword: String = ""): UserProfile {
++    fun profileFromMap(data: Map<String, Any?>): UserProfile {
+         return UserProfile(
+             firstName = data.stringValue("firstName", "first_name"),
+             lastName = data.stringValue("lastName", "last_name"),
+             email = data.stringValue("email"),
+-            password = currentPassword,
+             city = data.stringValue("city"),
+             state = data.stringValue("state"),
+             insuranceName = data.stringValue("insuranceName", "insurance_name", "insuranceCardSummary", "insurance_card_summary"),
+diff --git a/app/src/main/java/app/eob/me/data/FirebaseEobRepository.kt b/app/src/main/java/app/eob/me/data/FirebaseEobRepository.kt
+index abbc02f..603ce4a 100644
+--- a/app/src/main/java/app/eob/me/data/FirebaseEobRepository.kt
++++ b/app/src/main/java/app/eob/me/data/FirebaseEobRepository.kt
+@@ -39,19 +39,20 @@ class FirebaseEobRepository(private val context: Context) {
+ 
+     fun signInOrCreate(
+         profile: UserProfile,
++        credentials: RegistrationCredentials,
+         onResult: (FirebaseSyncStatus) -> Unit
+     ) {
+         if (!configured) {
+             onResult(status())
+             return
+         }
+-        if (profile.email.isBlank() || profile.password.isBlank()) {
++        if (credentials.email.isBlank() || credentials.password.isBlank()) {
+             onResult(FirebaseSyncStatus(true, message = "Enter email and password to sync with Firebase."))
+             return
+         }
+ 
+         val auth = FirebaseAuth.getInstance()
+-        auth.signInWithEmailAndPassword(profile.email, profile.password)
++        auth.signInWithEmailAndPassword(credentials.email, credentials.password)
+             .addOnSuccessListener {
+                 val userId = it.user?.uid.orEmpty()
+                 saveProfile(userId, profile) {}
+@@ -59,7 +60,7 @@ class FirebaseEobRepository(private val context: Context) {
+                 onResult(FirebaseSyncStatus(true, userId, "Firebase sync is active."))
+             }
+             .addOnFailureListener {
+-                auth.createUserWithEmailAndPassword(profile.email, profile.password)
++                auth.createUserWithEmailAndPassword(credentials.email, credentials.password)
+                     .addOnSuccessListener { result ->
+                         val userId = result.user?.uid.orEmpty()
+                         saveProfile(userId, profile) {}
+@@ -102,12 +103,16 @@ class FirebaseEobRepository(private val context: Context) {
+             .addOnFailureListener { onResult("Password reset failed: ${it.localizedMessage}") }
+     }
+ 
+-    fun createAccount(profile: UserProfile, onResult: (FirebaseSyncStatus) -> Unit) {
++    fun createAccount(
++        profile: UserProfile,
++        credentials: RegistrationCredentials,
++        onResult: (FirebaseSyncStatus) -> Unit
++    ) {
+         if (!configured) {
+             onResult(status())
+             return
+         }
+-        FirebaseAuth.getInstance().createUserWithEmailAndPassword(profile.email, profile.password)
++        FirebaseAuth.getInstance().createUserWithEmailAndPassword(credentials.email, credentials.password)
+             .addOnSuccessListener {
+                 val userId = it.user?.uid.orEmpty()
+                 saveProfile(userId, profile) {}
+@@ -125,7 +130,6 @@ class FirebaseEobRepository(private val context: Context) {
+ 
+     fun observeProfile(
+         userId: String,
+-        currentPassword: String,
+         onProfile: (UserProfile) -> Unit,
+         onError: (String) -> Unit
+     ): ListenerRegistration? {
+@@ -137,7 +141,7 @@ class FirebaseEobRepository(private val context: Context) {
+                     return@addSnapshotListener
+                 }
+                 val data = snapshot?.data ?: return@addSnapshotListener
+-                onProfile(FirebaseEobMapper.profileFromMap(data, currentPassword))
++                onProfile(FirebaseEobMapper.profileFromMap(data))
+             }
+     }
+ 
+diff --git a/app/src/main/java/app/eob/me/navigation/EobNavHost.kt b/app/src/main/java/app/eob/me/navigation/EobNavHost.kt
+index b8a63b4..419a6bf 100644
+--- a/app/src/main/java/app/eob/me/navigation/EobNavHost.kt
++++ b/app/src/main/java/app/eob/me/navigation/EobNavHost.kt
+@@ -7,6 +7,7 @@ import android.widget.Toast
+ import androidx.activity.compose.rememberLauncherForActivityResult
+ import androidx.activity.result.contract.ActivityResultContracts
+ import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.Column
+ import androidx.compose.foundation.layout.Row
+ import androidx.compose.foundation.layout.fillMaxSize
+@@ -48,6 +49,7 @@ import app.eob.me.data.EobStrings
+ import app.eob.me.data.FirebaseEobRepository
+ import app.eob.me.data.UserProfile
+ import app.eob.me.ui.screens.AnalysisScreen
++import app.eob.me.ui.screens.LoadingInvoiceScreen
+ import app.eob.me.ui.screens.AppealScreen
+ import app.eob.me.ui.screens.AuthChoiceScreen
+ import app.eob.me.ui.screens.AuthScreen
+@@ -63,6 +65,7 @@ import app.eob.me.ui.screens.ProfileScreen
+ import app.eob.me.util.OcrProcessor
+ import app.eob.me.viewmodel.AppViewModel
+ import app.eob.me.viewmodel.EobViewModel
++import app.eob.me.viewmodel.HubUiState
+ import com.google.firebase.firestore.ListenerRegistration
+ import kotlinx.coroutines.launch
+ 
+@@ -76,6 +79,7 @@ fun EobNavHost(viewModel: AppViewModel) {
+     val isSignUp by viewModel.isSignUp.collectAsStateWithLifecycle()
+     val awaitingEmailVerification by viewModel.awaitingEmailVerification.collectAsStateWithLifecycle()
+     val authMessage by viewModel.authMessage.collectAsStateWithLifecycle()
++    val registrationCredentials by viewModel.registrationCredentials.collectAsStateWithLifecycle()
+ 
+     LaunchedEffect(currentScreen) {
+         val targetRoute = currentScreen.route
+@@ -125,11 +129,13 @@ fun EobNavHost(viewModel: AppViewModel) {
+             AuthScreen(
+                 language = language,
+                 profile = profile,
++                credentials = registrationCredentials,
+                 isSignUp = isSignUp == true,
+                 awaitingEmailVerification = awaitingEmailVerification,
+                 authMessage = authMessage,
+                 modifier = Modifier.fillMaxSize(),
+                 onProfileChanged = viewModel::onProfileChanged,
++                onCredentialsChanged = viewModel::onCredentialsChanged,
+                 onToggleMode = viewModel::onAuthToggleMode,
+                 onSubmit = viewModel::onAuthSubmit,
+                 onForgotPassword = viewModel::onForgotPassword,
+@@ -167,11 +173,13 @@ private fun MainHubNavHost(
+     val navController = rememberNavController()
+     val eobViewModel: EobViewModel = viewModel()
+     val eobRecords by eobViewModel.eobRecords.collectAsStateWithLifecycle()
++    val uiState by eobViewModel.uiState.collectAsStateWithLifecycle()
+     val sortedEobRecords by remember {
+         derivedStateOf { eobRecords.sortedBy { it.serviceDateSortKey } }
+     }
+ 
+     fun prepareAndUpload(uri: Uri, sourceName: String) {
++        eobViewModel.setLoadingInvoice(true)
+         scope.launch {
+             runCatching { OcrProcessor.prepareUriForUpload(context, uri) }
+                 .onSuccess { preparedUri ->
+@@ -186,6 +194,7 @@ private fun MainHubNavHost(
+                     onActivity()
+                 }
+                 .onFailure {
++                    eobViewModel.setLoadingInvoice(false)
+                     Toast.makeText(context, EobStrings.t(language, "ocrFailed"), Toast.LENGTH_SHORT).show()
+                 }
+         }
+@@ -217,7 +226,7 @@ private fun MainHubNavHost(
+         )
+     }
+ 
+-    LaunchedEffect(profile.email, profile.password, profile.isComplete) {
++    LaunchedEffect(profile.email, profile.isComplete) {
+         if (profile.isComplete && eobViewModel.firebaseStatus.userId.isNotBlank()) {
+             firebaseRepository.saveProfile(eobViewModel.firebaseStatus.userId, profile) {}
+             firebaseRepository.saveInsuranceCardMetadata(eobViewModel.firebaseStatus.userId, profile) {}
+@@ -229,7 +238,6 @@ private fun MainHubNavHost(
+     DisposableEffect(userId) {
+         val profileRegistration = firebaseRepository.observeProfile(
+             userId = userId,
+-            currentPassword = profile.password,
+             onProfile = { updatedProfile ->
+                 onProfileChanged(updatedProfile)
+                 onActivity()
+@@ -273,7 +281,14 @@ private fun MainHubNavHost(
+                 .fillMaxSize()
+                 .padding(padding)
+         ) {
+-            Header(language, onProfile = { navController.navigate(EobRoute.Profile.route) }, onLogout = onLogout)
++            Header(
++                language = language,
++                onProfile = { navController.navigate(EobRoute.Profile.route) },
++                onLogout = {
++                    eobViewModel.resetHubState()
++                    onLogout()
++                }
++            )
+             PrimaryScrollableTabRow(
+                 selectedTabIndex = selectedTabIndex,
+                 edgePadding = 8.dp
+@@ -298,8 +313,8 @@ private fun MainHubNavHost(
+                         language = language,
+                         profile = profile,
+                         records = sortedEobRecords,
+-                        appointments = eobViewModel.appointments.sortedBy { it.date },
+-                        uploadNotice = eobViewModel.uploadNotice,
++                        appointments = uiState.appointments.sortedBy { it.date },
++                        uploadNotice = uiState.uploadNotice,
+                         onAddAppointment = { date, provider, time, notes ->
+                             eobViewModel.addAppointment(date, provider, time, notes)
+                             onActivity()
+@@ -314,6 +329,7 @@ private fun MainHubNavHost(
+                     HistoryRoute(
+                         language = language,
+                         profile = profile,
++                        uiState = uiState,
+                         eobViewModel = eobViewModel,
+                         firebaseRepository = firebaseRepository,
+                         onLibraryUpload = { libraryLauncher.launch(arrayOf("image/*", "application/pdf")) },
+@@ -351,10 +367,10 @@ private fun MainHubNavHost(
+                 }
+                 composable(EobRoute.Appeal.route) {
+                     AppealScreen(
+-                        language,
+-                        profile,
+-                        eobViewModel.selectedRecord,
+-                        eobViewModel.appealLetter,
++                        language = language,
++                        profile = profile,
++                        selectedRecord = uiState.selectedRecord,
++                        letter = uiState.appealLetter,
+                         {
+                             eobViewModel.regenerateAppeal(profile)
+                             onActivity()
+@@ -378,7 +394,10 @@ private fun MainHubNavHost(
+                             onActivity()
+                         },
+                         onLanguageChanged = onLanguageChanged,
+-                        onLogout = onLogout
++                        onLogout = {
++                            eobViewModel.resetHubState()
++                            onLogout()
++                        }
+                     )
+                 }
+             }
+@@ -390,6 +409,7 @@ private fun MainHubNavHost(
+ private fun HistoryRoute(
+     language: AppLanguage,
+     profile: UserProfile,
++    uiState: HubUiState,
+     eobViewModel: EobViewModel,
+     firebaseRepository: FirebaseEobRepository,
+     onLibraryUpload: () -> Unit,
+@@ -440,32 +460,38 @@ private fun HistoryRoute(
+                 color = MaterialTheme.colorScheme.error
+             )
+         }
+-        AnalysisScreen(
+-            language = language,
+-            records = filteredRecords,
+-            selectedRecord = eobViewModel.selectedRecord,
+-            uploadText = eobViewModel.uploadText,
+-            uploadNotice = eobViewModel.uploadNotice,
+-            onUploadTextChanged = {
+-                eobViewModel.uploadText = it
+-                onActivity()
+-            },
+-            onLibraryUpload = onLibraryUpload,
+-            onCameraScan = onCameraScan,
+-            onDeleteEob = { record ->
+-                eobViewModel.deleteRecord(record, profile)
+-                if (eobViewModel.firebaseStatus.userId.isNotBlank()) {
+-                    firebaseRepository.deleteEob(eobViewModel.firebaseStatus.userId, record) { message ->
+-                        eobViewModel.updateUploadNotice(message)
++        Box(modifier = Modifier.weight(1f)) {
++            if (uiState.isLoadingInvoice) {
++                LoadingInvoiceScreen(modifier = Modifier.fillMaxSize())
++            } else {
++                AnalysisScreen(
++                    language = language,
++                    records = filteredRecords,
++                    selectedRecord = uiState.selectedRecord,
++                    uploadText = eobViewModel.uploadText,
++                    uploadNotice = uiState.uploadNotice,
++                    onUploadTextChanged = {
++                        eobViewModel.uploadText = it
++                        onActivity()
++                    },
++                    onLibraryUpload = onLibraryUpload,
++                    onCameraScan = onCameraScan,
++                    onDeleteEob = { record ->
++                        eobViewModel.deleteRecord(record, profile)
++                        if (eobViewModel.firebaseStatus.userId.isNotBlank()) {
++                            firebaseRepository.deleteEob(eobViewModel.firebaseStatus.userId, record) { message ->
++                                eobViewModel.updateUploadNotice(message)
++                            }
++                        }
++                        onActivity()
++                    },
++                    onSelected = {
++                        eobViewModel.selectRecord(it, profile)
++                        onActivity()
+                     }
+-                }
+-                onActivity()
+-            },
+-            onSelected = {
+-                eobViewModel.selectRecord(it, profile)
+-                onActivity()
++                )
+             }
+-        )
++        }
+     }
+ }
+ 
+diff --git a/app/src/main/java/app/eob/me/ui/components/CameraScanningOverlay.kt b/app/src/main/java/app/eob/me/ui/components/CameraScanningOverlay.kt
+new file mode 100644
+index 0000000..646f589
+--- /dev/null
++++ b/app/src/main/java/app/eob/me/ui/components/CameraScanningOverlay.kt
+@@ -0,0 +1,101 @@
++package app.eob.me.ui.components
++
++import androidx.compose.animation.core.LinearEasing
++import androidx.compose.animation.core.RepeatMode
++import androidx.compose.animation.core.animateFloat
++import androidx.compose.animation.core.infiniteRepeatable
++import androidx.compose.animation.core.rememberInfiniteTransition
++import androidx.compose.animation.core.tween
++import androidx.compose.foundation.Canvas
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.getValue
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.geometry.CornerRadius
++import androidx.compose.ui.geometry.Offset
++import androidx.compose.ui.geometry.Size
++import androidx.compose.ui.graphics.BlendMode
++import androidx.compose.ui.graphics.Brush
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.graphics.CompositingStrategy
++import androidx.compose.ui.graphics.PathEffect
++import androidx.compose.ui.graphics.drawscope.Stroke
++import androidx.compose.ui.graphics.graphicsLayer
++import androidx.compose.ui.unit.dp
++
++private val OverlayMask = Color(0xA0000000)
++private val BrandBlue = Color(0xFF2498EA)
++private val NeonTeal = Color(0xFF00F2FE)
++
++@Composable
++fun CameraScanningOverlay(modifier: Modifier = Modifier) {
++    val infiniteTransition = rememberInfiniteTransition(label = "LaserScanner")
++    val sweepProgress by infiniteTransition.animateFloat(
++        initialValue = 0f,
++        targetValue = 1f,
++        animationSpec = infiniteRepeatable(
++            animation = tween(durationMillis = 2500, easing = LinearEasing),
++            repeatMode = RepeatMode.Reverse
++        ),
++        label = "LaserSweepProgress"
++    )
++
++    Canvas(
++        modifier = modifier
++            .fillMaxSize()
++            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
++    ) {
++        val canvasWidth = size.width
++        val canvasHeight = size.height
++
++        val boxWidth = canvasWidth * 0.85f
++        var boxHeight = boxWidth * 1.414f
++        if (boxHeight > canvasHeight * 0.85f) {
++            boxHeight = canvasHeight * 0.85f
++        }
++        val left = (canvasWidth - boxWidth) / 2f
++        val top = (canvasHeight - boxHeight) / 2f
++        val cornerRadius = CornerRadius(12.dp.toPx(), 12.dp.toPx())
++        val guideSize = Size(boxWidth, boxHeight)
++
++        drawRect(color = OverlayMask, size = size)
++
++        drawRoundRect(
++            color = Color.Transparent,
++            topLeft = Offset(left, top),
++            size = guideSize,
++            cornerRadius = cornerRadius,
++            blendMode = BlendMode.Clear
++        )
++
++        drawRoundRect(
++            color = BrandBlue.copy(alpha = 0.8f),
++            topLeft = Offset(left, top),
++            size = guideSize,
++            cornerRadius = cornerRadius,
++            style = Stroke(
++                width = 2.dp.toPx(),
++                pathEffect = PathEffect.dashPathEffect(floatArrayOf(40f, 20f), 0f)
++            )
++        )
++
++        val laserY = top + (boxHeight * sweepProgress)
++        val laserHalfHeight = 15.dp.toPx()
++        val laserGradient = Brush.verticalGradient(
++            colors = listOf(
++                NeonTeal.copy(alpha = 0f),
++                NeonTeal.copy(alpha = 0.9f),
++                BrandBlue.copy(alpha = 0.9f),
++                BrandBlue.copy(alpha = 0f)
++            ),
++            startY = laserY - laserHalfHeight,
++            endY = laserY + laserHalfHeight
++        )
++
++        drawRect(
++            brush = laserGradient,
++            topLeft = Offset(left + 4.dp.toPx(), laserY - laserHalfHeight),
++            size = Size(boxWidth - 8.dp.toPx(), laserHalfHeight * 2f)
++        )
++    }
++}
+diff --git a/app/src/main/java/app/eob/me/ui/components/ShimmerModifier.kt b/app/src/main/java/app/eob/me/ui/components/ShimmerModifier.kt
+new file mode 100644
+index 0000000..6fb3b31
+--- /dev/null
++++ b/app/src/main/java/app/eob/me/ui/components/ShimmerModifier.kt
+@@ -0,0 +1,57 @@
++package app.eob.me.ui.components
++
++import androidx.compose.animation.core.LinearEasing
++import androidx.compose.animation.core.RepeatMode
++import androidx.compose.animation.core.animateFloat
++import androidx.compose.animation.core.infiniteRepeatable
++import androidx.compose.animation.core.rememberInfiniteTransition
++import androidx.compose.animation.core.tween
++import androidx.compose.foundation.background
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.composed
++import androidx.compose.ui.geometry.Offset
++import androidx.compose.ui.graphics.Brush
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.layout.onGloballyPositioned
++import androidx.compose.ui.unit.IntSize
++
++fun Modifier.shimmerEffect(): Modifier = composed {
++    var size by remember { mutableStateOf(IntSize.Zero) }
++    val transition = rememberInfiniteTransition(label = "ShimmerTransition")
++
++    // Animate across a wider factor range to completely clear out edge components on wide layouts
++    val translateAnimation by transition.animateFloat(
++        initialValue = -2f * size.width.toFloat(),
++        targetValue = 2f * size.width.toFloat(),
++        animationSpec = infiniteRepeatable(
++            animation = tween(durationMillis = 1300, easing = LinearEasing),
++            repeatMode = RepeatMode.Restart
++        ),
++        label = "ShimmerTranslate"
++    )
++
++    val shimmerColors = listOf(
++        Color(0xFFEFEFEF),
++        Color(0xFFF6F6F6),
++        Color(0xFFEFEFEF)
++    )
++
++    this.onGloballyPositioned { size = it.size }
++        .background(
++            brush = Brush.linearGradient(
++                colors = shimmerColors,
++                start = Offset(x = translateAnimation, y = 0f),
++                end = Offset(
++                    x = translateAnimation + size.width.toFloat(),
++                    y = size.composeOffsetFactor()
++                )
++            )
++        )
++}
++
++// Inline extension layout to cleanly set a consistent diagonal slant angle
++private fun IntSize.composeOffsetFactor(): Float = this.height.toFloat() * 0.45f
+diff --git a/app/src/main/java/app/eob/me/ui/screens/CameraCaptureScreen.kt b/app/src/main/java/app/eob/me/ui/screens/CameraCaptureScreen.kt
+index c5d9eb5..cd2f2a5 100644
+--- a/app/src/main/java/app/eob/me/ui/screens/CameraCaptureScreen.kt
++++ b/app/src/main/java/app/eob/me/ui/screens/CameraCaptureScreen.kt
+@@ -18,7 +18,13 @@ import androidx.camera.core.ImageCaptureException
+ import androidx.camera.core.Preview
+ import androidx.camera.lifecycle.ProcessCameraProvider
+ import androidx.camera.view.PreviewView
++import androidx.compose.animation.core.Animatable
++import androidx.compose.animation.core.LinearEasing
++import androidx.compose.animation.core.Spring
++import androidx.compose.animation.core.spring
++import androidx.compose.animation.core.tween
+ import androidx.compose.foundation.Canvas
++import androidx.compose.foundation.gestures.detectTapGestures
+ import androidx.compose.foundation.layout.Arrangement
+ import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.Column
+@@ -37,12 +43,12 @@ import androidx.compose.runtime.remember
+ import androidx.compose.runtime.setValue
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+-import androidx.compose.ui.geometry.CornerRadius
+ import androidx.compose.ui.geometry.Offset
+-import androidx.compose.ui.geometry.Size
+ import androidx.compose.ui.graphics.Color
+-import androidx.compose.ui.graphics.StrokeCap
+ import androidx.compose.ui.graphics.drawscope.Stroke
++import androidx.compose.ui.graphics.drawscope.scale
++import androidx.compose.ui.graphics.drawscope.translate
++import androidx.compose.ui.input.pointer.pointerInput
+ import androidx.compose.ui.platform.LocalContext
+ import androidx.lifecycle.compose.LocalLifecycleOwner
+ import androidx.compose.ui.unit.dp
+@@ -50,8 +56,16 @@ import androidx.compose.ui.viewinterop.AndroidView
+ import androidx.core.content.ContextCompat
+ import app.eob.me.data.AppLanguage
+ import app.eob.me.data.EobStrings
++import app.eob.me.ui.components.CameraScanningOverlay
+ import java.io.File
+ import java.util.concurrent.TimeUnit
++import kotlinx.coroutines.delay
++import kotlinx.coroutines.launch
++
++private val BrandBlue = Color(0xFF2498EA)
++private const val TapFocusReticleActiveMs = 500L
++
++data class TapFocusState(val offset: Offset, val triggerTime: Long)
+ 
+ @Composable
+ fun CameraCaptureScreen(
+@@ -74,6 +88,10 @@ fun CameraCaptureScreen(
+     var statusMessage by remember { mutableStateOf("") }
+     var isCameraReady by remember { mutableStateOf(false) }
+     var isCapturing by remember { mutableStateOf(false) }
++    var boundCamera by remember { mutableStateOf<Camera?>(null) }
++    var tapFocusState by remember { mutableStateOf<TapFocusState?>(null) }
++    val reticleScale = remember { Animatable(2.0f) }
++    val reticleAlpha = remember { Animatable(1.0f) }
+     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+         hasPermission = granted
+         if (!granted) statusMessage = EobStrings.t(language, "cameraPermissionRequired")
+@@ -83,13 +101,43 @@ fun CameraCaptureScreen(
+         if (!hasPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
+     }
+ 
++    LaunchedEffect(tapFocusState) {
++        tapFocusState?.let {
++            reticleScale.snapTo(2.0f)
++            reticleAlpha.snapTo(1.0f)
++            launch {
++                reticleScale.animateTo(
++                    targetValue = 1.0f,
++                    animationSpec = spring(
++                        dampingRatio = Spring.DampingRatioMediumBouncy,
++                        stiffness = Spring.StiffnessMedium
++                    )
++                )
++            }
++            launch {
++                delay(250)
++                reticleAlpha.animateTo(
++                    targetValue = 0.0f,
++                    animationSpec = tween(durationMillis = 250, easing = LinearEasing)
++                )
++            }
++        }
++    }
++
++    LaunchedEffect(tapFocusState) {
++        val state = tapFocusState ?: return@LaunchedEffect
++        delay(TapFocusReticleActiveMs)
++        if (tapFocusState?.triggerTime == state.triggerTime) {
++            tapFocusState = null
++        }
++    }
++
+     DisposableEffect(hasPermission) {
+         if (!hasPermission) {
+             onDispose { }
+         } else {
+             val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+             val executor = ContextCompat.getMainExecutor(context)
+-            var camera: Camera? = null
+             val focusHandler = Handler(Looper.getMainLooper())
+             var focusRunnable: Runnable? = null
+             val listener = Runnable {
+@@ -105,17 +153,19 @@ fun CameraCaptureScreen(
+                         .build()
+                     val selector = availableCameraSelector(cameraProvider)
+                     cameraProvider.unbindAll()
+-                    camera = cameraProvider.bindToLifecycle(
++                    val camera = cameraProvider.bindToLifecycle(
+                         lifecycleOwner,
+                         selector,
+                         preview,
+                         capture
+                     )
++                    boundCamera = camera
+                     imageCapture = capture
+                     isCameraReady = true
+                     statusMessage = ""
+                     focusRunnable = autofocusRunnable(previewView, camera).also { focusHandler.postDelayed(it, 400) }
+                 }.onFailure { error ->
++                    boundCamera = null
+                     isCameraReady = false
+                     imageCapture = null
+                     statusMessage = error.localizedMessage ?: "Unable to open camera. Please try again."
+@@ -129,33 +179,58 @@ fun CameraCaptureScreen(
+                         cameraProviderFuture.get().unbindAll()
+                     }
+                 }
++                boundCamera = null
+                 imageCapture = null
+                 isCameraReady = false
+             }
+         }
+     }
+ 
+-    Box(Modifier.fillMaxSize()) {
+-        if (hasPermission) {
+-            AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+-            DocumentGuideOverlay()
+-            Column(
++    if (hasPermission) {
++        Box(modifier = Modifier.fillMaxSize()) {
++            // Block 1: The Secure Viewfinder & Gesture Layer
++            Box(
+                 modifier = Modifier
+-                    .align(Alignment.BottomCenter)
+-                    .padding(20.dp),
+-                verticalArrangement = Arrangement.spacedBy(12.dp),
+-                horizontalAlignment = Alignment.CenterHorizontally
++                    .fillMaxSize()
++                    .pointerInput(Unit) {
++                        detectTapGestures { offset ->
++                            tapFocusState = TapFocusState(offset, System.currentTimeMillis())
++                            focusAtPoint(
++                                previewView = previewView,
++                                camera = boundCamera,
++                                offset = offset
++                            )
++                        }
++                    }
+             ) {
+-                if (statusMessage.isNotBlank()) {
+-                    Text(statusMessage, color = MaterialTheme.colorScheme.error)
++                CameraViewfinderStream(
++                    previewView = previewView,
++                    modifier = Modifier.fillMaxSize()
++                )
++                CameraScanningOverlay(modifier = Modifier.fillMaxSize())
++                tapFocusState?.let { state ->
++                    if (System.currentTimeMillis() - state.triggerTime < TapFocusReticleActiveMs) {
++                        TapFocusReticleOverlay(
++                            state = state,
++                            scale = reticleScale.value,
++                            alpha = reticleAlpha.value,
++                            modifier = Modifier.fillMaxSize()
++                        )
++                    }
+                 }
+-                Button(
+-                    onClick = {
+-                        val capture = imageCapture
+-                        if (capture == null || !isCameraReady) {
+-                            statusMessage = "Camera is still starting. Please wait a moment."
+-                            return@Button
+-                        }
++            }
++            // Block 2: The Interactive HUD Control Interface Layer (Sits on top)
++            CameraControlHudElements(
++                language = language,
++                statusMessage = statusMessage,
++                isCameraReady = isCameraReady,
++                isCapturing = isCapturing,
++                onClose = onClose,
++                onRequestCapture = {
++                    val capture = imageCapture
++                    if (capture == null || !isCameraReady) {
++                        statusMessage = "Camera is still starting. Please wait a moment."
++                    } else {
+                         isCapturing = true
+                         captureImage(
+                             context = context,
+@@ -169,57 +244,143 @@ fun CameraCaptureScreen(
+                                 statusMessage = it
+                             }
+                         )
+-                    },
+-                    enabled = isCameraReady && !isCapturing,
+-                    modifier = Modifier.fillMaxWidth()
+-                ) {
+-                    Text(if (isCapturing) "Capturing..." else EobStrings.t(language, "scanBill"))
+-                }
+-                Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
+-                    Text(EobStrings.t(language, "close"))
+-                }
+-            }
+-        } else {
+-            Column(
+-                modifier = Modifier
+-                    .fillMaxSize()
+-                    .padding(24.dp),
+-                verticalArrangement = Arrangement.Center,
+-                horizontalAlignment = Alignment.CenterHorizontally
+-            ) {
+-                Text(statusMessage.ifBlank { EobStrings.t(language, "cameraPermissionRequired") })
+-                Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
+-                    Text(EobStrings.t(language, "scanWithCamera"))
+-                }
+-            }
++                    }
++                },
++                modifier = Modifier.fillMaxSize()
++            )
++        }
++    } else {
++        CameraPermissionPrompt(
++            language = language,
++            statusMessage = statusMessage,
++            onRequestPermission = { permissionLauncher.launch(Manifest.permission.CAMERA) },
++            modifier = Modifier.fillMaxSize()
++        )
++    }
++}
++
++@Composable
++private fun CameraViewfinderStream(
++    previewView: PreviewView,
++    modifier: Modifier = Modifier
++) {
++    AndroidView(
++        factory = { previewView },
++        modifier = modifier
++    )
++}
++
++@Composable
++private fun CameraControlHudElements(
++    language: AppLanguage,
++    statusMessage: String,
++    isCameraReady: Boolean,
++    isCapturing: Boolean,
++    onClose: () -> Unit,
++    onRequestCapture: () -> Unit,
++    modifier: Modifier = Modifier
++) {
++    Column(
++        modifier = modifier
++            .padding(20.dp),
++        verticalArrangement = Arrangement.Bottom,
++        horizontalAlignment = Alignment.CenterHorizontally
++    ) {
++        if (statusMessage.isNotBlank()) {
++            Text(statusMessage, color = MaterialTheme.colorScheme.error)
++        }
++        Button(
++            onClick = onRequestCapture,
++            enabled = isCameraReady && !isCapturing,
++            modifier = Modifier.fillMaxWidth()
++        ) {
++            Text(if (isCapturing) "Capturing..." else EobStrings.t(language, "scanBill"))
++        }
++        Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
++            Text(EobStrings.t(language, "close"))
+         }
+     }
+ }
+ 
+ @Composable
+-private fun DocumentGuideOverlay() {
+-    Canvas(Modifier.fillMaxSize()) {
+-        val marginX = size.width * 0.08f
+-        val marginY = size.height * 0.16f
+-        val rectSize = Size(size.width - marginX * 2, size.height - marginY * 2)
+-        val stroke = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round)
+-        drawRoundRect(
+-            color = Color.White.copy(alpha = 0.85f),
+-            topLeft = Offset(marginX, marginY),
+-            size = rectSize,
+-            cornerRadius = CornerRadius(20.dp.toPx()),
+-            style = stroke
+-        )
+-        drawRoundRect(
+-            color = Color(0xFF0B3D91).copy(alpha = 0.30f),
+-            topLeft = Offset(marginX, marginY),
+-            size = rectSize,
+-            cornerRadius = CornerRadius(20.dp.toPx()),
+-            style = Stroke(width = 12.dp.toPx())
+-        )
++private fun CameraPermissionPrompt(
++    language: AppLanguage,
++    statusMessage: String,
++    onRequestPermission: () -> Unit,
++    modifier: Modifier = Modifier
++) {
++    Column(
++        modifier = modifier.padding(24.dp),
++        verticalArrangement = Arrangement.Center,
++        horizontalAlignment = Alignment.CenterHorizontally
++    ) {
++        Text(statusMessage.ifBlank { EobStrings.t(language, "cameraPermissionRequired") })
++        Button(onClick = onRequestPermission) {
++            Text(EobStrings.t(language, "scanWithCamera"))
++        }
++    }
++}
++
++@Composable
++private fun TapFocusReticleOverlay(
++    state: TapFocusState,
++    scale: Float,
++    alpha: Float,
++    modifier: Modifier = Modifier
++) {
++    Canvas(modifier = modifier) {
++        val center = state.offset
++        val radius = 36.dp.toPx()
++        val strokeWidth = 2.dp.toPx()
++        val tickLength = 12.dp.toPx()
++        val reticleColor = BrandBlue.copy(alpha = alpha)
++
++        translate(center.x, center.y) {
++            scale(scale) {
++                drawCircle(
++                    color = reticleColor,
++                    radius = radius,
++                    style = Stroke(width = strokeWidth)
++                )
++                drawLine(
++                    color = reticleColor,
++                    start = Offset(-tickLength, 0f),
++                    end = Offset(-radius + 6.dp.toPx(), 0f),
++                    strokeWidth = strokeWidth
++                )
++                drawLine(
++                    color = reticleColor,
++                    start = Offset(radius - 6.dp.toPx(), 0f),
++                    end = Offset(tickLength, 0f),
++                    strokeWidth = strokeWidth
++                )
++                drawLine(
++                    color = reticleColor,
++                    start = Offset(0f, -tickLength),
++                    end = Offset(0f, -radius + 6.dp.toPx()),
++                    strokeWidth = strokeWidth
++                )
++                drawLine(
++                    color = reticleColor,
++                    start = Offset(0f, radius - 6.dp.toPx()),
++                    end = Offset(0f, tickLength),
++                    strokeWidth = strokeWidth
++                )
++            }
++        }
+     }
+ }
+ 
++private fun focusAtPoint(previewView: PreviewView, camera: Camera?, offset: Offset) {
++    val currentCamera = camera ?: return
++    if (previewView.width <= 0 || previewView.height <= 0) return
++    val point = previewView.meteringPointFactory.createPoint(offset.x, offset.y)
++    val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF)
++        .setAutoCancelDuration(4, TimeUnit.SECONDS)
++        .build()
++    currentCamera.cameraControl.startFocusAndMetering(action)
++}
++
+ private fun autofocusRunnable(previewView: PreviewView, camera: Camera?): Runnable {
+     return object : Runnable {
+         override fun run() {
+diff --git a/app/src/main/java/app/eob/me/ui/screens/LoadingInvoiceScreen.kt b/app/src/main/java/app/eob/me/ui/screens/LoadingInvoiceScreen.kt
+new file mode 100644
+index 0000000..4dfac9d
+--- /dev/null
++++ b/app/src/main/java/app/eob/me/ui/screens/LoadingInvoiceScreen.kt
+@@ -0,0 +1,71 @@
++package app.eob.me.ui.screens
++
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.size
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.draw.clip
++import androidx.compose.ui.unit.dp
++import app.eob.me.ui.components.shimmerEffect
++
++@Composable
++fun LoadingInvoiceScreen(modifier: Modifier = Modifier) {
++    Column(
++        modifier = modifier
++            .fillMaxSize()
++            .padding(16.dp),
++        verticalArrangement = Arrangement.spacedBy(16.dp)
++    ) {
++        // Mocking a standard Provider Header block
++        Box(
++            modifier = Modifier
++                .fillMaxWidth(0.6f)
++                .height(32.dp)
++                .clip(RoundedCornerShape(6.dp))
++                .shimmerEffect()
++        )
++
++        Spacer(modifier = Modifier.height(12.dp))
++
++        // Repeating Cpt Charge lines skeleton entries
++        repeat(4) {
++            Row(
++                modifier = Modifier.fillMaxWidth(),
++                horizontalArrangement = Arrangement.SpaceBetween
++            ) {
++                Box(
++                    modifier = Modifier
++                        .size(width = 110.dp, height = 20.dp)
++                        .clip(RoundedCornerShape(4.dp))
++                        .shimmerEffect()
++                )
++                Box(
++                    modifier = Modifier
++                        .size(width = 65.dp, height = 20.dp)
++                        .clip(RoundedCornerShape(4.dp))
++                        .shimmerEffect()
++                )
++            }
++        }
++
++        Spacer(modifier = Modifier.weight(1f))
++
++        // Total Summary Card bar layout placeholder
++        Box(
++            modifier = Modifier
++                .fillMaxWidth()
++                .height(80.dp)
++                .clip(RoundedCornerShape(12.dp))
++                .shimmerEffect()
++        )
++    }
++}
+diff --git a/app/src/main/java/app/eob/me/ui/screens/RegistrationScreen.kt b/app/src/main/java/app/eob/me/ui/screens/RegistrationScreen.kt
+index 3caf01f..7be005c 100644
+--- a/app/src/main/java/app/eob/me/ui/screens/RegistrationScreen.kt
++++ b/app/src/main/java/app/eob/me/ui/screens/RegistrationScreen.kt
+@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.unit.dp
+ import app.eob.me.data.AppLanguage
+ import app.eob.me.data.EobStrings
++import app.eob.me.data.RegistrationCredentials
+ import app.eob.me.data.UserProfile
+ 
+ @Composable
+@@ -47,11 +48,13 @@ fun AuthChoiceScreen(
+ fun AuthScreen(
+     language: AppLanguage,
+     profile: UserProfile,
++    credentials: RegistrationCredentials,
+     isSignUp: Boolean,
+     awaitingEmailVerification: Boolean = false,
+     authMessage: String,
+     modifier: Modifier = Modifier,
+     onProfileChanged: (UserProfile) -> Unit,
++    onCredentialsChanged: (RegistrationCredentials) -> Unit,
+     onToggleMode: () -> Unit,
+     onSubmit: () -> Unit,
+     onForgotPassword: () -> Unit = {},
+@@ -72,10 +75,12 @@ fun AuthScreen(
+     RegistrationScreen(
+         language = language,
+         profile = profile,
++        credentials = credentials,
+         isSignUp = isSignUp,
+         authMessage = authMessage,
+         modifier = modifier,
+         onProfileChanged = onProfileChanged,
++        onCredentialsChanged = onCredentialsChanged,
+         onToggleMode = onToggleMode,
+         onSubmit = onSubmit,
+         onForgotPassword = onForgotPassword,
+@@ -112,10 +117,12 @@ private fun EmailVerificationScreen(
+ fun RegistrationScreen(
+     language: AppLanguage,
+     profile: UserProfile,
++    credentials: RegistrationCredentials,
+     isSignUp: Boolean,
+     authMessage: String,
+     modifier: Modifier = Modifier,
+     onProfileChanged: (UserProfile) -> Unit,
++    onCredentialsChanged: (RegistrationCredentials) -> Unit,
+     onToggleMode: () -> Unit,
+     onSubmit: () -> Unit,
+     onForgotPassword: () -> Unit = {},
+@@ -135,21 +142,24 @@ fun RegistrationScreen(
+         Text(EobStrings.t(language, "profileRequiredHelp"))
+         if (isSignUp) {
+             ProfileFields(language, profile, onProfileChanged)
+-        } else {
+-            OutlinedTextField(
+-                value = profile.email,
+-                onValueChange = { onProfileChanged(profile.copy(email = it)) },
+-                label = { Text(EobStrings.t(language, "email")) },
+-                modifier = Modifier.fillMaxWidth()
++            PasswordField(
++                language = language,
++                password = credentials.password,
++                onPasswordChanged = { onCredentialsChanged(credentials.copy(email = profile.email, password = it)) }
+             )
+-            OutlinedTextField(
+-                value = profile.password,
+-                onValueChange = { onProfileChanged(profile.copy(password = it)) },
+-                label = { Text(EobStrings.t(language, "password")) },
+-                modifier = Modifier.fillMaxWidth()
++        } else {
++            CredentialFields(
++                language = language,
++                credentials = credentials,
++                onCredentialsChanged = { updated ->
++                    onCredentialsChanged(updated)
++                    if (updated.email != profile.email) {
++                        onProfileChanged(profile.copy(email = updated.email))
++                    }
++                }
+             )
+         }
+-        if (profile.password.isNotBlank() && !profile.isPasswordValid) {
++        if (credentials.password.isNotBlank() && !credentials.isPasswordValid) {
+             Text(EobStrings.t(language, "passwordRule"), color = MaterialTheme.colorScheme.error)
+         }
+         if (authMessage.isNotBlank()) {
+@@ -157,7 +167,11 @@ fun RegistrationScreen(
+         }
+         Button(
+             onClick = onSubmit,
+-            enabled = if (isSignUp) profile.isComplete else profile.email.isNotBlank() && profile.password.isNotBlank(),
++            enabled = if (isSignUp) {
++                credentials.isReadyForSignUp(profile)
++            } else {
++                credentials.isReadyForSignIn()
++            },
+             modifier = Modifier.fillMaxWidth()
+         ) {
+             Text(if (isSignUp) EobStrings.t(language, "createAccount") else EobStrings.t(language, "login"))
+@@ -196,12 +210,6 @@ fun ProfileFields(language: AppLanguage, profile: UserProfile, onProfileChanged:
+         label = { Text(EobStrings.t(language, "email")) },
+         modifier = Modifier.fillMaxWidth()
+     )
+-    OutlinedTextField(
+-        value = profile.password,
+-        onValueChange = { onProfileChanged(profile.copy(password = it)) },
+-        label = { Text(EobStrings.t(language, "password")) },
+-        modifier = Modifier.fillMaxWidth()
+-    )
+     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+         OutlinedTextField(
+             value = profile.city,
+@@ -235,3 +243,36 @@ fun ProfileFields(language: AppLanguage, profile: UserProfile, onProfileChanged:
+         modifier = Modifier.fillMaxWidth()
+     )
+ }
++
++@Composable
++private fun CredentialFields(
++    language: AppLanguage,
++    credentials: RegistrationCredentials,
++    onCredentialsChanged: (RegistrationCredentials) -> Unit
++) {
++    OutlinedTextField(
++        value = credentials.email,
++        onValueChange = { onCredentialsChanged(credentials.copy(email = it)) },
++        label = { Text(EobStrings.t(language, "email")) },
++        modifier = Modifier.fillMaxWidth()
++    )
++    PasswordField(
++        language = language,
++        password = credentials.password,
++        onPasswordChanged = { onCredentialsChanged(credentials.copy(password = it)) }
++    )
++}
++
++@Composable
++private fun PasswordField(
++    language: AppLanguage,
++    password: String,
++    onPasswordChanged: (String) -> Unit
++) {
++    OutlinedTextField(
++        value = password,
++        onValueChange = onPasswordChanged,
++        label = { Text(EobStrings.t(language, "password")) },
++        modifier = Modifier.fillMaxWidth()
++    )
++}
+diff --git a/app/src/main/java/app/eob/me/viewmodel/AppViewModel.kt b/app/src/main/java/app/eob/me/viewmodel/AppViewModel.kt
+index 8490148..d162675 100644
+--- a/app/src/main/java/app/eob/me/viewmodel/AppViewModel.kt
++++ b/app/src/main/java/app/eob/me/viewmodel/AppViewModel.kt
+@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
+ import app.eob.me.data.AppLanguage
+ import app.eob.me.data.EobStrings
+ import app.eob.me.data.FirebaseEobRepository
++import app.eob.me.data.RegistrationCredentials
+ import app.eob.me.data.UserProfile
+ import app.eob.me.navigation.Screen
+ import com.google.firebase.FirebaseApp
+@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.SharingStarted
+ import kotlinx.coroutines.flow.StateFlow
+ import kotlinx.coroutines.flow.asStateFlow
+ import kotlinx.coroutines.flow.combine
++import kotlinx.coroutines.flow.map
+ import kotlinx.coroutines.flow.stateIn
+ import kotlinx.coroutines.flow.update
+ import kotlinx.coroutines.launch
+@@ -45,6 +47,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
+     private val _profile = MutableStateFlow(UserProfile(email = auth?.currentUser?.email.orEmpty()))
+     val profile: StateFlow<UserProfile> = _profile.asStateFlow()
+ 
++    private val _registrationCredentials = MutableStateFlow(RegistrationCredentials())
++    val registrationCredentials: StateFlow<RegistrationCredentials> = _registrationCredentials.asStateFlow()
++
+     private val _isSignUp = MutableStateFlow<Boolean?>(null)
+     val isSignUp: StateFlow<Boolean?> = _isSignUp.asStateFlow()
+ 
+@@ -67,26 +72,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
+     private val _lastActivityAt = MutableStateFlow(System.currentTimeMillis())
+     val lastActivityAt: StateFlow<Long> = _lastActivityAt.asStateFlow()
+ 
+-    val selectedLanguage: StateFlow<AppLanguage> = combine(_language) { languages ->
+-        languages[0] ?: AppLanguage.English
+-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppLanguage.English)
++    val selectedLanguage: StateFlow<AppLanguage> = _language
++        .map { language -> language ?: AppLanguage.English }
++        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppLanguage.English)
+ 
+-    val currentScreen: StateFlow<Screen> = combine(
++    val currentScreen: StateFlow<Screen> = listOf(
+         _splashComplete,
+         _language,
+         _introStep,
+         _firebaseUser,
+         _awaitingEmailVerification,
+         _isSignUp
+-    ) { values ->
++    ).combineAll { values ->
+         val splashComplete = values[0] as Boolean
+         val language = values[1] as AppLanguage?
+         val introStep = values[2] as Int
+         val firebaseUser = values[3] as FirebaseUser?
+         val awaitingEmailVerification = values[4] as Boolean
+-        @Suppress("UNCHECKED_CAST")
+         val isSignUp = values[5] as Boolean?
+-
+         when {
+             !splashComplete -> Screen.Splash
+             language == null -> Screen.Language
+@@ -143,16 +146,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
+     fun onCreateAccountSelected() {
+         _isSignUp.value = true
+         _authMessage.value = ""
++        _registrationCredentials.value = RegistrationCredentials(email = _profile.value.email)
+     }
+ 
+     fun onSignInSelected() {
+         _isSignUp.value = false
+         _authMessage.value = ""
++        _registrationCredentials.value = RegistrationCredentials(email = _profile.value.email)
+     }
+ 
+     fun onAuthToggleMode() {
+         _isSignUp.value = null
+         _authMessage.value = ""
++        _registrationCredentials.value = RegistrationCredentials()
+     }
+ 
+     fun onProfileChanged(updated: UserProfile) {
+@@ -160,6 +166,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
+         updateActivityTime()
+     }
+ 
++    fun onCredentialsChanged(updated: RegistrationCredentials) {
++        _registrationCredentials.value = updated
++        if (updated.email.isNotBlank() && updated.email != _profile.value.email) {
++            _profile.update { it.copy(email = updated.email) }
++        }
++        updateActivityTime()
++    }
++
+     fun onLanguageChanged(updated: AppLanguage) {
+         _language.value = updated
+         updateActivityTime()
+@@ -172,8 +186,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
+             return
+         }
+         val profile = _profile.value
++        val credentials = _registrationCredentials.value
+         if (_isSignUp.value == true) {
+-            firebaseRepository.createAccount(profile) { status ->
++            val signUpCredentials = credentials.copy(email = profile.email)
++            firebaseRepository.createAccount(profile, signUpCredentials) { status ->
+                 _authMessage.value = if (status.userId.isBlank()) {
+                     status.message
+                 } else {
+@@ -182,10 +198,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
+                 if (status.userId.isNotBlank()) {
+                     auth?.currentUser?.sendEmailVerification()
+                     _awaitingEmailVerification.value = true
++                    _registrationCredentials.value = RegistrationCredentials()
+                 }
+             }
+         } else {
+-            firebaseRepository.signIn(profile.email, profile.password) { status ->
++            firebaseRepository.signIn(credentials.email, credentials.password) { status ->
+                 val currentUser = auth?.currentUser
+                 if (currentUser != null && !currentUser.isEmailVerified) {
+                     _awaitingEmailVerification.value = true
+@@ -193,6 +210,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
+                         "Email verification required. Check your original verification email before continuing."
+                 } else {
+                     _authMessage.value = if (status.userId.isBlank()) status.message else ""
++                    if (status.userId.isNotBlank()) {
++                        _registrationCredentials.value = RegistrationCredentials()
++                    }
+                 }
+             }
+         }
+@@ -200,15 +220,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
+     }
+ 
+     fun onForgotPassword() {
+-        firebaseRepository.sendPasswordReset(_profile.value.email) { message ->
++        val language = _language.value ?: AppLanguage.English
++        val email = _registrationCredentials.value.email.ifBlank { _profile.value.email }
++        firebaseRepository.sendPasswordReset(email) { message ->
+             _authMessage.value = message.ifBlank {
+-                EobStrings.t(selectedLanguage.value, "passwordResetSent")
++                EobStrings.t(language, "passwordResetSent")
+             }
+         }
+     }
+ 
+     fun onForgotUsername() {
+-        _authMessage.value = EobStrings.t(selectedLanguage.value, "forgotUsernameHelp")
++        val language = _language.value ?: AppLanguage.English
++        _authMessage.value = EobStrings.t(language, "forgotUsernameHelp")
+     }
+ 
+     fun onRefreshVerification() {
+@@ -227,6 +250,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
+     fun onLogout() {
+         firebaseRepository.signOut()
+         _introStep.value = 0
++        _registrationCredentials.value = RegistrationCredentials()
+         updateActivityTime()
+     }
+ 
+diff --git a/app/src/main/java/app/eob/me/viewmodel/EobViewModel.kt b/app/src/main/java/app/eob/me/viewmodel/EobViewModel.kt
+index bb04ca8..be0d38d 100644
+--- a/app/src/main/java/app/eob/me/viewmodel/EobViewModel.kt
++++ b/app/src/main/java/app/eob/me/viewmodel/EobViewModel.kt
+@@ -3,7 +3,6 @@ package app.eob.me.viewmodel
+ import android.graphics.Bitmap
+ import android.net.Uri
+ import androidx.compose.runtime.getValue
+-import androidx.compose.runtime.mutableStateListOf
+ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.setValue
+ import androidx.lifecycle.ViewModel
+@@ -24,87 +23,128 @@ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.flow.MutableStateFlow
+ import kotlinx.coroutines.flow.StateFlow
+ import kotlinx.coroutines.flow.asStateFlow
++import kotlinx.coroutines.flow.update
+ import kotlinx.coroutines.launch
+ import kotlinx.coroutines.withContext
+ 
++data class HubUiState(
++    val selectedRecord: EobRecord? = null,
++    val uploadNotice: String = "",
++    val appealLetter: String = "",
++    val appointments: List<DoctorAppointment> = emptyList(),
++    val isLoadingInvoice: Boolean = false
++)
++
+ class EobViewModel : ViewModel() {
+-    private val _eobRecords = MutableStateFlow(
+-        listOf(EobAnalyzer.analyze(EobStrings.sampleEobText, "Sample camera scan", 1))
+-    )
++    private val _eobRecords = MutableStateFlow<List<EobRecord>>(emptyList())
+     val eobRecords: StateFlow<List<EobRecord>> = _eobRecords.asStateFlow()
+ 
+-    val appointments = mutableStateListOf<DoctorAppointment>()
+-    var selectedRecord by mutableStateOf<EobRecord?>(_eobRecords.value.firstOrNull())
+-        private set
++    private val _uiState = MutableStateFlow(HubUiState())
++    val uiState: StateFlow<HubUiState> = _uiState.asStateFlow()
++
+     var uploadText by mutableStateOf("")
+-    var uploadNotice by mutableStateOf("")
+-        private set
+     var selectedCptCategory by mutableStateOf(CptCategory.OfficeVisit)
+-    var appealLetter by mutableStateOf(AppealLetterGenerator.generate(UserProfile(), selectedRecord))
+-        private set
+     var firebaseStatus by mutableStateOf(FirebaseSyncStatus(isConfigured = false))
+     var firebaseNews by mutableStateOf<List<NewsRelease>>(emptyList())
+     private var deletedNewsKeys by mutableStateOf<Set<String>>(emptySet())
+     private var eobListener: ListenerRegistration? = null
+ 
++    fun resetHubState() {
++        eobListener?.remove()
++        eobListener = null
++        _eobRecords.value = emptyList()
++        _uiState.value = HubUiState()
++        uploadText = ""
++        selectedCptCategory = CptCategory.OfficeVisit
++        firebaseNews = emptyList()
++        deletedNewsKeys = emptySet()
++    }
++
+     fun fetchHistoryFromFirestore(
+         repository: FirebaseEobRepository,
+         userId: String,
+         profile: UserProfile
+     ) {
+-        viewModelScope.launch(Dispatchers.IO) {
+-            eobListener?.remove()
+-            eobListener = null
+-            if (userId.isBlank()) return@launch
+-            eobListener = repository.observeEobs(
+-                userId = userId,
+-                onRecords = { records ->
+-                    viewModelScope.launch(Dispatchers.Default) {
+-                        val compacted = EobAnalyzer.compactDuplicateEobs(records)
+-                        withContext(Dispatchers.Main) {
+-                            applyRecords(compacted, profile)
++        if (userId.isBlank()) {
++            resetHubState()
++            return
++        }
++
++        eobListener?.remove()
++        eobListener = repository.observeEobs(
++            userId = userId,
++            onRecords = { records ->
++                viewModelScope.launch(Dispatchers.Default) {
++                    val compacted = EobAnalyzer.compactDuplicateEobs(records)
++                    _eobRecords.value = compacted
++
++                    withContext(Dispatchers.Main) {
++                        val currentSelection = _uiState.value.selectedRecord
++                        val nextSelection = if (currentSelection == null || compacted.none { it.id == currentSelection.id }) {
++                            compacted.firstOrNull()
++                        } else {
++                            compacted.firstOrNull { it.id == currentSelection.id }
++                        }
++
++                        _uiState.update {
++                            it.copy(
++                                selectedRecord = nextSelection,
++                                appealLetter = AppealLetterGenerator.generate(profile, nextSelection),
++                                isLoadingInvoice = false
++                            )
+                         }
+-                    }
+-                },
+-                onError = { message ->
+-                    viewModelScope.launch(Dispatchers.Main) {
+-                        firebaseStatus = firebaseStatus.copy(message = message)
+                     }
+                 }
+-            )
+-        }
++            },
++            onError = { message ->
++                _uiState.update { it.copy(uploadNotice = message, isLoadingInvoice = false) }
++            }
++        )
+     }
+ 
+     fun replaceRecords(newRecords: List<EobRecord>, profile: UserProfile) {
+         viewModelScope.launch(Dispatchers.Default) {
+             val compacted = EobAnalyzer.compactDuplicateEobs(newRecords)
++            _eobRecords.value = compacted
++
+             withContext(Dispatchers.Main) {
+-                applyRecords(compacted, profile)
+-            }
+-        }
+-    }
++                val currentSelection = _uiState.value.selectedRecord
++                val nextSelection = if (currentSelection == null || compacted.none { it.id == currentSelection.id }) {
++                    compacted.firstOrNull()
++                } else {
++                    compacted.firstOrNull { it.id == currentSelection.id }
++                }
+ 
+-    private fun applyRecords(compacted: List<EobRecord>, profile: UserProfile) {
+-        _eobRecords.value = compacted
+-        val current = selectedRecord
+-        selectedRecord = if (current == null || compacted.none { it.id == current.id }) {
+-            compacted.firstOrNull()
+-        } else {
+-            compacted.firstOrNull { it.id == current.id }
++                _uiState.update {
++                    it.copy(
++                        selectedRecord = nextSelection,
++                        appealLetter = AppealLetterGenerator.generate(profile, nextSelection)
++                    )
++                }
++            }
+         }
+-        regenerateAppeal(profile)
+     }
+ 
+     fun selectRecord(record: EobRecord, profile: UserProfile) {
+-        selectedRecord = record
+-        regenerateAppeal(profile)
+-        uploadNotice = ""
++        _uiState.update {
++            it.copy(
++                selectedRecord = record,
++                uploadNotice = "",
++                appealLetter = AppealLetterGenerator.generate(profile, record)
++            )
++        }
+     }
+ 
+     fun deleteRecord(record: EobRecord, profile: UserProfile) {
+-        _eobRecords.value = _eobRecords.value.filter { it.id != record.id }
+-        selectedRecord = _eobRecords.value.firstOrNull()
+-        regenerateAppeal(profile)
++        val remaining = _eobRecords.value.filter { it.id != record.id }
++        _eobRecords.value = remaining
++        val nextSelection = remaining.firstOrNull()
++        _uiState.update {
++            it.copy(
++                selectedRecord = nextSelection,
++                appealLetter = AppealLetterGenerator.generate(profile, nextSelection)
++            )
++        }
+     }
+ 
+     fun deleteNews(news: NewsRelease) {
+@@ -117,23 +157,35 @@ class EobViewModel : ViewModel() {
+     }
+ 
+     fun addAppointment(date: String, provider: String, time: String, notes: String) {
+-        appointments.add(DoctorAppointment((appointments.maxOfOrNull { it.id } ?: 0) + 1, date, provider, time, notes))
++        _uiState.update { state ->
++            val nextId = (state.appointments.maxOfOrNull { it.id } ?: 0) + 1
++            state.copy(
++                appointments = state.appointments + DoctorAppointment(nextId, date, provider, time, notes)
++            )
++        }
+     }
+ 
+     fun removeAppointment(appointment: DoctorAppointment) {
+-        appointments.removeAll { it.id == appointment.id }
++        _uiState.update { state ->
++            state.copy(appointments = state.appointments.filterNot { it.id == appointment.id })
++        }
+     }
+ 
+     fun updateAppeal(text: String) {
+-        appealLetter = text
++        _uiState.update { it.copy(appealLetter = text) }
+     }
+ 
+     fun updateUploadNotice(message: String) {
+-        uploadNotice = message
++        _uiState.update { it.copy(uploadNotice = message) }
++    }
++
++    fun setLoadingInvoice(loading: Boolean) {
++        _uiState.update { it.copy(isLoadingInvoice = loading) }
+     }
+ 
+     fun regenerateAppeal(profile: UserProfile) {
+-        appealLetter = AppealLetterGenerator.generate(profile, selectedRecord)
++        val selected = _uiState.value.selectedRecord
++        _uiState.update { it.copy(appealLetter = AppealLetterGenerator.generate(profile, selected)) }
+     }
+ 
+     fun uploadEobFile(
+@@ -143,8 +195,9 @@ class EobViewModel : ViewModel() {
+         sourceName: String,
+         language: AppLanguage
+     ) {
++        setLoadingInvoice(true)
+         repository.uploadEobFile(userId, uri, sourceName) { message ->
+-            uploadNotice = message.ifBlank { EobStrings.t(language, "libraryUploadStarted") }
++            updateUploadNotice(message.ifBlank { EobStrings.t(language, "libraryUploadStarted") })
+         }
+     }
+ 
+@@ -155,8 +208,9 @@ class EobViewModel : ViewModel() {
+         sourceName: String,
+         language: AppLanguage
+     ) {
++        setLoadingInvoice(true)
+         repository.uploadEobBitmap(userId, bitmap, sourceName) { message ->
+-            uploadNotice = message.ifBlank { EobStrings.t(language, "cameraScanStarted") }
++            updateUploadNotice(message.ifBlank { EobStrings.t(language, "cameraScanStarted") })
+         }
+     }
+ 
+@@ -165,18 +219,24 @@ class EobViewModel : ViewModel() {
+         val currentRecords = _eobRecords.value
+         val analyzedRecord = EobAnalyzer.analyze(uploadText, sourceName, (currentRecords.maxOfOrNull { it.id } ?: 0) + 1)
+         val duplicateIndex = currentRecords.indexOfFirst { EobAnalyzer.isSameEob(it, analyzedRecord) }
++        val notice = if (duplicateIndex >= 0) {
++            "Duplicate EOB found. The original copy was replaced with this upload."
++        } else {
++            "EOB added."
++        }
+         val record = if (duplicateIndex >= 0) {
+-            uploadNotice = "Duplicate EOB found. The original copy was replaced with this upload."
+             analyzedRecord.copy(id = currentRecords[duplicateIndex].id)
+         } else {
+-            uploadNotice = "EOB added."
+             analyzedRecord
+         }
+         val updatedRecords = currentRecords.toMutableList().apply {
+             if (duplicateIndex >= 0) this[duplicateIndex] = record else add(record)
+         }
++        _uiState.update { it.copy(uploadNotice = notice) }
+         replaceRecords(updatedRecords, profile)
+-        if (userId.isNotBlank()) repository.saveEob(userId, record) { uploadNotice = it }
++        if (userId.isNotBlank()) {
++            repository.saveEob(userId, record) { updateUploadNotice(it) }
++        }
+         uploadText = ""
+     }
+ 
+diff --git a/app/src/main/java/app/eob/me/viewmodel/FlowCombineExtensions.kt b/app/src/main/java/app/eob/me/viewmodel/FlowCombineExtensions.kt
+new file mode 100644
+index 0000000..08b928c
+--- /dev/null
++++ b/app/src/main/java/app/eob/me/viewmodel/FlowCombineExtensions.kt
+@@ -0,0 +1,11 @@
++package app.eob.me.viewmodel
++
++import kotlinx.coroutines.flow.Flow
++import kotlinx.coroutines.flow.combine
++
++fun <R> List<Flow<*>>.combineAll(transform: suspend (Array<Any?>) -> R): Flow<R> {
++    @Suppress("UNCHECKED_CAST")
++    return combine(map { flow -> flow as Flow<Any?> }) { values ->
++        transform(values)
++    }
++}
+diff --git a/app/src/test/java/app/eob/me/ExampleUnitTest.kt b/app/src/test/java/app/eob/me/ExampleUnitTest.kt
+index e41f732..36507cf 100644
+--- a/app/src/test/java/app/eob/me/ExampleUnitTest.kt
++++ b/app/src/test/java/app/eob/me/ExampleUnitTest.kt
+@@ -4,6 +4,7 @@ import app.eob.me.data.CptCategory
+ import app.eob.me.data.EobAnalyzer
+ import app.eob.me.data.EobKnowledgeBase
+ import app.eob.me.data.FirebaseEobMapper
++import app.eob.me.data.RegistrationCredentials
+ import app.eob.me.data.UserProfile
+ import app.eob.me.data.AppealLetterGenerator
+ import app.eob.me.data.BillingIssueType
+@@ -123,7 +124,6 @@ class ExampleUnitTest {
+             firstName = "Lester",
+             lastName = "Duhart",
+             email = "member@example.com",
+-            password = "password1",
+             city = "Atlanta",
+             state = "GA"
+         )
+@@ -256,19 +256,22 @@ class ExampleUnitTest {
+     }
+ 
+     @Test
+-    fun profileRequiresCityStateAndStrongPassword() {
+-        val weakProfile = UserProfile(
++    fun profileRequiresCityStateAndRegistrationPasswordRules() {
++        val incompleteProfile = UserProfile(
+             firstName = "Lester",
+             lastName = "Duhart",
+             email = "member@example.com",
+-            password = "password",
+-            city = "Atlanta",
++            city = "",
+             state = "GA"
+         )
+-        val completeProfile = weakProfile.copy(password = "password1")
++        val completeProfile = incompleteProfile.copy(city = "Atlanta")
++        val weakCredentials = RegistrationCredentials(email = "member@example.com", password = "password")
++        val strongCredentials = RegistrationCredentials(email = "member@example.com", password = "password1")
+ 
+-        assertFalse(weakProfile.isComplete)
++        assertFalse(incompleteProfile.isComplete)
+         assertTrue(completeProfile.isComplete)
++        assertFalse(weakCredentials.isPasswordValid)
++        assertTrue(strongCredentials.isReadyForSignUp(completeProfile))
+     }
+ 
+     @Test
+@@ -284,7 +287,6 @@ class ExampleUnitTest {
+             firstName = "Lester",
+             lastName = "Duhart",
+             email = "member@example.com",
+-            password = "private",
+             city = "Atlanta",
+             state = "GA",
+             insuranceName = "Aetna",
+@@ -293,7 +295,7 @@ class ExampleUnitTest {
+             insuranceCardDownloadUrl = "https://firebasestorage.example/card.jpg"
+         )
+         val profileMap = FirebaseEobMapper.profileToMap(profile)
+-        val restoredProfile = FirebaseEobMapper.profileFromMap(profileMap, currentPassword = profile.password)
++        val restoredProfile = FirebaseEobMapper.profileFromMap(profileMap)
+         val record = EobAnalyzer.analyze(
+             """
+                 Aetna

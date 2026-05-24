@@ -1,0 +1,118 @@
+diff --git a/src/helpers/beta/zod.ts b/src/helpers/beta/zod.ts
+index 452a28d6..f20c2480 100644
+--- a/src/helpers/beta/zod.ts
++++ b/src/helpers/beta/zod.ts
+@@ -3,7 +3,8 @@ import type { infer as zodInfer, ZodType } from 'zod';
+ import * as z from 'zod/v4';
+ import { AnthropicError } from '../../core/error';
+ import { AutoParseableBetaOutputFormat } from '../../lib/beta-parser';
+-import { BetaRunnableTool, BetaToolRunContext, Promisable } from '../../lib/tools/BetaRunnableTool';
++import { BetaRunnableCustomTool, BetaToolRunContext, Promisable } from '../../lib/tools/BetaRunnableTool';
++export type { BetaRunnableCustomTool } from '../../lib/tools/BetaRunnableTool';
+ import { BetaToolResultContentBlockParam } from '../../resources/beta';
+ /**
+  * Creates a JSON schema output format object from the given Zod schema.
+@@ -54,7 +55,7 @@ export function betaZodTool<InputSchema extends ZodType>(options: {
+     args: zodInfer<InputSchema>,
+     context?: BetaToolRunContext,
+   ) => Promisable<string | Array<BetaToolResultContentBlockParam>>;
+-}): BetaRunnableTool<zodInfer<InputSchema>> {
++}): BetaRunnableCustomTool<zodInfer<InputSchema>> {
+   const jsonSchema = z.toJSONSchema(options.inputSchema, { reused: 'ref' });
+ 
+   if (jsonSchema.type !== 'object') {
+diff --git a/src/lib/tools/BetaRunnableTool.ts b/src/lib/tools/BetaRunnableTool.ts
+index dd8f3e26..caf8f16b 100644
+--- a/src/lib/tools/BetaRunnableTool.ts
++++ b/src/lib/tools/BetaRunnableTool.ts
+@@ -47,3 +47,31 @@ export type BetaRunnableTool<Input = any> = BetaClientRunnableToolType & {
+   ) => Promisable<string | Array<BetaToolResultContentBlockParam>>;
+   parse: (content: unknown) => Input;
+ };
++
++/**
++ * A runnable custom tool (type: 'custom') created by helpers like `betaZodTool`.
++ *
++ * Unlike the more general {@link BetaRunnableTool}, this type is structurally
++ * compatible with `ToolUnion` so it can be passed directly to
++ * `client.messages.stream()` and `client.messages.create()` in addition to
++ * `client.beta.messages.toolRunner()`.
++ *
++ * The narrower `input_schema` shape (no `readonly` arrays) is what makes the
++ * assignability work under `strictNullChecks` + `exactOptionalPropertyTypes`.
++ */
++export type BetaRunnableCustomTool<Input = any> = {
++  type: 'custom';
++  name: string;
++  description?: string;
++  input_schema: {
++    type: 'object';
++    properties?: unknown | null;
++    required?: string[] | null;
++    [k: string]: unknown;
++  };
++  run: (
++    args: Input,
++    context?: BetaToolRunContext,
++  ) => Promisable<string | Array<BetaToolResultContentBlockParam>>;
++  parse: (content: unknown) => Input;
++};
+diff --git a/tests/helpers/zod.test.ts b/tests/helpers/zod.test.ts
+index 9285ded5..92b8b424 100644
+--- a/tests/helpers/zod.test.ts
++++ b/tests/helpers/zod.test.ts
+@@ -1,8 +1,53 @@
+ import { z } from 'zod';
+-import { betaZodOutputFormat } from '../../src/helpers/beta/zod';
++import type { ToolUnion } from '../../src/resources/messages/messages';
++import { betaZodOutputFormat, betaZodTool } from '../../src/helpers/beta/zod';
+ import { zodOutputFormat } from '../../src/helpers/zod';
+ 
+ describe('beta zod helpers', () => {
++  describe('betaZodTool', () => {
++    it('returns a tool that is assignable to ToolUnion (issue #1010)', () => {
++      const tool = betaZodTool({
++        name: 'create_event',
++        description: 'Create a calendar event',
++        inputSchema: z.object({ title: z.string() }),
++        run: async (input) => `Created: ${input.title}`,
++      });
++
++      // Compile-time check: betaZodTool result must be usable as ToolUnion
++      const toolUnion: ToolUnion = tool;
++      expect(toolUnion.name).toBe('create_event');
++    });
++
++    it('generates correct tool definition', () => {
++      const tool = betaZodTool({
++        name: 'my_tool',
++        description: 'A test tool',
++        inputSchema: z.object({ value: z.number() }),
++        run: async (input) => String(input.value),
++      });
++
++      expect(tool.type).toBe('custom');
++      expect(tool.name).toBe('my_tool');
++      expect(tool.description).toBe('A test tool');
++      expect(tool.input_schema.type).toBe('object');
++    });
++
++    it('run and parse methods work correctly', async () => {
++      const tool = betaZodTool({
++        name: 'echo',
++        description: 'Echo a value',
++        inputSchema: z.object({ msg: z.string() }),
++        run: async (input) => `echo: ${input.msg}`,
++      });
++
++      const result = await tool.run({ msg: 'hello' });
++      expect(result).toBe('echo: hello');
++
++      const parsed = tool.parse({ msg: 'world' });
++      expect(parsed).toEqual({ msg: 'world' });
++    });
++  });
++
+   describe('betaZodOutputFormat', () => {
+     it('creates valid JSON schema from simple Zod object', () => {
+       const schema = z.object({

@@ -1,0 +1,1094 @@
+diff --git a/enterprise/integrations/jira_dc/jira_dc_manager.py b/enterprise/integrations/jira_dc/jira_dc_manager.py
+index 12ec4d6380c3..1473db15e647 100644
+--- a/enterprise/integrations/jira_dc/jira_dc_manager.py
++++ b/enterprise/integrations/jira_dc/jira_dc_manager.py
+@@ -5,13 +5,15 @@
+ 
+ import httpx
+ from fastapi import Request
++from integrations.jira_dc.jira_dc_service_account import (
++    resolve_jira_dc_service_account,
++)
+ from integrations.jira_dc.jira_dc_types import (
+     JiraDcViewInterface,
+ )
+ from integrations.jira_dc.jira_dc_view import (
+     JiraDcExistingConversationView,
+     JiraDcFactory,
+-    JiraDcNewConversationView,
+ )
+ from integrations.manager import Manager
+ from integrations.models import JobContext, Message
+@@ -301,8 +303,18 @@ async def receive_message(self, message: Message):
+             )
+             return
+ 
++        try:
++            service_account = resolve_jira_dc_service_account(
++                workspace, self.token_manager
++            )
++        except Exception as e:
++            logger.error(
++                f'[Jira DC] Service account configuration is invalid: {str(e)}'
++            )
++            return
++
+         # Prevent any recursive triggers from the service account
+-        if job_context.user_email == workspace.svc_acc_email:
++        if job_context.user_email == service_account.email:
+             return
+ 
+         if workspace.status != 'active':
+@@ -336,14 +348,15 @@ async def receive_message(self, message: Message):
+ 
+         # Get issue details
+         try:
+-            api_key = self.token_manager.decrypt_text(workspace.svc_acc_api_key)
+             issue_title, issue_description = await self.get_issue_details(
+-                job_context, api_key
++                job_context, service_account.api_key
+             )
+             job_context.issue_title = issue_title
+             job_context.issue_description = issue_description
+             job_context.previous_comments = await self.get_issue_comments(
+-                job_context, api_key, bot_email=workspace.svc_acc_email
++                job_context,
++                service_account.api_key,
++                bot_email=service_account.email,
+             )
+         except Exception as e:
+             logger.error(f'[Jira DC] Failed to get issue context: {str(e)}')
+@@ -420,13 +433,6 @@ async def start_job(self, jira_dc_view: JiraDcViewInterface) -> None:
+                 f'issue {jira_dc_view.job_context.issue_key}',
+             )
+ 
+-            # Set decrypted API key for new conversations (needed for V1 callback processor)
+-            if isinstance(jira_dc_view, JiraDcNewConversationView):
+-                api_key = self.token_manager.decrypt_text(
+-                    jira_dc_view.jira_dc_workspace.svc_acc_api_key
+-                )
+-                jira_dc_view._decrypted_api_key = api_key
+-
+             # Create conversation using V1 app conversation system
+             # The callback processor is registered automatically by the view
+             conversation_id = await jira_dc_view.create_or_update_conversation(
+@@ -460,14 +466,14 @@ async def start_job(self, jira_dc_view: JiraDcViewInterface) -> None:
+ 
+         # Send response comment
+         try:
+-            api_key = self.token_manager.decrypt_text(
+-                jira_dc_view.jira_dc_workspace.svc_acc_api_key
++            service_account = resolve_jira_dc_service_account(
++                jira_dc_view.jira_dc_workspace, self.token_manager
+             )
+             await self.send_message(
+                 msg_info,
+                 issue_key=jira_dc_view.job_context.issue_key,
+                 base_api_url=jira_dc_view.job_context.base_api_url,
+-                svc_acc_api_key=api_key,
++                svc_acc_api_key=service_account.api_key,
+             )
+         except Exception as e:
+             logger.error(f'[Jira] Failed to send response message: {str(e)}')
+@@ -636,11 +642,13 @@ async def _add_acknowledgement_reaction(
+         if not job_context.comment_id:
+             return
+         try:
+-            api_key = self.token_manager.decrypt_text(workspace.svc_acc_api_key)
++            service_account = resolve_jira_dc_service_account(
++                workspace, self.token_manager
++            )
+             await self.add_reaction(
+                 comment_id=job_context.comment_id,
+                 base_api_url=job_context.base_api_url,
+-                svc_acc_api_key=api_key,
++                svc_acc_api_key=service_account.api_key,
+             )
+             logger.info(
+                 f'[Jira DC] Reacted to comment {job_context.comment_id} on issue {job_context.issue_key}'
+@@ -772,12 +780,14 @@ async def _send_error_comment(
+             return
+ 
+         try:
+-            api_key = self.token_manager.decrypt_text(workspace.svc_acc_api_key)
++            service_account = resolve_jira_dc_service_account(
++                workspace, self.token_manager
++            )
+             await self.send_message(
+                 error_msg,
+                 issue_key=job_context.issue_key,
+                 base_api_url=job_context.base_api_url,
+-                svc_acc_api_key=api_key,
++                svc_acc_api_key=service_account.api_key,
+             )
+         except Exception as e:
+             logger.error(f'[Jira DC] Failed to send error comment: {str(e)}')
+@@ -790,15 +800,15 @@ async def _send_repo_selection_comment(self, jira_dc_view: JiraDcViewInterface):
+                 'Please add it to your issue description or send a followup comment.'
+             )
+ 
+-            api_key = self.token_manager.decrypt_text(
+-                jira_dc_view.jira_dc_workspace.svc_acc_api_key
++            service_account = resolve_jira_dc_service_account(
++                jira_dc_view.jira_dc_workspace, self.token_manager
+             )
+ 
+             await self.send_message(
+                 comment_msg,
+                 issue_key=jira_dc_view.job_context.issue_key,
+                 base_api_url=jira_dc_view.job_context.base_api_url,
+-                svc_acc_api_key=api_key,
++                svc_acc_api_key=service_account.api_key,
+             )
+ 
+             logger.info(
+diff --git a/enterprise/integrations/jira_dc/jira_dc_service_account.py b/enterprise/integrations/jira_dc/jira_dc_service_account.py
+new file mode 100644
+index 000000000000..803c450d23c2
+--- /dev/null
++++ b/enterprise/integrations/jira_dc/jira_dc_service_account.py
+@@ -0,0 +1,101 @@
++"""Service-account resolution for Jira Data Center integrations."""
++
++import re
++from dataclasses import dataclass
++
++from server.auth.constants import (
++    JIRA_DC_SERVICE_ACCOUNT_EMAIL,
++    JIRA_DC_SERVICE_ACCOUNT_PAT,
++)
++from server.auth.token_manager import TokenManager
++from storage.jira_dc_workspace import JiraDcWorkspace
++
++_EMAIL_RE = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
++
++
++@dataclass(frozen=True)
++class JiraDcServiceAccount:
++    email: str
++    api_key: str
++    managed_by_env: bool
++
++
++def get_jira_dc_service_account_config_error() -> str | None:
++    """Return a human-readable KOTS/env service-account config error, if any."""
++    email = JIRA_DC_SERVICE_ACCOUNT_EMAIL
++    api_key = JIRA_DC_SERVICE_ACCOUNT_PAT
++
++    if bool(email) != bool(api_key):
++        return (
++            'Jira DC service account is partially configured. Set both '
++            'JIRA_DC_SERVICE_ACCOUNT_EMAIL and JIRA_DC_SERVICE_ACCOUNT_PAT, '
++            'or clear both to configure service accounts in OpenHands.'
++        )
++
++    if email and not _EMAIL_RE.match(email):
++        return 'JIRA_DC_SERVICE_ACCOUNT_EMAIL must be a valid email address.'
++
++    if api_key and any(char.isspace() for char in api_key):
++        return 'JIRA_DC_SERVICE_ACCOUNT_PAT cannot contain whitespace.'
++
++    return None
++
++
++def get_jira_dc_managed_service_account() -> JiraDcServiceAccount | None:
++    """Return the env-managed service account, or None when not configured."""
++    config_error = get_jira_dc_service_account_config_error()
++    if config_error:
++        raise ValueError(config_error)
++
++    if not JIRA_DC_SERVICE_ACCOUNT_EMAIL or not JIRA_DC_SERVICE_ACCOUNT_PAT:
++        return None
++
++    return JiraDcServiceAccount(
++        email=JIRA_DC_SERVICE_ACCOUNT_EMAIL,
++        api_key=JIRA_DC_SERVICE_ACCOUNT_PAT,
++        managed_by_env=True,
++    )
++
++
++def is_jira_dc_service_account_managed() -> bool:
++    """Return True when Jira DC service-account credentials are env-managed."""
++    return (
++        get_jira_dc_service_account_config_error() is None
++        and bool(JIRA_DC_SERVICE_ACCOUNT_EMAIL)
++        and bool(JIRA_DC_SERVICE_ACCOUNT_PAT)
++    )
++
++
++def get_jira_dc_managed_service_account_email() -> str | None:
++    """Return the env-managed service-account email, if fully configured."""
++    if not is_jira_dc_service_account_managed():
++        return None
++    return JIRA_DC_SERVICE_ACCOUNT_EMAIL
++
++
++def resolve_jira_dc_service_account(
++    workspace: JiraDcWorkspace,
++    token_manager: TokenManager,
++) -> JiraDcServiceAccount:
++    """Resolve the effective Jira DC service account for runtime API calls.
++
++    KOTS/env values are authoritative when both are set. Otherwise the existing
++    per-workspace encrypted values are used for SaaS and non-managed installs.
++    """
++    managed_service_account = get_jira_dc_managed_service_account()
++    if managed_service_account:
++        return managed_service_account
++
++    email = (workspace.svc_acc_email or '').strip()
++    if not email:
++        raise ValueError('Jira DC workspace is missing a service account email.')
++
++    encrypted_api_key = workspace.svc_acc_api_key
++    if not encrypted_api_key:
++        raise ValueError('Jira DC workspace is missing a service account PAT.')
++
++    return JiraDcServiceAccount(
++        email=email,
++        api_key=token_manager.decrypt_text(encrypted_api_key),
++        managed_by_env=False,
++    )
+diff --git a/enterprise/integrations/jira_dc/jira_dc_v1_callback_processor.py b/enterprise/integrations/jira_dc/jira_dc_v1_callback_processor.py
+index 51c0388b5347..7a6352fab370 100644
+--- a/enterprise/integrations/jira_dc/jira_dc_v1_callback_processor.py
++++ b/enterprise/integrations/jira_dc/jira_dc_v1_callback_processor.py
+@@ -8,8 +8,13 @@
+ from uuid import UUID
+ 
+ import httpx
++from integrations.jira_dc.jira_dc_service_account import (
++    resolve_jira_dc_service_account,
++)
+ from integrations.utils import get_summary_instruction, markdown_to_jira_markup
+ from pydantic import Field
++from server.auth.token_manager import TokenManager
++from storage.jira_dc_integration_store import JiraDcIntegrationStore
+ 
+ from openhands.agent_server.models import AskAgentRequest, AskAgentResponse
+ from openhands.app_server.event_callback.event_callback_models import (
+@@ -39,7 +44,6 @@ class JiraDcV1CallbackProcessor(EventCallbackProcessor):
+     issue_key: str
+     workspace_name: str
+     base_api_url: str
+-    svc_acc_api_key: str  # Decrypted API key
+ 
+     async def __call__(
+         self,
+@@ -216,14 +220,26 @@ async def _post_summary_to_jira_dc(self, summary: str):
+         """Post the summary back to the Jira DC issue."""
+         if not all(
+             [
+-                self.svc_acc_api_key,
+                 self.issue_key,
++                self.workspace_name,
+                 self.base_api_url,
+             ]
+         ):
+             _logger.warning('[Jira DC] Missing required data for posting summary')
+             return
+ 
++        workspace = await JiraDcIntegrationStore.get_instance().get_workspace_by_name(
++            self.workspace_name
++        )
++        if not workspace:
++            _logger.warning(
++                '[Jira DC] Workspace %s not found for posting summary',
++                self.workspace_name,
++            )
++            return
++
++        service_account = resolve_jira_dc_service_account(workspace, TokenManager())
++
+         # Add a comment to the Jira DC issue with the summary
+         comment_url = f'{self.base_api_url}/rest/api/2/issue/{self.issue_key}/comment'
+ 
+@@ -231,7 +247,7 @@ async def _post_summary_to_jira_dc(self, summary: str):
+         # Convert standard Markdown to Jira Wiki Markup for proper rendering
+         comment_body = {'body': markdown_to_jira_markup(message)}
+ 
+-        headers = {'Authorization': f'Bearer {self.svc_acc_api_key}'}
++        headers = {'Authorization': f'Bearer {service_account.api_key}'}
+ 
+         async with httpx.AsyncClient(verify=httpx_verify_option()) as client:
+             response = await client.post(
+diff --git a/enterprise/integrations/jira_dc/jira_dc_view.py b/enterprise/integrations/jira_dc/jira_dc_view.py
+index bac5a00649f7..4796feacb40d 100644
+--- a/enterprise/integrations/jira_dc/jira_dc_view.py
++++ b/enterprise/integrations/jira_dc/jira_dc_view.py
+@@ -5,7 +5,7 @@
+ - Creating conversations using V1 app conversation system
+ """
+ 
+-from dataclasses import dataclass, field
++from dataclasses import dataclass
+ from uuid import UUID, uuid4
+ 
+ from integrations.jira_dc.jira_dc_types import (
+@@ -51,9 +51,6 @@ class JiraDcNewConversationView(JiraDcViewInterface):
+     selected_repo: str | None
+     conversation_id: str
+ 
+-    # Decrypted API key (set by manager)
+-    _decrypted_api_key: str = field(default='', repr=False)
+-
+     # Resolved org ID for V1 conversations
+     resolved_org_id: UUID | None = None
+ 
+@@ -164,7 +161,6 @@ def _create_jira_dc_v1_callback_processor(self) -> JiraDcV1CallbackProcessor:
+             issue_key=self.job_context.issue_key,
+             workspace_name=self.jira_dc_workspace.name,
+             base_api_url=self.job_context.base_api_url,
+-            svc_acc_api_key=self._decrypted_api_key,
+         )
+ 
+     async def _get_git_provider(self) -> ProviderType | None:
+diff --git a/enterprise/server/auth/constants.py b/enterprise/server/auth/constants.py
+index 6cbbc54412e4..5b02102ad6d1 100644
+--- a/enterprise/server/auth/constants.py
++++ b/enterprise/server/auth/constants.py
+@@ -31,6 +31,8 @@
+ JIRA_DC_CLIENT_SECRET = os.getenv('JIRA_DC_CLIENT_SECRET', '').strip()
+ JIRA_DC_BASE_URL = os.getenv('JIRA_DC_BASE_URL', '').strip()
+ JIRA_DC_ENABLE_OAUTH = os.getenv('JIRA_DC_ENABLE_OAUTH', '1') in ('1', 'true')
++JIRA_DC_SERVICE_ACCOUNT_EMAIL = os.getenv('JIRA_DC_SERVICE_ACCOUNT_EMAIL', '').strip()
++JIRA_DC_SERVICE_ACCOUNT_PAT = os.getenv('JIRA_DC_SERVICE_ACCOUNT_PAT', '').strip()
+ AUTH_URL = os.getenv('AUTH_URL', '').rstrip('/')
+ ROLE_CHECK_ENABLED = os.getenv('ROLE_CHECK_ENABLED', 'false').lower() in (
+     '1',
+diff --git a/enterprise/server/routes/integration/jira_dc.py b/enterprise/server/routes/integration/jira_dc.py
+index 10b3ec7f3c65..5f066753d013 100644
+--- a/enterprise/server/routes/integration/jira_dc.py
++++ b/enterprise/server/routes/integration/jira_dc.py
+@@ -17,6 +17,10 @@
+ )
+ from fastapi.responses import JSONResponse, RedirectResponse
+ from integrations.jira_dc.jira_dc_manager import JiraDcManager
++from integrations.jira_dc.jira_dc_service_account import (
++    get_jira_dc_managed_service_account,
++    get_jira_dc_service_account_config_error,
++)
+ from integrations.models import Message, SourceType
+ from pydantic import BaseModel, Field, field_validator
+ from server.auth.constants import (
+@@ -59,7 +63,7 @@ class JiraDcWorkspaceCreate(BaseModel):
+             'auto-enroll mode it is left blank and generated here.'
+         ),
+     )
+-    svc_acc_email: str = Field(..., description='Service account email')
++    svc_acc_email: str | None = Field(default=None, description='Service account email')
+     svc_acc_api_key: str | None = Field(
+         default=None,
+         description=(
+@@ -92,6 +96,8 @@ def validate_workspace_name(cls, v):
+     @field_validator('svc_acc_email')
+     @classmethod
+     def validate_svc_acc_email(cls, v):
++        if v is None or v == '':
++            return v
+         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+         if not re.match(email_pattern, v):
+             raise ValueError('svc_acc_email must be a valid email address')
+@@ -386,12 +392,37 @@ def _resolve_webhook_secret(
+     return secrets.token_urlsafe(32)
+ 
+ 
++def _resolve_submitted_service_account(
++    workspace_data: JiraDcWorkspaceCreate,
++) -> tuple[str, str]:
++    """Resolve service-account values to persist for this workspace request."""
++    managed_service_account = get_jira_dc_managed_service_account()
++    if managed_service_account:
++        return managed_service_account.email, managed_service_account.api_key
++
++    svc_acc_email = (workspace_data.svc_acc_email or '').strip()
++    if not svc_acc_email:
++        raise HTTPException(
++            status_code=status.HTTP_400_BAD_REQUEST,
++            detail='A service account email is required when configuring Jira DC in OpenHands.',
++        )
++
++    return svc_acc_email, (workspace_data.svc_acc_api_key or '').strip()
++
++
+ @jira_dc_integration_router.post('/workspaces')
+ async def create_jira_dc_workspace(
+     request: Request, workspace_data: JiraDcWorkspaceCreate
+ ):
+     """Create a new Jira DC workspace registration."""
+     try:
++        service_account_config_error = get_jira_dc_service_account_config_error()
++        if service_account_config_error:
++            raise HTTPException(
++                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
++                detail=service_account_config_error,
++            )
++
+         user_auth = cast(SaasUserAuth, await get_user_auth(request))
+         user_id = await user_auth.get_user_id()
+         user_email = await user_auth.get_user_email()
+@@ -409,7 +440,9 @@ async def create_jira_dc_workspace(
+                 workspace_data.workspace_name
+             )
+         )
+-        provided_api_key = (workspace_data.svc_acc_api_key or '').strip()
++        svc_acc_email, provided_api_key = _resolve_submitted_service_account(
++            workspace_data
++        )
+         # The service-account PAT is required to create a NEW workspace, but is
+         # optional when editing one (blank = keep the stored token), so admins
+         # never have to re-paste it just to change other fields.
+@@ -439,7 +472,7 @@ async def create_jira_dc_workspace(
+                 'user_email': user_email,
+                 'target_workspace': workspace_data.workspace_name,
+                 'webhook_secret': resolved_webhook_secret,
+-                'svc_acc_email': workspace_data.svc_acc_email,
++                'svc_acc_email': svc_acc_email,
+                 # Empty when editing without changing the PAT; the callback then
+                 # keeps the workspace's stored token instead of overwriting it.
+                 'svc_acc_api_key': provided_api_key,
+@@ -497,7 +530,7 @@ async def create_jira_dc_workspace(
+                     admin_user_id=user_id,
+                     org_id=effective_org_id,
+                     encrypted_webhook_secret=encrypted_webhook_secret,
+-                    svc_acc_email=workspace_data.svc_acc_email,
++                    svc_acc_email=svc_acc_email,
+                     encrypted_svc_acc_api_key=encrypted_new_svc_acc_api_key,
+                     status='active' if workspace_data.is_active else 'inactive',
+                 )
+@@ -531,7 +564,7 @@ async def create_jira_dc_workspace(
+                     id=workspace.id,
+                     org_id=effective_org_id,
+                     encrypted_webhook_secret=encrypted_webhook_secret,
+-                    svc_acc_email=workspace_data.svc_acc_email,
++                    svc_acc_email=svc_acc_email,
+                     encrypted_svc_acc_api_key=updated_encrypted_svc_acc_api_key,
+                     status='active' if workspace_data.is_active else 'inactive',
+                 )
+diff --git a/enterprise/tests/unit/integrations/jira_dc/test_jira_dc_service_account.py b/enterprise/tests/unit/integrations/jira_dc/test_jira_dc_service_account.py
+new file mode 100644
+index 000000000000..62d8d295b910
+--- /dev/null
++++ b/enterprise/tests/unit/integrations/jira_dc/test_jira_dc_service_account.py
+@@ -0,0 +1,76 @@
++from unittest.mock import MagicMock, patch
++
++import pytest
++from integrations.jira_dc.jira_dc_service_account import (
++    get_jira_dc_service_account_config_error,
++    resolve_jira_dc_service_account,
++)
++
++
++def test_resolve_service_account_uses_workspace_credentials(sample_jira_dc_workspace):
++    token_manager = MagicMock()
++    token_manager.decrypt_text.return_value = 'workspace-pat'
++
++    with (
++        patch(
++            'integrations.jira_dc.jira_dc_service_account.JIRA_DC_SERVICE_ACCOUNT_EMAIL',
++            '',
++        ),
++        patch(
++            'integrations.jira_dc.jira_dc_service_account.JIRA_DC_SERVICE_ACCOUNT_PAT',
++            '',
++        ),
++    ):
++        service_account = resolve_jira_dc_service_account(
++            sample_jira_dc_workspace, token_manager
++        )
++
++    assert service_account.email == 'service@company.com'
++    assert service_account.api_key == 'workspace-pat'
++    assert service_account.managed_by_env is False
++    token_manager.decrypt_text.assert_called_once_with('encrypted_api_key')
++
++
++def test_resolve_service_account_prefers_env_credentials(sample_jira_dc_workspace):
++    token_manager = MagicMock()
++
++    with (
++        patch(
++            'integrations.jira_dc.jira_dc_service_account.JIRA_DC_SERVICE_ACCOUNT_EMAIL',
++            'managed@company.com',
++        ),
++        patch(
++            'integrations.jira_dc.jira_dc_service_account.JIRA_DC_SERVICE_ACCOUNT_PAT',
++            'managed-pat',
++        ),
++    ):
++        service_account = resolve_jira_dc_service_account(
++            sample_jira_dc_workspace, token_manager
++        )
++
++    assert service_account.email == 'managed@company.com'
++    assert service_account.api_key == 'managed-pat'
++    assert service_account.managed_by_env is True
++    token_manager.decrypt_text.assert_not_called()
++
++
++@pytest.mark.parametrize(
++    ('email', 'api_key', 'expected_error'),
++    [
++        ('managed@company.com', '', 'partially configured'),
++        ('invalid-email', 'managed-pat', 'valid email'),
++        ('managed@company.com', 'managed pat', 'cannot contain whitespace'),
++    ],
++)
++def test_service_account_env_config_errors(email, api_key, expected_error):
++    with (
++        patch(
++            'integrations.jira_dc.jira_dc_service_account.JIRA_DC_SERVICE_ACCOUNT_EMAIL',
++            email,
++        ),
++        patch(
++            'integrations.jira_dc.jira_dc_service_account.JIRA_DC_SERVICE_ACCOUNT_PAT',
++            api_key,
++        ),
++    ):
++        assert expected_error in (get_jira_dc_service_account_config_error() or '')
+diff --git a/enterprise/tests/unit/integrations/jira_dc/test_jira_dc_v1_callback_processor.py b/enterprise/tests/unit/integrations/jira_dc/test_jira_dc_v1_callback_processor.py
+new file mode 100644
+index 000000000000..b0ad5367d0d1
+--- /dev/null
++++ b/enterprise/tests/unit/integrations/jira_dc/test_jira_dc_v1_callback_processor.py
+@@ -0,0 +1,48 @@
++from unittest.mock import AsyncMock, MagicMock, patch
++
++import pytest
++from integrations.jira_dc.jira_dc_v1_callback_processor import (
++    JiraDcV1CallbackProcessor,
++)
++
++
++@pytest.mark.asyncio
++@patch('integrations.jira_dc.jira_dc_v1_callback_processor.httpx.AsyncClient')
++@patch('integrations.jira_dc.jira_dc_v1_callback_processor.TokenManager')
++@patch(
++    'integrations.jira_dc.jira_dc_v1_callback_processor.JiraDcIntegrationStore.get_instance'
++)
++async def test_post_summary_resolves_service_account_at_callback_time(
++    mock_store_get_instance,
++    mock_token_manager_cls,
++    mock_async_client,
++    sample_jira_dc_workspace,
++):
++    store = MagicMock()
++    store.get_workspace_by_name = AsyncMock(return_value=sample_jira_dc_workspace)
++    mock_store_get_instance.return_value = store
++
++    token_manager = MagicMock()
++    token_manager.decrypt_text.return_value = 'runtime-pat'
++    mock_token_manager_cls.return_value = token_manager
++
++    response = MagicMock()
++    response.raise_for_status = MagicMock()
++    client = AsyncMock()
++    client.post.return_value = response
++    mock_async_client.return_value.__aenter__.return_value = client
++
++    processor = JiraDcV1CallbackProcessor(
++        issue_key='PROJ-123',
++        workspace_name='jira.company.com',
++        base_api_url='https://jira.company.com',
++    )
++
++    await processor._post_summary_to_jira_dc('Summary')
++
++    store.get_workspace_by_name.assert_awaited_once_with('jira.company.com')
++    token_manager.decrypt_text.assert_called_once_with('encrypted_api_key')
++    client.post.assert_awaited_once()
++    _, kwargs = client.post.call_args
++    assert kwargs['headers'] == {'Authorization': 'Bearer runtime-pat'}
++    assert kwargs['json']['body'].startswith('OpenHands resolved this issue:')
+diff --git a/enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py b/enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py
+index 12acde70b573..142a604a47d6 100644
+--- a/enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py
++++ b/enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py
+@@ -7,6 +7,7 @@
+ import pytest
+ from fastapi import HTTPException, Request, status
+ from fastapi.responses import RedirectResponse
++from integrations.jira_dc.jira_dc_service_account import JiraDcServiceAccount
+ from pydantic import ValidationError
+ from server.auth.saas_user_auth import SaasUserAuth
+ from server.routes.integration.jira_dc import (
+@@ -624,6 +625,58 @@ async def test_create_jira_dc_workspace_oauth_disabled_new_workspace(
+         mock_handle_link.assert_called_once()
+ 
+ 
++@pytest.mark.asyncio
++@patch('server.routes.integration.jira_dc.get_user_auth')
++@patch('server.routes.integration.jira_dc.jira_dc_manager', new_callable=AsyncMock)
++@patch('server.routes.integration.jira_dc.JIRA_DC_ENABLE_OAUTH', False)
++@patch(
++    'server.routes.integration.jira_dc._handle_workspace_link_creation',
++    new_callable=AsyncMock,
++)
++@patch('server.routes.integration.jira_dc.get_jira_dc_service_account_config_error')
++@patch('server.routes.integration.jira_dc.get_jira_dc_managed_service_account')
++async def test_create_jira_dc_workspace_uses_managed_service_account(
++    mock_get_managed_service_account,
++    mock_get_service_account_error,
++    mock_handle_link,
++    mock_manager,
++    mock_get_auth,
++    mock_request,
++    mock_user_auth,
++):
++    mock_get_auth.return_value = mock_user_auth
++    mock_get_service_account_error.return_value = None
++    mock_get_managed_service_account.return_value = JiraDcServiceAccount(
++        email='managed@test.com',
++        api_key='managed-pat',
++        managed_by_env=True,
++    )
++    mock_manager.integration_store.get_workspace_by_name.return_value = None
++    mock_workspace = MagicMock()
++    mock_workspace.name = 'test-workspace'
++    mock_manager.integration_store.create_workspace.return_value = mock_workspace
++
++    workspace_data = JiraDcWorkspaceCreate(
++        workspace_name='test-workspace',
++        webhook_secret='secret',
++        is_active=True,
++    )
++
++    with patch('server.routes.integration.jira_dc.token_manager') as mock_token_manager:
++        mock_token_manager.encrypt_text.side_effect = lambda x: f'enc_{x}'
++
++        response = await create_jira_dc_workspace(mock_request, workspace_data)
++        content = json.loads(response.body)
++
++    assert response.status_code == 200
++    assert content['success'] is True
++    mock_manager.integration_store.create_workspace.assert_called_once()
++    create_kwargs = mock_manager.integration_store.create_workspace.call_args.kwargs
++    assert create_kwargs['svc_acc_email'] == 'managed@test.com'
++    assert create_kwargs['encrypted_svc_acc_api_key'] == 'enc_managed-pat'
++    mock_handle_link.assert_called_once()
++
++
+ @pytest.mark.asyncio
+ @patch('server.routes.integration.jira_dc.get_user_auth')
+ @patch('server.routes.integration.jira_dc.jira_dc_manager', new_callable=AsyncMock)
+diff --git a/frontend/src/api/option-service/option.types.ts b/frontend/src/api/option-service/option.types.ts
+index 3cda7c0fa114..cad91a5ac8c4 100644
+--- a/frontend/src/api/option-service/option.types.ts
++++ b/frontend/src/api/option-service/option.types.ts
+@@ -58,4 +58,10 @@ export interface WebClientConfig {
+   /** Jira DC host when DC OAuth is configured; used to pre-fill + lock the
+    *  configure form's host field. Null/absent in email-match mode. */
+   jira_dc_oauth_host?: string | null;
++  /** True when Jira DC service-account credentials are managed by OHE/KOTS. */
++  jira_dc_service_account_managed?: boolean;
++  /** Non-secret service-account email when managed by OHE/KOTS. */
++  jira_dc_service_account_email?: string | null;
++  /** Non-secret Jira DC service-account env config error, if any. */
++  jira_dc_service_account_config_error?: string | null;
+ }
+diff --git a/frontend/src/components/features/settings/project-management/jira-dc-integration-panel.tsx b/frontend/src/components/features/settings/project-management/jira-dc-integration-panel.tsx
+index b87de95bde99..c6a02a38565a 100644
+--- a/frontend/src/components/features/settings/project-management/jira-dc-integration-panel.tsx
++++ b/frontend/src/components/features/settings/project-management/jira-dc-integration-panel.tsx
+@@ -33,6 +33,12 @@ export function JiraDcIntegrationPanel() {
+   const { data: config } = useConfig();
+   // OAuth installs already know the host; pre-fill + lock it.
+   const jiraDcOAuthHost = config?.jira_dc_oauth_host ?? null;
++  const serviceAccountManaged =
++    config?.jira_dc_service_account_managed ?? false;
++  const managedServiceAccountEmail =
++    config?.jira_dc_service_account_email ?? "";
++  const serviceAccountConfigError =
++    config?.jira_dc_service_account_config_error ?? null;
+ 
+   const { data: integrationData } = useIntegrationStatus("jira-dc");
+   const existingWorkspace = integrationData?.workspace;
+@@ -69,12 +75,19 @@ export function JiraDcIntegrationPanel() {
+   const seedForm = React.useCallback(() => {
+     if (existingWorkspace) {
+       setWorkspace(existingWorkspace.name);
+-      setServiceAccountEmail(existingWorkspace.svc_acc_email ?? "");
++      setServiceAccountEmail(
++        serviceAccountManaged
++          ? managedServiceAccountEmail
++          : (existingWorkspace.svc_acc_email ?? ""),
++      );
+       setHasSavedApiKey(true);
+       setIsActive(existingWorkspace.status === "active");
+     } else {
+       setWorkspace(jiraDcOAuthHost ?? "");
+-      setHasSavedApiKey(false);
++      setServiceAccountEmail(
++        serviceAccountManaged ? managedServiceAccountEmail : "",
++      );
++      setHasSavedApiKey(serviceAccountManaged);
+       setIsActive(true);
+     }
+     setServiceAccountApiKey("");
+@@ -82,7 +95,12 @@ export function JiraDcIntegrationPanel() {
+     setManualMode(false);
+     setEmailError(null);
+     setApiKeyError(null);
+-  }, [existingWorkspace, jiraDcOAuthHost]);
++  }, [
++    existingWorkspace,
++    jiraDcOAuthHost,
++    managedServiceAccountEmail,
++    serviceAccountManaged,
++  ]);
+ 
+   React.useEffect(() => {
+     seedForm();
+@@ -133,8 +151,10 @@ export function JiraDcIntegrationPanel() {
+     configureMutation.mutate({
+       workspace,
+       webhookSecret: manualMode ? manualSecret : "",
+-      serviceAccountEmail,
+-      serviceAccountApiKey,
++      serviceAccountEmail: serviceAccountManaged
++        ? managedServiceAccountEmail
++        : serviceAccountEmail,
++      serviceAccountApiKey: serviceAccountManaged ? "" : serviceAccountApiKey,
+       adminApiKey: manualMode ? "" : adminApiKey.trim(),
+       isActive,
+     });
+@@ -152,7 +172,9 @@ export function JiraDcIntegrationPanel() {
+     configureMutation.mutate({
+       workspace,
+       webhookSecret: "",
+-      serviceAccountEmail,
++      serviceAccountEmail: serviceAccountManaged
++        ? managedServiceAccountEmail
++        : serviceAccountEmail,
+       serviceAccountApiKey: "",
+       adminApiKey: "",
+       isActive,
+@@ -161,15 +183,18 @@ export function JiraDcIntegrationPanel() {
+ 
+   // PAT required to create a new workspace; optional on edit (blank keeps the
+   // stored token). Auto mode on a new workspace needs the one-time admin PAT.
+-  const apiKeyRequired = !existingWorkspace;
++  const apiKeyRequired = !existingWorkspace && !serviceAccountManaged;
++  const serviceAccountEmailSatisfied =
++    serviceAccountManaged || serviceAccountEmail.trim() !== "";
+   const webhookSatisfied =
+     !!existingWorkspace || manualMode || adminApiKey.trim() !== "";
+   const isSubmitDisabled =
+     !workspace.trim() ||
+-    !serviceAccountEmail.trim() ||
++    !serviceAccountEmailSatisfied ||
+     (apiKeyRequired && !serviceAccountApiKey.trim()) ||
+     emailError !== null ||
+     apiKeyError !== null ||
++    serviceAccountConfigError !== null ||
+     !webhookSatisfied ||
+     isBusy;
+ 
+@@ -242,8 +267,19 @@ export function JiraDcIntegrationPanel() {
+                 </td>
+                 <td className="px-4 py-3">
+                   <Typography.Text className="text-sm text-gray-300 break-all">
+-                    {existingWorkspace.svc_acc_email || "—"}
++                    {serviceAccountManaged
++                      ? managedServiceAccountEmail ||
++                        existingWorkspace.svc_acc_email ||
++                        "—"
++                      : existingWorkspace.svc_acc_email || "—"}
+                   </Typography.Text>
++                  {serviceAccountManaged && (
++                    <Typography.Text className="block text-xs text-tertiary-alt mt-1">
++                      {t(
++                        I18nKey.PROJECT_MANAGEMENT$JIRA_DC_SERVICE_ACCOUNT_MANAGED_BADGE,
++                      )}
++                    </Typography.Text>
++                  )}
+                 </td>
+                 <td className="px-4 py-3">{statusBadge()}</td>
+                 <td className="px-4 py-3">
+@@ -431,41 +467,68 @@ export function JiraDcIntegrationPanel() {
+                     )}
+                   </p>
+                 </div>
+-                <div>
+-                  <SettingsInput
+-                    testId="jira-dc-svc-email-input"
+-                    label={t(
+-                      I18nKey.PROJECT_MANAGEMENT$SERVICE_ACCOUNT_EMAIL_LABEL,
+-                    )}
+-                    placeholder={t(
+-                      I18nKey.PROJECT_MANAGEMENT$SERVICE_ACCOUNT_EMAIL_PLACEHOLDER,
+-                    )}
+-                    value={serviceAccountEmail}
+-                    onChange={handleEmailChange}
+-                    className="w-full"
+-                    type="email"
+-                  />
+-                  {emailError && (
+-                    <p className="text-red-500 text-sm mt-2">{emailError}</p>
+-                  )}
+-                </div>
+-                <div>
+-                  <SettingsInput
+-                    testId="jira-dc-svc-pat-input"
+-                    label={t(
+-                      I18nKey.PROJECT_MANAGEMENT$JIRA_DC_SERVICE_ACCOUNT_API_LABEL,
++                {serviceAccountConfigError && (
++                  <p className="text-red-500 text-sm">
++                    {t(
++                      I18nKey.PROJECT_MANAGEMENT$JIRA_DC_SERVICE_ACCOUNT_CONFIG_ERROR,
++                      { error: serviceAccountConfigError },
+                     )}
+-                    placeholder={t(apiKeyPlaceholderKey)}
+-                    value={serviceAccountApiKey}
+-                    onChange={handleApiKeyChange}
+-                    className="w-full"
+-                    type="password"
+-                    showOptionalTag={hasSavedApiKey}
+-                  />
+-                  {apiKeyError && (
+-                    <p className="text-red-500 text-sm mt-2">{apiKeyError}</p>
+-                  )}
+-                </div>
++                  </p>
++                )}
++                {serviceAccountManaged ? (
++                  <div className="rounded border border-neutral-700 px-3 py-2">
++                    <Typography.Text className="text-sm text-white break-all">
++                      {managedServiceAccountEmail}
++                    </Typography.Text>
++                    <p className="text-xs text-tertiary-alt mt-1">
++                      {t(
++                        I18nKey.PROJECT_MANAGEMENT$JIRA_DC_SERVICE_ACCOUNT_MANAGED_HELP,
++                      )}
++                    </p>
++                  </div>
++                ) : (
++                  <>
++                    <div>
++                      <SettingsInput
++                        testId="jira-dc-svc-email-input"
++                        label={t(
++                          I18nKey.PROJECT_MANAGEMENT$SERVICE_ACCOUNT_EMAIL_LABEL,
++                        )}
++                        placeholder={t(
++                          I18nKey.PROJECT_MANAGEMENT$SERVICE_ACCOUNT_EMAIL_PLACEHOLDER,
++                        )}
++                        value={serviceAccountEmail}
++                        onChange={handleEmailChange}
++                        className="w-full"
++                        type="email"
++                      />
++                      {emailError && (
++                        <p className="text-red-500 text-sm mt-2">
++                          {emailError}
++                        </p>
++                      )}
++                    </div>
++                    <div>
++                      <SettingsInput
++                        testId="jira-dc-svc-pat-input"
++                        label={t(
++                          I18nKey.PROJECT_MANAGEMENT$JIRA_DC_SERVICE_ACCOUNT_API_LABEL,
++                        )}
++                        placeholder={t(apiKeyPlaceholderKey)}
++                        value={serviceAccountApiKey}
++                        onChange={handleApiKeyChange}
++                        className="w-full"
++                        type="password"
++                        showOptionalTag={hasSavedApiKey}
++                      />
++                      {apiKeyError && (
++                        <p className="text-red-500 text-sm mt-2">
++                          {apiKeyError}
++                        </p>
++                      )}
++                    </div>
++                  </>
++                )}
+               </div>
+             </div>
+ 
+diff --git a/frontend/src/i18n/declaration.ts b/frontend/src/i18n/declaration.ts
+index 226ac275cf21..af8218990790 100644
+--- a/frontend/src/i18n/declaration.ts
++++ b/frontend/src/i18n/declaration.ts
+@@ -1523,6 +1523,9 @@ export enum I18nKey {
+   PROJECT_MANAGEMENT$JIRA_DC_WEBHOOK_MODE_AUTO = "PROJECT_MANAGEMENT$JIRA_DC_WEBHOOK_MODE_AUTO",
+   PROJECT_MANAGEMENT$JIRA_DC_WEBHOOK_MODE_MANUAL = "PROJECT_MANAGEMENT$JIRA_DC_WEBHOOK_MODE_MANUAL",
+   PROJECT_MANAGEMENT$JIRA_DC_SERVICE_ACCOUNT_SECTION_HELP = "PROJECT_MANAGEMENT$JIRA_DC_SERVICE_ACCOUNT_SECTION_HELP",
++  PROJECT_MANAGEMENT$JIRA_DC_SERVICE_ACCOUNT_MANAGED_BADGE = "PROJECT_MANAGEMENT$JIRA_DC_SERVICE_ACCOUNT_MANAGED_BADGE",
++  PROJECT_MANAGEMENT$JIRA_DC_SERVICE_ACCOUNT_MANAGED_HELP = "PROJECT_MANAGEMENT$JIRA_DC_SERVICE_ACCOUNT_MANAGED_HELP",
++  PROJECT_MANAGEMENT$JIRA_DC_SERVICE_ACCOUNT_CONFIG_ERROR = "PROJECT_MANAGEMENT$JIRA_DC_SERVICE_ACCOUNT_CONFIG_ERROR",
+   PROJECT_MANAGEMENT$JIRA_DC_SVC_ACC_API_PLACEHOLDER = "PROJECT_MANAGEMENT$JIRA_DC_SVC_ACC_API_PLACEHOLDER",
+   PROJECT_MANAGEMENT$JIRA_DC_SVC_ACC_API_SAVED_PLACEHOLDER = "PROJECT_MANAGEMENT$JIRA_DC_SVC_ACC_API_SAVED_PLACEHOLDER",
+   PROJECT_MANAGEMENT$JIRA_DC_REMOVE_ADMIN_TOKEN_LABEL = "PROJECT_MANAGEMENT$JIRA_DC_REMOVE_ADMIN_TOKEN_LABEL",
+diff --git a/frontend/src/i18n/translation.json b/frontend/src/i18n/translation.json
+index 32154438a3a2..d260b2541b95 100644
+--- a/frontend/src/i18n/translation.json
++++ b/frontend/src/i18n/translation.json
+@@ -25890,6 +25890,57 @@
+     "tr": "OpenHands'in geri yanıt verme şekli: bu hesap olarak yorum yapar ve tepki verir.",
+     "uk": "Як OpenHands відповідає: коментує та реагує від імені цього облікового запису."
+   },
++  "PROJECT_MANAGEMENT$JIRA_DC_SERVICE_ACCOUNT_MANAGED_BADGE": {
++    "en": "Managed in Admin Console",
++    "ja": "Managed in Admin Console",
++    "zh-CN": "Managed in Admin Console",
++    "zh-TW": "Managed in Admin Console",
++    "ko-KR": "Managed in Admin Console",
++    "no": "Managed in Admin Console",
++    "ar": "Managed in Admin Console",
++    "de": "Managed in Admin Console",
++    "fr": "Managed in Admin Console",
++    "it": "Managed in Admin Console",
++    "pt": "Managed in Admin Console",
++    "es": "Managed in Admin Console",
++    "ca": "Managed in Admin Console",
++    "tr": "Managed in Admin Console",
++    "uk": "Managed in Admin Console"
++  },
++  "PROJECT_MANAGEMENT$JIRA_DC_SERVICE_ACCOUNT_MANAGED_HELP": {
++    "en": "Configured from the OpenHands Enterprise Admin Console. Change the service-account email or PAT there.",
++    "ja": "Configured from the OpenHands Enterprise Admin Console. Change the service-account email or PAT there.",
++    "zh-CN": "Configured from the OpenHands Enterprise Admin Console. Change the service-account email or PAT there.",
++    "zh-TW": "Configured from the OpenHands Enterprise Admin Console. Change the service-account email or PAT there.",
++    "ko-KR": "Configured from the OpenHands Enterprise Admin Console. Change the service-account email or PAT there.",
++    "no": "Configured from the OpenHands Enterprise Admin Console. Change the service-account email or PAT there.",
++    "ar": "Configured from the OpenHands Enterprise Admin Console. Change the service-account email or PAT there.",
++    "de": "Configured from the OpenHands Enterprise Admin Console. Change the service-account email or PAT there.",
++    "fr": "Configured from the OpenHands Enterprise Admin Console. Change the service-account email or PAT there.",
++    "it": "Configured from the OpenHands Enterprise Admin Console. Change the service-account email or PAT there.",
++    "pt": "Configured from the OpenHands Enterprise Admin Console. Change the service-account email or PAT there.",
++    "es": "Configured from the OpenHands Enterprise Admin Console. Change the service-account email or PAT there.",
++    "ca": "Configured from the OpenHands Enterprise Admin Console. Change the service-account email or PAT there.",
++    "tr": "Configured from the OpenHands Enterprise Admin Console. Change the service-account email or PAT there.",
++    "uk": "Configured from the OpenHands Enterprise Admin Console. Change the service-account email or PAT there."
++  },
++  "PROJECT_MANAGEMENT$JIRA_DC_SERVICE_ACCOUNT_CONFIG_ERROR": {
++    "en": "Service account configuration error: {{error}}",
++    "ja": "Service account configuration error: {{error}}",
++    "zh-CN": "Service account configuration error: {{error}}",
++    "zh-TW": "Service account configuration error: {{error}}",
++    "ko-KR": "Service account configuration error: {{error}}",
++    "no": "Service account configuration error: {{error}}",
++    "ar": "Service account configuration error: {{error}}",
++    "de": "Service account configuration error: {{error}}",
++    "fr": "Service account configuration error: {{error}}",
++    "it": "Service account configuration error: {{error}}",
++    "pt": "Service account configuration error: {{error}}",
++    "es": "Service account configuration error: {{error}}",
++    "ca": "Service account configuration error: {{error}}",
++    "tr": "Service account configuration error: {{error}}",
++    "uk": "Service account configuration error: {{error}}"
++  },
+   "PROJECT_MANAGEMENT$JIRA_DC_SVC_ACC_API_PLACEHOLDER": {
+     "en": "Paste the service account's Jira PAT",
+     "ja": "サービスアカウントのJira PATを貼り付け",
+diff --git a/openhands/app_server/web_client/default_web_client_config_injector.py b/openhands/app_server/web_client/default_web_client_config_injector.py
+index d04c0bb51c6c..6460e6a8fd57 100644
+--- a/openhands/app_server/web_client/default_web_client_config_injector.py
++++ b/openhands/app_server/web_client/default_web_client_config_injector.py
+@@ -1,4 +1,5 @@
+ import os
++import re
+ from datetime import datetime
+ from urllib.parse import urlparse
+ 
+@@ -130,6 +131,54 @@ def _get_jira_dc_oauth_host() -> str | None:
+     return urlparse(base_url).hostname or None
+ 
+ 
++_JIRA_DC_SERVICE_ACCOUNT_EMAIL_RE = re.compile(
++    r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
++)
++
++
++def _get_jira_dc_service_account_env() -> tuple[str, str]:
++    """Return optional env-managed Jira DC service-account credentials."""
++    return (
++        os.getenv('JIRA_DC_SERVICE_ACCOUNT_EMAIL', '').strip(),
++        os.getenv('JIRA_DC_SERVICE_ACCOUNT_PAT', '').strip(),
++    )
++
++
++def _get_jira_dc_service_account_config_error() -> str | None:
++    """Return a web-client-safe service-account config error, if any."""
++    email, api_key = _get_jira_dc_service_account_env()
++
++    if bool(email) != bool(api_key):
++        return (
++            'Set both JIRA_DC_SERVICE_ACCOUNT_EMAIL and '
++            'JIRA_DC_SERVICE_ACCOUNT_PAT, or clear both.'
++        )
++
++    if email and not _JIRA_DC_SERVICE_ACCOUNT_EMAIL_RE.match(email):
++        return 'JIRA_DC_SERVICE_ACCOUNT_EMAIL must be a valid email address.'
++
++    if api_key and any(char.isspace() for char in api_key):
++        return 'JIRA_DC_SERVICE_ACCOUNT_PAT cannot contain whitespace.'
++
++    return None
++
++
++def _is_jira_dc_service_account_managed() -> bool:
++    """Return whether Jira DC service-account credentials are env-managed."""
++    email, api_key = _get_jira_dc_service_account_env()
++    return (
++        bool(email and api_key) and _get_jira_dc_service_account_config_error() is None
++    )
++
++
++def _get_jira_dc_service_account_email() -> str | None:
++    """Return the env-managed service-account email when fully configured."""
++    if not _is_jira_dc_service_account_managed():
++        return None
++    email, _ = _get_jira_dc_service_account_env()
++    return email
++
++
+ def _get_feature_flags() -> WebClientFeatureFlags:
+     """Get feature flags from environment variables.
+ 
+@@ -183,6 +232,15 @@ class DefaultWebClientConfigInjector(WebClientConfigInjector):
+     )
+     slack_enabled: bool = Field(default_factory=_get_slack_enabled)
+     jira_dc_oauth_host: str | None = Field(default_factory=_get_jira_dc_oauth_host)
++    jira_dc_service_account_managed: bool = Field(
++        default_factory=_is_jira_dc_service_account_managed
++    )
++    jira_dc_service_account_email: str | None = Field(
++        default_factory=_get_jira_dc_service_account_email
++    )
++    jira_dc_service_account_config_error: str | None = Field(
++        default_factory=_get_jira_dc_service_account_config_error
++    )
+     acp_providers: list[ACPProviderConfig] = Field(
+         default_factory=lambda: [
+             ACPProviderConfig(
+@@ -217,6 +275,11 @@ async def get_web_client_config(self) -> WebClientConfig:
+             provider_default_hosts=self.provider_default_hosts,
+             slack_enabled=self.slack_enabled,
+             jira_dc_oauth_host=self.jira_dc_oauth_host,
++            jira_dc_service_account_managed=self.jira_dc_service_account_managed,
++            jira_dc_service_account_email=self.jira_dc_service_account_email,
++            jira_dc_service_account_config_error=(
++                self.jira_dc_service_account_config_error
++            ),
+             acp_providers=self.acp_providers,
+         )
+         return result
+diff --git a/openhands/app_server/web_client/web_client_models.py b/openhands/app_server/web_client/web_client_models.py
+index 4b565020818e..816b9317b5f5 100644
+--- a/openhands/app_server/web_client/web_client_models.py
++++ b/openhands/app_server/web_client/web_client_models.py
+@@ -58,3 +58,9 @@ class WebClientConfig(DiscriminatedUnionMixin):
+     # configure form can pre-fill and lock the host field (the OAuth callback only
+     # accepts this exact host). None in email-match mode / when DC isn't configured.
+     jira_dc_oauth_host: str | None = None
++    # Optional OpenHands Enterprise/KOTS-managed Jira DC service account. When
++    # configured, the frontend hides the in-app service-account secret entry and
++    # the backend always prefers the env credentials at runtime.
++    jira_dc_service_account_managed: bool = False
++    jira_dc_service_account_email: str | None = None
++    jira_dc_service_account_config_error: str | None = None

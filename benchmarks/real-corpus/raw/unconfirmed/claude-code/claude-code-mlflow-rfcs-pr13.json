@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-mlflow-rfcs-pr13",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 13,
+    "headSha": "22f64f8443775ac5ec880df4d3dd6e04c7587cab",
+    "baseSha": "cada44f8d0687c25df8994e27611b4330216fc28",
+    "title": "Add RFC 0007: Scorer Presets for Common Evaluation Patterns",
+    "body": "## Summary\n\nThis RFC proposes a `Preset` class for MLflow that packages a named, immutable collection of scorers for common evaluation patterns. MLflow ships five built-in presets (`RAG`, `AGENT`, `CONVERSATIONAL_AGENT`, `SAFETY`, `QUALITY`), and users can define their own.\n\nPresets can be passed directly in the `scorers` list alongside individual scorers:\n\n```python\nfrom mlflow.genai.scorers import AGENT, Guidelines\n\nmlflow.genai.evaluate(\n    data=eval_dataset,\n    scorers=[AGENT, Guidelines(name=\"tone\", guidelines=[\"Be professional\"])],\n)\n```\n\nDuplicate scorers across presets are automatically deduplicated during validation.\n\nBased on [mlflow/mlflow#21445](https://github.com/mlflow/mlflow/issues/21445).\n\nAlso introduces a new scorer proposal: [`TaskSuccess`](https://github.com/mlflow/mlflow/issues/22972) — a ground-truth-free scorer for evaluating agent result quality.\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+    "author": "Nehanth",
+    "headRef": "rfc-0007-scorer-presets",
+    "repository": "mlflow/rfcs"
+  },
+  "diffRef": {
+    "repository": "mlflow/rfcs",
+    "headSha": "22f64f8443775ac5ec880df4d3dd6e04c7587cab",
+    "baseSha": "cada44f8d0687c25df8994e27611b4330216fc28"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-mlflow-rfcs-pr13.diff",
+  "vendoredAt": "2026-05-24T03:09:08.365Z",
+  "collectedAt": "2026-05-24T03:09:08.365Z"
+}

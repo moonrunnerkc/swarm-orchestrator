@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14531",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14531,
+    "headSha": "645a9a0a8ce840a240c5ad7cc0b7b60f22615495",
+    "baseSha": "e0bfb874d801bf087427165842d1db88770594ec",
+    "title": "fix: forward insecure git access env to sandboxes",
+    "body": "Refs #14523.\n\n## Summary\n- auto-forward `ALLOW_INSECURE_GIT_ACCESS` into agent-server sandbox specs alongside the existing `LLM_` and `LMNR_` forwarding\n- keep arbitrary env forwarding explicit via `OH_AGENT_SERVER_ENV`\n- add coverage for exact env forwarding and the Docker sandbox spec environment\n\n## Validation\n- `uv run pytest tests\\unit\\app_server\\test_agent_server_env_override.py::TestExactAutoForwarding tests\\unit\\app_server\\test_agent_server_env_override.py::TestDockerSandboxSpecEnvironmentOverride::test_docker_specs_include_insecure_git_access_env -q`\n- `uv run ruff check openhands\\app_server\\sandbox\\sandbox_spec_service.py tests\\unit\\app_server\\test_agent_server_env_override.py`\n- `python -m py_compile openhands\\app_server\\sandbox\\sandbox_spec_service.py tests\\unit\\app_server\\test_agent_server_env_override.py`\n- `git diff --check`\n\nNote: I also ran the full `tests\\unit\\app_server\\test_agent_server_env_override.py` on Windows. It reached 43 passed / 2 failed; the failures are the existing case-sensitivity expectations for `LLM_` and `LMNR_` env names on Windows, where `os.environ` is case-insensitive. The new exact-forwarding tests pass.",
+    "author": "he-yufeng",
+    "headRef": "fix/forward-insecure-git-env",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "645a9a0a8ce840a240c5ad7cc0b7b60f22615495",
+    "baseSha": "e0bfb874d801bf087427165842d1db88770594ec"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14531.diff",
+  "vendoredAt": "2026-05-24T03:17:53.237Z",
+  "collectedAt": "2026-05-24T03:17:53.237Z"
+}

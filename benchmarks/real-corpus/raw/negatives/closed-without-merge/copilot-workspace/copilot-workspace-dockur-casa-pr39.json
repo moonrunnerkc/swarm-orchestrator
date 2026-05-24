@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-dockur-casa-pr39",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 39,
+    "headSha": "2552ee365a28c956de743269b5394831dfcfbe6a",
+    "baseSha": "7ba8c6ac041298d768727f083582a443a6353964",
+    "title": "fix: redirect @icewhale/icewhale-files-openapi to @yundera mirror in Dockerfile build",
+    "body": "## Problem\n\nThe package `@icewhale/icewhale-files-openapi` has been completely removed from npm, causing the `CasaOS-UI` build step in the Dockerfile to fail with:\n\n```\nERR_PNPM_FETCH_404  GET https://registry.npmjs.org/@icewhale/icewhale-files-openapi/-/icewhale-files-openapi-1.3.0-alpha133.tgz: Not Found - 404\n```\n\nThe `pnpm-lock.yaml` in the `CasaOS-UI` submodule (which uses `--frozen-lockfile`) pins the package to version `1.3.0-alpha133`, which no longer exists on npm.\n\n## Solution\n\nA mirror of the package exists on npm as `@yundera/icewhale-files-openapi@1.3.0-alpha133` (same version, same content, same code).\n\nThis PR adds a small build-time patch script (`build/patch-casaos-ui.cjs`) that runs in the Dockerfile before `pnpm install` to:\n\n1. Update `package.json` to use pnpm's npm-alias syntax: `\"npm:@yundera/icewhale-files-openapi@1.3.0-alpha133\"` — so the package is still accessible in source code as `@icewhale/icewhale-files-openapi`.\n2. Update the three corresponding entries in `pnpm-lock.yaml`:\n   - Importer entry: specifier and version reference\n   - Packages entry: package key and integrity hash\n   - Snapshots entry: package key\n\n`--frozen-lockfile` is preserved, ensuring all other dependencies remain at their exact locked versions.\n\n## Changes\n\n- `build/patch-casaos-ui.cjs` — new patch script\n- `Dockerfile` — copy and run the patch script before `pnpm install`\n",
+    "author": "Copilot",
+    "headRef": "copilot/fix-dockerfile-build-issue",
+    "repository": "dockur/casa"
+  },
+  "diffRef": {
+    "repository": "dockur/casa",
+    "headSha": "2552ee365a28c956de743269b5394831dfcfbe6a",
+    "baseSha": "7ba8c6ac041298d768727f083582a443a6353964"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/copilot-workspace/copilot-workspace-dockur-casa-pr39.diff",
+  "vendoredAt": "2026-05-24T04:28:17.103Z",
+  "collectedAt": "2026-05-24T04:28:17.103Z"
+}

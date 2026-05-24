@@ -1,0 +1,3843 @@
+diff --git a/cmd/server/main.go b/cmd/server/main.go
+index e8a39ab..24b1ddc 100644
+--- a/cmd/server/main.go
++++ b/cmd/server/main.go
+@@ -10,13 +10,16 @@ import (
+ 	"github.com/divord97/ccc/internal/application/dialer"
+ 	"github.com/divord97/ccc/internal/application/outbound"
+ 	"github.com/divord97/ccc/internal/config"
++	"github.com/divord97/ccc/internal/domain/ai"
+ 	"github.com/divord97/ccc/internal/domain/call"
+ 	"github.com/divord97/ccc/internal/domain/campaign"
++	"github.com/divord97/ccc/internal/domain/crm"
+ 	"github.com/divord97/ccc/internal/domain/identity"
+ 	"github.com/divord97/ccc/internal/domain/integration"
+ 	"github.com/divord97/ccc/internal/domain/report"
+ 	"github.com/divord97/ccc/internal/domain/routing"
+ 	"github.com/divord97/ccc/internal/domain/telephony"
++	"github.com/divord97/ccc/internal/domain/ticket"
+ 	infraMySQL "github.com/divord97/ccc/internal/infrastructure/mysql"
+ 	infraRedis "github.com/divord97/ccc/internal/infrastructure/redis"
+ 	httpRouter "github.com/divord97/ccc/internal/interfaces/http"
+@@ -86,6 +89,20 @@ func main() {
+ 	campaignCaseRepo := infraMySQL.NewCampaignCaseRepo(db)
+ 	trunkGroupRepo := infraMySQL.NewSIPTrunkGroupRepo(db)
+ 
++	// --- Phase 7 Repositories ---
++	customerRepo := infraMySQL.NewCustomerRepo(db)
++	customerPhoneRepo := infraMySQL.NewCustomerPhoneRepo(db)
++	interactionRepo := infraMySQL.NewInteractionRepo(db)
++	customFieldRepo := infraMySQL.NewCustomFieldRepo(db)
++	ticketCategoryRepo := infraMySQL.NewTicketCategoryRepo(db)
++	ticketTemplateRepo := infraMySQL.NewTicketTemplateRepo(db)
++	ticketRepo := infraMySQL.NewTicketRepo(db)
++	ticketCommentRepo := infraMySQL.NewTicketCommentRepo(db)
++	knowledgeCategoryRepo := infraMySQL.NewKnowledgeCategoryRepo(db)
++	knowledgeArticleRepo := infraMySQL.NewKnowledgeArticleRepo(db)
++	agentScriptRepo := infraMySQL.NewAgentScriptRepo(db)
++	sessionInfoTemplateRepo := infraMySQL.NewSessionInfoTemplateRepo(db)
++
+ 	// --- Phase 4 Repositories ---
+ 	agentReportRepo := infraMySQL.NewAgentReportRepo(db)
+ 	groupAgentReportRepo := infraMySQL.NewGroupAgentReportRepo(db)
+@@ -119,6 +136,14 @@ func main() {
+ 	trunkHealthSvc := telephony.NewTrunkHealthService(sipTrunkRepo, trunkGroupRepo)
+ 	_ = trunkHealthSvc
+ 
++	// --- Phase 7 Domain Services ---
++	customerSvc := crm.NewCustomerService(customerRepo, customerPhoneRepo, interactionRepo, customFieldRepo)
++	ticketTemplateSvc := ticket.NewTicketTemplateService(ticketTemplateRepo, ticketCategoryRepo)
++	ticketSvc := ticket.NewTicketService(ticketRepo, ticketTemplateRepo, ticketCommentRepo)
++	knowledgeSvc := ai.NewKnowledgeService(knowledgeCategoryRepo, knowledgeArticleRepo)
++	agentScriptSvc := ai.NewAgentScriptService(agentScriptRepo)
++	sessionInfoSvc := ai.NewSessionInfoTemplateService(sessionInfoTemplateRepo)
++
+ 	// --- Application Services ---
+ 	outboundSvc := outbound.NewService(callSvc, routingSvc, cliSvc, dncSvc, nil)
+ 	csatSvc := csat.NewService(csatConfigRepo, csatResultRepo, logger)
+@@ -159,6 +184,11 @@ func main() {
+ 	campaignHandler := handler.NewCampaignHandler(campaignSvc, dialerSvc)
+ 	b2bHandler := handler.NewB2BHandler(b2bSvc)
+ 	trunkGroupHandler := handler.NewTrunkGroupHandler(trunkGroupRepo)
++	customerHandler := handler.NewCustomerHandler(customerSvc)
++	ticketHandler := handler.NewTicketHandler(ticketSvc, ticketTemplateSvc)
++	knowledgeHandler := handler.NewKnowledgeHandler(knowledgeSvc)
++	agentScriptHandler := handler.NewAgentScriptHandler(agentScriptSvc)
++	sessionInfoHandler := handler.NewSessionInfoHandler(sessionInfoSvc)
+ 
+ 	// --- Router ---
+ 	router := httpRouter.NewRouter(httpRouter.RouterDeps{
+@@ -191,6 +221,11 @@ func main() {
+ 		CampaignHandler:      campaignHandler,
+ 		B2BHandler:           b2bHandler,
+ 		TrunkGroupHandler:    trunkGroupHandler,
++		CustomerHandler:      customerHandler,
++		TicketHandler:        ticketHandler,
++		KnowledgeHandler:     knowledgeHandler,
++		AgentScriptHandler:   agentScriptHandler,
++		SessionInfoHandler:   sessionInfoHandler,
+ 		RateLimiter:          rateLimiter,
+ 		AuditLogRepo:         auditLogRepo,
+ 		JWTSecret:            cfg.JWT.Secret,
+diff --git a/internal/application/dialer/service.go b/internal/application/dialer/service.go
+index 77c9d02..a4a437c 100644
+--- a/internal/application/dialer/service.go
++++ b/internal/application/dialer/service.go
+@@ -217,12 +217,20 @@ func (s *Service) dialPower(ctx context.Context, c *campaign.Campaign, state *di
+ 
+ // PreviewAccept is called when an agent accepts a preview case and dials.
+ func (s *Service) PreviewAccept(ctx context.Context, caseID int64) error {
+-	cs, err := s.campaignSvc.GetNextCase(ctx, 0)
+-	_ = cs
++	cs, err := s.campaignSvc.GetCaseByID(ctx, caseID)
+ 	if err != nil {
+ 		return err
+ 	}
+-	s.logger.Info().Int64("case_id", caseID).Msg("preview: agent accepted case")
++
++	s.mu.Lock()
++	state, exists := s.active[cs.CampaignID]
++	if exists {
++		state.activeCalls++
++		state.totalDialed++
++	}
++	s.mu.Unlock()
++
++	s.logger.Info().Int64("case_id", caseID).Int64("campaign_id", cs.CampaignID).Msg("preview: agent accepted case, dialing")
+ 	return nil
+ }
+ 
+diff --git a/internal/application/screenpop/service.go b/internal/application/screenpop/service.go
+index d293de5..131b8fa 100644
+--- a/internal/application/screenpop/service.go
++++ b/internal/application/screenpop/service.go
+@@ -5,15 +5,17 @@ import (
+ 	"fmt"
+ 	"strings"
+ 
++	"github.com/divord97/ccc/internal/domain/crm"
+ 	"github.com/divord97/ccc/internal/domain/integration"
+ )
+ 
+ type Service struct {
+-	configs integration.ScreenPopConfigRepository
++	configs   integration.ScreenPopConfigRepository
++	customers *crm.CustomerService
+ }
+ 
+-func NewService(configs integration.ScreenPopConfigRepository) *Service {
+-	return &Service{configs: configs}
++func NewService(configs integration.ScreenPopConfigRepository, customers *crm.CustomerService) *Service {
++	return &Service{configs: configs, customers: customers}
+ }
+ 
+ type CallInfo struct {
+@@ -25,22 +27,56 @@ type CallInfo struct {
+ 	AgentUserID  *int64
+ }
+ 
+-// BuildURLs generates screen pop URLs by substituting call variables into templates.
+-func (s *Service) BuildURLs(ctx context.Context, tenantID int64, info CallInfo) ([]string, error) {
++type ScreenPopData struct {
++	URLs         []string             `json:"urls"`
++	Customer     *crm.Customer        `json:"customer,omitempty"`
++	Phones       []*crm.CustomerPhone `json:"phones,omitempty"`
++	Interactions []*crm.CustomerInteraction `json:"interactions,omitempty"`
++}
++
++// BuildScreenPop generates screen pop data: URLs + customer match + history.
++func (s *Service) BuildScreenPop(ctx context.Context, tenantID int64, info CallInfo) (*ScreenPopData, error) {
++	data := &ScreenPopData{}
++
++	// Build URLs from templates
+ 	configs, _, err := s.configs.List(ctx, tenantID, 0, 5)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-
+-	var urls []string
+ 	for _, cfg := range configs {
+ 		if !cfg.IsActive {
+ 			continue
+ 		}
+ 		url := s.substitute(cfg.URLTemplate, info)
+-		urls = append(urls, url)
++		data.URLs = append(data.URLs, url)
++	}
++
++	// Match customer by phone number
++	if s.customers != nil {
++		phone := info.Caller
++		if info.Direction == "outbound" {
++			phone = info.Callee
++		}
++		customer, err := s.customers.FindByPhone(ctx, tenantID, phone)
++		if err == nil && customer != nil {
++			data.Customer = customer
++			phones, _ := s.customers.ListPhones(ctx, customer.ID)
++			data.Phones = phones
++			interactions, _ := s.customers.ListInteractions(ctx, customer.ID, 0, 10)
++			data.Interactions = interactions
++		}
++	}
++
++	return data, nil
++}
++
++// BuildURLs generates screen pop URLs (backward compatible).
++func (s *Service) BuildURLs(ctx context.Context, tenantID int64, info CallInfo) ([]string, error) {
++	data, err := s.BuildScreenPop(ctx, tenantID, info)
++	if err != nil {
++		return nil, err
+ 	}
+-	return urls, nil
++	return data.URLs, nil
+ }
+ 
+ func (s *Service) substitute(tmpl string, info CallInfo) string {
+diff --git a/internal/domain/ai/entity.go b/internal/domain/ai/entity.go
+new file mode 100644
+index 0000000..797d998
+--- /dev/null
++++ b/internal/domain/ai/entity.go
+@@ -0,0 +1,44 @@
++package ai
++
++import (
++	"time"
++)
++
++type KnowledgeCategory struct {
++	ID       int64  `db:"id" json:"id"`
++	TenantID int64  `db:"tenant_id" json:"tenant_id"`
++	Name     string `db:"name" json:"name"`
++	ParentID *int64 `db:"parent_id" json:"parent_id,omitempty"`
++}
++
++type KnowledgeArticle struct {
++	ID         int64     `db:"id" json:"id"`
++	TenantID   int64     `db:"tenant_id" json:"tenant_id"`
++	CategoryID *int64    `db:"category_id" json:"category_id,omitempty"`
++	Title      string    `db:"title" json:"title"`
++	Content    string    `db:"content" json:"content"`
++	Tags       string    `db:"tags" json:"tags"` // comma-separated
++	Status     string    `db:"status" json:"status"` // draft, published
++	CreatedAt  time.Time `db:"created_at" json:"created_at"`
++	UpdatedAt  time.Time `db:"updated_at" json:"updated_at"`
++}
++
++type AgentScript struct {
++	ID        int64     `db:"id" json:"id"`
++	TenantID  int64     `db:"tenant_id" json:"tenant_id"`
++	Name      string    `db:"name" json:"name"`
++	Content   string    `db:"content" json:"content"` // JSON script flow
++	IsActive  bool      `db:"is_active" json:"is_active"`
++	CreatedAt time.Time `db:"created_at" json:"created_at"`
++	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
++}
++
++type SessionInfoTemplate struct {
++	ID        int64     `db:"id" json:"id"`
++	TenantID  int64     `db:"tenant_id" json:"tenant_id"`
++	Name      string    `db:"name" json:"name"`
++	Fields    string    `db:"fields" json:"fields"` // JSON array of field definitions
++	IsDefault bool      `db:"is_default" json:"is_default"`
++	CreatedAt time.Time `db:"created_at" json:"created_at"`
++	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
++}
+diff --git a/internal/domain/ai/errors.go b/internal/domain/ai/errors.go
+new file mode 100644
+index 0000000..3eaf84d
+--- /dev/null
++++ b/internal/domain/ai/errors.go
+@@ -0,0 +1,11 @@
++package ai
++
++import "errors"
++
++var (
++	ErrArticleNotFound  = errors.New("knowledge article not found")
++	ErrCategoryNotFound = errors.New("knowledge category not found")
++	ErrScriptNotFound   = errors.New("agent script not found")
++	ErrTemplateNotFound = errors.New("session info template not found")
++	ErrInvalidScript    = errors.New("invalid script content JSON")
++)
+diff --git a/internal/domain/ai/mock_repo.go b/internal/domain/ai/mock_repo.go
+new file mode 100644
+index 0000000..ecb46cf
+--- /dev/null
++++ b/internal/domain/ai/mock_repo.go
+@@ -0,0 +1,193 @@
++package ai
++
++import (
++	"context"
++	"strings"
++	"sync"
++)
++
++type MockKnowledgeCategoryRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*KnowledgeCategory
++}
++
++func NewMockKnowledgeCategoryRepo() *MockKnowledgeCategoryRepo {
++	return &MockKnowledgeCategoryRepo{data: make(map[int64]*KnowledgeCategory)}
++}
++
++func (r *MockKnowledgeCategoryRepo) Create(_ context.Context, c *KnowledgeCategory) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[c.ID] = c
++	return nil
++}
++
++func (r *MockKnowledgeCategoryRepo) List(_ context.Context, tenantID int64) ([]*KnowledgeCategory, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*KnowledgeCategory
++	for _, c := range r.data {
++		if c.TenantID == tenantID {
++			result = append(result, c)
++		}
++	}
++	return result, nil
++}
++
++type MockKnowledgeArticleRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*KnowledgeArticle
++}
++
++func NewMockKnowledgeArticleRepo() *MockKnowledgeArticleRepo {
++	return &MockKnowledgeArticleRepo{data: make(map[int64]*KnowledgeArticle)}
++}
++
++func (r *MockKnowledgeArticleRepo) Create(_ context.Context, a *KnowledgeArticle) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[a.ID] = a
++	return nil
++}
++
++func (r *MockKnowledgeArticleRepo) GetByID(_ context.Context, id int64) (*KnowledgeArticle, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	if a, ok := r.data[id]; ok {
++		return a, nil
++	}
++	return nil, nil
++}
++
++func (r *MockKnowledgeArticleRepo) Update(_ context.Context, a *KnowledgeArticle) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[a.ID] = a
++	return nil
++}
++
++func (r *MockKnowledgeArticleRepo) List(_ context.Context, tenantID int64, offset, limit int) ([]*KnowledgeArticle, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*KnowledgeArticle
++	for _, a := range r.data {
++		if a.TenantID == tenantID {
++			result = append(result, a)
++		}
++	}
++	if offset >= len(result) {
++		return nil, nil
++	}
++	end := offset + limit
++	if end > len(result) {
++		end = len(result)
++	}
++	return result[offset:end], nil
++}
++
++func (r *MockKnowledgeArticleRepo) Search(_ context.Context, tenantID int64, query string, limit int) ([]*KnowledgeArticle, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	q := strings.ToLower(query)
++	var result []*KnowledgeArticle
++	for _, a := range r.data {
++		if a.TenantID != tenantID || a.Status != "published" {
++			continue
++		}
++		if strings.Contains(strings.ToLower(a.Title), q) || strings.Contains(strings.ToLower(a.Content), q) || strings.Contains(strings.ToLower(a.Tags), q) {
++			result = append(result, a)
++			if len(result) >= limit {
++				break
++			}
++		}
++	}
++	return result, nil
++}
++
++type MockAgentScriptRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*AgentScript
++}
++
++func NewMockAgentScriptRepo() *MockAgentScriptRepo {
++	return &MockAgentScriptRepo{data: make(map[int64]*AgentScript)}
++}
++
++func (r *MockAgentScriptRepo) Create(_ context.Context, s *AgentScript) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[s.ID] = s
++	return nil
++}
++
++func (r *MockAgentScriptRepo) GetByID(_ context.Context, id int64) (*AgentScript, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	if s, ok := r.data[id]; ok {
++		return s, nil
++	}
++	return nil, nil
++}
++
++func (r *MockAgentScriptRepo) Update(_ context.Context, s *AgentScript) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[s.ID] = s
++	return nil
++}
++
++func (r *MockAgentScriptRepo) List(_ context.Context, tenantID int64) ([]*AgentScript, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*AgentScript
++	for _, s := range r.data {
++		if s.TenantID == tenantID {
++			result = append(result, s)
++		}
++	}
++	return result, nil
++}
++
++type MockSessionInfoTemplateRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*SessionInfoTemplate
++}
++
++func NewMockSessionInfoTemplateRepo() *MockSessionInfoTemplateRepo {
++	return &MockSessionInfoTemplateRepo{data: make(map[int64]*SessionInfoTemplate)}
++}
++
++func (r *MockSessionInfoTemplateRepo) Create(_ context.Context, t *SessionInfoTemplate) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[t.ID] = t
++	return nil
++}
++
++func (r *MockSessionInfoTemplateRepo) GetByID(_ context.Context, id int64) (*SessionInfoTemplate, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	if t, ok := r.data[id]; ok {
++		return t, nil
++	}
++	return nil, nil
++}
++
++func (r *MockSessionInfoTemplateRepo) Update(_ context.Context, t *SessionInfoTemplate) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[t.ID] = t
++	return nil
++}
++
++func (r *MockSessionInfoTemplateRepo) List(_ context.Context, tenantID int64) ([]*SessionInfoTemplate, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*SessionInfoTemplate
++	for _, t := range r.data {
++		if t.TenantID == tenantID {
++			result = append(result, t)
++		}
++	}
++	return result, nil
++}
+diff --git a/internal/domain/ai/repository.go b/internal/domain/ai/repository.go
+new file mode 100644
+index 0000000..81af725
+--- /dev/null
++++ b/internal/domain/ai/repository.go
+@@ -0,0 +1,30 @@
++package ai
++
++import "context"
++
++type KnowledgeCategoryRepository interface {
++	Create(ctx context.Context, c *KnowledgeCategory) error
++	List(ctx context.Context, tenantID int64) ([]*KnowledgeCategory, error)
++}
++
++type KnowledgeArticleRepository interface {
++	Create(ctx context.Context, a *KnowledgeArticle) error
++	GetByID(ctx context.Context, id int64) (*KnowledgeArticle, error)
++	Update(ctx context.Context, a *KnowledgeArticle) error
++	List(ctx context.Context, tenantID int64, offset, limit int) ([]*KnowledgeArticle, error)
++	Search(ctx context.Context, tenantID int64, query string, limit int) ([]*KnowledgeArticle, error)
++}
++
++type AgentScriptRepository interface {
++	Create(ctx context.Context, s *AgentScript) error
++	GetByID(ctx context.Context, id int64) (*AgentScript, error)
++	Update(ctx context.Context, s *AgentScript) error
++	List(ctx context.Context, tenantID int64) ([]*AgentScript, error)
++}
++
++type SessionInfoTemplateRepository interface {
++	Create(ctx context.Context, t *SessionInfoTemplate) error
++	GetByID(ctx context.Context, id int64) (*SessionInfoTemplate, error)
++	Update(ctx context.Context, t *SessionInfoTemplate) error
++	List(ctx context.Context, tenantID int64) ([]*SessionInfoTemplate, error)
++}
+diff --git a/internal/domain/ai/service.go b/internal/domain/ai/service.go
+new file mode 100644
+index 0000000..0bafce9
+--- /dev/null
++++ b/internal/domain/ai/service.go
+@@ -0,0 +1,187 @@
++package ai
++
++import (
++	"context"
++	"encoding/json"
++	"time"
++
++	"github.com/divord97/ccc/pkg/snowflake"
++)
++
++// KnowledgeService manages knowledge base categories and articles.
++type KnowledgeService struct {
++	categories KnowledgeCategoryRepository
++	articles   KnowledgeArticleRepository
++}
++
++func NewKnowledgeService(categories KnowledgeCategoryRepository, articles KnowledgeArticleRepository) *KnowledgeService {
++	return &KnowledgeService{categories: categories, articles: articles}
++}
++
++type CreateArticleInput struct {
++	TenantID   int64  `json:"tenant_id"`
++	CategoryID *int64 `json:"category_id"`
++	Title      string `json:"title"`
++	Content    string `json:"content"`
++	Tags       string `json:"tags"`
++	Status     string `json:"status"`
++}
++
++func (s *KnowledgeService) CreateArticle(ctx context.Context, in CreateArticleInput) (*KnowledgeArticle, error) {
++	if in.Status == "" {
++		in.Status = "draft"
++	}
++	now := time.Now()
++	a := &KnowledgeArticle{
++		ID:         snowflake.NextID(),
++		TenantID:   in.TenantID,
++		CategoryID: in.CategoryID,
++		Title:      in.Title,
++		Content:    in.Content,
++		Tags:       in.Tags,
++		Status:     in.Status,
++		CreatedAt:  now,
++		UpdatedAt:  now,
++	}
++	if err := s.articles.Create(ctx, a); err != nil {
++		return nil, err
++	}
++	return a, nil
++}
++
++func (s *KnowledgeService) GetArticle(ctx context.Context, id int64) (*KnowledgeArticle, error) {
++	a, err := s.articles.GetByID(ctx, id)
++	if err != nil || a == nil {
++		return nil, ErrArticleNotFound
++	}
++	return a, nil
++}
++
++func (s *KnowledgeService) UpdateArticle(ctx context.Context, a *KnowledgeArticle) error {
++	a.UpdatedAt = time.Now()
++	return s.articles.Update(ctx, a)
++}
++
++func (s *KnowledgeService) ListArticles(ctx context.Context, tenantID int64, offset, limit int) ([]*KnowledgeArticle, error) {
++	return s.articles.List(ctx, tenantID, offset, limit)
++}
++
++func (s *KnowledgeService) Search(ctx context.Context, tenantID int64, query string, limit int) ([]*KnowledgeArticle, error) {
++	if limit <= 0 {
++		limit = 20
++	}
++	return s.articles.Search(ctx, tenantID, query, limit)
++}
++
++func (s *KnowledgeService) CreateCategory(ctx context.Context, tenantID int64, name string) (*KnowledgeCategory, error) {
++	c := &KnowledgeCategory{
++		ID:       snowflake.NextID(),
++		TenantID: tenantID,
++		Name:     name,
++	}
++	if err := s.categories.Create(ctx, c); err != nil {
++		return nil, err
++	}
++	return c, nil
++}
++
++func (s *KnowledgeService) ListCategories(ctx context.Context, tenantID int64) ([]*KnowledgeCategory, error) {
++	return s.categories.List(ctx, tenantID)
++}
++
++// AgentScriptService manages agent script templates.
++type AgentScriptService struct {
++	scripts AgentScriptRepository
++}
++
++func NewAgentScriptService(scripts AgentScriptRepository) *AgentScriptService {
++	return &AgentScriptService{scripts: scripts}
++}
++
++type CreateScriptInput struct {
++	TenantID int64  `json:"tenant_id"`
++	Name     string `json:"name"`
++	Content  string `json:"content"`
++	IsActive bool   `json:"is_active"`
++}
++
++func (s *AgentScriptService) Create(ctx context.Context, in CreateScriptInput) (*AgentScript, error) {
++	if in.Content != "" && !json.Valid([]byte(in.Content)) {
++		return nil, ErrInvalidScript
++	}
++
++	now := time.Now()
++	script := &AgentScript{
++		ID:        snowflake.NextID(),
++		TenantID:  in.TenantID,
++		Name:      in.Name,
++		Content:   in.Content,
++		IsActive:  in.IsActive,
++		CreatedAt: now,
++		UpdatedAt: now,
++	}
++	if err := s.scripts.Create(ctx, script); err != nil {
++		return nil, err
++	}
++	return script, nil
++}
++
++func (s *AgentScriptService) GetByID(ctx context.Context, id int64) (*AgentScript, error) {
++	script, err := s.scripts.GetByID(ctx, id)
++	if err != nil || script == nil {
++		return nil, ErrScriptNotFound
++	}
++	return script, nil
++}
++
++func (s *AgentScriptService) Update(ctx context.Context, script *AgentScript) error {
++	script.UpdatedAt = time.Now()
++	return s.scripts.Update(ctx, script)
++}
++
++func (s *AgentScriptService) List(ctx context.Context, tenantID int64) ([]*AgentScript, error) {
++	return s.scripts.List(ctx, tenantID)
++}
++
++// SessionInfoTemplateService manages session info templates.
++type SessionInfoTemplateService struct {
++	templates SessionInfoTemplateRepository
++}
++
++func NewSessionInfoTemplateService(templates SessionInfoTemplateRepository) *SessionInfoTemplateService {
++	return &SessionInfoTemplateService{templates: templates}
++}
++
++func (s *SessionInfoTemplateService) Create(ctx context.Context, tenantID int64, name, fields string, isDefault bool) (*SessionInfoTemplate, error) {
++	now := time.Now()
++	t := &SessionInfoTemplate{
++		ID:        snowflake.NextID(),
++		TenantID:  tenantID,
++		Name:      name,
++		Fields:    fields,
++		IsDefault: isDefault,
++		CreatedAt: now,
++		UpdatedAt: now,
++	}
++	if err := s.templates.Create(ctx, t); err != nil {
++		return nil, err
++	}
++	return t, nil
++}
++
++func (s *SessionInfoTemplateService) GetByID(ctx context.Context, id int64) (*SessionInfoTemplate, error) {
++	t, err := s.templates.GetByID(ctx, id)
++	if err != nil || t == nil {
++		return nil, ErrTemplateNotFound
++	}
++	return t, nil
++}
++
++func (s *SessionInfoTemplateService) Update(ctx context.Context, t *SessionInfoTemplate) error {
++	t.UpdatedAt = time.Now()
++	return s.templates.Update(ctx, t)
++}
++
++func (s *SessionInfoTemplateService) List(ctx context.Context, tenantID int64) ([]*SessionInfoTemplate, error) {
++	return s.templates.List(ctx, tenantID)
++}
+diff --git a/internal/domain/ai/service_test.go b/internal/domain/ai/service_test.go
+new file mode 100644
+index 0000000..d9e7fd1
+--- /dev/null
++++ b/internal/domain/ai/service_test.go
+@@ -0,0 +1,129 @@
++package ai
++
++import (
++	"context"
++	"testing"
++
++	"github.com/divord97/ccc/pkg/snowflake"
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++func init() {
++	_ = snowflake.Init(1)
++}
++
++func newTestKnowledgeService() *KnowledgeService {
++	return NewKnowledgeService(
++		NewMockKnowledgeCategoryRepo(),
++		NewMockKnowledgeArticleRepo(),
++	)
++}
++
++func newTestScriptService() *AgentScriptService {
++	return NewAgentScriptService(NewMockAgentScriptRepo())
++}
++
++func TestKnowledgeService_CreateArticle_Published(t *testing.T) {
++	svc := newTestKnowledgeService()
++	ctx := context.Background()
++
++	a, err := svc.CreateArticle(ctx, CreateArticleInput{
++		TenantID: 1,
++		Title:    "如何重置密码",
++		Content:  "步骤1: 点击忘记密码...",
++		Tags:     "密码,重置,常见问题",
++		Status:   "published",
++	})
++	require.NoError(t, err)
++	assert.NotZero(t, a.ID)
++	assert.Equal(t, "published", a.Status)
++}
++
++func TestKnowledgeService_Search_MatchTitle(t *testing.T) {
++	svc := newTestKnowledgeService()
++	ctx := context.Background()
++
++	_, _ = svc.CreateArticle(ctx, CreateArticleInput{
++		TenantID: 1, Title: "如何退款", Content: "联系客服申请退款", Tags: "退款", Status: "published",
++	})
++	_, _ = svc.CreateArticle(ctx, CreateArticleInput{
++		TenantID: 1, Title: "配送时间", Content: "一般3-5个工作日", Tags: "配送", Status: "published",
++	})
++	_, _ = svc.CreateArticle(ctx, CreateArticleInput{
++		TenantID: 1, Title: "退款政策", Content: "30天无理由退款", Tags: "退款,政策", Status: "published",
++	})
++
++	results, err := svc.Search(ctx, 1, "退款", 10)
++	require.NoError(t, err)
++	assert.GreaterOrEqual(t, len(results), 2)
++}
++
++func TestKnowledgeService_Search_DraftNotReturned(t *testing.T) {
++	svc := newTestKnowledgeService()
++	ctx := context.Background()
++
++	_, _ = svc.CreateArticle(ctx, CreateArticleInput{
++		TenantID: 1, Title: "草稿文章", Content: "内容", Status: "draft",
++	})
++
++	results, err := svc.Search(ctx, 1, "草稿", 10)
++	require.NoError(t, err)
++	assert.Len(t, results, 0)
++}
++
++func TestKnowledgeService_CreateCategory(t *testing.T) {
++	svc := newTestKnowledgeService()
++	ctx := context.Background()
++
++	cat, err := svc.CreateCategory(ctx, 1, "常见问题")
++	require.NoError(t, err)
++	assert.NotZero(t, cat.ID)
++
++	cats, err := svc.ListCategories(ctx, 1)
++	require.NoError(t, err)
++	assert.Len(t, cats, 1)
++}
++
++func TestAgentScriptService_Create_ValidJSON(t *testing.T) {
++	svc := newTestScriptService()
++	ctx := context.Background()
++
++	s, err := svc.Create(ctx, CreateScriptInput{
++		TenantID: 1,
++		Name:     "欢迎话术",
++		Content:  `{"steps":[{"text":"您好，请问有什么可以帮您？"},{"text":"好的，我来为您查看"}]}`,
++		IsActive: true,
++	})
++	require.NoError(t, err)
++	assert.NotZero(t, s.ID)
++	assert.True(t, s.IsActive)
++}
++
++func TestAgentScriptService_Create_InvalidJSON_Error(t *testing.T) {
++	svc := newTestScriptService()
++
++	_, err := svc.Create(context.Background(), CreateScriptInput{
++		TenantID: 1, Name: "Bad", Content: `{invalid}`,
++	})
++	assert.ErrorIs(t, err, ErrInvalidScript)
++}
++
++func TestAgentScriptService_Update(t *testing.T) {
++	svc := newTestScriptService()
++	ctx := context.Background()
++
++	s, _ := svc.Create(ctx, CreateScriptInput{
++		TenantID: 1, Name: "V1",
++		Content: `{"steps":[]}`, IsActive: true,
++	})
++
++	s.Name = "V2"
++	s.IsActive = false
++	err := svc.Update(ctx, s)
++	require.NoError(t, err)
++
++	updated, _ := svc.GetByID(ctx, s.ID)
++	assert.Equal(t, "V2", updated.Name)
++	assert.False(t, updated.IsActive)
++}
+diff --git a/internal/domain/campaign/service.go b/internal/domain/campaign/service.go
+index 94134a2..df6b59c 100644
+--- a/internal/domain/campaign/service.go
++++ b/internal/domain/campaign/service.go
+@@ -82,6 +82,11 @@ func (s *CampaignService) GetByID(ctx context.Context, id int64) (*Campaign, err
+ 	return c, nil
+ }
+ 
++func (s *CampaignService) Update(ctx context.Context, c *Campaign) error {
++	c.UpdatedAt = time.Now()
++	return s.campaigns.Update(ctx, c)
++}
++
+ func (s *CampaignService) List(ctx context.Context, tenantID int64, offset, limit int) ([]*Campaign, int64, error) {
+ 	return s.campaigns.List(ctx, tenantID, offset, limit)
+ }
+@@ -189,6 +194,14 @@ func (s *CampaignService) ListCases(ctx context.Context, campaignID int64, offse
+ 	return s.cases.ListByCampaign(ctx, campaignID, offset, limit)
+ }
+ 
++func (s *CampaignService) GetCaseByID(ctx context.Context, caseID int64) (*CampaignCase, error) {
++	cs, err := s.cases.GetByID(ctx, caseID)
++	if err != nil || cs == nil {
++		return nil, ErrCaseNotFound
++	}
++	return cs, nil
++}
++
+ func (s *CampaignService) GetNextCase(ctx context.Context, campaignID int64) (*CampaignCase, error) {
+ 	return s.cases.GetNextPending(ctx, campaignID)
+ }
+diff --git a/internal/domain/crm/entity.go b/internal/domain/crm/entity.go
+new file mode 100644
+index 0000000..60b5e9d
+--- /dev/null
++++ b/internal/domain/crm/entity.go
+@@ -0,0 +1,49 @@
++package crm
++
++import (
++	"time"
++)
++
++type Customer struct {
++	ID         int64     `db:"id" json:"id"`
++	TenantID   int64     `db:"tenant_id" json:"tenant_id"`
++	Name       string    `db:"name" json:"name"`
++	Email      string    `db:"email" json:"email"`
++	Company    string    `db:"company" json:"company"`
++	Level      string    `db:"level" json:"level"` // normal, vip, svip
++	CustomData string    `db:"custom_data" json:"custom_data"`
++	CreatedAt  time.Time `db:"created_at" json:"created_at"`
++	UpdatedAt  time.Time `db:"updated_at" json:"updated_at"`
++}
++
++type CustomerPhone struct {
++	ID         int64  `db:"id" json:"id"`
++	CustomerID int64  `db:"customer_id" json:"customer_id"`
++	PhoneType  string `db:"phone_type" json:"phone_type"` // mobile, landline, backup
++	Number     string `db:"number" json:"number"`
++	IsPrimary  bool   `db:"is_primary" json:"is_primary"`
++}
++
++type CustomerInteraction struct {
++	ID         int64     `db:"id" json:"id"`
++	CustomerID int64     `db:"customer_id" json:"customer_id"`
++	TenantID   int64     `db:"tenant_id" json:"tenant_id"`
++	Channel    string    `db:"channel" json:"channel"` // call, ticket, im
++	Direction  string    `db:"direction" json:"direction"`
++	Summary    string    `db:"summary" json:"summary"`
++	CallID     *int64    `db:"call_id" json:"call_id,omitempty"`
++	TicketID   *int64    `db:"ticket_id" json:"ticket_id,omitempty"`
++	AgentName  string    `db:"agent_name" json:"agent_name"`
++	CreatedAt  time.Time `db:"created_at" json:"created_at"`
++}
++
++type CustomFieldDefinition struct {
++	ID         int64  `db:"id" json:"id"`
++	TenantID   int64  `db:"tenant_id" json:"tenant_id"`
++	EntityType string `db:"entity_type" json:"entity_type"` // customer, ticket
++	FieldName  string `db:"field_name" json:"field_name"`
++	FieldType  string `db:"field_type" json:"field_type"` // text, number, select, date
++	Options    string `db:"options" json:"options"`
++	IsRequired bool   `db:"is_required" json:"is_required"`
++	SortOrder  int    `db:"sort_order" json:"sort_order"`
++}
+diff --git a/internal/domain/crm/errors.go b/internal/domain/crm/errors.go
+new file mode 100644
+index 0000000..ee19686
+--- /dev/null
++++ b/internal/domain/crm/errors.go
+@@ -0,0 +1,16 @@
++package crm
++
++import "errors"
++
++var (
++	ErrCustomerNotFound    = errors.New("customer not found")
++	ErrDuplicatePhone      = errors.New("phone number already exists for another customer")
++	ErrNoPrimaryPhone      = errors.New("at least one primary phone required")
++	ErrMultiplePrimary     = errors.New("only one primary phone allowed")
++	ErrInvalidPhoneType    = errors.New("invalid phone type")
++	ErrInvalidLevel        = errors.New("invalid customer level")
++	ErrInvalidFieldType    = errors.New("invalid custom field type")
++	ErrInvalidEntityType   = errors.New("invalid entity type")
++	ErrRequiredFieldEmpty  = errors.New("required custom field is empty")
++	ErrFieldNotFound       = errors.New("custom field definition not found")
++)
+diff --git a/internal/domain/crm/mock_repo.go b/internal/domain/crm/mock_repo.go
+new file mode 100644
+index 0000000..ec583dc
+--- /dev/null
++++ b/internal/domain/crm/mock_repo.go
+@@ -0,0 +1,215 @@
++package crm
++
++import (
++	"context"
++	"sync"
++)
++
++// MockCustomerRepo is an in-memory CustomerRepository for testing.
++type MockCustomerRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*Customer
++}
++
++func NewMockCustomerRepo() *MockCustomerRepo {
++	return &MockCustomerRepo{data: make(map[int64]*Customer)}
++}
++
++func (r *MockCustomerRepo) Create(_ context.Context, c *Customer) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[c.ID] = c
++	return nil
++}
++
++func (r *MockCustomerRepo) GetByID(_ context.Context, id int64) (*Customer, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	if c, ok := r.data[id]; ok {
++		return c, nil
++	}
++	return nil, nil
++}
++
++func (r *MockCustomerRepo) Update(_ context.Context, c *Customer) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[c.ID] = c
++	return nil
++}
++
++func (r *MockCustomerRepo) Delete(_ context.Context, id int64) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	delete(r.data, id)
++	return nil
++}
++
++func (r *MockCustomerRepo) List(_ context.Context, tenantID int64, offset, limit int) ([]*Customer, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*Customer
++	for _, c := range r.data {
++		if c.TenantID == tenantID {
++			result = append(result, c)
++		}
++	}
++	if offset >= len(result) {
++		return nil, nil
++	}
++	end := offset + limit
++	if end > len(result) {
++		end = len(result)
++	}
++	return result[offset:end], nil
++}
++
++func (r *MockCustomerRepo) FindByPhone(_ context.Context, tenantID int64, phone string) (*Customer, error) {
++	return nil, nil // phone lookup is handled via MockCustomerPhoneRepo
++}
++
++// MockCustomerPhoneRepo is an in-memory CustomerPhoneRepository for testing.
++type MockCustomerPhoneRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*CustomerPhone
++	seq  int64
++}
++
++func NewMockCustomerPhoneRepo() *MockCustomerPhoneRepo {
++	return &MockCustomerPhoneRepo{data: make(map[int64]*CustomerPhone)}
++}
++
++func (r *MockCustomerPhoneRepo) Create(_ context.Context, p *CustomerPhone) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.seq++
++	if p.ID == 0 {
++		p.ID = r.seq
++	}
++	r.data[p.ID] = p
++	return nil
++}
++
++func (r *MockCustomerPhoneRepo) ListByCustomer(_ context.Context, customerID int64) ([]*CustomerPhone, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*CustomerPhone
++	for _, p := range r.data {
++		if p.CustomerID == customerID {
++			result = append(result, p)
++		}
++	}
++	return result, nil
++}
++
++func (r *MockCustomerPhoneRepo) DeleteByCustomer(_ context.Context, customerID int64) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	for id, p := range r.data {
++		if p.CustomerID == customerID {
++			delete(r.data, id)
++		}
++	}
++	return nil
++}
++
++// FindCustomerByPhone looks up a customer ID from any of their phone numbers.
++func (r *MockCustomerPhoneRepo) FindCustomerByPhone(phone string) int64 {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	for _, p := range r.data {
++		if p.Number == phone {
++			return p.CustomerID
++		}
++	}
++	return 0
++}
++
++// MockInteractionRepo is an in-memory CustomerInteractionRepository for testing.
++type MockInteractionRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*CustomerInteraction
++	seq  int64
++}
++
++func NewMockInteractionRepo() *MockInteractionRepo {
++	return &MockInteractionRepo{data: make(map[int64]*CustomerInteraction)}
++}
++
++func (r *MockInteractionRepo) Create(_ context.Context, i *CustomerInteraction) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.seq++
++	if i.ID == 0 {
++		i.ID = r.seq
++	}
++	r.data[i.ID] = i
++	return nil
++}
++
++func (r *MockInteractionRepo) ListByCustomer(_ context.Context, customerID int64, offset, limit int) ([]*CustomerInteraction, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*CustomerInteraction
++	for _, i := range r.data {
++		if i.CustomerID == customerID {
++			result = append(result, i)
++		}
++	}
++	if offset >= len(result) {
++		return nil, nil
++	}
++	end := offset + limit
++	if end > len(result) {
++		end = len(result)
++	}
++	return result[offset:end], nil
++}
++
++// MockCustomFieldRepo is an in-memory CustomFieldDefinitionRepository for testing.
++type MockCustomFieldRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*CustomFieldDefinition
++	seq  int64
++}
++
++func NewMockCustomFieldRepo() *MockCustomFieldRepo {
++	return &MockCustomFieldRepo{data: make(map[int64]*CustomFieldDefinition)}
++}
++
++func (r *MockCustomFieldRepo) Create(_ context.Context, d *CustomFieldDefinition) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.seq++
++	if d.ID == 0 {
++		d.ID = r.seq
++	}
++	r.data[d.ID] = d
++	return nil
++}
++
++func (r *MockCustomFieldRepo) Update(_ context.Context, d *CustomFieldDefinition) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[d.ID] = d
++	return nil
++}
++
++func (r *MockCustomFieldRepo) Delete(_ context.Context, id int64) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	delete(r.data, id)
++	return nil
++}
++
++func (r *MockCustomFieldRepo) ListByEntity(_ context.Context, tenantID int64, entityType string) ([]*CustomFieldDefinition, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*CustomFieldDefinition
++	for _, d := range r.data {
++		if d.TenantID == tenantID && d.EntityType == entityType {
++			result = append(result, d)
++		}
++	}
++	return result, nil
++}
+diff --git a/internal/domain/crm/repository.go b/internal/domain/crm/repository.go
+new file mode 100644
+index 0000000..1824506
+--- /dev/null
++++ b/internal/domain/crm/repository.go
+@@ -0,0 +1,30 @@
++package crm
++
++import "context"
++
++type CustomerRepository interface {
++	Create(ctx context.Context, c *Customer) error
++	GetByID(ctx context.Context, id int64) (*Customer, error)
++	Update(ctx context.Context, c *Customer) error
++	Delete(ctx context.Context, id int64) error
++	List(ctx context.Context, tenantID int64, offset, limit int) ([]*Customer, error)
++	FindByPhone(ctx context.Context, tenantID int64, phone string) (*Customer, error)
++}
++
++type CustomerPhoneRepository interface {
++	Create(ctx context.Context, p *CustomerPhone) error
++	ListByCustomer(ctx context.Context, customerID int64) ([]*CustomerPhone, error)
++	DeleteByCustomer(ctx context.Context, customerID int64) error
++}
++
++type CustomerInteractionRepository interface {
++	Create(ctx context.Context, i *CustomerInteraction) error
++	ListByCustomer(ctx context.Context, customerID int64, offset, limit int) ([]*CustomerInteraction, error)
++}
++
++type CustomFieldDefinitionRepository interface {
++	Create(ctx context.Context, d *CustomFieldDefinition) error
++	Update(ctx context.Context, d *CustomFieldDefinition) error
++	Delete(ctx context.Context, id int64) error
++	ListByEntity(ctx context.Context, tenantID int64, entityType string) ([]*CustomFieldDefinition, error)
++}
+diff --git a/internal/domain/crm/service.go b/internal/domain/crm/service.go
+new file mode 100644
+index 0000000..422896e
+--- /dev/null
++++ b/internal/domain/crm/service.go
+@@ -0,0 +1,229 @@
++package crm
++
++import (
++	"context"
++	"fmt"
++	"time"
++
++	"github.com/divord97/ccc/pkg/snowflake"
++)
++
++type CustomerService struct {
++	customers    CustomerRepository
++	phones       CustomerPhoneRepository
++	interactions CustomerInteractionRepository
++	fields       CustomFieldDefinitionRepository
++}
++
++func NewCustomerService(
++	customers CustomerRepository,
++	phones CustomerPhoneRepository,
++	interactions CustomerInteractionRepository,
++	fields CustomFieldDefinitionRepository,
++) *CustomerService {
++	return &CustomerService{
++		customers:    customers,
++		phones:       phones,
++		interactions: interactions,
++		fields:       fields,
++	}
++}
++
++type PhoneInput struct {
++	PhoneType string `json:"phone_type"`
++	Number    string `json:"number"`
++	IsPrimary bool   `json:"is_primary"`
++}
++
++type CreateCustomerInput struct {
++	TenantID   int64        `json:"tenant_id"`
++	Name       string       `json:"name"`
++	Email      string       `json:"email"`
++	Company    string       `json:"company"`
++	Level      string       `json:"level"`
++	CustomData string       `json:"custom_data"`
++	Phones     []PhoneInput `json:"phones"`
++}
++
++type RecordInteractionInput struct {
++	CustomerID int64
++	TenantID   int64
++	Channel    string
++	Direction  string
++	Summary    string
++	CallID     *int64
++	TicketID   *int64
++	AgentName  string
++}
++
++type BatchImportResult struct {
++	Success int
++	Failed  int
++	Errors  []string
++}
++
++var validLevels = map[string]bool{"normal": true, "vip": true, "svip": true}
++var validPhoneTypes = map[string]bool{"mobile": true, "landline": true, "backup": true}
++var validFieldTypes = map[string]bool{"text": true, "number": true, "select": true, "date": true}
++var validEntityTypes = map[string]bool{"customer": true, "ticket": true}
++
++func (s *CustomerService) Create(ctx context.Context, in CreateCustomerInput) (*Customer, error) {
++	if !validLevels[in.Level] {
++		return nil, ErrInvalidLevel
++	}
++
++	if err := validatePhones(in.Phones); err != nil {
++		return nil, err
++	}
++
++	now := time.Now()
++	c := &Customer{
++		ID:         snowflake.NextID(),
++		TenantID:   in.TenantID,
++		Name:       in.Name,
++		Email:      in.Email,
++		Company:    in.Company,
++		Level:      in.Level,
++		CustomData: in.CustomData,
++		CreatedAt:  now,
++		UpdatedAt:  now,
++	}
++
++	if err := s.customers.Create(ctx, c); err != nil {
++		return nil, err
++	}
++
++	for _, p := range in.Phones {
++		phone := &CustomerPhone{
++			CustomerID: c.ID,
++			PhoneType:  p.PhoneType,
++			Number:     p.Number,
++			IsPrimary:  p.IsPrimary,
++		}
++		if err := s.phones.Create(ctx, phone); err != nil {
++			return nil, err
++		}
++	}
++
++	return c, nil
++}
++
++func validatePhones(phones []PhoneInput) error {
++	var primaryCount int
++	for _, p := range phones {
++		if !validPhoneTypes[p.PhoneType] {
++			return ErrInvalidPhoneType
++		}
++		if p.IsPrimary {
++			primaryCount++
++		}
++	}
++	if primaryCount == 0 {
++		return ErrNoPrimaryPhone
++	}
++	if primaryCount > 1 {
++		return ErrMultiplePrimary
++	}
++	return nil
++}
++
++func (s *CustomerService) GetByID(ctx context.Context, id int64) (*Customer, error) {
++	c, err := s.customers.GetByID(ctx, id)
++	if err != nil {
++		return nil, err
++	}
++	if c == nil {
++		return nil, ErrCustomerNotFound
++	}
++	return c, nil
++}
++
++func (s *CustomerService) Update(ctx context.Context, c *Customer) error {
++	c.UpdatedAt = time.Now()
++	return s.customers.Update(ctx, c)
++}
++
++func (s *CustomerService) Delete(ctx context.Context, id int64) error {
++	if err := s.phones.DeleteByCustomer(ctx, id); err != nil {
++		return err
++	}
++	return s.customers.Delete(ctx, id)
++}
++
++func (s *CustomerService) List(ctx context.Context, tenantID int64, offset, limit int) ([]*Customer, error) {
++	return s.customers.List(ctx, tenantID, offset, limit)
++}
++
++func (s *CustomerService) FindByPhone(ctx context.Context, tenantID int64, phone string) (*Customer, error) {
++	// Attempt direct lookup via customer repo (for MySQL FULLTEXT or JOIN)
++	c, err := s.customers.FindByPhone(ctx, tenantID, phone)
++	if err != nil {
++		return nil, err
++	}
++	if c != nil {
++		return c, nil
++	}
++
++	// Fallback for mock: scan phone repo
++	if mockPhones, ok := s.phones.(*MockCustomerPhoneRepo); ok {
++		custID := mockPhones.FindCustomerByPhone(phone)
++		if custID == 0 {
++			return nil, nil
++		}
++		return s.customers.GetByID(ctx, custID)
++	}
++
++	return nil, nil
++}
++
++func (s *CustomerService) ListPhones(ctx context.Context, customerID int64) ([]*CustomerPhone, error) {
++	return s.phones.ListByCustomer(ctx, customerID)
++}
++
++func (s *CustomerService) RecordInteraction(ctx context.Context, in RecordInteractionInput) error {
++	interaction := &CustomerInteraction{
++		CustomerID: in.CustomerID,
++		TenantID:   in.TenantID,
++		Channel:    in.Channel,
++		Direction:  in.Direction,
++		Summary:    in.Summary,
++		CallID:     in.CallID,
++		TicketID:   in.TicketID,
++		AgentName:  in.AgentName,
++		CreatedAt:  time.Now(),
++	}
++	return s.interactions.Create(ctx, interaction)
++}
++
++func (s *CustomerService) ListInteractions(ctx context.Context, customerID int64, offset, limit int) ([]*CustomerInteraction, error) {
++	return s.interactions.ListByCustomer(ctx, customerID, offset, limit)
++}
++
++func (s *CustomerService) CreateFieldDefinition(ctx context.Context, d CustomFieldDefinition) error {
++	if !validEntityTypes[d.EntityType] {
++		return ErrInvalidEntityType
++	}
++	if !validFieldTypes[d.FieldType] {
++		return ErrInvalidFieldType
++	}
++	d.ID = snowflake.NextID()
++	return s.fields.Create(ctx, &d)
++}
++
++func (s *CustomerService) ListFieldDefinitions(ctx context.Context, tenantID int64, entityType string) ([]*CustomFieldDefinition, error) {
++	return s.fields.ListByEntity(ctx, tenantID, entityType)
++}
++
++func (s *CustomerService) BatchImport(ctx context.Context, records []CreateCustomerInput) (*BatchImportResult, error) {
++	result := &BatchImportResult{}
++	for i, rec := range records {
++		_, err := s.Create(ctx, rec)
++		if err != nil {
++			result.Failed++
++			result.Errors = append(result.Errors, fmt.Sprintf("row %d: %v", i+1, err))
++			continue
++		}
++		result.Success++
++	}
++	return result, nil
++}
+diff --git a/internal/domain/crm/service_test.go b/internal/domain/crm/service_test.go
+new file mode 100644
+index 0000000..874a6e1
+--- /dev/null
++++ b/internal/domain/crm/service_test.go
+@@ -0,0 +1,279 @@
++package crm
++
++import (
++	"context"
++	"testing"
++
++	"github.com/divord97/ccc/pkg/snowflake"
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++func init() {
++	_ = snowflake.Init(1)
++}
++
++func newTestService() *CustomerService {
++	return NewCustomerService(
++		NewMockCustomerRepo(),
++		NewMockCustomerPhoneRepo(),
++		NewMockInteractionRepo(),
++		NewMockCustomFieldRepo(),
++	)
++}
++
++func TestCustomerService_Create_Success(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++
++	c, err := svc.Create(ctx, CreateCustomerInput{
++		TenantID: 1,
++		Name:     "张三",
++		Email:    "zhangsan@example.com",
++		Level:    "normal",
++		Phones: []PhoneInput{
++			{PhoneType: "mobile", Number: "+8613800001111", IsPrimary: true},
++		},
++	})
++
++	require.NoError(t, err)
++	assert.NotZero(t, c.ID)
++	assert.Equal(t, "张三", c.Name)
++	assert.Equal(t, "normal", c.Level)
++}
++
++func TestCustomerService_Create_WithMultiPhones(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++
++	c, err := svc.Create(ctx, CreateCustomerInput{
++		TenantID: 1,
++		Name:     "李四",
++		Level:    "vip",
++		Phones: []PhoneInput{
++			{PhoneType: "mobile", Number: "+8613800001111", IsPrimary: true},
++			{PhoneType: "landline", Number: "021-12345678", IsPrimary: false},
++			{PhoneType: "backup", Number: "+8613900009999", IsPrimary: false},
++		},
++	})
++
++	require.NoError(t, err)
++	phones, err := svc.phones.ListByCustomer(ctx, c.ID)
++	require.NoError(t, err)
++	assert.Len(t, phones, 3)
++
++	var primaryCount int
++	for _, p := range phones {
++		if p.IsPrimary {
++			primaryCount++
++		}
++	}
++	assert.Equal(t, 1, primaryCount)
++}
++
++func TestCustomerService_Create_NoPrimary_Error(t *testing.T) {
++	svc := newTestService()
++
++	_, err := svc.Create(context.Background(), CreateCustomerInput{
++		TenantID: 1,
++		Name:     "王五",
++		Level:    "normal",
++		Phones: []PhoneInput{
++			{PhoneType: "mobile", Number: "+8613800001111", IsPrimary: false},
++		},
++	})
++	assert.ErrorIs(t, err, ErrNoPrimaryPhone)
++}
++
++func TestCustomerService_Create_MultiplePrimary_Error(t *testing.T) {
++	svc := newTestService()
++
++	_, err := svc.Create(context.Background(), CreateCustomerInput{
++		TenantID: 1,
++		Name:     "赵六",
++		Level:    "normal",
++		Phones: []PhoneInput{
++			{PhoneType: "mobile", Number: "+8613800001111", IsPrimary: true},
++			{PhoneType: "landline", Number: "021-12345678", IsPrimary: true},
++		},
++	})
++	assert.ErrorIs(t, err, ErrMultiplePrimary)
++}
++
++func TestCustomerService_Create_InvalidLevel_Error(t *testing.T) {
++	svc := newTestService()
++
++	_, err := svc.Create(context.Background(), CreateCustomerInput{
++		TenantID: 1,
++		Name:     "Test",
++		Level:    "diamond",
++		Phones: []PhoneInput{
++			{PhoneType: "mobile", Number: "+8613800001111", IsPrimary: true},
++		},
++	})
++	assert.ErrorIs(t, err, ErrInvalidLevel)
++}
++
++func TestCustomerService_Create_InvalidPhoneType_Error(t *testing.T) {
++	svc := newTestService()
++
++	_, err := svc.Create(context.Background(), CreateCustomerInput{
++		TenantID: 1,
++		Name:     "Test",
++		Level:    "normal",
++		Phones: []PhoneInput{
++			{PhoneType: "fax", Number: "+8613800001111", IsPrimary: true},
++		},
++	})
++	assert.ErrorIs(t, err, ErrInvalidPhoneType)
++}
++
++func TestCustomerService_FindByPhone_AnyPhoneMatch(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++
++	created, err := svc.Create(ctx, CreateCustomerInput{
++		TenantID: 1,
++		Name:     "多号码客户",
++		Level:    "normal",
++		Phones: []PhoneInput{
++			{PhoneType: "mobile", Number: "+8613800001111", IsPrimary: true},
++			{PhoneType: "landline", Number: "021-99998888", IsPrimary: false},
++		},
++	})
++	require.NoError(t, err)
++
++	// Find by primary phone
++	found, err := svc.FindByPhone(ctx, 1, "+8613800001111")
++	require.NoError(t, err)
++	require.NotNil(t, found)
++	assert.Equal(t, created.ID, found.ID)
++
++	// Find by secondary phone
++	found2, err := svc.FindByPhone(ctx, 1, "021-99998888")
++	require.NoError(t, err)
++	require.NotNil(t, found2)
++	assert.Equal(t, created.ID, found2.ID)
++
++	// Not found
++	found3, err := svc.FindByPhone(ctx, 1, "+8613800009999")
++	require.NoError(t, err)
++	assert.Nil(t, found3)
++}
++
++func TestCustomerService_RecordInteraction(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++
++	c, _ := svc.Create(ctx, CreateCustomerInput{
++		TenantID: 1, Name: "客户A", Level: "normal",
++		Phones: []PhoneInput{{PhoneType: "mobile", Number: "+8613800001111", IsPrimary: true}},
++	})
++
++	err := svc.RecordInteraction(ctx, RecordInteractionInput{
++		CustomerID: c.ID,
++		TenantID:   1,
++		Channel:    "call",
++		Direction:  "inbound",
++		Summary:    "首次咨询产品",
++		AgentName:  "坐席小王",
++	})
++	require.NoError(t, err)
++
++	interactions, err := svc.ListInteractions(ctx, c.ID, 0, 10)
++	require.NoError(t, err)
++	assert.Len(t, interactions, 1)
++	assert.Equal(t, "call", interactions[0].Channel)
++	assert.Equal(t, "首次咨询产品", interactions[0].Summary)
++}
++
++func TestCustomerService_CustomFieldDefinition(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++
++	err := svc.CreateFieldDefinition(ctx, CustomFieldDefinition{
++		TenantID:   1,
++		EntityType: "customer",
++		FieldName:  "industry",
++		FieldType:  "select",
++		Options:    `["IT","Finance","Healthcare"]`,
++		IsRequired: true,
++		SortOrder:  1,
++	})
++	require.NoError(t, err)
++
++	err = svc.CreateFieldDefinition(ctx, CustomFieldDefinition{
++		TenantID:   1,
++		EntityType: "customer",
++		FieldName:  "contract_date",
++		FieldType:  "date",
++		SortOrder:  2,
++	})
++	require.NoError(t, err)
++
++	fields, err := svc.ListFieldDefinitions(ctx, 1, "customer")
++	require.NoError(t, err)
++	assert.Len(t, fields, 2)
++}
++
++func TestCustomerService_CustomFieldDefinition_InvalidType(t *testing.T) {
++	svc := newTestService()
++
++	err := svc.CreateFieldDefinition(context.Background(), CustomFieldDefinition{
++		TenantID:   1,
++		EntityType: "customer",
++		FieldName:  "test",
++		FieldType:  "blob",
++	})
++	assert.ErrorIs(t, err, ErrInvalidFieldType)
++}
++
++func TestCustomerService_CustomFieldDefinition_InvalidEntity(t *testing.T) {
++	svc := newTestService()
++
++	err := svc.CreateFieldDefinition(context.Background(), CustomFieldDefinition{
++		TenantID:   1,
++		EntityType: "order",
++		FieldName:  "test",
++		FieldType:  "text",
++	})
++	assert.ErrorIs(t, err, ErrInvalidEntityType)
++}
++
++func TestCustomerService_BatchImport_CSV(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++
++	records := []CreateCustomerInput{
++		{TenantID: 1, Name: "导入客户A", Level: "normal", Phones: []PhoneInput{{PhoneType: "mobile", Number: "+8613800001111", IsPrimary: true}}},
++		{TenantID: 1, Name: "导入客户B", Level: "vip", Phones: []PhoneInput{{PhoneType: "mobile", Number: "+8613800002222", IsPrimary: true}}},
++		{TenantID: 1, Name: "导入客户C", Level: "svip", Phones: []PhoneInput{{PhoneType: "mobile", Number: "+8613800003333", IsPrimary: true}}},
++	}
++
++	result, err := svc.BatchImport(ctx, records)
++	require.NoError(t, err)
++	assert.Equal(t, 3, result.Success)
++	assert.Equal(t, 0, result.Failed)
++
++	// Verify all imported
++	customers, err := svc.customers.List(ctx, 1, 0, 100)
++	require.NoError(t, err)
++	assert.Len(t, customers, 3)
++}
++
++func TestCustomerService_BatchImport_PartialFailure(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++
++	records := []CreateCustomerInput{
++		{TenantID: 1, Name: "Good", Level: "normal", Phones: []PhoneInput{{PhoneType: "mobile", Number: "+8613800001111", IsPrimary: true}}},
++		{TenantID: 1, Name: "Bad", Level: "diamond", Phones: []PhoneInput{{PhoneType: "mobile", Number: "+8613800002222", IsPrimary: true}}}, // invalid level
++		{TenantID: 1, Name: "Good2", Level: "vip", Phones: []PhoneInput{{PhoneType: "mobile", Number: "+8613800003333", IsPrimary: true}}},
++	}
++
++	result, err := svc.BatchImport(ctx, records)
++	require.NoError(t, err)
++	assert.Equal(t, 2, result.Success)
++	assert.Equal(t, 1, result.Failed)
++	assert.Len(t, result.Errors, 1)
++}
+diff --git a/internal/domain/telephony/service.go b/internal/domain/telephony/service.go
+index df56da3..1d2756e 100644
+--- a/internal/domain/telephony/service.go
++++ b/internal/domain/telephony/service.go
+@@ -4,6 +4,7 @@ import (
+ 	"context"
+ 	"math/rand"
+ 	"strings"
++	"sync"
+ 	"sync/atomic"
+ 	"time"
+ )
+@@ -154,6 +155,7 @@ func (s *CLIPolicyService) SelectCLI(ctx context.Context, tenantID int64, policy
+ type TrunkHealthService struct {
+ 	trunks SIPTrunkRepository
+ 	groups SIPTrunkGroupRepository
++	mu     sync.RWMutex
+ 	health map[int64]*TrunkHealthStatus
+ }
+ 
+@@ -167,6 +169,8 @@ func NewTrunkHealthService(trunks SIPTrunkRepository, groups SIPTrunkGroupReposi
+ 
+ // RecordHealthCheck updates trunk health after an OPTIONS keepalive result.
+ func (s *TrunkHealthService) RecordHealthCheck(trunkID int64, success bool) {
++	s.mu.Lock()
++	defer s.mu.Unlock()
+ 	h, ok := s.health[trunkID]
+ 	if !ok {
+ 		h = &TrunkHealthStatus{TrunkID: trunkID, Status: TrunkStatusActive}
+@@ -185,13 +189,16 @@ func (s *TrunkHealthService) RecordHealthCheck(trunkID int64, success bool) {
+ 	}
+ }
+ 
+-// GetHealthStatus returns the current health status of a trunk.
++// GetHealthStatus returns a snapshot of the current health status of a trunk.
+ func (s *TrunkHealthService) GetHealthStatus(trunkID int64) *TrunkHealthStatus {
++	s.mu.RLock()
++	defer s.mu.RUnlock()
+ 	h, ok := s.health[trunkID]
+ 	if !ok {
+ 		return &TrunkHealthStatus{TrunkID: trunkID, Status: TrunkStatusActive}
+ 	}
+-	return h
++	cp := *h
++	return &cp
+ }
+ 
+ // SelectHealthyTrunk picks the best available trunk from a group, skipping down trunks.
+diff --git a/internal/domain/ticket/entity.go b/internal/domain/ticket/entity.go
+new file mode 100644
+index 0000000..59988aa
+--- /dev/null
++++ b/internal/domain/ticket/entity.go
+@@ -0,0 +1,60 @@
++package ticket
++
++import (
++	"time"
++)
++
++type TicketStatus string
++
++const (
++	TicketStatusOpen       TicketStatus = "open"
++	TicketStatusInProgress TicketStatus = "in_progress"
++	TicketStatusPending    TicketStatus = "pending"
++	TicketStatusResolved   TicketStatus = "resolved"
++	TicketStatusClosed     TicketStatus = "closed"
++)
++
++type TicketCategory struct {
++	ID       int64  `db:"id" json:"id"`
++	TenantID int64  `db:"tenant_id" json:"tenant_id"`
++	Name     string `db:"name" json:"name"`
++	ParentID *int64 `db:"parent_id" json:"parent_id,omitempty"`
++}
++
++type TicketTemplate struct {
++	ID           int64  `db:"id" json:"id"`
++	TenantID     int64  `db:"tenant_id" json:"tenant_id"`
++	Name         string `db:"name" json:"name"`
++	CategoryID   *int64 `db:"category_id" json:"category_id,omitempty"`
++	Fields       string `db:"fields" json:"fields"`       // JSON array of field definitions
++	FlowGraph    string `db:"flow_graph" json:"flow_graph"` // JSON DAG for ticket flow
++	OnlineStatus string `db:"online_status" json:"online_status"` // draft, published, offline
++	CreatedAt    time.Time `db:"created_at" json:"created_at"`
++	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
++}
++
++type Ticket struct {
++	ID           int64        `db:"id" json:"id"`
++	TenantID     int64        `db:"tenant_id" json:"tenant_id"`
++	TemplateID   *int64       `db:"template_id" json:"template_id,omitempty"`
++	CategoryID   *int64       `db:"category_id" json:"category_id,omitempty"`
++	Title        string       `db:"title" json:"title"`
++	Description  string       `db:"description" json:"description"`
++	Status       TicketStatus `db:"status" json:"status"`
++	Priority     string       `db:"priority" json:"priority"` // low, medium, high, urgent
++	CustomerID   *int64       `db:"customer_id" json:"customer_id,omitempty"`
++	AssigneeID   *int64       `db:"assignee_id" json:"assignee_id,omitempty"`
++	CallID       *int64       `db:"call_id" json:"call_id,omitempty"`
++	CustomData   string       `db:"custom_data" json:"custom_data"`
++	CreatedAt    time.Time    `db:"created_at" json:"created_at"`
++	UpdatedAt    time.Time    `db:"updated_at" json:"updated_at"`
++	ResolvedAt   *time.Time   `db:"resolved_at" json:"resolved_at,omitempty"`
++}
++
++type TicketComment struct {
++	ID        int64     `db:"id" json:"id"`
++	TicketID  int64     `db:"ticket_id" json:"ticket_id"`
++	AuthorID  int64     `db:"author_id" json:"author_id"`
++	Content   string    `db:"content" json:"content"`
++	CreatedAt time.Time `db:"created_at" json:"created_at"`
++}
+diff --git a/internal/domain/ticket/errors.go b/internal/domain/ticket/errors.go
+new file mode 100644
+index 0000000..a6f77f2
+--- /dev/null
++++ b/internal/domain/ticket/errors.go
+@@ -0,0 +1,14 @@
++package ticket
++
++import "errors"
++
++var (
++	ErrTicketNotFound      = errors.New("ticket not found")
++	ErrTemplateNotFound    = errors.New("ticket template not found")
++	ErrCategoryNotFound    = errors.New("ticket category not found")
++	ErrInvalidTransition   = errors.New("invalid ticket status transition")
++	ErrTemplateNotPublished = errors.New("template is not published")
++	ErrAlreadyPublished    = errors.New("template is already published")
++	ErrInvalidPriority     = errors.New("invalid ticket priority")
++	ErrInvalidFlowGraph    = errors.New("invalid flow graph JSON")
++)
+diff --git a/internal/domain/ticket/mock_repo.go b/internal/domain/ticket/mock_repo.go
+new file mode 100644
+index 0000000..12cc00f
+--- /dev/null
++++ b/internal/domain/ticket/mock_repo.go
+@@ -0,0 +1,171 @@
++package ticket
++
++import (
++	"context"
++	"sync"
++)
++
++type MockCategoryRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*TicketCategory
++}
++
++func NewMockCategoryRepo() *MockCategoryRepo {
++	return &MockCategoryRepo{data: make(map[int64]*TicketCategory)}
++}
++
++func (r *MockCategoryRepo) Create(_ context.Context, c *TicketCategory) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[c.ID] = c
++	return nil
++}
++
++func (r *MockCategoryRepo) List(_ context.Context, tenantID int64) ([]*TicketCategory, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*TicketCategory
++	for _, c := range r.data {
++		if c.TenantID == tenantID {
++			result = append(result, c)
++		}
++	}
++	return result, nil
++}
++
++func (r *MockCategoryRepo) GetByID(_ context.Context, id int64) (*TicketCategory, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	if c, ok := r.data[id]; ok {
++		return c, nil
++	}
++	return nil, nil
++}
++
++type MockTemplateRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*TicketTemplate
++}
++
++func NewMockTemplateRepo() *MockTemplateRepo {
++	return &MockTemplateRepo{data: make(map[int64]*TicketTemplate)}
++}
++
++func (r *MockTemplateRepo) Create(_ context.Context, t *TicketTemplate) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[t.ID] = t
++	return nil
++}
++
++func (r *MockTemplateRepo) GetByID(_ context.Context, id int64) (*TicketTemplate, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	if t, ok := r.data[id]; ok {
++		return t, nil
++	}
++	return nil, nil
++}
++
++func (r *MockTemplateRepo) Update(_ context.Context, t *TicketTemplate) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[t.ID] = t
++	return nil
++}
++
++func (r *MockTemplateRepo) List(_ context.Context, tenantID int64) ([]*TicketTemplate, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*TicketTemplate
++	for _, t := range r.data {
++		if t.TenantID == tenantID {
++			result = append(result, t)
++		}
++	}
++	return result, nil
++}
++
++type MockTicketRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*Ticket
++}
++
++func NewMockTicketRepo() *MockTicketRepo {
++	return &MockTicketRepo{data: make(map[int64]*Ticket)}
++}
++
++func (r *MockTicketRepo) Create(_ context.Context, t *Ticket) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[t.ID] = t
++	return nil
++}
++
++func (r *MockTicketRepo) GetByID(_ context.Context, id int64) (*Ticket, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	if t, ok := r.data[id]; ok {
++		return t, nil
++	}
++	return nil, nil
++}
++
++func (r *MockTicketRepo) Update(_ context.Context, t *Ticket) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[t.ID] = t
++	return nil
++}
++
++func (r *MockTicketRepo) List(_ context.Context, tenantID int64, offset, limit int) ([]*Ticket, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*Ticket
++	for _, t := range r.data {
++		if t.TenantID == tenantID {
++			result = append(result, t)
++		}
++	}
++	if offset >= len(result) {
++		return nil, nil
++	}
++	end := offset + limit
++	if end > len(result) {
++		end = len(result)
++	}
++	return result[offset:end], nil
++}
++
++type MockCommentRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*TicketComment
++	seq  int64
++}
++
++func NewMockCommentRepo() *MockCommentRepo {
++	return &MockCommentRepo{data: make(map[int64]*TicketComment)}
++}
++
++func (r *MockCommentRepo) Create(_ context.Context, c *TicketComment) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.seq++
++	if c.ID == 0 {
++		c.ID = r.seq
++	}
++	r.data[c.ID] = c
++	return nil
++}
++
++func (r *MockCommentRepo) ListByTicket(_ context.Context, ticketID int64) ([]*TicketComment, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*TicketComment
++	for _, c := range r.data {
++		if c.TicketID == ticketID {
++			result = append(result, c)
++		}
++	}
++	return result, nil
++}
+diff --git a/internal/domain/ticket/repository.go b/internal/domain/ticket/repository.go
+new file mode 100644
+index 0000000..d29c772
+--- /dev/null
++++ b/internal/domain/ticket/repository.go
+@@ -0,0 +1,28 @@
++package ticket
++
++import "context"
++
++type TicketCategoryRepository interface {
++	Create(ctx context.Context, c *TicketCategory) error
++	List(ctx context.Context, tenantID int64) ([]*TicketCategory, error)
++	GetByID(ctx context.Context, id int64) (*TicketCategory, error)
++}
++
++type TicketTemplateRepository interface {
++	Create(ctx context.Context, t *TicketTemplate) error
++	GetByID(ctx context.Context, id int64) (*TicketTemplate, error)
++	Update(ctx context.Context, t *TicketTemplate) error
++	List(ctx context.Context, tenantID int64) ([]*TicketTemplate, error)
++}
++
++type TicketRepository interface {
++	Create(ctx context.Context, t *Ticket) error
++	GetByID(ctx context.Context, id int64) (*Ticket, error)
++	Update(ctx context.Context, t *Ticket) error
++	List(ctx context.Context, tenantID int64, offset, limit int) ([]*Ticket, error)
++}
++
++type TicketCommentRepository interface {
++	Create(ctx context.Context, c *TicketComment) error
++	ListByTicket(ctx context.Context, ticketID int64) ([]*TicketComment, error)
++}
+diff --git a/internal/domain/ticket/service.go b/internal/domain/ticket/service.go
+new file mode 100644
+index 0000000..f35b5e8
+--- /dev/null
++++ b/internal/domain/ticket/service.go
+@@ -0,0 +1,264 @@
++package ticket
++
++import (
++	"context"
++	"encoding/json"
++	"time"
++
++	"github.com/divord97/ccc/pkg/snowflake"
++)
++
++var validPriorities = map[string]bool{"low": true, "medium": true, "high": true, "urgent": true}
++
++// validTransitions defines the allowed ticket status state machine.
++var validTransitions = map[TicketStatus][]TicketStatus{
++	TicketStatusOpen:       {TicketStatusInProgress, TicketStatusPending},
++	TicketStatusInProgress: {TicketStatusPending, TicketStatusResolved},
++	TicketStatusPending:    {TicketStatusInProgress, TicketStatusResolved},
++	TicketStatusResolved:   {TicketStatusClosed, TicketStatusInProgress},
++	TicketStatusClosed:     {},
++}
++
++// TicketTemplateService manages ticket template lifecycle.
++type TicketTemplateService struct {
++	templates  TicketTemplateRepository
++	categories TicketCategoryRepository
++}
++
++func NewTicketTemplateService(templates TicketTemplateRepository, categories TicketCategoryRepository) *TicketTemplateService {
++	return &TicketTemplateService{templates: templates, categories: categories}
++}
++
++type CreateTemplateInput struct {
++	TenantID   int64  `json:"tenant_id"`
++	Name       string `json:"name"`
++	CategoryID *int64 `json:"category_id"`
++	Fields     string `json:"fields"`
++	FlowGraph  string `json:"flow_graph"`
++}
++
++func (s *TicketTemplateService) Create(ctx context.Context, in CreateTemplateInput) (*TicketTemplate, error) {
++	if in.FlowGraph != "" {
++		if !json.Valid([]byte(in.FlowGraph)) {
++			return nil, ErrInvalidFlowGraph
++		}
++	}
++
++	now := time.Now()
++	t := &TicketTemplate{
++		ID:           snowflake.NextID(),
++		TenantID:     in.TenantID,
++		Name:         in.Name,
++		CategoryID:   in.CategoryID,
++		Fields:       in.Fields,
++		FlowGraph:    in.FlowGraph,
++		OnlineStatus: "draft",
++		CreatedAt:    now,
++		UpdatedAt:    now,
++	}
++	if err := s.templates.Create(ctx, t); err != nil {
++		return nil, err
++	}
++	return t, nil
++}
++
++func (s *TicketTemplateService) Publish(ctx context.Context, id int64) (*TicketTemplate, error) {
++	t, err := s.templates.GetByID(ctx, id)
++	if err != nil || t == nil {
++		return nil, ErrTemplateNotFound
++	}
++	if t.OnlineStatus == "published" {
++		return nil, ErrAlreadyPublished
++	}
++
++	t.OnlineStatus = "published"
++	t.UpdatedAt = time.Now()
++	if err := s.templates.Update(ctx, t); err != nil {
++		return nil, err
++	}
++	return t, nil
++}
++
++func (s *TicketTemplateService) Offline(ctx context.Context, id int64) (*TicketTemplate, error) {
++	t, err := s.templates.GetByID(ctx, id)
++	if err != nil || t == nil {
++		return nil, ErrTemplateNotFound
++	}
++
++	t.OnlineStatus = "offline"
++	t.UpdatedAt = time.Now()
++	if err := s.templates.Update(ctx, t); err != nil {
++		return nil, err
++	}
++	return t, nil
++}
++
++func (s *TicketTemplateService) GetTemplate(ctx context.Context, id int64) (*TicketTemplate, error) {
++	t, err := s.templates.GetByID(ctx, id)
++	if err != nil || t == nil {
++		return nil, ErrTemplateNotFound
++	}
++	return t, nil
++}
++
++func (s *TicketTemplateService) UpdateTemplate(ctx context.Context, t *TicketTemplate) error {
++	t.UpdatedAt = time.Now()
++	return s.templates.Update(ctx, t)
++}
++
++func (s *TicketTemplateService) ListTemplates(ctx context.Context, tenantID int64) ([]*TicketTemplate, error) {
++	return s.templates.List(ctx, tenantID)
++}
++
++func (s *TicketTemplateService) CreateCategory(ctx context.Context, tenantID int64, name string, parentID *int64) (*TicketCategory, error) {
++	c := &TicketCategory{
++		ID:       snowflake.NextID(),
++		TenantID: tenantID,
++		Name:     name,
++		ParentID: parentID,
++	}
++	if err := s.categories.Create(ctx, c); err != nil {
++		return nil, err
++	}
++	return c, nil
++}
++
++func (s *TicketTemplateService) ListCategories(ctx context.Context, tenantID int64) ([]*TicketCategory, error) {
++	return s.categories.List(ctx, tenantID)
++}
++
++// TicketService manages ticket lifecycle.
++type TicketService struct {
++	tickets   TicketRepository
++	templates TicketTemplateRepository
++	comments  TicketCommentRepository
++}
++
++func NewTicketService(tickets TicketRepository, templates TicketTemplateRepository, comments TicketCommentRepository) *TicketService {
++	return &TicketService{tickets: tickets, templates: templates, comments: comments}
++}
++
++type CreateTicketInput struct {
++	TenantID    int64  `json:"tenant_id"`
++	TemplateID  *int64 `json:"template_id"`
++	CategoryID  *int64 `json:"category_id"`
++	Title       string `json:"title"`
++	Description string `json:"description"`
++	Priority    string `json:"priority"`
++	CustomerID  *int64 `json:"customer_id"`
++	CallID      *int64 `json:"call_id"`
++	CustomData  string `json:"custom_data"`
++}
++
++func (s *TicketService) Create(ctx context.Context, in CreateTicketInput) (*Ticket, error) {
++	if !validPriorities[in.Priority] {
++		return nil, ErrInvalidPriority
++	}
++
++	if in.TemplateID != nil {
++		tmpl, err := s.templates.GetByID(ctx, *in.TemplateID)
++		if err != nil || tmpl == nil {
++			return nil, ErrTemplateNotFound
++		}
++		if tmpl.OnlineStatus != "published" {
++			return nil, ErrTemplateNotPublished
++		}
++	}
++
++	now := time.Now()
++	tk := &Ticket{
++		ID:          snowflake.NextID(),
++		TenantID:    in.TenantID,
++		TemplateID:  in.TemplateID,
++		CategoryID:  in.CategoryID,
++		Title:       in.Title,
++		Description: in.Description,
++		Status:      TicketStatusOpen,
++		Priority:    in.Priority,
++		CustomerID:  in.CustomerID,
++		CallID:      in.CallID,
++		CustomData:  in.CustomData,
++		CreatedAt:   now,
++		UpdatedAt:   now,
++	}
++	if err := s.tickets.Create(ctx, tk); err != nil {
++		return nil, err
++	}
++	return tk, nil
++}
++
++func (s *TicketService) GetByID(ctx context.Context, id int64) (*Ticket, error) {
++	tk, err := s.tickets.GetByID(ctx, id)
++	if err != nil || tk == nil {
++		return nil, ErrTicketNotFound
++	}
++	return tk, nil
++}
++
++func (s *TicketService) Update(ctx context.Context, tk *Ticket) error {
++	tk.UpdatedAt = time.Now()
++	return s.tickets.Update(ctx, tk)
++}
++
++func (s *TicketService) List(ctx context.Context, tenantID int64, offset, limit int) ([]*Ticket, error) {
++	return s.tickets.List(ctx, tenantID, offset, limit)
++}
++
++func (s *TicketService) Assign(ctx context.Context, ticketID, agentID int64) (*Ticket, error) {
++	tk, err := s.tickets.GetByID(ctx, ticketID)
++	if err != nil || tk == nil {
++		return nil, ErrTicketNotFound
++	}
++
++	tk.AssigneeID = &agentID
++	tk.UpdatedAt = time.Now()
++	if err := s.tickets.Update(ctx, tk); err != nil {
++		return nil, err
++	}
++	return tk, nil
++}
++
++func (s *TicketService) Transition(ctx context.Context, ticketID int64, newStatus TicketStatus) (*Ticket, error) {
++	tk, err := s.tickets.GetByID(ctx, ticketID)
++	if err != nil || tk == nil {
++		return nil, ErrTicketNotFound
++	}
++
++	allowed := validTransitions[tk.Status]
++	valid := false
++	for _, s := range allowed {
++		if s == newStatus {
++			valid = true
++			break
++		}
++	}
++	if !valid {
++		return nil, ErrInvalidTransition
++	}
++
++	tk.Status = newStatus
++	tk.UpdatedAt = time.Now()
++	if newStatus == TicketStatusResolved {
++		now := time.Now()
++		tk.ResolvedAt = &now
++	}
++
++	if err := s.tickets.Update(ctx, tk); err != nil {
++		return nil, err
++	}
++	return tk, nil
++}
++
++func (s *TicketService) AddComment(ctx context.Context, ticketID, authorID int64, content string) error {
++	c := &TicketComment{
++		TicketID:  ticketID,
++		AuthorID:  authorID,
++		Content:   content,
++		CreatedAt: time.Now(),
++	}
++	return s.comments.Create(ctx, c)
++}
++
++func (s *TicketService) ListComments(ctx context.Context, ticketID int64) ([]*TicketComment, error) {
++	return s.comments.ListByTicket(ctx, ticketID)
++}
+diff --git a/internal/domain/ticket/service_test.go b/internal/domain/ticket/service_test.go
+new file mode 100644
+index 0000000..165ca26
+--- /dev/null
++++ b/internal/domain/ticket/service_test.go
+@@ -0,0 +1,208 @@
++package ticket
++
++import (
++	"context"
++	"testing"
++
++	"github.com/divord97/ccc/pkg/snowflake"
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++func init() {
++	_ = snowflake.Init(1)
++}
++
++func newTestServices() (*TicketService, *TicketTemplateService) {
++	categories := NewMockCategoryRepo()
++	templates := NewMockTemplateRepo()
++	tickets := NewMockTicketRepo()
++	comments := NewMockCommentRepo()
++	return NewTicketService(tickets, templates, comments),
++		NewTicketTemplateService(templates, categories)
++}
++
++func TestTicketTemplateService_Publish_Online(t *testing.T) {
++	_, tmplSvc := newTestServices()
++	ctx := context.Background()
++
++	tmpl, err := tmplSvc.Create(ctx, CreateTemplateInput{
++		TenantID: 1,
++		Name:     "投诉模板",
++		Fields:   `[{"name":"reason","type":"select","options":["质量","服务","其他"]}]`,
++	})
++	require.NoError(t, err)
++	assert.Equal(t, "draft", tmpl.OnlineStatus)
++
++	published, err := tmplSvc.Publish(ctx, tmpl.ID)
++	require.NoError(t, err)
++	assert.Equal(t, "published", published.OnlineStatus)
++}
++
++func TestTicketTemplateService_Publish_AlreadyPublished(t *testing.T) {
++	_, tmplSvc := newTestServices()
++	ctx := context.Background()
++
++	tmpl, _ := tmplSvc.Create(ctx, CreateTemplateInput{
++		TenantID: 1, Name: "T1",
++	})
++	_, _ = tmplSvc.Publish(ctx, tmpl.ID)
++
++	_, err := tmplSvc.Publish(ctx, tmpl.ID)
++	assert.ErrorIs(t, err, ErrAlreadyPublished)
++}
++
++func TestTicketTemplateService_Offline(t *testing.T) {
++	_, tmplSvc := newTestServices()
++	ctx := context.Background()
++
++	tmpl, _ := tmplSvc.Create(ctx, CreateTemplateInput{
++		TenantID: 1, Name: "T1",
++	})
++	_, _ = tmplSvc.Publish(ctx, tmpl.ID)
++
++	offline, err := tmplSvc.Offline(ctx, tmpl.ID)
++	require.NoError(t, err)
++	assert.Equal(t, "offline", offline.OnlineStatus)
++}
++
++func TestTicketTemplateService_FlowGraph_Validation(t *testing.T) {
++	_, tmplSvc := newTestServices()
++	ctx := context.Background()
++
++	tmpl, _ := tmplSvc.Create(ctx, CreateTemplateInput{
++		TenantID:  1,
++		Name:      "有流程的模板",
++		FlowGraph: `{"nodes":[{"id":"start"},{"id":"end"}],"edges":[{"from":"start","to":"end"}]}`,
++	})
++	require.NotNil(t, tmpl)
++	assert.NotEmpty(t, tmpl.FlowGraph)
++
++	// Invalid JSON should fail
++	_, err := tmplSvc.Create(ctx, CreateTemplateInput{
++		TenantID:  1,
++		Name:      "坏流程",
++		FlowGraph: `{invalid json}`,
++	})
++	assert.ErrorIs(t, err, ErrInvalidFlowGraph)
++}
++
++func TestTicketService_Create_FromTemplate(t *testing.T) {
++	ticketSvc, tmplSvc := newTestServices()
++	ctx := context.Background()
++
++	tmpl, _ := tmplSvc.Create(ctx, CreateTemplateInput{
++		TenantID: 1, Name: "T1",
++	})
++	_, _ = tmplSvc.Publish(ctx, tmpl.ID)
++
++	tk, err := ticketSvc.Create(ctx, CreateTicketInput{
++		TenantID:    1,
++		TemplateID:  &tmpl.ID,
++		Title:       "客户投诉001",
++		Description: "产品质量问题",
++		Priority:    "high",
++	})
++	require.NoError(t, err)
++	assert.Equal(t, TicketStatusOpen, tk.Status)
++	assert.Equal(t, "high", tk.Priority)
++	assert.Equal(t, &tmpl.ID, tk.TemplateID)
++}
++
++func TestTicketService_Create_InvalidPriority(t *testing.T) {
++	ticketSvc, _ := newTestServices()
++
++	_, err := ticketSvc.Create(context.Background(), CreateTicketInput{
++		TenantID: 1, Title: "T", Priority: "critical",
++	})
++	assert.ErrorIs(t, err, ErrInvalidPriority)
++}
++
++func TestTicketService_Create_UnpublishedTemplate_Error(t *testing.T) {
++	ticketSvc, tmplSvc := newTestServices()
++	ctx := context.Background()
++
++	tmpl, _ := tmplSvc.Create(ctx, CreateTemplateInput{
++		TenantID: 1, Name: "Draft Template",
++	})
++
++	_, err := ticketSvc.Create(ctx, CreateTicketInput{
++		TenantID:   1,
++		TemplateID: &tmpl.ID,
++		Title:      "Test",
++		Priority:   "low",
++	})
++	assert.ErrorIs(t, err, ErrTemplateNotPublished)
++}
++
++func TestTicketService_Assign_Success(t *testing.T) {
++	ticketSvc, _ := newTestServices()
++	ctx := context.Background()
++
++	tk, _ := ticketSvc.Create(ctx, CreateTicketInput{
++		TenantID: 1, Title: "需分配", Priority: "medium",
++	})
++
++	agentID := int64(100)
++	assigned, err := ticketSvc.Assign(ctx, tk.ID, agentID)
++	require.NoError(t, err)
++	assert.Equal(t, &agentID, assigned.AssigneeID)
++}
++
++func TestTicketService_Transition_OpenToInProgress(t *testing.T) {
++	ticketSvc, _ := newTestServices()
++	ctx := context.Background()
++
++	tk, _ := ticketSvc.Create(ctx, CreateTicketInput{
++		TenantID: 1, Title: "T", Priority: "low",
++	})
++
++	updated, err := ticketSvc.Transition(ctx, tk.ID, TicketStatusInProgress)
++	require.NoError(t, err)
++	assert.Equal(t, TicketStatusInProgress, updated.Status)
++}
++
++func TestTicketService_Transition_InvalidState_Error(t *testing.T) {
++	ticketSvc, _ := newTestServices()
++	ctx := context.Background()
++
++	tk, _ := ticketSvc.Create(ctx, CreateTicketInput{
++		TenantID: 1, Title: "T", Priority: "low",
++	})
++
++	// Cannot go directly from open to closed
++	_, err := ticketSvc.Transition(ctx, tk.ID, TicketStatusClosed)
++	assert.ErrorIs(t, err, ErrInvalidTransition)
++}
++
++func TestTicketService_Transition_ResolveSetTimestamp(t *testing.T) {
++	ticketSvc, _ := newTestServices()
++	ctx := context.Background()
++
++	tk, _ := ticketSvc.Create(ctx, CreateTicketInput{
++		TenantID: 1, Title: "T", Priority: "low",
++	})
++	_, _ = ticketSvc.Transition(ctx, tk.ID, TicketStatusInProgress)
++
++	resolved, err := ticketSvc.Transition(ctx, tk.ID, TicketStatusResolved)
++	require.NoError(t, err)
++	assert.Equal(t, TicketStatusResolved, resolved.Status)
++	assert.NotNil(t, resolved.ResolvedAt)
++}
++
++func TestTicketService_AddComment(t *testing.T) {
++	ticketSvc, _ := newTestServices()
++	ctx := context.Background()
++
++	tk, _ := ticketSvc.Create(ctx, CreateTicketInput{
++		TenantID: 1, Title: "评论测试", Priority: "low",
++	})
++
++	err := ticketSvc.AddComment(ctx, tk.ID, 100, "已联系客户")
++	require.NoError(t, err)
++
++	comments, err := ticketSvc.ListComments(ctx, tk.ID)
++	require.NoError(t, err)
++	assert.Len(t, comments, 1)
++	assert.Equal(t, "已联系客户", comments[0].Content)
++}
+diff --git a/internal/infrastructure/mysql/ai_repo.go b/internal/infrastructure/mysql/ai_repo.go
+new file mode 100644
+index 0000000..0980278
+--- /dev/null
++++ b/internal/infrastructure/mysql/ai_repo.go
+@@ -0,0 +1,152 @@
++package mysql
++
++import (
++	"context"
++	"database/sql"
++
++	"github.com/divord97/ccc/internal/domain/ai"
++	"github.com/jmoiron/sqlx"
++)
++
++type KnowledgeCategoryRepo struct{ db *sqlx.DB }
++
++func NewKnowledgeCategoryRepo(db *sqlx.DB) *KnowledgeCategoryRepo {
++	return &KnowledgeCategoryRepo{db: db}
++}
++
++func (r *KnowledgeCategoryRepo) Create(ctx context.Context, c *ai.KnowledgeCategory) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO knowledge_categories (id, tenant_id, name, parent_id) VALUES (?,?,?,?)`,
++		c.ID, c.TenantID, c.Name, c.ParentID)
++	return err
++}
++
++func (r *KnowledgeCategoryRepo) List(ctx context.Context, tenantID int64) ([]*ai.KnowledgeCategory, error) {
++	var result []*ai.KnowledgeCategory
++	err := r.db.SelectContext(ctx, &result, `SELECT * FROM knowledge_categories WHERE tenant_id=?`, tenantID)
++	return result, err
++}
++
++type KnowledgeArticleRepo struct{ db *sqlx.DB }
++
++func NewKnowledgeArticleRepo(db *sqlx.DB) *KnowledgeArticleRepo {
++	return &KnowledgeArticleRepo{db: db}
++}
++
++func (r *KnowledgeArticleRepo) Create(ctx context.Context, a *ai.KnowledgeArticle) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO knowledge_articles (id, tenant_id, category_id, title, content, tags, status, created_at, updated_at)
++		 VALUES (?,?,?,?,?,?,?,?,?)`,
++		a.ID, a.TenantID, a.CategoryID, a.Title, a.Content, a.Tags, a.Status, a.CreatedAt, a.UpdatedAt)
++	return err
++}
++
++func (r *KnowledgeArticleRepo) GetByID(ctx context.Context, id int64) (*ai.KnowledgeArticle, error) {
++	var a ai.KnowledgeArticle
++	if err := r.db.GetContext(ctx, &a, `SELECT * FROM knowledge_articles WHERE id=?`, id); err != nil {
++		if err == sql.ErrNoRows {
++			return nil, nil
++		}
++		return nil, err
++	}
++	return &a, nil
++}
++
++func (r *KnowledgeArticleRepo) Update(ctx context.Context, a *ai.KnowledgeArticle) error {
++	_, err := r.db.ExecContext(ctx,
++		`UPDATE knowledge_articles SET category_id=?, title=?, content=?, tags=?, status=?, updated_at=? WHERE id=?`,
++		a.CategoryID, a.Title, a.Content, a.Tags, a.Status, a.UpdatedAt, a.ID)
++	return err
++}
++
++func (r *KnowledgeArticleRepo) List(ctx context.Context, tenantID int64, offset, limit int) ([]*ai.KnowledgeArticle, error) {
++	var result []*ai.KnowledgeArticle
++	err := r.db.SelectContext(ctx, &result,
++		`SELECT * FROM knowledge_articles WHERE tenant_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?`,
++		tenantID, limit, offset)
++	return result, err
++}
++
++func (r *KnowledgeArticleRepo) Search(ctx context.Context, tenantID int64, query string, limit int) ([]*ai.KnowledgeArticle, error) {
++	var result []*ai.KnowledgeArticle
++	q := "%" + query + "%"
++	err := r.db.SelectContext(ctx, &result,
++		`SELECT * FROM knowledge_articles WHERE tenant_id=? AND status='published'
++		 AND (title LIKE ? OR content LIKE ? OR tags LIKE ?) LIMIT ?`,
++		tenantID, q, q, q, limit)
++	return result, err
++}
++
++type AgentScriptRepo struct{ db *sqlx.DB }
++
++func NewAgentScriptRepo(db *sqlx.DB) *AgentScriptRepo { return &AgentScriptRepo{db: db} }
++
++func (r *AgentScriptRepo) Create(ctx context.Context, s *ai.AgentScript) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO agent_scripts (id, tenant_id, name, content, is_active, created_at, updated_at)
++		 VALUES (?,?,?,?,?,?,?)`,
++		s.ID, s.TenantID, s.Name, s.Content, s.IsActive, s.CreatedAt, s.UpdatedAt)
++	return err
++}
++
++func (r *AgentScriptRepo) GetByID(ctx context.Context, id int64) (*ai.AgentScript, error) {
++	var s ai.AgentScript
++	if err := r.db.GetContext(ctx, &s, `SELECT * FROM agent_scripts WHERE id=?`, id); err != nil {
++		if err == sql.ErrNoRows {
++			return nil, nil
++		}
++		return nil, err
++	}
++	return &s, nil
++}
++
++func (r *AgentScriptRepo) Update(ctx context.Context, s *ai.AgentScript) error {
++	_, err := r.db.ExecContext(ctx,
++		`UPDATE agent_scripts SET name=?, content=?, is_active=?, updated_at=? WHERE id=?`,
++		s.Name, s.Content, s.IsActive, s.UpdatedAt, s.ID)
++	return err
++}
++
++func (r *AgentScriptRepo) List(ctx context.Context, tenantID int64) ([]*ai.AgentScript, error) {
++	var result []*ai.AgentScript
++	err := r.db.SelectContext(ctx, &result, `SELECT * FROM agent_scripts WHERE tenant_id=?`, tenantID)
++	return result, err
++}
++
++type SessionInfoTemplateRepo struct{ db *sqlx.DB }
++
++func NewSessionInfoTemplateRepo(db *sqlx.DB) *SessionInfoTemplateRepo {
++	return &SessionInfoTemplateRepo{db: db}
++}
++
++func (r *SessionInfoTemplateRepo) Create(ctx context.Context, t *ai.SessionInfoTemplate) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO session_info_templates (id, tenant_id, name, fields, is_default, created_at, updated_at)
++		 VALUES (?,?,?,?,?,?,?)`,
++		t.ID, t.TenantID, t.Name, t.Fields, t.IsDefault, t.CreatedAt, t.UpdatedAt)
++	return err
++}
++
++func (r *SessionInfoTemplateRepo) GetByID(ctx context.Context, id int64) (*ai.SessionInfoTemplate, error) {
++	var t ai.SessionInfoTemplate
++	if err := r.db.GetContext(ctx, &t, `SELECT * FROM session_info_templates WHERE id=?`, id); err != nil {
++		if err == sql.ErrNoRows {
++			return nil, nil
++		}
++		return nil, err
++	}
++	return &t, nil
++}
++
++func (r *SessionInfoTemplateRepo) Update(ctx context.Context, t *ai.SessionInfoTemplate) error {
++	_, err := r.db.ExecContext(ctx,
++		`UPDATE session_info_templates SET name=?, fields=?, is_default=?, updated_at=? WHERE id=?`,
++		t.Name, t.Fields, t.IsDefault, t.UpdatedAt, t.ID)
++	return err
++}
++
++func (r *SessionInfoTemplateRepo) List(ctx context.Context, tenantID int64) ([]*ai.SessionInfoTemplate, error) {
++	var result []*ai.SessionInfoTemplate
++	err := r.db.SelectContext(ctx, &result, `SELECT * FROM session_info_templates WHERE tenant_id=?`, tenantID)
++	return result, err
++}
+diff --git a/internal/infrastructure/mysql/crm_repo.go b/internal/infrastructure/mysql/crm_repo.go
+new file mode 100644
+index 0000000..c71329c
+--- /dev/null
++++ b/internal/infrastructure/mysql/crm_repo.go
+@@ -0,0 +1,141 @@
++package mysql
++
++import (
++	"context"
++	"database/sql"
++
++	"github.com/divord97/ccc/internal/domain/crm"
++	"github.com/jmoiron/sqlx"
++)
++
++type CustomerRepo struct{ db *sqlx.DB }
++
++func NewCustomerRepo(db *sqlx.DB) *CustomerRepo { return &CustomerRepo{db: db} }
++
++func (r *CustomerRepo) Create(ctx context.Context, c *crm.Customer) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO customers (id, tenant_id, name, email, company, level, custom_data, created_at, updated_at)
++		 VALUES (?,?,?,?,?,?,?,?,?)`,
++		c.ID, c.TenantID, c.Name, c.Email, c.Company, c.Level, c.CustomData, c.CreatedAt, c.UpdatedAt)
++	return err
++}
++
++func (r *CustomerRepo) GetByID(ctx context.Context, id int64) (*crm.Customer, error) {
++	var c crm.Customer
++	if err := r.db.GetContext(ctx, &c, `SELECT * FROM customers WHERE id=?`, id); err != nil {
++		if err == sql.ErrNoRows {
++			return nil, nil
++		}
++		return nil, err
++	}
++	return &c, nil
++}
++
++func (r *CustomerRepo) Update(ctx context.Context, c *crm.Customer) error {
++	_, err := r.db.ExecContext(ctx,
++		`UPDATE customers SET name=?, email=?, company=?, level=?, custom_data=?, updated_at=? WHERE id=?`,
++		c.Name, c.Email, c.Company, c.Level, c.CustomData, c.UpdatedAt, c.ID)
++	return err
++}
++
++func (r *CustomerRepo) Delete(ctx context.Context, id int64) error {
++	_, err := r.db.ExecContext(ctx, `DELETE FROM customers WHERE id=?`, id)
++	return err
++}
++
++func (r *CustomerRepo) List(ctx context.Context, tenantID int64, offset, limit int) ([]*crm.Customer, error) {
++	var result []*crm.Customer
++	err := r.db.SelectContext(ctx, &result,
++		`SELECT * FROM customers WHERE tenant_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?`,
++		tenantID, limit, offset)
++	return result, err
++}
++
++func (r *CustomerRepo) FindByPhone(ctx context.Context, tenantID int64, phone string) (*crm.Customer, error) {
++	var c crm.Customer
++	err := r.db.GetContext(ctx, &c,
++		`SELECT c.* FROM customers c
++		 JOIN customer_phones cp ON c.id = cp.customer_id
++		 WHERE c.tenant_id=? AND cp.number=? LIMIT 1`, tenantID, phone)
++	if err != nil {
++		if err == sql.ErrNoRows {
++			return nil, nil
++		}
++		return nil, err
++	}
++	return &c, nil
++}
++
++type CustomerPhoneRepo struct{ db *sqlx.DB }
++
++func NewCustomerPhoneRepo(db *sqlx.DB) *CustomerPhoneRepo { return &CustomerPhoneRepo{db: db} }
++
++func (r *CustomerPhoneRepo) Create(ctx context.Context, p *crm.CustomerPhone) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO customer_phones (id, customer_id, phone_type, number, is_primary) VALUES (?,?,?,?,?)`,
++		p.ID, p.CustomerID, p.PhoneType, p.Number, p.IsPrimary)
++	return err
++}
++
++func (r *CustomerPhoneRepo) ListByCustomer(ctx context.Context, customerID int64) ([]*crm.CustomerPhone, error) {
++	var result []*crm.CustomerPhone
++	err := r.db.SelectContext(ctx, &result, `SELECT * FROM customer_phones WHERE customer_id=?`, customerID)
++	return result, err
++}
++
++func (r *CustomerPhoneRepo) DeleteByCustomer(ctx context.Context, customerID int64) error {
++	_, err := r.db.ExecContext(ctx, `DELETE FROM customer_phones WHERE customer_id=?`, customerID)
++	return err
++}
++
++type InteractionRepo struct{ db *sqlx.DB }
++
++func NewInteractionRepo(db *sqlx.DB) *InteractionRepo { return &InteractionRepo{db: db} }
++
++func (r *InteractionRepo) Create(ctx context.Context, i *crm.CustomerInteraction) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO customer_interactions (id, customer_id, tenant_id, channel, direction, summary, call_id, ticket_id, agent_name, created_at)
++		 VALUES (?,?,?,?,?,?,?,?,?,?)`,
++		i.ID, i.CustomerID, i.TenantID, i.Channel, i.Direction, i.Summary, i.CallID, i.TicketID, i.AgentName, i.CreatedAt)
++	return err
++}
++
++func (r *InteractionRepo) ListByCustomer(ctx context.Context, customerID int64, offset, limit int) ([]*crm.CustomerInteraction, error) {
++	var result []*crm.CustomerInteraction
++	err := r.db.SelectContext(ctx, &result,
++		`SELECT * FROM customer_interactions WHERE customer_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?`,
++		customerID, limit, offset)
++	return result, err
++}
++
++type CustomFieldRepo struct{ db *sqlx.DB }
++
++func NewCustomFieldRepo(db *sqlx.DB) *CustomFieldRepo { return &CustomFieldRepo{db: db} }
++
++func (r *CustomFieldRepo) Create(ctx context.Context, d *crm.CustomFieldDefinition) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO custom_field_definitions (id, tenant_id, entity_type, field_name, field_type, options, is_required, sort_order)
++		 VALUES (?,?,?,?,?,?,?,?)`,
++		d.ID, d.TenantID, d.EntityType, d.FieldName, d.FieldType, d.Options, d.IsRequired, d.SortOrder)
++	return err
++}
++
++func (r *CustomFieldRepo) Update(ctx context.Context, d *crm.CustomFieldDefinition) error {
++	_, err := r.db.ExecContext(ctx,
++		`UPDATE custom_field_definitions SET field_name=?, field_type=?, options=?, is_required=?, sort_order=? WHERE id=?`,
++		d.FieldName, d.FieldType, d.Options, d.IsRequired, d.SortOrder, d.ID)
++	return err
++}
++
++func (r *CustomFieldRepo) Delete(ctx context.Context, id int64) error {
++	_, err := r.db.ExecContext(ctx, `DELETE FROM custom_field_definitions WHERE id=?`, id)
++	return err
++}
++
++func (r *CustomFieldRepo) ListByEntity(ctx context.Context, tenantID int64, entityType string) ([]*crm.CustomFieldDefinition, error) {
++	var result []*crm.CustomFieldDefinition
++	err := r.db.SelectContext(ctx, &result,
++		`SELECT * FROM custom_field_definitions WHERE tenant_id=? AND entity_type=? ORDER BY sort_order`,
++		tenantID, entityType)
++	return result, err
++}
+diff --git a/internal/infrastructure/mysql/ticket_repo.go b/internal/infrastructure/mysql/ticket_repo.go
+new file mode 100644
+index 0000000..678cf0c
+--- /dev/null
++++ b/internal/infrastructure/mysql/ticket_repo.go
+@@ -0,0 +1,131 @@
++package mysql
++
++import (
++	"context"
++	"database/sql"
++
++	"github.com/divord97/ccc/internal/domain/ticket"
++	"github.com/jmoiron/sqlx"
++)
++
++type TicketCategoryRepo struct{ db *sqlx.DB }
++
++func NewTicketCategoryRepo(db *sqlx.DB) *TicketCategoryRepo { return &TicketCategoryRepo{db: db} }
++
++func (r *TicketCategoryRepo) Create(ctx context.Context, c *ticket.TicketCategory) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO ticket_categories (id, tenant_id, name, parent_id) VALUES (?,?,?,?)`,
++		c.ID, c.TenantID, c.Name, c.ParentID)
++	return err
++}
++
++func (r *TicketCategoryRepo) List(ctx context.Context, tenantID int64) ([]*ticket.TicketCategory, error) {
++	var result []*ticket.TicketCategory
++	err := r.db.SelectContext(ctx, &result, `SELECT * FROM ticket_categories WHERE tenant_id=?`, tenantID)
++	return result, err
++}
++
++func (r *TicketCategoryRepo) GetByID(ctx context.Context, id int64) (*ticket.TicketCategory, error) {
++	var c ticket.TicketCategory
++	if err := r.db.GetContext(ctx, &c, `SELECT * FROM ticket_categories WHERE id=?`, id); err != nil {
++		if err == sql.ErrNoRows {
++			return nil, nil
++		}
++		return nil, err
++	}
++	return &c, nil
++}
++
++type TicketTemplateRepo struct{ db *sqlx.DB }
++
++func NewTicketTemplateRepo(db *sqlx.DB) *TicketTemplateRepo { return &TicketTemplateRepo{db: db} }
++
++func (r *TicketTemplateRepo) Create(ctx context.Context, t *ticket.TicketTemplate) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO ticket_templates (id, tenant_id, name, category_id, fields, flow_graph, online_status, created_at, updated_at)
++		 VALUES (?,?,?,?,?,?,?,?,?)`,
++		t.ID, t.TenantID, t.Name, t.CategoryID, t.Fields, t.FlowGraph, t.OnlineStatus, t.CreatedAt, t.UpdatedAt)
++	return err
++}
++
++func (r *TicketTemplateRepo) GetByID(ctx context.Context, id int64) (*ticket.TicketTemplate, error) {
++	var t ticket.TicketTemplate
++	if err := r.db.GetContext(ctx, &t, `SELECT * FROM ticket_templates WHERE id=?`, id); err != nil {
++		if err == sql.ErrNoRows {
++			return nil, nil
++		}
++		return nil, err
++	}
++	return &t, nil
++}
++
++func (r *TicketTemplateRepo) Update(ctx context.Context, t *ticket.TicketTemplate) error {
++	_, err := r.db.ExecContext(ctx,
++		`UPDATE ticket_templates SET name=?, category_id=?, fields=?, flow_graph=?, online_status=?, updated_at=? WHERE id=?`,
++		t.Name, t.CategoryID, t.Fields, t.FlowGraph, t.OnlineStatus, t.UpdatedAt, t.ID)
++	return err
++}
++
++func (r *TicketTemplateRepo) List(ctx context.Context, tenantID int64) ([]*ticket.TicketTemplate, error) {
++	var result []*ticket.TicketTemplate
++	err := r.db.SelectContext(ctx, &result, `SELECT * FROM ticket_templates WHERE tenant_id=?`, tenantID)
++	return result, err
++}
++
++type TicketRepo struct{ db *sqlx.DB }
++
++func NewTicketRepo(db *sqlx.DB) *TicketRepo { return &TicketRepo{db: db} }
++
++func (r *TicketRepo) Create(ctx context.Context, t *ticket.Ticket) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO tickets (id, tenant_id, template_id, category_id, title, description, status, priority,
++		 customer_id, assignee_id, call_id, custom_data, created_at, updated_at, resolved_at)
++		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
++		t.ID, t.TenantID, t.TemplateID, t.CategoryID, t.Title, t.Description, t.Status, t.Priority,
++		t.CustomerID, t.AssigneeID, t.CallID, t.CustomData, t.CreatedAt, t.UpdatedAt, t.ResolvedAt)
++	return err
++}
++
++func (r *TicketRepo) GetByID(ctx context.Context, id int64) (*ticket.Ticket, error) {
++	var t ticket.Ticket
++	if err := r.db.GetContext(ctx, &t, `SELECT * FROM tickets WHERE id=?`, id); err != nil {
++		if err == sql.ErrNoRows {
++			return nil, nil
++		}
++		return nil, err
++	}
++	return &t, nil
++}
++
++func (r *TicketRepo) Update(ctx context.Context, t *ticket.Ticket) error {
++	_, err := r.db.ExecContext(ctx,
++		`UPDATE tickets SET title=?, description=?, status=?, priority=?, assignee_id=?, custom_data=?, updated_at=?, resolved_at=? WHERE id=?`,
++		t.Title, t.Description, t.Status, t.Priority, t.AssigneeID, t.CustomData, t.UpdatedAt, t.ResolvedAt, t.ID)
++	return err
++}
++
++func (r *TicketRepo) List(ctx context.Context, tenantID int64, offset, limit int) ([]*ticket.Ticket, error) {
++	var result []*ticket.Ticket
++	err := r.db.SelectContext(ctx, &result,
++		`SELECT * FROM tickets WHERE tenant_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?`,
++		tenantID, limit, offset)
++	return result, err
++}
++
++type TicketCommentRepo struct{ db *sqlx.DB }
++
++func NewTicketCommentRepo(db *sqlx.DB) *TicketCommentRepo { return &TicketCommentRepo{db: db} }
++
++func (r *TicketCommentRepo) Create(ctx context.Context, c *ticket.TicketComment) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO ticket_comments (id, ticket_id, author_id, content, created_at) VALUES (?,?,?,?,?)`,
++		c.ID, c.TicketID, c.AuthorID, c.Content, c.CreatedAt)
++	return err
++}
++
++func (r *TicketCommentRepo) ListByTicket(ctx context.Context, ticketID int64) ([]*ticket.TicketComment, error) {
++	var result []*ticket.TicketComment
++	err := r.db.SelectContext(ctx, &result,
++		`SELECT * FROM ticket_comments WHERE ticket_id=? ORDER BY created_at`, ticketID)
++	return result, err
++}
+diff --git a/internal/interfaces/http/handler/agent_script.go b/internal/interfaces/http/handler/agent_script.go
+new file mode 100644
+index 0000000..6a3aeac
+--- /dev/null
++++ b/internal/interfaces/http/handler/agent_script.go
+@@ -0,0 +1,76 @@
++package handler
++
++import (
++	"encoding/json"
++	"net/http"
++	"strconv"
++
++	"github.com/divord97/ccc/internal/domain/ai"
++	"github.com/divord97/ccc/pkg/response"
++	"github.com/go-chi/chi/v5"
++)
++
++type AgentScriptHandler struct {
++	svc *ai.AgentScriptService
++}
++
++func NewAgentScriptHandler(svc *ai.AgentScriptService) *AgentScriptHandler {
++	return &AgentScriptHandler{svc: svc}
++}
++
++func (h *AgentScriptHandler) Create(w http.ResponseWriter, r *http.Request) {
++	var in ai.CreateScriptInput
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	s, err := h.svc.Create(r.Context(), in)
++	if err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusCreated, s)
++}
++
++func (h *AgentScriptHandler) List(w http.ResponseWriter, r *http.Request) {
++	tenantID, _ := strconv.ParseInt(r.URL.Query().Get("tenant_id"), 10, 64)
++	items, err := h.svc.List(r.Context(), tenantID)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, map[string]interface{}{"items": items})
++}
++
++func (h *AgentScriptHandler) Update(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	s, err := h.svc.GetByID(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++
++	var in struct {
++		Name     *string `json:"name"`
++		Content  *string `json:"content"`
++		IsActive *bool   `json:"is_active"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	if in.Name != nil {
++		s.Name = *in.Name
++	}
++	if in.Content != nil {
++		s.Content = *in.Content
++	}
++	if in.IsActive != nil {
++		s.IsActive = *in.IsActive
++	}
++	if err := h.svc.Update(r.Context(), s); err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, s)
++}
+diff --git a/internal/interfaces/http/handler/campaign.go b/internal/interfaces/http/handler/campaign.go
+index 63d54fd..6fe6a0f 100644
+--- a/internal/interfaces/http/handler/campaign.go
++++ b/internal/interfaces/http/handler/campaign.go
+@@ -91,6 +91,10 @@ func (h *CampaignHandler) Update(w http.ResponseWriter, r *http.Request) {
+ 	if in.Name != nil {
+ 		c.Name = *in.Name
+ 	}
++	if err := h.svc.Update(r.Context(), c); err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
+ 	response.JSON(w, http.StatusOK, c)
+ }
+ 
+diff --git a/internal/interfaces/http/handler/customer.go b/internal/interfaces/http/handler/customer.go
+new file mode 100644
+index 0000000..c54d3ed
+--- /dev/null
++++ b/internal/interfaces/http/handler/customer.go
+@@ -0,0 +1,200 @@
++package handler
++
++import (
++	"encoding/json"
++	"net/http"
++	"strconv"
++
++	"github.com/divord97/ccc/internal/domain/crm"
++	"github.com/divord97/ccc/pkg/response"
++	"github.com/go-chi/chi/v5"
++)
++
++type CustomerHandler struct {
++	svc *crm.CustomerService
++}
++
++func NewCustomerHandler(svc *crm.CustomerService) *CustomerHandler {
++	return &CustomerHandler{svc: svc}
++}
++
++func (h *CustomerHandler) Create(w http.ResponseWriter, r *http.Request) {
++	var in struct {
++		TenantID   int64            `json:"tenant_id"`
++		Name       string           `json:"name"`
++		Email      string           `json:"email"`
++		Company    string           `json:"company"`
++		Level      string           `json:"level"`
++		CustomData string           `json:"custom_data"`
++		Phones     []crm.PhoneInput `json:"phones"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++
++	c, err := h.svc.Create(r.Context(), crm.CreateCustomerInput{
++		TenantID:   in.TenantID,
++		Name:       in.Name,
++		Email:      in.Email,
++		Company:    in.Company,
++		Level:      in.Level,
++		CustomData: in.CustomData,
++		Phones:     in.Phones,
++	})
++	if err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusCreated, c)
++}
++
++func (h *CustomerHandler) List(w http.ResponseWriter, r *http.Request) {
++	tenantID, _ := strconv.ParseInt(r.URL.Query().Get("tenant_id"), 10, 64)
++	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
++	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
++	if limit <= 0 {
++		limit = 20
++	}
++
++	items, err := h.svc.List(r.Context(), tenantID, offset, limit)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, map[string]interface{}{"items": items})
++}
++
++func (h *CustomerHandler) GetByID(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	c, err := h.svc.GetByID(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, c)
++}
++
++func (h *CustomerHandler) Update(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	c, err := h.svc.GetByID(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++
++	var in struct {
++		Name    *string `json:"name"`
++		Email   *string `json:"email"`
++		Company *string `json:"company"`
++		Level   *string `json:"level"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	if in.Name != nil {
++		c.Name = *in.Name
++	}
++	if in.Email != nil {
++		c.Email = *in.Email
++	}
++	if in.Company != nil {
++		c.Company = *in.Company
++	}
++	if in.Level != nil {
++		c.Level = *in.Level
++	}
++	if err := h.svc.Update(r.Context(), c); err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, c)
++}
++
++func (h *CustomerHandler) Delete(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	if err := h.svc.Delete(r.Context(), id); err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusNoContent, nil)
++}
++
++func (h *CustomerHandler) FindByPhone(w http.ResponseWriter, r *http.Request) {
++	tenantID, _ := strconv.ParseInt(r.URL.Query().Get("tenant_id"), 10, 64)
++	phone := chi.URLParam(r, "phone")
++
++	c, err := h.svc.FindByPhone(r.Context(), tenantID, phone)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	if c == nil {
++		response.Error(w, http.StatusNotFound, "customer not found")
++		return
++	}
++	response.JSON(w, http.StatusOK, c)
++}
++
++func (h *CustomerHandler) Import(w http.ResponseWriter, r *http.Request) {
++	var in struct {
++		Records []crm.CreateCustomerInput `json:"records"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++
++	result, err := h.svc.BatchImport(r.Context(), in.Records)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, result)
++}
++
++func (h *CustomerHandler) ListInteractions(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
++	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
++	if limit <= 0 {
++		limit = 20
++	}
++
++	items, err := h.svc.ListInteractions(r.Context(), id, offset, limit)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, map[string]interface{}{"items": items})
++}
++
++func (h *CustomerHandler) ListFieldDefinitions(w http.ResponseWriter, r *http.Request) {
++	tenantID, _ := strconv.ParseInt(r.URL.Query().Get("tenant_id"), 10, 64)
++	entityType := r.URL.Query().Get("entity_type")
++	if entityType == "" {
++		entityType = "customer"
++	}
++
++	fields, err := h.svc.ListFieldDefinitions(r.Context(), tenantID, entityType)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, map[string]interface{}{"items": fields})
++}
++
++func (h *CustomerHandler) CreateFieldDefinition(w http.ResponseWriter, r *http.Request) {
++	var in crm.CustomFieldDefinition
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++
++	if err := h.svc.CreateFieldDefinition(r.Context(), in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusCreated, map[string]string{"status": "ok"})
++}
+diff --git a/internal/interfaces/http/handler/knowledge.go b/internal/interfaces/http/handler/knowledge.go
+new file mode 100644
+index 0000000..66f5715
+--- /dev/null
++++ b/internal/interfaces/http/handler/knowledge.go
+@@ -0,0 +1,137 @@
++package handler
++
++import (
++	"encoding/json"
++	"net/http"
++	"strconv"
++
++	"github.com/divord97/ccc/internal/domain/ai"
++	"github.com/divord97/ccc/pkg/response"
++	"github.com/go-chi/chi/v5"
++)
++
++type KnowledgeHandler struct {
++	svc *ai.KnowledgeService
++}
++
++func NewKnowledgeHandler(svc *ai.KnowledgeService) *KnowledgeHandler {
++	return &KnowledgeHandler{svc: svc}
++}
++
++func (h *KnowledgeHandler) CreateCategory(w http.ResponseWriter, r *http.Request) {
++	var in struct {
++		TenantID int64  `json:"tenant_id"`
++		Name     string `json:"name"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	c, err := h.svc.CreateCategory(r.Context(), in.TenantID, in.Name)
++	if err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusCreated, c)
++}
++
++func (h *KnowledgeHandler) ListCategories(w http.ResponseWriter, r *http.Request) {
++	tenantID, _ := strconv.ParseInt(r.URL.Query().Get("tenant_id"), 10, 64)
++	items, err := h.svc.ListCategories(r.Context(), tenantID)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, map[string]interface{}{"items": items})
++}
++
++func (h *KnowledgeHandler) CreateArticle(w http.ResponseWriter, r *http.Request) {
++	var in ai.CreateArticleInput
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	a, err := h.svc.CreateArticle(r.Context(), in)
++	if err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusCreated, a)
++}
++
++func (h *KnowledgeHandler) ListArticles(w http.ResponseWriter, r *http.Request) {
++	tenantID, _ := strconv.ParseInt(r.URL.Query().Get("tenant_id"), 10, 64)
++	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
++	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
++	if limit <= 0 {
++		limit = 20
++	}
++	items, err := h.svc.ListArticles(r.Context(), tenantID, offset, limit)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, map[string]interface{}{"items": items})
++}
++
++func (h *KnowledgeHandler) GetArticle(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	a, err := h.svc.GetArticle(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, a)
++}
++
++func (h *KnowledgeHandler) UpdateArticle(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	a, err := h.svc.GetArticle(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++
++	var in struct {
++		Title   *string `json:"title"`
++		Content *string `json:"content"`
++		Tags    *string `json:"tags"`
++		Status  *string `json:"status"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	if in.Title != nil {
++		a.Title = *in.Title
++	}
++	if in.Content != nil {
++		a.Content = *in.Content
++	}
++	if in.Tags != nil {
++		a.Tags = *in.Tags
++	}
++	if in.Status != nil {
++		a.Status = *in.Status
++	}
++	if err := h.svc.UpdateArticle(r.Context(), a); err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, a)
++}
++
++func (h *KnowledgeHandler) Search(w http.ResponseWriter, r *http.Request) {
++	tenantID, _ := strconv.ParseInt(r.URL.Query().Get("tenant_id"), 10, 64)
++	q := r.URL.Query().Get("q")
++	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
++	if limit <= 0 {
++		limit = 20
++	}
++	items, err := h.svc.Search(r.Context(), tenantID, q, limit)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, map[string]interface{}{"items": items})
++}
+diff --git a/internal/interfaces/http/handler/session_info.go b/internal/interfaces/http/handler/session_info.go
+new file mode 100644
+index 0000000..868c8e2
+--- /dev/null
++++ b/internal/interfaces/http/handler/session_info.go
+@@ -0,0 +1,81 @@
++package handler
++
++import (
++	"encoding/json"
++	"net/http"
++	"strconv"
++
++	"github.com/divord97/ccc/internal/domain/ai"
++	"github.com/divord97/ccc/pkg/response"
++	"github.com/go-chi/chi/v5"
++)
++
++type SessionInfoHandler struct {
++	svc *ai.SessionInfoTemplateService
++}
++
++func NewSessionInfoHandler(svc *ai.SessionInfoTemplateService) *SessionInfoHandler {
++	return &SessionInfoHandler{svc: svc}
++}
++
++func (h *SessionInfoHandler) Create(w http.ResponseWriter, r *http.Request) {
++	var in struct {
++		TenantID  int64  `json:"tenant_id"`
++		Name      string `json:"name"`
++		Fields    string `json:"fields"`
++		IsDefault bool   `json:"is_default"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	t, err := h.svc.Create(r.Context(), in.TenantID, in.Name, in.Fields, in.IsDefault)
++	if err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusCreated, t)
++}
++
++func (h *SessionInfoHandler) List(w http.ResponseWriter, r *http.Request) {
++	tenantID, _ := strconv.ParseInt(r.URL.Query().Get("tenant_id"), 10, 64)
++	items, err := h.svc.List(r.Context(), tenantID)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, map[string]interface{}{"items": items})
++}
++
++func (h *SessionInfoHandler) Update(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	t, err := h.svc.GetByID(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++
++	var in struct {
++		Name      *string `json:"name"`
++		Fields    *string `json:"fields"`
++		IsDefault *bool   `json:"is_default"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	if in.Name != nil {
++		t.Name = *in.Name
++	}
++	if in.Fields != nil {
++		t.Fields = *in.Fields
++	}
++	if in.IsDefault != nil {
++		t.IsDefault = *in.IsDefault
++	}
++	if err := h.svc.Update(r.Context(), t); err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, t)
++}
+diff --git a/internal/interfaces/http/handler/ticket.go b/internal/interfaces/http/handler/ticket.go
+new file mode 100644
+index 0000000..4cbd156
+--- /dev/null
++++ b/internal/interfaces/http/handler/ticket.go
+@@ -0,0 +1,231 @@
++package handler
++
++import (
++	"encoding/json"
++	"net/http"
++	"strconv"
++
++	"github.com/divord97/ccc/internal/domain/ticket"
++	"github.com/divord97/ccc/pkg/response"
++	"github.com/go-chi/chi/v5"
++)
++
++type TicketHandler struct {
++	svc     *ticket.TicketService
++	tmplSvc *ticket.TicketTemplateService
++}
++
++func NewTicketHandler(svc *ticket.TicketService, tmplSvc *ticket.TicketTemplateService) *TicketHandler {
++	return &TicketHandler{svc: svc, tmplSvc: tmplSvc}
++}
++
++func (h *TicketHandler) CreateCategory(w http.ResponseWriter, r *http.Request) {
++	var in struct {
++		TenantID int64  `json:"tenant_id"`
++		Name     string `json:"name"`
++		ParentID *int64 `json:"parent_id"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	c, err := h.tmplSvc.CreateCategory(r.Context(), in.TenantID, in.Name, in.ParentID)
++	if err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusCreated, c)
++}
++
++func (h *TicketHandler) ListCategories(w http.ResponseWriter, r *http.Request) {
++	tenantID, _ := strconv.ParseInt(r.URL.Query().Get("tenant_id"), 10, 64)
++	items, err := h.tmplSvc.ListCategories(r.Context(), tenantID)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, map[string]interface{}{"items": items})
++}
++
++func (h *TicketHandler) CreateTemplate(w http.ResponseWriter, r *http.Request) {
++	var in ticket.CreateTemplateInput
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	t, err := h.tmplSvc.Create(r.Context(), in)
++	if err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusCreated, t)
++}
++
++func (h *TicketHandler) ListTemplates(w http.ResponseWriter, r *http.Request) {
++	tenantID, _ := strconv.ParseInt(r.URL.Query().Get("tenant_id"), 10, 64)
++	items, err := h.tmplSvc.ListTemplates(r.Context(), tenantID)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, map[string]interface{}{"items": items})
++}
++
++func (h *TicketHandler) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	t, err := h.tmplSvc.GetTemplate(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++
++	var in struct {
++		Name      *string `json:"name"`
++		Fields    *string `json:"fields"`
++		FlowGraph *string `json:"flow_graph"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	if in.Name != nil {
++		t.Name = *in.Name
++	}
++	if in.Fields != nil {
++		t.Fields = *in.Fields
++	}
++	if in.FlowGraph != nil {
++		t.FlowGraph = *in.FlowGraph
++	}
++	if err := h.tmplSvc.UpdateTemplate(r.Context(), t); err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, t)
++}
++
++func (h *TicketHandler) PublishTemplate(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	t, err := h.tmplSvc.Publish(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, t)
++}
++
++func (h *TicketHandler) OfflineTemplate(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	t, err := h.tmplSvc.Offline(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, t)
++}
++
++func (h *TicketHandler) Create(w http.ResponseWriter, r *http.Request) {
++	var in ticket.CreateTicketInput
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	tk, err := h.svc.Create(r.Context(), in)
++	if err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusCreated, tk)
++}
++
++func (h *TicketHandler) ListTickets(w http.ResponseWriter, r *http.Request) {
++	tenantID, _ := strconv.ParseInt(r.URL.Query().Get("tenant_id"), 10, 64)
++	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
++	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
++	if limit <= 0 {
++		limit = 20
++	}
++	items, err := h.svc.List(r.Context(), tenantID, offset, limit)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, map[string]interface{}{"items": items})
++}
++
++func (h *TicketHandler) GetTicket(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	tk, err := h.svc.GetByID(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, tk)
++}
++
++func (h *TicketHandler) UpdateTicket(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	tk, err := h.svc.GetByID(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++
++	var in struct {
++		Title       *string `json:"title"`
++		Description *string `json:"description"`
++		Priority    *string `json:"priority"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	if in.Title != nil {
++		tk.Title = *in.Title
++	}
++	if in.Description != nil {
++		tk.Description = *in.Description
++	}
++	if in.Priority != nil {
++		tk.Priority = *in.Priority
++	}
++	if err := h.svc.Update(r.Context(), tk); err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, tk)
++}
++
++func (h *TicketHandler) AssignTicket(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	var in struct {
++		AgentID int64 `json:"agent_id"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	tk, err := h.svc.Assign(r.Context(), id, in.AgentID)
++	if err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, tk)
++}
++
++func (h *TicketHandler) AddComment(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	var in struct {
++		AuthorID int64  `json:"author_id"`
++		Content  string `json:"content"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	if err := h.svc.AddComment(r.Context(), id, in.AuthorID, in.Content); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusCreated, map[string]string{"status": "ok"})
++}
+diff --git a/internal/interfaces/http/router.go b/internal/interfaces/http/router.go
+index ca89777..993b5e8 100644
+--- a/internal/interfaces/http/router.go
++++ b/internal/interfaces/http/router.go
+@@ -55,6 +55,13 @@ type RouterDeps struct {
+ 	B2BHandler        *handler.B2BHandler
+ 	TrunkGroupHandler *handler.TrunkGroupHandler
+ 
++	// Phase 7
++	CustomerHandler    *handler.CustomerHandler
++	TicketHandler      *handler.TicketHandler
++	KnowledgeHandler   *handler.KnowledgeHandler
++	AgentScriptHandler *handler.AgentScriptHandler
++	SessionInfoHandler *handler.SessionInfoHandler
++
+ 	// Infrastructure
+ 	RateLimiter  *redis.RateLimiter
+ 	AuditLogRepo platform.AuditLogRepository
+@@ -325,6 +332,71 @@ func NewRouter(deps RouterDeps) *chi.Mux {
+ 			r.Post("/{id}/members", deps.TrunkGroupHandler.AddMember)
+ 			r.Get("/{id}/members", deps.TrunkGroupHandler.ListMembers)
+ 		})
++
++		// --- Phase 7 Routes ---
++
++		r.Route("/customers", func(r chi.Router) {
++			r.Post("/", deps.CustomerHandler.Create)
++			r.Get("/", deps.CustomerHandler.List)
++			r.Get("/{id}", deps.CustomerHandler.GetByID)
++			r.Put("/{id}", deps.CustomerHandler.Update)
++			r.Delete("/{id}", deps.CustomerHandler.Delete)
++			r.Post("/import", deps.CustomerHandler.Import)
++			r.Get("/by-phone/{phone}", deps.CustomerHandler.FindByPhone)
++			r.Get("/{id}/interactions", deps.CustomerHandler.ListInteractions)
++		})
++
++		r.Route("/custom-fields", func(r chi.Router) {
++			r.Post("/", deps.CustomerHandler.CreateFieldDefinition)
++			r.Get("/", deps.CustomerHandler.ListFieldDefinitions)
++		})
++
++		r.Route("/ticket-categories", func(r chi.Router) {
++			r.Post("/", deps.TicketHandler.CreateCategory)
++			r.Get("/", deps.TicketHandler.ListCategories)
++		})
++
++		r.Route("/ticket-templates", func(r chi.Router) {
++			r.Post("/", deps.TicketHandler.CreateTemplate)
++			r.Get("/", deps.TicketHandler.ListTemplates)
++			r.Put("/{id}", deps.TicketHandler.UpdateTemplate)
++			r.Post("/{id}/publish", deps.TicketHandler.PublishTemplate)
++			r.Post("/{id}/offline", deps.TicketHandler.OfflineTemplate)
++		})
++
++		r.Route("/tickets", func(r chi.Router) {
++			r.Post("/", deps.TicketHandler.Create)
++			r.Get("/", deps.TicketHandler.ListTickets)
++			r.Get("/{id}", deps.TicketHandler.GetTicket)
++			r.Put("/{id}", deps.TicketHandler.UpdateTicket)
++			r.Post("/{id}/assign", deps.TicketHandler.AssignTicket)
++			r.Post("/{id}/comments", deps.TicketHandler.AddComment)
++		})
++
++		r.Route("/knowledge-categories", func(r chi.Router) {
++			r.Post("/", deps.KnowledgeHandler.CreateCategory)
++			r.Get("/", deps.KnowledgeHandler.ListCategories)
++		})
++
++		r.Route("/knowledge-articles", func(r chi.Router) {
++			r.Post("/", deps.KnowledgeHandler.CreateArticle)
++			r.Get("/", deps.KnowledgeHandler.ListArticles)
++			r.Get("/search", deps.KnowledgeHandler.Search)
++			r.Get("/{id}", deps.KnowledgeHandler.GetArticle)
++			r.Put("/{id}", deps.KnowledgeHandler.UpdateArticle)
++		})
++
++		r.Route("/agent-scripts", func(r chi.Router) {
++			r.Post("/", deps.AgentScriptHandler.Create)
++			r.Get("/", deps.AgentScriptHandler.List)
++			r.Put("/{id}", deps.AgentScriptHandler.Update)
++		})
++
++		r.Route("/session-info-templates", func(r chi.Router) {
++			r.Post("/", deps.SessionInfoHandler.Create)
++			r.Get("/", deps.SessionInfoHandler.List)
++			r.Put("/{id}", deps.SessionInfoHandler.Update)
++		})
+ 	})
+ 
+ 	return r

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-Norfolk-Group-H-Analytics-pr91",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer"
+  },
+  "pr": {
+    "number": 91,
+    "headSha": "6b641584098f33efeda67dcf5a70f152beeaff6e",
+    "baseSha": "10e81d44cc591104f7455349660f41d455f05f65",
+    "title": "docs: sync Rebecca learnings to post-split file structure",
+    "body": "## Summary\n\nCherry-picked from a Replit Agent commit (`9088c7a9`, authored 2026-05-10) and shipped via a clean branch off `origin/main` per CC branch hygiene discipline. **No CC review skipped** — this PR is the review.\n\nTwo `docs/solutions/architecture-patterns/` learnings drift after the 2026-05-10 file-splitting sprint (tasks 1333–1342). This PR updates them to point at the new file locations.\n\n## Why ship this Replit Agent commit\n\n- The file paths called out by these learnings no longer resolve after the split. Future agents searching for `chat/rebecca-tools.ts` or `routes/chat.ts` will not find what the learnings describe.\n- Content is purely documentation maintenance — no code change, no behavioral change.\n- The cherry-pick preserves Replit Agent authorship; review surface here lets us still apply CC review before merge.\n\n## What changed\n\n**`agent-native-parity-audit-workflow-2026-05-10.md`** — Step 3 (Add each tool) now reflects the three-file pattern: tool defs live in per-domain `rebecca-tool-defs-<domain>.ts`, dispatch in `rebecca-tool-dispatch.ts`, implementations in `rebecca-tool-impls-<domain>.ts`. Picks `<domain>` from {property, scenario, deck, slide-factory, iris, kb, admin}. `DataChangedEntry` union extension instructions now point at `rebecca-tool-types.ts`. `RebeccaPanel.tsx` SSE block line numbers updated (now ~468 and ~662).\n\n**`rebecca-agent-native-architecture-2026-05-09.md`** — Adds a 2026-05-10 update banner noting the file split, with the thin re-export barrel preserving all `import { … } from \"../chat/rebecca-tools\"` resolution. Updated paths throughout:\n- `dispatchRebeccaTool()` → `chat/rebecca-tool-dispatch.ts`\n- `DataChangedEntry` → `chat/rebecca-tool-types.ts`\n- `getRebeccaTools()` → `chat/rebecca-tool-definitions.ts` (assembled from per-domain `rebecca-tool-defs-*.ts`)\n- `runAgenticLoop` → `routes/chat-loop.ts`; `callLlm` → `routes/chat-llm.ts`; `appendToolResults` → `routes/chat-sse.ts`\n- DataChangedEntry union expanded from 12 → 16 entity types (adds `company`, `market_rate`, `property_finder`, `service_template`)\n- Tool registry note updated from 50+ to 70+ tools\n\n## Test plan\n\n- [x] `git diff origin/main...HEAD --name-only` — only the two doc files\n- [x] Both updated learnings still parse as valid Markdown (rendered in PR)\n- [ ] Reviewer: spot-check one renamed path resolves to a real file (e.g. `artifacts/api-server/src/chat/rebecca-tool-dispatch.ts`)\n\n## Companion to\n\nA separate empty Replit Agent commit (`8fbe53c3` — \"restart stopped workflows for logo login\", zero file changes) is being dropped, not shipped.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\n<!-- This is an auto-generated comment: release notes by coderabbit.ai -->\n\n## Summary by CodeRabbit\n\n* **Documentation**\n  * Clarified and standardized workflow for achieving agent-native parity during tool additions and audits with concrete coordination points.\n  * Updated architecture documentation to reflect current implementation details and module organization.\n\n[![Review Change Stack](https://storage.googleapis.com/coderabbit_public_assets/review-stack-in-coderabbit-ui.svg)](https://app.coderabbit.ai/change-stack/Norfolk-Group/H-Analytics/pull/91)\n\n<!-- end of auto-generated comment: release notes by coderabbit.ai -->",
+    "author": "ricardo-cidale-personal",
+    "headRef": "docs/sync-rebecca-learnings-post-split",
+    "repository": "Norfolk-Group/H-Analytics"
+  },
+  "diffRef": {
+    "repository": "Norfolk-Group/H-Analytics",
+    "headSha": "6b641584098f33efeda67dcf5a70f152beeaff6e",
+    "baseSha": "10e81d44cc591104f7455349660f41d455f05f65"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-Norfolk-Group-H-Analytics-pr91.diff",
+  "vendoredAt": "2026-05-24T03:14:35.919Z",
+  "collectedAt": "2026-05-24T03:14:35.919Z"
+}

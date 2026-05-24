@@ -1,0 +1,626 @@
+diff --git a/aider/models.py b/aider/models.py
+index 5b0f2166aa4..3aef0b8372e 100644
+--- a/aider/models.py
++++ b/aider/models.py
+@@ -19,6 +19,7 @@
+ from aider import __version__
+ from aider.dump import dump  # noqa: F401
+ from aider.llm import litellm
++from aider.nearai import NearAIModelManager
+ from aider.openrouter import OpenRouterModelManager
+ from aider.sendchat import ensure_alternating_roles, sanity_check_messages
+ from aider.utils import check_pip_install_extra
+@@ -29,6 +30,9 @@
+ 
+ DEFAULT_MODEL_NAME = "gpt-4o"
+ ANTHROPIC_BETA_HEADER = "prompt-caching-2024-07-31,pdfs-2024-09-25"
++NEARAI_API_BASE = "https://cloud-api.near.ai/v1"
++NEARAI_UNSUPPORTED_PARAMS = {"store", "reasoning_effort", "strict"}
++NEARAI_UNSUPPORTED_SETTINGS = {"thinking_tokens", "reasoning_effort"}
+ 
+ OPENAI_MODELS = """
+ o1
+@@ -112,6 +116,7 @@
+     "gemini": "gemini/gemini-3-pro-preview",
+     "gemini-exp": "gemini/gemini-2.5-pro-exp-03-25",
+     "grok3": "xai/grok-3-beta",
++    "nearai": "nearai/zai-org/GLM-5.1-FP8",
+     "optimus": "openrouter/openrouter/optimus-alpha",
+ }
+ # Model metadata loaded from resources and user's files.
+@@ -168,11 +173,14 @@ def __init__(self):
+ 
+         # Manager for the cached OpenRouter model database
+         self.openrouter_manager = OpenRouterModelManager()
++        self.nearai_manager = NearAIModelManager()
+ 
+     def set_verify_ssl(self, verify_ssl):
+         self.verify_ssl = verify_ssl
+         if hasattr(self, "openrouter_manager"):
+             self.openrouter_manager.set_verify_ssl(verify_ssl)
++        if hasattr(self, "nearai_manager"):
++            self.nearai_manager.set_verify_ssl(verify_ssl)
+ 
+     def _load_cache(self):
+         if self._cache_loaded:
+@@ -240,6 +248,15 @@ def get_model_from_cached_json_db(self, model):
+         return dict()
+ 
+     def get_model_info(self, model):
++        local_info = self.local_model_metadata.get(model)
++        if local_info:
++            return local_info
++
++        if model.startswith("nearai/"):
++            nearai_info = self.nearai_manager.get_model_info(model)
++            if nearai_info:
++                return nearai_info
++
+         cached_info = self.get_model_from_cached_json_db(model)
+ 
+         litellm_info = None
+@@ -427,6 +444,13 @@ def configure_model_settings(self, model):
+             if "reasoning_effort" not in self.accepts_settings:
+                 self.accepts_settings.append("reasoning_effort")
+ 
++        if self.is_nearai() and self.accepts_settings:
++            self.accepts_settings = [
++                setting
++                for setting in self.accepts_settings
++                if setting not in NEARAI_UNSUPPORTED_SETTINGS
++            ]
++
+     def apply_generic_model_settings(self, model):
+         if "/o3-mini" in model:
+             self.edit_format = "diff"
+@@ -721,6 +745,7 @@ def fast_validate_environment(self):
+             anthropic="ANTHROPIC_API_KEY",
+             groq="GROQ_API_KEY",
+             fireworks_ai="FIREWORKS_API_KEY",
++            nearai="NEARAI_API_KEY",
+         )
+         var = None
+         if model in OPENAI_MODELS:
+@@ -924,6 +949,43 @@ def is_deepseek_r1(self):
+     def is_ollama(self):
+         return self.name.startswith("ollama/") or self.name.startswith("ollama_chat/")
+ 
++    def is_nearai(self):
++        return self.name.startswith("nearai/")
++
++    def configure_nearai_completion(self, kwargs):
++        kwargs["model"] = "openai/" + self.name[len("nearai/") :]
++        kwargs["api_base"] = os.environ.get("NEARAI_API_BASE") or NEARAI_API_BASE
++
++        if "max_completion_tokens" in kwargs:
++            max_completion_tokens = kwargs.pop("max_completion_tokens")
++            if "max_tokens" not in kwargs:
++                kwargs["max_tokens"] = max_completion_tokens
++
++        for param in NEARAI_UNSUPPORTED_PARAMS:
++            kwargs.pop(param, None)
++
++        extra_body = kwargs.get("extra_body")
++        if isinstance(extra_body, dict):
++            extra_body = dict(extra_body)
++            for param in NEARAI_UNSUPPORTED_PARAMS:
++                extra_body.pop(param, None)
++            if extra_body:
++                kwargs["extra_body"] = extra_body
++            else:
++                kwargs.pop("extra_body", None)
++
++        return os.environ.get("NEARAI_API_KEY")
++
++    def prepare_nearai_messages(self, messages):
++        updated_messages = []
++        changed = False
++        for message in messages:
++            if isinstance(message, dict) and message.get("role") == "developer":
++                message = {**message, "role": "system"}
++                changed = True
++            updated_messages.append(message)
++        return updated_messages if changed else messages
++
+     def github_copilot_token_to_open_ai_key(self, extra_headers):
+         # check to see if there's an openai api key
+         # If so, check to see if it's expire
+@@ -1002,6 +1064,10 @@ def send_completion(self, messages, functions, stream, temperature=None):
+             kwargs["tool_choice"] = {"type": "function", "function": {"name": function["name"]}}
+         if self.extra_params:
+             kwargs.update(self.extra_params)
++        nearai_api_key = None
++        if self.is_nearai():
++            messages = self.prepare_nearai_messages(messages)
++            nearai_api_key = self.configure_nearai_completion(kwargs)
+         if self.is_ollama() and "num_ctx" not in kwargs:
+             num_ctx = int(self.token_count(messages) * 1.25) + 8192
+             kwargs["num_ctx"] = num_ctx
+@@ -1014,6 +1080,8 @@ def send_completion(self, messages, functions, stream, temperature=None):
+             kwargs["timeout"] = request_timeout
+         if self.verbose:
+             dump(kwargs)
++        if nearai_api_key:
++            kwargs["api_key"] = nearai_api_key
+         kwargs["messages"] = messages
+ 
+         # Are we using github copilot?
+@@ -1223,6 +1291,8 @@ def fuzzy_match_models(name):
+     chat_models = set()
+     model_metadata = list(litellm.model_cost.items())
+     model_metadata += list(model_info_manager.local_model_metadata.items())
++    if "nearai" in name:
++        model_metadata += list(model_info_manager.nearai_manager.get_model_infos().items())
+ 
+     for orig_model, attrs in model_metadata:
+         model = orig_model.lower()
+diff --git a/aider/nearai.py b/aider/nearai.py
+new file mode 100644
+index 00000000000..09140b07cc9
+--- /dev/null
++++ b/aider/nearai.py
+@@ -0,0 +1,170 @@
++"""
++NEAR AI Cloud model metadata caching and lookup.
++
++This module keeps a local cached copy of the public NEAR AI Cloud model list
++and exposes metadata in a format compatible with LiteLLM's get_model_info().
++"""
++
++import json
++import time
++from pathlib import Path
++
++import requests
++
++
++def _cost_per_token(cost):
++    if not cost:
++        return None
++    try:
++        amount = cost.get("amount")
++        scale = cost.get("scale", 9)
++        if amount is None:
++            return None
++        return amount * (10**-scale)
++    except Exception:  # noqa: BLE001
++        return None
++
++
++def _model_mode(record):
++    model_id = record.get("modelId", "")
++    metadata = record.get("metadata") or {}
++    architecture = metadata.get("architecture") or {}
++    input_modalities = architecture.get("inputModalities") or []
++    output_modalities = architecture.get("outputModalities") or []
++
++    if "embedding" in output_modalities:
++        return "embedding"
++    if "image" in output_modalities:
++        return "image_generation"
++    if "audio" in input_modalities:
++        return "audio_transcription"
++    if "Reranker" in model_id or "score" in output_modalities:
++        return "rerank"
++    if "text" in output_modalities:
++        return "chat"
++    return None
++
++
++class NearAIModelManager:
++    MODELS_URL = "https://cloud-api.near.ai/v1/model/list"
++    CACHE_TTL = 60 * 60 * 24  # 24 h
++
++    def __init__(self):
++        self.cache_dir = Path.home() / ".aider" / "caches"
++        self.cache_file = self.cache_dir / "nearai_models.json"
++        self.content = None
++        self.verify_ssl = True
++        self._cache_loaded = False
++        self._model_infos = None
++
++    def set_verify_ssl(self, verify_ssl):
++        self.verify_ssl = verify_ssl
++
++    def get_model_info(self, model):
++        return self.get_model_infos().get(self._normalize_model_name(model), {})
++
++    def get_model_infos(self):
++        self._ensure_content()
++        if self._model_infos is not None:
++            return self._model_infos
++
++        infos = {}
++        if not self.content or "models" not in self.content:
++            self._model_infos = infos
++            return infos
++
++        for record in self.content["models"]:
++            info = self._record_to_model_info(record)
++            if not info:
++                continue
++
++            names = self._record_model_names(record)
++            for name in names:
++                infos[name] = info
++
++        self._model_infos = infos
++        return infos
++
++    def _record_to_model_info(self, record):
++        model_id = record.get("modelId")
++        if not model_id or model_id == "openai/privacy-filter":
++            return {}
++
++        mode = _model_mode(record)
++        if not mode:
++            return {}
++
++        metadata = record.get("metadata") or {}
++        context_len = metadata.get("contextLength")
++        info = {
++            "max_input_tokens": context_len,
++            "max_tokens": context_len,
++            "max_output_tokens": context_len,
++            "input_cost_per_token": _cost_per_token(record.get("inputCostPerToken")),
++            "output_cost_per_token": _cost_per_token(record.get("outputCostPerToken")),
++            "litellm_provider": "nearai",
++            "mode": mode,
++        }
++
++        architecture = metadata.get("architecture") or {}
++        input_modalities = architecture.get("inputModalities") or []
++        if "image" in input_modalities:
++            info["supports_vision"] = True
++        if mode == "chat":
++            info["supports_function_calling"] = True
++
++        return info
++
++    def _record_model_names(self, record):
++        metadata = record.get("metadata") or {}
++        names = [record.get("modelId")]
++        names.extend(metadata.get("aliases") or [])
++        return {
++            self._normalize_model_name(name)
++            for name in names
++            if name and name != "openai/privacy-filter"
++        }
++
++    def _normalize_model_name(self, model):
++        if model.startswith("nearai/"):
++            return model
++        return "nearai/" + model
++
++    def _ensure_content(self):
++        self._load_cache()
++        if not self.content:
++            self._update_cache()
++
++    def _load_cache(self):
++        if self._cache_loaded:
++            return
++        try:
++            self.cache_dir.mkdir(parents=True, exist_ok=True)
++            if self.cache_file.exists():
++                cache_age = time.time() - self.cache_file.stat().st_mtime
++                if cache_age < self.CACHE_TTL:
++                    try:
++                        self.content = json.loads(self.cache_file.read_text())
++                    except json.JSONDecodeError:
++                        self.content = None
++        except OSError:
++            pass
++
++        self._cache_loaded = True
++
++    def _update_cache(self):
++        try:
++            response = requests.get(self.MODELS_URL, timeout=10, verify=self.verify_ssl)
++            if response.status_code == 200:
++                self.content = response.json()
++                self._model_infos = None
++                try:
++                    self.cache_file.write_text(json.dumps(self.content, indent=2))
++                except OSError:
++                    pass
++        except Exception as ex:  # noqa: BLE001
++            print(f"Failed to fetch NEAR AI Cloud model list: {ex}")
++            try:
++                self.cache_file.write_text("{}")
++            except OSError:
++                pass
+diff --git a/aider/onboarding.py b/aider/onboarding.py
+index 9b6abd54b8d..a7d1812012d 100644
+--- a/aider/onboarding.py
++++ b/aider/onboarding.py
+@@ -63,6 +63,7 @@ def try_to_select_default_model():
+     model_key_pairs = [
+         ("ANTHROPIC_API_KEY", "sonnet"),
+         ("DEEPSEEK_API_KEY", "deepseek"),
++        ("NEARAI_API_KEY", "nearai/zai-org/GLM-5.1-FP8"),
+         ("OPENAI_API_KEY", "gpt-4o"),
+         ("GEMINI_API_KEY", "gemini/gemini-2.5-pro-exp-03-25"),
+         ("VERTEXAI_PROJECT", "vertex_ai/gemini-2.5-pro-exp-03-25"),
+@@ -228,7 +229,7 @@ def start_openrouter_oauth_flow(io, analytics):
+ 
+     class OAuthCallbackHandler(http.server.SimpleHTTPRequestHandler):
+         def do_GET(self):
+-            nonlocal auth_code, server_error
++            nonlocal auth_code
+             parsed_path = urlparse(self.path)
+             if parsed_path.path == "/callback/aider":
+                 query_params = parse_qs(parsed_path.query)
+diff --git a/aider/resources/model-settings.yml b/aider/resources/model-settings.yml
+index c4d14cd0801..992788463e0 100644
+--- a/aider/resources/model-settings.yml
++++ b/aider/resources/model-settings.yml
+@@ -600,6 +600,15 @@
+     max_tokens: 8192
+   caches_by_default: true
+ 
++- name: nearai/zai-org/GLM-5.1-FP8
++  edit_format: diff
++  weak_model_name: nearai/zai-org/GLM-5.1-FP8
++  use_repo_map: true
++  examples_as_sys_msg: true
++  extra_params:
++    max_tokens: 8192
++  editor_edit_format: editor-diff
++
+ - name: openrouter/deepseek/deepseek-chat:free
+   edit_format: diff
+   weak_model_name: openrouter/deepseek/deepseek-chat:free
+diff --git a/aider/website/docs/config/api-keys.md b/aider/website/docs/config/api-keys.md
+index 3be726aa299..5872e24dcbf 100644
+--- a/aider/website/docs/config/api-keys.md
++++ b/aider/website/docs/config/api-keys.md
+@@ -72,6 +72,7 @@ is a great place to store your API keys and other provider API environment varia
+ GEMINI_API_KEY=foo
+ OPENROUTER_API_KEY=bar
+ DEEPSEEK_API_KEY=baz
++NEARAI_API_KEY=qux
+ ```
+ 
+ #### YAML config file
+@@ -86,5 +87,5 @@ api-key:
+ - gemini=foo      # Sets env var GEMINI_API_KEY=foo
+ - openrouter=bar  # Sets env var OPENROUTER_API_KEY=bar
+ - deepseek=baz    # Sets env var DEEPSEEK_API_KEY=baz
++- nearai=qux      # Sets env var NEARAI_API_KEY=qux
+ ```
+-
+diff --git a/aider/website/docs/llms.md b/aider/website/docs/llms.md
+index c2475431c3d..9a30895ff3a 100644
+--- a/aider/website/docs/llms.md
++++ b/aider/website/docs/llms.md
+@@ -38,6 +38,12 @@ It can also access
+ local models that provide an
+ [Open AI compatible API](/docs/llms/openai-compat.html).
+ 
++## Other cloud providers
++{: .no_toc }
++
++Aider can connect to many other providers, including
++[NEAR AI Cloud TEE inference](/docs/llms/nearai.html).
++
+ ## Use a capable model
+ {: .no_toc }
+ 
+@@ -51,4 +57,3 @@ and commit the changes...
+ this is usually because the model isn't capable of properly
+ returning "code edits".
+ Models weaker than GPT 3.5 may have problems working well with aider.
+-
+diff --git a/aider/website/docs/llms/nearai.md b/aider/website/docs/llms/nearai.md
+new file mode 100644
+index 00000000000..76bc8d7b9d6
+--- /dev/null
++++ b/aider/website/docs/llms/nearai.md
+@@ -0,0 +1,42 @@
++---
++parent: Connecting to LLMs
++nav_order: 510
++---
++
++# NEAR AI Cloud
++
++Aider can connect to NEAR AI Cloud TEE inference using the `nearai/` model prefix.
++NEAR AI Cloud provides an OpenAI-compatible API at `https://cloud-api.near.ai/v1`.
++
++First, install aider:
++
++{% include install.md %}
++
++Then configure your API key:
++
++```
++export NEARAI_API_KEY=<key> # Mac/Linux
++setx   NEARAI_API_KEY <key> # Windows, restart shell after setx
++```
++
++Start working with aider and NEAR AI Cloud on your codebase:
++
++```bash
++# Change directory into your codebase
++cd /to/your/project
++
++# Use the default TEE-backed model
++aider --model nearai
++
++# Or specify a NEAR AI Cloud model
++aider --model nearai/zai-org/GLM-5.1-FP8
++
++# List models available from NEAR AI Cloud
++aider --list-models nearai/
++```
++
++You can also provide the key on the command line:
++
++```bash
++aider --model nearai/zai-org/GLM-5.1-FP8 --api-key nearai=<key>
++```
+diff --git a/tests/basic/test_nearai.py b/tests/basic/test_nearai.py
+new file mode 100644
+index 00000000000..48eccc8e201
+--- /dev/null
++++ b/tests/basic/test_nearai.py
+@@ -0,0 +1,158 @@
++from pathlib import Path
++
++from aider.models import Model, ModelInfoManager
++from aider.nearai import NearAIModelManager
++from aider.onboarding import try_to_select_default_model
++
++
++class DummyResponse:
++    def __init__(self, json_data):
++        self.status_code = 200
++        self._json_data = json_data
++
++    def json(self):
++        return self._json_data
++
++
++def test_nearai_get_model_info_from_cache(monkeypatch, tmp_path):
++    payload = {
++        "models": [
++            {
++                "modelId": "zai-org/GLM-5.1-FP8",
++                "inputCostPerToken": {"amount": 1000, "scale": 9, "currency": "USD"},
++                "outputCostPerToken": {"amount": 3000, "scale": 9, "currency": "USD"},
++                "metadata": {
++                    "contextLength": 202752,
++                    "aliases": ["glm-latest"],
++                    "architecture": {
++                        "inputModalities": ["text"],
++                        "outputModalities": ["text"],
++                    },
++                },
++            },
++            {
++                "modelId": "openai/privacy-filter",
++                "inputCostPerToken": {"amount": 0, "scale": 9, "currency": "USD"},
++                "outputCostPerToken": {"amount": 0, "scale": 9, "currency": "USD"},
++                "metadata": {
++                    "contextLength": 512,
++                    "architecture": {
++                        "inputModalities": ["text"],
++                        "outputModalities": ["text"],
++                    },
++                },
++            },
++        ]
++    }
++
++    monkeypatch.setattr("requests.get", lambda *a, **k: DummyResponse(payload))
++    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
++
++    manager = NearAIModelManager()
++    info = manager.get_model_info("nearai/zai-org/GLM-5.1-FP8")
++    alias_info = manager.get_model_info("nearai/glm-latest")
++
++    assert info["max_input_tokens"] == 202752
++    assert abs(info["input_cost_per_token"] - 0.000001) < 0.000000000001
++    assert abs(info["output_cost_per_token"] - 0.000003) < 0.000000000001
++    assert info["litellm_provider"] == "nearai"
++    assert info["mode"] == "chat"
++    assert alias_info == info
++    assert manager.get_model_info("nearai/openai/privacy-filter") == {}
++
++
++def test_model_info_manager_uses_nearai_manager(monkeypatch):
++    stub_info = {
++        "max_input_tokens": 128000,
++        "max_tokens": 128000,
++        "max_output_tokens": 128000,
++        "input_cost_per_token": 0.000001,
++        "output_cost_per_token": 0.000003,
++        "litellm_provider": "nearai",
++        "mode": "chat",
++    }
++
++    def fail_litellm_lookup(*args, **kwargs):
++        raise AssertionError("nearai should not require LiteLLM model metadata")
++
++    monkeypatch.setattr("aider.models.litellm.get_model_info", fail_litellm_lookup)
++    monkeypatch.setattr(
++        "aider.models.NearAIModelManager.get_model_info",
++        lambda self, model: stub_info,
++    )
++
++    manager = ModelInfoManager()
++    info = manager.get_model_info("nearai/zai-org/GLM-5.1-FP8")
++
++    assert info == stub_info
++
++
++def test_nearai_completion_uses_openai_compatible_endpoint(monkeypatch):
++    captured = {}
++
++    def fake_completion(**kwargs):
++        captured.update(kwargs)
++        return "response"
++
++    monkeypatch.setenv("NEARAI_API_KEY", "near-key")
++    monkeypatch.setattr(
++        "aider.models.Model.get_model_info",
++        lambda self, model: {"max_input_tokens": 128000, "litellm_provider": "nearai"},
++    )
++    monkeypatch.setattr("aider.models.litellm.completion", fake_completion)
++
++    model = Model("nearai/zai-org/GLM-5.1-FP8")
++    model.extra_params = {
++        "max_completion_tokens": 123,
++        "store": True,
++        "extra_body": {"reasoning_effort": "low", "foo": "bar"},
++    }
++    _hash, response = model.send_completion(
++        [{"role": "developer", "content": "Use system-compatible role."}],
++        functions=None,
++        stream=False,
++    )
++
++    assert response == "response"
++    assert captured["model"] == "openai/zai-org/GLM-5.1-FP8"
++    assert captured["api_base"] == "https://cloud-api.near.ai/v1"
++    assert captured["api_key"] == "near-key"
++    assert captured["max_tokens"] == 123
++    assert "max_completion_tokens" not in captured
++    assert "store" not in captured
++    assert captured["extra_body"] == {"foo": "bar"}
++    assert captured["messages"][0]["role"] == "system"
++
++
++def test_nearai_default_model_selection(monkeypatch):
++    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
++    monkeypatch.setenv("NEARAI_API_KEY", "near-key")
++
++    assert try_to_select_default_model() == "nearai/zai-org/GLM-5.1-FP8"
++
++
++def test_nearai_alias_uses_default_model_settings(monkeypatch):
++    monkeypatch.setenv("NEARAI_API_KEY", "near-key")
++    monkeypatch.setattr(
++        "aider.models.Model.get_model_info",
++        lambda self, model: {"max_input_tokens": 128000, "litellm_provider": "nearai"},
++    )
++
++    model = Model("nearai")
++
++    assert model.name == "nearai/zai-org/GLM-5.1-FP8"
++    assert model.edit_format == "diff"
++    assert model.use_repo_map
++
++
++def test_nearai_does_not_advertise_unsupported_reasoning_settings(monkeypatch):
++    monkeypatch.setenv("NEARAI_API_KEY", "near-key")
++    monkeypatch.setattr(
++        "aider.models.Model.get_model_info",
++        lambda self, model: {"max_input_tokens": 128000, "litellm_provider": "nearai"},
++    )
++
++    model = Model("nearai/anthropic/claude-sonnet-4-6")
++
++    assert "thinking_tokens" not in model.accepts_settings
++    assert "reasoning_effort" not in model.accepts_settings

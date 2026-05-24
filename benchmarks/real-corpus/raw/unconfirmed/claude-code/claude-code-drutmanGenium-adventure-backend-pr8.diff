@@ -1,0 +1,473 @@
+diff --git a/src/data/store.ts b/src/data/store.ts
+index 41e80a6..ded29bd 100644
+--- a/src/data/store.ts
++++ b/src/data/store.ts
+@@ -1,11 +1,31 @@
+-import type { Booking, ContactMessage } from "../types.js"
++import type { Booking, ContactMessage, User, Session } from "../types.js"
++import crypto from "crypto"
+ 
+ // In-memory stores (se reinician al reiniciar el server)
+ export const bookings: Booking[] = []
+ export const contactMessages: ContactMessage[] = []
++export const users: User[] = []
++export const sessions: Session[] = []
+ 
+ let bookingCounter = 0
+ let contactCounter = 0
++let userCounter = 0
++
++// Session lifetime: 7 days. Tokens older than this are considered expired
++// and will be rejected/purged on access.
++export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
++
++// Password hashing parameters (scrypt is built-in to Node.js crypto, so
++// no extra dependencies are required). N=2^15 keeps it relatively fast on
++// commodity hardware while still being many orders of magnitude slower
++// than a plain SHA-256 hash.
++const SCRYPT_KEYLEN = 64
++const SCRYPT_SALT_BYTES = 16
++const SCRYPT_COST = 1 << 15 // N
++const SCRYPT_BLOCK_SIZE = 8 // r
++const SCRYPT_PARALLELIZATION = 1 // p
++// maxmem must be large enough to fit 128 * N * r bytes (~32MB at N=2^15, r=8).
++const SCRYPT_MAXMEM = 64 * 1024 * 1024
+ 
+ export function nextBookingId(): string {
+   return `BK-${String(++bookingCounter).padStart(4, "0")}`
+@@ -14,3 +34,83 @@ export function nextBookingId(): string {
+ export function nextContactId(): string {
+   return `CT-${String(++contactCounter).padStart(4, "0")}`
+ }
++
++export function nextUserId(): string {
++  return `US-${String(++userCounter).padStart(4, "0")}`
++}
++
++export function generateToken(): string {
++  return crypto.randomBytes(32).toString("hex")
++}
++
++// Hash a password with scrypt + a per-password random salt. The returned
++// string encodes the algorithm parameters, salt, and hash so that future
++// changes to the parameters can be applied without breaking existing
++// stored hashes.
++export function hashPassword(password: string): string {
++  const salt = crypto.randomBytes(SCRYPT_SALT_BYTES)
++  const hash = crypto.scryptSync(password, salt, SCRYPT_KEYLEN, {
++    N: SCRYPT_COST,
++    r: SCRYPT_BLOCK_SIZE,
++    p: SCRYPT_PARALLELIZATION,
++    maxmem: SCRYPT_MAXMEM,
++  })
++  return `scrypt$${SCRYPT_COST}$${SCRYPT_BLOCK_SIZE}$${SCRYPT_PARALLELIZATION}$${salt.toString("hex")}$${hash.toString("hex")}`
++}
++
++// Verify a candidate password against a stored hash. Uses a constant-time
++// comparison to avoid leaking information through timing differences.
++export function verifyPassword(password: string, stored: string): boolean {
++  if (typeof stored !== "string") return false
++  const parts = stored.split("$")
++  if (parts.length !== 6 || parts[0] !== "scrypt") return false
++  const [, nStr, rStr, pStr, saltHex, hashHex] = parts
++  const N = Number(nStr)
++  const r = Number(rStr)
++  const p = Number(pStr)
++  if (!Number.isFinite(N) || !Number.isFinite(r) || !Number.isFinite(p)) {
++    return false
++  }
++  let salt: Buffer
++  let expected: Buffer
++  try {
++    salt = Buffer.from(saltHex, "hex")
++    expected = Buffer.from(hashHex, "hex")
++  } catch {
++    return false
++  }
++  if (salt.length === 0 || expected.length === 0) return false
++  const candidate = crypto.scryptSync(password, salt, expected.length, {
++    N,
++    r,
++    p,
++    maxmem: SCRYPT_MAXMEM,
++  })
++  if (candidate.length !== expected.length) return false
++  return crypto.timingSafeEqual(candidate, expected)
++}
++
++// Remove sessions whose expiresAt has passed. Called opportunistically on
++// every session lookup so expired tokens cannot be used and don't grow
++// the in-memory store unboundedly.
++export function purgeExpiredSessions(now: number = Date.now()): void {
++  for (let i = sessions.length - 1; i >= 0; i--) {
++    const expiresAt = Date.parse(sessions[i].expiresAt)
++    if (!Number.isFinite(expiresAt) || expiresAt <= now) {
++      sessions.splice(i, 1)
++    }
++  }
++}
++
++export function findSessionByToken(token: string): Session | undefined {
++  purgeExpiredSessions()
++  return sessions.find((s) => s.token === token)
++}
++
++export function findUserById(id: string): User | undefined {
++  return users.find((u) => u.id === id)
++}
++
++export function findUserByEmail(email: string): User | undefined {
++  return users.find((u) => u.email.toLowerCase() === email.toLowerCase())
++}
+diff --git a/src/index.ts b/src/index.ts
+index cfee261..0d72aad 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -5,6 +5,7 @@ import activitiesRouter from "./routes/activities"
+ import calendarRouter from "./routes/calendar"
+ import bookingsRouter from "./routes/bookings"
+ import contactRouter from "./routes/contact"
++import authRouter from "./routes/auth"
+ 
+ const app = express()
+ const PORT = process.env.PORT || 3001
+@@ -14,6 +15,7 @@ app.use(cors({ origin: process.env.FRONTEND_URL || "http://localhost:3000" }))
+ app.use(express.json())
+ 
+ // Routes
++app.use("/api/auth", authRouter)
+ app.use("/api/activities", activitiesRouter)
+ app.use("/api/calendar", calendarRouter)
+ app.use("/api/bookings", bookingsRouter)
+@@ -33,6 +35,10 @@ app.listen(PORT, () => {
+   console.log(`Adventure backend corriendo en http://localhost:${PORT}`)
+   console.log(`Endpoints disponibles:`)
+   console.log(`  GET  /api/health`)
++  console.log(`  POST /api/auth/register`)
++  console.log(`  POST /api/auth/login`)
++  console.log(`  GET  /api/auth/me`)
++  console.log(`  POST /api/auth/logout`)
+   console.log(`  GET  /api/activities`)
+   console.log(`  GET  /api/activities/:id`)
+   console.log(`  GET  /api/calendar`)
+diff --git a/src/routes/auth.ts b/src/routes/auth.ts
+new file mode 100644
+index 0000000..cba0299
+--- /dev/null
++++ b/src/routes/auth.ts
+@@ -0,0 +1,288 @@
++import { Router, type Request, type Response, type NextFunction } from "express"
++import { z } from "zod"
++import {
++  users,
++  sessions,
++  nextUserId,
++  generateToken,
++  hashPassword,
++  verifyPassword,
++  findUserByEmail,
++  findSessionByToken,
++  findUserById,
++  SESSION_TTL_MS,
++} from "../data/store"
++
++const router = Router()
++
++const RegisterSchema = z.object({
++  firstName: z.string().min(1, "Nombre es obligatorio"),
++  lastName: z.string().min(1, "Apellido es obligatorio"),
++  email: z.string().email("Email inválido"),
++  password: z
++    .string()
++    .min(6, "La contraseña debe tener al menos 6 caracteres"),
++  phone: z.string().optional().default(""),
++})
++
++const LoginSchema = z.object({
++  email: z.string().email("Email inválido"),
++  password: z.string().min(1, "Contraseña es obligatoria"),
++})
++
++// ─── Rate limiting ───────────────────────────────────────────────────────────
++// Simple fixed-window in-memory rate limiter. Intentionally implemented
++// without an external dependency to avoid expanding the dependency surface.
++// Note: this state is per-process. If the service is ever scaled
++// horizontally, swap this for a shared store (e.g. Redis) so an attacker
++// cannot just spread requests across instances.
++
++interface RateBucket {
++  count: number
++  resetAt: number
++}
++
++interface RateLimiterOptions {
++  windowMs: number
++  max: number
++  // How a request maps to a bucket key. Defaults to client IP.
++  keyFn?: (req: Request) => string
++  message?: string
++}
++
++function clientIp(req: Request): string {
++  // express's req.ip honors trust proxy settings; fall back to socket
++  // remote address if for some reason it's not populated.
++  return (
++    req.ip ||
++    req.socket?.remoteAddress ||
++    "unknown"
++  )
++}
++
++function createRateLimiter(opts: RateLimiterOptions) {
++  const buckets = new Map<string, RateBucket>()
++
++  return function rateLimiter(
++    req: Request,
++    res: Response,
++    next: NextFunction
++  ): void {
++    const now = Date.now()
++    const key = (opts.keyFn ?? clientIp)(req)
++
++    // Opportunistic cleanup so the map can't grow unbounded.
++    if (buckets.size > 10_000) {
++      for (const [k, b] of buckets) {
++        if (b.resetAt <= now) buckets.delete(k)
++      }
++    }
++
++    let bucket = buckets.get(key)
++    if (!bucket || bucket.resetAt <= now) {
++      bucket = { count: 0, resetAt: now + opts.windowMs }
++      buckets.set(key, bucket)
++    }
++
++    bucket.count += 1
++
++    if (bucket.count > opts.max) {
++      const retryAfterSec = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000))
++      res.setHeader("Retry-After", String(retryAfterSec))
++      res
++        .status(429)
++        .json({
++          error:
++            opts.message ??
++            "Demasiadas solicitudes. Intenta nuevamente más tarde.",
++        })
++      return
++    }
++
++    next()
++  }
++}
++
++// Login: stricter limit per IP to deter brute force / credential stuffing.
++// Combined with the per-(IP+email) limiter below, this protects against
++// both wide spraying and targeted attacks against a single account.
++const loginIpLimiter = createRateLimiter({
++  windowMs: 15 * 60 * 1000,
++  max: 20,
++  message: "Demasiados intentos de inicio de sesión. Intenta más tarde.",
++})
++
++const loginIpEmailLimiter = createRateLimiter({
++  windowMs: 15 * 60 * 1000,
++  max: 5,
++  message: "Demasiados intentos de inicio de sesión. Intenta más tarde.",
++  keyFn: (req) => {
++    const email =
++      typeof req.body?.email === "string"
++        ? req.body.email.toLowerCase()
++        : ""
++    return `${clientIp(req)}|${email}`
++  },
++})
++
++// Register: deter automated account creation.
++const registerIpLimiter = createRateLimiter({
++  windowMs: 60 * 60 * 1000,
++  max: 10,
++  message: "Demasiados registros desde esta dirección. Intenta más tarde.",
++})
++
++// POST /api/auth/register
++router.post("/register", registerIpLimiter, (req, res) => {
++  const parsed = RegisterSchema.safeParse(req.body)
++
++  if (!parsed.success) {
++    res.status(400).json({
++      error: "Datos inválidos",
++      details: parsed.error.flatten().fieldErrors,
++    })
++    return
++  }
++
++  const data = parsed.data
++
++  // Check if email already exists
++  const existing = findUserByEmail(data.email)
++  if (existing) {
++    res.status(409).json({ error: "Ya existe una cuenta con este email" })
++    return
++  }
++
++  const user = {
++    id: nextUserId(),
++    firstName: data.firstName,
++    lastName: data.lastName,
++    email: data.email.toLowerCase(),
++    password: hashPassword(data.password),
++    phone: data.phone,
++    createdAt: new Date().toISOString(),
++  }
++
++  users.push(user)
++
++  // Create session
++  const token = generateToken()
++  const now = new Date()
++  sessions.push({
++    token,
++    userId: user.id,
++    createdAt: now.toISOString(),
++    expiresAt: new Date(now.getTime() + SESSION_TTL_MS).toISOString(),
++  })
++
++  res.status(201).json({
++    message: "Cuenta creada exitosamente",
++    token,
++    user: {
++      id: user.id,
++      firstName: user.firstName,
++      lastName: user.lastName,
++      email: user.email,
++      phone: user.phone,
++    },
++  })
++})
++
++// POST /api/auth/login
++router.post("/login", loginIpLimiter, loginIpEmailLimiter, (req, res) => {
++  const parsed = LoginSchema.safeParse(req.body)
++
++  if (!parsed.success) {
++    res.status(400).json({
++      error: "Datos inválidos",
++      details: parsed.error.flatten().fieldErrors,
++    })
++    return
++  }
++
++  const data = parsed.data
++
++  const user = findUserByEmail(data.email)
++  if (!user) {
++    res.status(401).json({ error: "Email o contraseña incorrectos" })
++    return
++  }
++
++  if (!verifyPassword(data.password, user.password)) {
++    res.status(401).json({ error: "Email o contraseña incorrectos" })
++    return
++  }
++
++  // Create session
++  const token = generateToken()
++  const now = new Date()
++  sessions.push({
++    token,
++    userId: user.id,
++    createdAt: now.toISOString(),
++    expiresAt: new Date(now.getTime() + SESSION_TTL_MS).toISOString(),
++  })
++
++  res.json({
++    message: "Inicio de sesión exitoso",
++    token,
++    user: {
++      id: user.id,
++      firstName: user.firstName,
++      lastName: user.lastName,
++      email: user.email,
++      phone: user.phone,
++    },
++  })
++})
++
++// GET /api/auth/me
++router.get("/me", (req, res) => {
++  const authHeader = req.headers.authorization
++  if (!authHeader || !authHeader.startsWith("Bearer ")) {
++    res.status(401).json({ error: "No autenticado" })
++    return
++  }
++
++  const token = authHeader.slice(7)
++  const session = findSessionByToken(token)
++  if (!session) {
++    res.status(401).json({ error: "Sesión inválida o expirada" })
++    return
++  }
++
++  const user = findUserById(session.userId)
++  if (!user) {
++    res.status(401).json({ error: "Usuario no encontrado" })
++    return
++  }
++
++  res.json({
++    user: {
++      id: user.id,
++      firstName: user.firstName,
++      lastName: user.lastName,
++      email: user.email,
++      phone: user.phone,
++    },
++  })
++})
++
++// POST /api/auth/logout
++router.post("/logout", (req, res) => {
++  const authHeader = req.headers.authorization
++  if (!authHeader || !authHeader.startsWith("Bearer ")) {
++    res.status(401).json({ error: "No autenticado" })
++    return
++  }
++
++  const token = authHeader.slice(7)
++  const sessionIndex = sessions.findIndex((s) => s.token === token)
++  if (sessionIndex !== -1) {
++    sessions.splice(sessionIndex, 1)
++  }
++
++  res.json({ message: "Sesión cerrada exitosamente" })
++})
++
++export default router
+diff --git a/src/types.ts b/src/types.ts
+index 7ee74ec..6a46b9f 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -83,3 +83,22 @@ export interface ContactMessage {
+   message: string
+   createdAt: string
+ }
++
++export interface User {
++  id: string
++  firstName: string
++  lastName: string
++  email: string
++  password: string
++  phone: string
++  createdAt: string
++}
++
++export interface Session {
++  token: string
++  userId: string
++  createdAt: string
++  // ISO timestamp after which the session is no longer valid. Sessions
++  // are purged opportunistically on lookup; see purgeExpiredSessions.
++  expiresAt: string
++}

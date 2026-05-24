@@ -1,0 +1,143 @@
+diff --git a/aider/args.py b/aider/args.py
+index 5b3fdf07faf..7d24f37ff55 100644
+--- a/aider/args.py
++++ b/aider/args.py
+@@ -653,6 +653,20 @@ def get_parser(default_config_files, git_root):
+             " (disables chat mode)"
+         ),
+     ).complete = shtab.FILE
++
++    group.add_argument(
++        "--one-shot",
++        metavar="PROMPT",
++        help="Run a single prompt without git/session, process reply, then exit (implies --no-git)",
++    )
++
++    group.add_argument(
++        "--one-shot-mode",
++        choices=["ask", "code"],
++        default="ask",
++        help="Mode to use with --one-shot, ask or code (default: ask)",
++    )
++
+     group.add_argument(
+         "--gui",
+         "--browser",
+diff --git a/aider/main.py b/aider/main.py
+index afb3f836624..35f42dc7604 100644
+--- a/aider/main.py
++++ b/aider/main.py
+@@ -503,6 +503,16 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
+     # Parse again to include any arguments that might have been defined in .env
+     args = parser.parse_args(argv)
+ 
++    if args.one_shot:
++        args.git = False
++        args.yes_always = True
++        args.map_tokens = 0
++    if args.edit_format is None:
++        args.edit_format = args.one_shot_mode
++    if args.one_shot_mode == "ask":
++        args.read = (args.read or []) + args.files
++        args.files = []
++
+     if args.shell_completions:
+         # Ensure parser.prog is set for shtab, though it should be by default
+         parser.prog = "aider"
+@@ -1133,6 +1143,20 @@ def get_io(pretty):
+         analytics.event("exit", reason="Completed --message")
+         return
+ 
++    if args.one_shot:
++        io.add_to_input_history(args.one_shot)
++        io.tool_output()
++        try:
++            coder.run(with_message=args.one_shot)
++        except SwitchCoder:
++            pass
++        except Exception as err:
++            io.tool_error(str(err))
++            analytics.event("exit", reason="one-shot error")
++            return 1
++        analytics.event("exit", reason="Completed --one-shot")
++        return 0
++
+     if args.message_file:
+         try:
+             message_from_file = io.read_text(args.message_file)
+diff --git a/tests/basic/test_main.py b/tests/basic/test_main.py
+index c8966a53671..73a14da1174 100644
+--- a/tests/basic/test_main.py
++++ b/tests/basic/test_main.py
+@@ -45,6 +45,71 @@ def tearDown(self):
+         self.input_patcher.stop()
+         self.webbrowser_patcher.stop()
+ 
++    def test_one_shot_no_git(self):
++        """--one-shot should disable git"""
++        with patch("aider.main.Coder.create") as mock_coder_create:
++            mock_coder = MagicMock()
++            mock_coder.show_announcements = MagicMock()
++            mock_coder_create.return_value = mock_coder
++            main(
++                ["--one-shot", "say hello", "--no-pretty"], input=DummyInput(), output=DummyOutput()
++            )
++            kwargs = mock_coder_create.call_args.kwargs
++            self.assertFalse(kwargs.get("use_git"))
++
++    def test_one_shot_runs_prompt(self):
++        """--one-shot should pass the prompt to coder.run"""
++        with patch("aider.main.Coder.create") as mock_coder_create:
++            mock_coder = MagicMock()
++            mock_coder.show_announcements = MagicMock()
++            mock_coder_create.return_value = mock_coder
++            main(
++                ["--one-shot", "say hello", "--no-pretty"], input=DummyInput(), output=DummyOutput()
++            )
++            mock_coder.run.assert_called_once_with(with_message="say hello")
++
++    def test_one_shot_exits_after_response(self):
++        """--one-shot should not enter the interactive loop"""
++        with patch("aider.main.Coder.create") as mock_coder_create:
++            mock_coder = MagicMock()
++            mock_coder.show_announcements = MagicMock()
++            mock_coder_create.return_value = mock_coder
++            main(
++                ["--one-shot", "say hello", "--no-pretty"], input=DummyInput(), output=DummyOutput()
++            )
++            self.assertEqual(mock_coder.run.call_count, 1)
++
++    def test_one_shot_ask_mode_files_readonly(self):
++        """--one-shot ask mode should add files as read-only"""
++        Path("hello.py").write_text("def add(a, b): return a + b")
++        with patch("aider.main.Coder.create") as mock_coder_create:
++            mock_coder = MagicMock()
++            mock_coder.show_announcements = MagicMock()
++            mock_coder_create.return_value = mock_coder
++            main(
++                ["--one-shot", "explain this", "hello.py", "--no-pretty"],
++                input=DummyInput(),
++                output=DummyOutput(),
++            )
++            kwargs = mock_coder_create.call_args.kwargs
++            self.assertEqual(kwargs.get("fnames"), [])
++            self.assertIn(str(Path("hello.py").resolve()), kwargs.get("read_only_fnames"))
++
++    def test_one_shot_code_mode_files_editable(self):
++        """--one-shot code mode should keep files editable"""
++        Path("hello.py").write_text("def add(a, b): return a + b")
++        with patch("aider.main.Coder.create") as mock_coder_create:
++            mock_coder = MagicMock()
++            mock_coder.show_announcements = MagicMock()
++            mock_coder_create.return_value = mock_coder
++            main(
++                ["--one-shot", "add logs", "hello.py", "--one-shot-mode", "code", "--no-pretty"],
++                input=DummyInput(),
++                output=DummyOutput(),
++            )
++            kwargs = mock_coder_create.call_args.kwargs
++            self.assertIn(str(Path("hello.py").resolve()), kwargs.get("fnames"))
++
+     def test_main_with_empty_dir_no_files_on_command(self):
+         main(["--no-git", "--exit", "--yes"], input=DummyInput(), output=DummyOutput())
+ 

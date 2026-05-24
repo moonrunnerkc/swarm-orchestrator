@@ -1,0 +1,1833 @@
+diff --git a/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/Dockerfile b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/Dockerfile
+new file mode 100644
+index 000000000..18f287f59
+--- /dev/null
++++ b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/Dockerfile
+@@ -0,0 +1,34 @@
++FROM node:22-slim
++
++RUN apt-get update && apt-get install -y --no-install-recommends \
++    git curl ca-certificates jq awscli && \
++    rm -rf /var/lib/apt/lists/*
++
++# Remove existing node user and create agent user with uid 1000 (matches S3 Files access point)
++RUN userdel -r node && \
++    useradd -m -d /home/agent -u 1000 agent && \
++    mkdir -p /home/agent/.codex /home/agent/.npm-global /app && \
++    chown -R agent:agent /home/agent /app
++
++# Switch to agent user for all subsequent steps
++USER agent
++
++ENV NPM_CONFIG_PREFIX=/home/agent/.npm-global
++ENV PATH=/home/agent/.npm-global/bin:$PATH
++
++# Install codex as agent user so all files are owned correctly
++RUN npm install -g @openai/codex
++
++# Initialize a git repo so codex treats /home/agent as a trusted directory
++RUN git config --global user.name "AgentCore Bot" && \
++    git config --global user.email "agentcore@company.com" && \
++    git -C /home/agent init
++
++# Codex config pointing at OpenAI models
++COPY --chown=agent:agent codex-config.toml /home/agent/.codex/config.toml
++COPY --chown=agent:agent server.js /app/server.js
++COPY --chown=agent:agent entrypoint.sh /app/entrypoint.sh
++
++WORKDIR /app
++EXPOSE 8080
++CMD ["/bin/bash", "/app/entrypoint.sh"]
+diff --git a/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/README.md b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/README.md
+new file mode 100644
+index 000000000..8e6d56c6c
+--- /dev/null
++++ b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/README.md
+@@ -0,0 +1,191 @@
++# Codex CLI  on AgentCore Runtime with S3 Files
++
++Deploys Codex CLI  as an HTTP agent on AWS Bedrock AgentCore Runtime, with an S3 Files file system mounted at `/mnt/s3files` for persistent storage shared across sessions.
++
++## Architecture
++
++```
++  ┌─────────────────────────┐         ┌─────────────────────────┐
++  │  AgentCore Runtime      │         │  AgentCore Runtime      │
++  │  Session A              │         │  Session B              │
++  │  (Codex CLI)            │         │  (Codex CLI)            │
++  │                         │         │                         │
++  │  /mnt/s3files ──────────┼────┐    │  /mnt/s3files ──────────┼────┐
++  └──────────┬──────────────┘    │    └──────────┬──────────────┘    │
++             │                   │               │                   │
++             │ Fetch API key     │               │ Fetch API key     │
++             ▼                   ▼               ▼                   ▼
++  ┌──────────────────────┐  ┌────────────────────────────────────────┐
++  │  AWS Secrets Manager │  │  S3 Files File System                  │
++  │  openai/codex        │  │                                        │
++  │  {"api_key":"sk-…"}  │  │  ┌────────────────────────┐            │
++  └──────────────────────┘  │  │  S3 Files Access Point │            │
++                            │  │  (uid/gid 1000)        │            │
++                            │  └───────────┬────────────┘            │
++                            └──────────────┼─────────────────────────┘
++                                           │
++                                           ▼
++                            ┌──────────────────────────────┐
++                            │  S3 Bucket                   │
++                            │  (agentcore-<account-id>)    │
++                            │                              │
++                            │  agents/                     │
++                            │  ├── skills/                 │
++                            │  ├── results/                │
++                            │  └── ...                     │
++                            └──────────────────────────────┘
++```
++
++Multiple runtime sessions mount the same S3 Files file system, enabling agents to share skills, results, and data across independent invocations.
++
++```
++CloudFormation stack (cfn-vpc.yaml):
++  VPC, subnets, NAT Gateway, Security Group
++  S3 Files IAM role, file system, access point, mount targets
++
++deploy.py creates:
++  IAM execution role
++  AgentCore Runtime (container from ECR, S3 Files mounted at /mnt/s3files)
++```
++
++## Prerequisites
++
++### Python environment
++
++```bash
++curl -LsSf https://astral.sh/uv/install.sh | sh
++uv venv --python 3.13 .venv
++source .venv/bin/activate
++uv pip install boto3 awscli --force-reinstall --no-cache-dir
++
++# Install Docker for Amazon Linux 2023 as example                                                                                                                                                                                                 
++sudo dnf install -y docker                                                                                                                                                                     
++# Start and enable Docker service                                                                                          
++sudo systemctl start docker                                                                                                                                                                                         
++sudo systemctl enable docker                                                                                               
++
++# Add your user to the docker group                                                                                                                                                                                 
++sudo usermod -aG docker $USER
++# Apply group change without logging out                                                                                   
++newgrp docker
++                                                                                                                                                                                            
++#Verify Docker works
++docker --version                                                                                                                                                                                                                      
++#Set up buildx for multi-platform builds                                                                                                                                                       
++docker buildx create --use
++```
++
++
++
++### S3 Files IAM policies
++
++The CloudFormation stack creates an IAM role (`S3FilesRole`) with the permissions required by S3 Files (S3, KMS, and EventBridge). For the full list of required policies, see the [S3 Files prerequisite policies](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-files-prereq-policies.html) documentation.
++
++### OpenAI API Key Setup
++
++**IMPORTANT**: Before deploying, you must create an AWS Secrets Manager secret containing your OpenAI API key. The container will fetch this secret at startup.
++
++1. Obtain an OpenAI API key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
++
++2. Create the secret in AWS Secrets Manager:
++
++```bash
++aws secretsmanager create-secret \
++    --name "openai/codex" \
++    --description "OpenAI API key for Codex CLI" \
++    --secret-string '{"api_key":"sk-YOUR-OPENAI-KEY-HERE"}' \
++    --region us-west-2
++```
++
++Replace `sk-YOUR-OPENAI-KEY-HERE` with your actual OpenAI API key, and adjust the region to match your deployment region.
++
++To update an existing secret:
++
++```bash
++aws secretsmanager update-secret \
++    --secret-id "openai/codex" \
++    --secret-string '{"api_key":"sk-YOUR-NEW-KEY-HERE"}' \
++    --region us-west-2
++```
++
++To verify the secret was created:
++
++```bash
++aws secretsmanager describe-secret \
++    --secret-id "openai/codex" \
++    --region us-west-2
++```
++
++## Step-by-step guide
++
++### Step 1 — Infrastructure setup (CloudFormation)
++
++Run the setup script to create the S3 bucket, deploy the CloudFormation stack (VPC, subnets, NAT Gateway, Security Group, S3 Files), build the arm64 Docker image, and push it to ECR.
++
++```bash
++./setup.sh us-west-2
++```
++
++All outputs are saved to `envvars.config` and used automatically by the next steps.
++
++### Step 2 — Deploy the agent
++
++Create the IAM execution role and the AgentCore Runtime:
++
++```bash
++python deploy.py
++```
++
++The script waits until the runtime status is `READY` and saves the runtime config to `runtime_config.json`.
++
++If you need to update an existing runtime (e.g. after rebuilding the Docker image), run:
++
++```bash
++python update.py
++```
++
++### Step 3 — Invoke the agent
++
++Send a prompt to the deployed agent. The first call creates a new session; subsequent calls can reuse the session ID for conversation continuity.
++
++**Session A** — create a shared skill on the persistent filesystem:
++
++```bash
++python invoke.py "can u create a new skill, to review python code? This skill should be created into /mnt/s3files/skills/"
++```
++
++Continue the conversation within the same session:
++
++```bash
++python invoke.py --session <session-a-id> "now add unit tests for that skill"
++```
++
++**Session B** — a completely new session accesses the same filesystem and uses the skill created by Session A:
++
++```bash
++python invoke.py "list the skills available in /mnt/s3files/skills/ and use the python review skill to review this code: def add(a,b): return a+b"
++```
++
++Both sessions share `/mnt/s3files`, so anything written by one session is immediately available to others.
++
++### Step 4 — Execute a command on the running session
++
++Run a shell command directly on the container using the session ID from the previous step:
++
++```bash
++python exec_cmd.py --session 7fd93a80-8838-4721-abea-b1787dd0172c "ls -l /mnt/s3files"
++```
++
++### Step 5 — Cleanup
++
++Delete all AgentCore resources (runtime, IAM role) and the CloudFormation stack. The S3 bucket is kept.
++
++```bash
++python cleanup.py
++```
++
++Or use the shell wrapper:
++
++```bash
++./cleanup.sh
++```
+diff --git a/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/cfn-vpc.yaml b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/cfn-vpc.yaml
+new file mode 100644
+index 000000000..d92bef29f
+--- /dev/null
++++ b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/cfn-vpc.yaml
+@@ -0,0 +1,371 @@
++AWSTemplateFormatVersion: "2010-09-09"
++Description: VPC infrastructure for AgentCore Codex CLI with S3 Files
++
++Parameters:
++  VpcCidr:
++    Type: String
++    Default: "10.0.0.0/16"
++  BucketName:
++    Type: String
++    Description: S3 bucket name (agentcore-<account-id>)
++  S3FilesPrefix:
++    Type: String
++    Default: "agents/"
++
++Mappings:
++  AgentCoreAZs:
++    us-east-1:
++      AZ1: use1-az1
++      AZ2: use1-az2
++    us-east-2:
++      AZ1: use2-az1
++      AZ2: use2-az2
++    us-west-2:
++      AZ1: usw2-az1
++      AZ2: usw2-az2
++    eu-west-1:
++      AZ1: euw1-az1
++      AZ2: euw1-az2
++    eu-central-1:
++      AZ1: euc1-az1
++      AZ2: euc1-az2
++    eu-north-1:
++      AZ1: eun1-az1
++      AZ2: eun1-az2
++    eu-west-2:
++      AZ1: euw2-az1
++      AZ2: euw2-az2
++    eu-west-3:
++      AZ1: euw3-az1
++      AZ2: euw3-az2
++    ap-southeast-1:
++      AZ1: apse1-az1
++      AZ2: apse1-az2
++    ap-southeast-2:
++      AZ1: apse2-az1
++      AZ2: apse2-az2
++    ap-northeast-1:
++      AZ1: apne1-az1
++      AZ2: apne1-az2
++    ap-northeast-2:
++      AZ1: apne2-az1
++      AZ2: apne2-az2
++    ap-south-1:
++      AZ1: aps1-az1
++      AZ2: aps1-az2
++    ca-central-1:
++      AZ1: cac1-az1
++      AZ2: cac1-az2
++
++Resources:
++
++  # ── VPC ──────────────────────────────────────────────────────────────────────
++
++  VPC:
++    Type: AWS::EC2::VPC
++    Properties:
++      CidrBlock: !Ref VpcCidr
++      EnableDnsSupport: true
++      EnableDnsHostnames: true
++      Tags:
++        - Key: Name
++          Value: agentcore-vpc
++
++  InternetGateway:
++    Type: AWS::EC2::InternetGateway
++    Properties:
++      Tags:
++        - Key: Name
++          Value: agentcore-igw
++
++  VPCGatewayAttachment:
++    Type: AWS::EC2::VPCGatewayAttachment
++    Properties:
++      VpcId: !Ref VPC
++      InternetGatewayId: !Ref InternetGateway
++
++  # ── Public Subnets ──────────────────────────────────────────────────────────
++
++  PublicSubnet1:
++    Type: AWS::EC2::Subnet
++    Properties:
++      VpcId: !Ref VPC
++      CidrBlock: "10.0.1.0/24"
++      AvailabilityZoneId: !FindInMap [AgentCoreAZs, !Ref "AWS::Region", AZ1]
++      MapPublicIpOnLaunch: true
++      Tags:
++        - Key: Name
++          Value: agentcore-public-1
++
++  PublicSubnet2:
++    Type: AWS::EC2::Subnet
++    Properties:
++      VpcId: !Ref VPC
++      CidrBlock: "10.0.2.0/24"
++      AvailabilityZoneId: !FindInMap [AgentCoreAZs, !Ref "AWS::Region", AZ2]
++      MapPublicIpOnLaunch: true
++      Tags:
++        - Key: Name
++          Value: agentcore-public-2
++
++  # ── Private Subnets ─────────────────────────────────────────────────────────
++
++  PrivateSubnet1:
++    Type: AWS::EC2::Subnet
++    Properties:
++      VpcId: !Ref VPC
++      CidrBlock: "10.0.11.0/24"
++      AvailabilityZoneId: !FindInMap [AgentCoreAZs, !Ref "AWS::Region", AZ1]
++      Tags:
++        - Key: Name
++          Value: agentcore-private-1
++
++  PrivateSubnet2:
++    Type: AWS::EC2::Subnet
++    Properties:
++      VpcId: !Ref VPC
++      CidrBlock: "10.0.12.0/24"
++      AvailabilityZoneId: !FindInMap [AgentCoreAZs, !Ref "AWS::Region", AZ2]
++      Tags:
++        - Key: Name
++          Value: agentcore-private-2
++
++  # ── Public Route Table ──────────────────────────────────────────────────────
++
++  PublicRouteTable:
++    Type: AWS::EC2::RouteTable
++    Properties:
++      VpcId: !Ref VPC
++      Tags:
++        - Key: Name
++          Value: agentcore-public-rt
++
++  PublicRoute:
++    Type: AWS::EC2::Route
++    DependsOn: VPCGatewayAttachment
++    Properties:
++      RouteTableId: !Ref PublicRouteTable
++      DestinationCidrBlock: "0.0.0.0/0"
++      GatewayId: !Ref InternetGateway
++
++  PublicSubnet1RTAssoc:
++    Type: AWS::EC2::SubnetRouteTableAssociation
++    Properties:
++      SubnetId: !Ref PublicSubnet1
++      RouteTableId: !Ref PublicRouteTable
++
++  PublicSubnet2RTAssoc:
++    Type: AWS::EC2::SubnetRouteTableAssociation
++    Properties:
++      SubnetId: !Ref PublicSubnet2
++      RouteTableId: !Ref PublicRouteTable
++
++  # ── NAT Gateway ─────────────────────────────────────────────────────────────
++
++  NatEIP:
++    Type: AWS::EC2::EIP
++    Properties:
++      Domain: vpc
++
++  NatGateway:
++    Type: AWS::EC2::NatGateway
++    Properties:
++      AllocationId: !GetAtt NatEIP.AllocationId
++      SubnetId: !Ref PublicSubnet1
++      Tags:
++        - Key: Name
++          Value: agentcore-nat
++
++  # ── Private Route Table ─────────────────────────────────────────────────────
++
++  PrivateRouteTable:
++    Type: AWS::EC2::RouteTable
++    Properties:
++      VpcId: !Ref VPC
++      Tags:
++        - Key: Name
++          Value: agentcore-private-rt
++
++  PrivateRoute:
++    Type: AWS::EC2::Route
++    Properties:
++      RouteTableId: !Ref PrivateRouteTable
++      DestinationCidrBlock: "0.0.0.0/0"
++      NatGatewayId: !Ref NatGateway
++
++  PrivateSubnet1RTAssoc:
++    Type: AWS::EC2::SubnetRouteTableAssociation
++    Properties:
++      SubnetId: !Ref PrivateSubnet1
++      RouteTableId: !Ref PrivateRouteTable
++
++  PrivateSubnet2RTAssoc:
++    Type: AWS::EC2::SubnetRouteTableAssociation
++    Properties:
++      SubnetId: !Ref PrivateSubnet2
++      RouteTableId: !Ref PrivateRouteTable
++
++  # ── Security Group ──────────────────────────────────────────────────────────
++
++  AgentCoreSecurityGroup:
++    Type: AWS::EC2::SecurityGroup
++    Properties:
++      GroupDescription: Security group for AgentCore runtimes
++      VpcId: !Ref VPC
++      SecurityGroupIngress:
++        - IpProtocol: tcp
++          FromPort: 2049
++          ToPort: 2049
++          CidrIp: "10.0.0.0/16"
++          Description: Allow NFS (S3 Files mount) from VPC
++      SecurityGroupEgress:
++        - IpProtocol: "-1"
++          CidrIp: "0.0.0.0/0"
++          Description: Allow all outbound
++      Tags:
++        - Key: Name
++          Value: agentcore-sg
++
++  # ── S3 Files IAM Role ──────────────────────────────────────────────────────
++
++  S3FilesRole:
++    Type: AWS::IAM::Role
++    Properties:
++      RoleName: !Sub "s3files-${AWS::StackName}-role"
++      AssumeRolePolicyDocument:
++        Version: "2012-10-17"
++        Statement:
++          - Effect: Allow
++            Principal:
++              Service: elasticfilesystem.amazonaws.com
++            Action: sts:AssumeRole
++      Policies:
++        - PolicyName: s3files-bucket-access
++          PolicyDocument:
++            Version: "2012-10-17"
++            Statement:
++              - Effect: Allow
++                Action:
++                  - s3:GetObject
++                  - s3:PutObject
++                  - s3:DeleteObject
++                  - s3:ListBucket
++                  - s3:GetBucketLocation
++                  - s3:AbortMultipartUpload
++                  - s3:DeleteObject*
++                  - s3:GetObject*
++                  - s3:List*
++                  - s3:PutObject*
++                  - s3:ListBucketVersions
++                Resource:
++                  - !Sub "arn:aws:s3:::${BucketName}"
++                  - !Sub "arn:aws:s3:::${BucketName}/*"
++              - Sid: S3ObjectPermissions
++                Effect: Allow
++                Action:
++                  - s3:AbortMultipartUpload
++                  - s3:DeleteObject*
++                  - s3:GetObject*
++                  - s3:List*
++                  - s3:PutObject*
++                Resource: !Sub "arn:aws:s3:::${BucketName}/*"
++              - Sid: UseKmsKeyWithS3Files
++                Effect: Allow
++                Action:
++                  - kms:GenerateDataKey
++                  - kms:Encrypt
++                  - kms:Decrypt
++                  - kms:ReEncryptFrom
++                  - kms:ReEncryptTo
++                Condition:
++                  StringLike:
++                    kms:ViaService: !Sub "s3.${AWS::Region}.amazonaws.com"
++                    kms:EncryptionContext:aws:s3:arn:
++                      - !Sub "arn:aws:s3:::${BucketName}"
++                      - !Sub "arn:aws:s3:::${BucketName}/*"
++                Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:*"
++              - Sid: EventBridgeManage
++                Effect: Allow
++                Action:
++                  - events:DeleteRule
++                  - events:DisableRule
++                  - events:EnableRule
++                  - events:PutRule
++                  - events:PutTargets
++                  - events:RemoveTargets
++                Condition:
++                  StringEquals:
++                    events:ManagedBy: elasticfilesystem.amazonaws.com
++                Resource:
++                  - "arn:aws:events:*:*:rule/DO-NOT-DELETE-S3-Files*"
++              - Sid: EventBridgeRead
++                Effect: Allow
++                Action:
++                  - events:DescribeRule
++                  - events:ListRuleNamesByTarget
++                  - events:ListRules
++                  - events:ListTargetsByRule
++                Resource:
++                  - "arn:aws:events:*:*:rule/*"
++
++  # ── S3 Files File System ───────────────────────────────────────────────────
++
++  S3FilesFileSystem:
++    Type: AWS::S3Files::FileSystem
++    DependsOn: S3FilesRole
++    Properties:
++      Bucket: !Sub "arn:aws:s3:::${BucketName}"
++      Prefix: !Ref S3FilesPrefix
++      RoleArn: !GetAtt S3FilesRole.Arn
++
++  # ── S3 Files Access Point ──────────────────────────────────────────────────
++
++  S3FilesAccessPoint:
++    Type: AWS::S3Files::AccessPoint
++    Properties:
++      FileSystemId: !Ref S3FilesFileSystem
++      PosixUser:
++        Uid: 1000
++        Gid: 1000
++      RootDirectory:
++        Path: /mnt/s3files
++        CreationPermissions:
++          OwnerUid: 1000
++          OwnerGid: 1000
++          Permissions: "755"
++
++  # ── S3 Files Mount Target (one per private subnet) ────────────────────────
++
++  S3FilesMountTarget1:
++    Type: AWS::S3Files::MountTarget
++    Properties:
++      FileSystemId: !Ref S3FilesFileSystem
++      SubnetId: !Ref PrivateSubnet1
++      SecurityGroups:
++        - !Ref AgentCoreSecurityGroup
++
++  S3FilesMountTarget2:
++    Type: AWS::S3Files::MountTarget
++    Properties:
++      FileSystemId: !Ref S3FilesFileSystem
++      SubnetId: !Ref PrivateSubnet2
++      SecurityGroups:
++        - !Ref AgentCoreSecurityGroup
++
++Outputs:
++  VpcId:
++    Value: !Ref VPC
++  PrivateSubnet1Id:
++    Value: !Ref PrivateSubnet1
++  PrivateSubnet2Id:
++    Value: !Ref PrivateSubnet2
++  SecurityGroupId:
++    Value: !Ref AgentCoreSecurityGroup
++  S3FilesFileSystemId:
++    Value: !Ref S3FilesFileSystem
++  S3FilesAccessPointId:
++    Value: !Ref S3FilesAccessPoint
++  S3FilesAccessPointArn:
++    Value: !GetAtt S3FilesAccessPoint.AccessPointArn
++  S3FilesRoleArn:
++    Value: !GetAtt S3FilesRole.Arn
+diff --git a/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/cleanup.py b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/cleanup.py
+new file mode 100644
+index 000000000..cc7da30ed
+--- /dev/null
++++ b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/cleanup.py
+@@ -0,0 +1,119 @@
++"""
++Clean up all resources created by setup.sh and deploy.py.
++
++Deletes everything except the S3 bucket:
++- AgentCore Runtime endpoint and runtime
++- AgentCore IAM execution role
++- CloudFormation stack (VPC, S3 Files, security group, NAT, etc.)
++
++Usage:
++    python cleanup.py
++"""
++
++import json
++import os
++import sys
++import time
++
++import boto3
++
++
++def load_config(filename):
++    path = os.path.join(os.path.dirname(__file__), filename)
++    if not os.path.exists(path):
++        return {}
++    with open(path) as f:
++        if filename.endswith(".json"):
++            return json.load(f)
++        cfg = {}
++        for line in f:
++            line = line.strip()
++            if line and "=" in line and not line.startswith("#"):
++                key, value = line.split("=", 1)
++                cfg[key] = value.strip('"').strip("'")
++        return cfg
++
++
++def main():
++    runtime_cfg = load_config("runtime_config.json")
++    env_cfg = load_config("envvars.config")
++
++    if not runtime_cfg:
++        print("Error: runtime_config.json not found.")
++        sys.exit(1)
++
++    agent_name = runtime_cfg["agent_name"]
++    runtime_id = runtime_cfg["runtime_id"]
++    region = runtime_cfg["region"]
++    stack_name = env_cfg.get("AGENTCORE_STACK_NAME", "agentcore-codex")
++    session = boto3.Session(region_name=region)
++    account_id = session.client("sts").get_caller_identity()["Account"]
++    control = session.client("bedrock-agentcore-control", region_name=region)
++    iam = session.client("iam")
++    cfn = session.client("cloudformation")
++
++    print(f"Cleaning up resources for: {agent_name}\n")
++
++    # 1. Delete AgentCore endpoints
++    try:
++        endpoints = control.list_agent_runtime_endpoints(agentRuntimeId=runtime_id)
++        for ep in endpoints.get("runtimeEndpoints", []):
++            name = ep["name"]
++            if name == "DEFAULT":
++                continue
++            print(f"  Deleting endpoint: {name}")
++            control.delete_agent_runtime_endpoint(
++                agentRuntimeId=runtime_id, endpointName=name
++            )
++        if endpoints.get("runtimeEndpoints"):
++            print("  Waiting for endpoint deletion...")
++            time.sleep(30)
++    except Exception as e:
++        print(f"  Warning: {e}")
++
++    # 2. Delete AgentCore runtime
++    try:
++        print(f"  Deleting runtime: {runtime_id}")
++        control.delete_agent_runtime(agentRuntimeId=runtime_id)
++        print("  Waiting for runtime deletion...")
++        time.sleep(30)
++    except Exception as e:
++        print(f"  Warning: {e}")
++
++    # 3. Delete AgentCore IAM execution role
++    role_name = f"agentcore-{agent_name}-role"
++    try:
++        policies = iam.list_role_policies(RoleName=role_name)
++        for policy_name in policies.get("PolicyNames", []):
++            iam.delete_role_policy(RoleName=role_name, PolicyName=policy_name)
++        iam.delete_role(RoleName=role_name)
++        print(f"  Deleted IAM role: {role_name}")
++    except iam.exceptions.NoSuchEntityException:
++        print(f"  IAM role not found: {role_name}")
++    except Exception as e:
++        print(f"  Warning: {e}")
++
++    # 4. Delete CloudFormation stack (VPC, S3 Files, SG, NAT, etc.)
++    try:
++        print(f"  Deleting CloudFormation stack: {stack_name}")
++        cfn.delete_stack(StackName=stack_name)
++        print("  Waiting for stack deletion (this may take a few minutes)...")
++        waiter = cfn.get_waiter("stack_delete_complete")
++        waiter.wait(StackName=stack_name, WaiterConfig={"Delay": 15, "MaxAttempts": 40})
++        print(f"  Stack deleted: {stack_name}")
++    except Exception as e:
++        print(f"  Warning: {e}")
++
++    # 5. Remove local config files
++    for f in ["runtime_config.json", "envvars.config"]:
++        path = os.path.join(os.path.dirname(__file__), f)
++        if os.path.exists(path):
++            os.remove(path)
++
++    bucket_name = f"agentcore-{account_id}"
++    print(f"\nCleanup complete for {agent_name}")
++    print(f"  (bucket s3://{bucket_name} was kept)")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/cleanup.sh b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/cleanup.sh
+new file mode 100755
+index 000000000..d803197ec
+--- /dev/null
++++ b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/cleanup.sh
+@@ -0,0 +1,15 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
++cd "$SCRIPT_DIR"
++
++echo "============================================================"
++echo "  AgentCore Cleanup"
++echo "============================================================"
++echo ""
++
++python3 cleanup.py
++
++echo ""
++echo "Done."
+diff --git a/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/codex-config.toml b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/codex-config.toml
+new file mode 100644
+index 000000000..ebf442cc7
+--- /dev/null
++++ b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/codex-config.toml
+@@ -0,0 +1,2 @@
++model_provider = "openai"
++model = "gpt-4o"
+diff --git a/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/deploy.py b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/deploy.py
+new file mode 100644
+index 000000000..b3f64ec98
+--- /dev/null
++++ b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/deploy.py
+@@ -0,0 +1,364 @@
++"""
++Deploy Codex agent to AgentCore Runtime via OpenAPI API key using a container image from ECR.
++
++Run setup.sh first, then:
++    python deploy.py
++
++Reads configuration from envvars.config (created by setup.sh).
++"""
++
++import json
++import os
++import sys
++import time
++
++import boto3
++
++# ── Load config ──────────────────────────────────────────────────────────────
++
++def load_dotconfig():
++    config_path = os.path.join(os.path.dirname(__file__), "envvars.config")
++    cfg = {}
++    if os.path.exists(config_path):
++        with open(config_path) as f:
++            for line in f:
++                line = line.strip()
++                if line and "=" in line and not line.startswith("#"):
++                    key, value = line.split("=", 1)
++                    cfg[key] = value
++    return cfg
++
++file_cfg = load_dotconfig()
++
++def cfg(key, default=None):
++    return file_cfg.get(key) or os.environ.get(key) or default
++
++# ── Configuration ────────────────────────────────────────────────────────────
++
++REGION = cfg("AGENTCORE_REGION", boto3.session.Session().region_name or "us-west-2")
++
++session = boto3.Session(region_name=REGION)
++ACCOUNT_ID = session.client("sts").get_caller_identity()["Account"]
++
++AGENT_NAME          = cfg("AGENTCORE_AGENT_NAME", f"codex_{int(time.time()) % 100000}")
++ECR_URI             = cfg("AGENTCORE_ECR_URI")
++SUBNET_1            = cfg("AGENTCORE_SUBNET_1")
++SUBNET_2            = cfg("AGENTCORE_SUBNET_2")
++SECURITY_GROUP      = cfg("AGENTCORE_SECURITY_GROUP")
++S3FILES_AP_ARN      = cfg("AGENTCORE_S3FILES_AP_ARN")
++S3FILES_BUCKET      = cfg("AGENTCORE_S3FILES_BUCKET", f"agentcore-{ACCOUNT_ID}")
++OPENAI_SECRET_NAME  = "openai/codex"
++OPENAI_SECRET_ARN   = f"arn:aws:secretsmanager:{REGION}:{ACCOUNT_ID}:secret:{OPENAI_SECRET_NAME}"
++
++if not ECR_URI:
++    print("Error: AGENTCORE_ECR_URI not found. Run setup.sh first.")
++    sys.exit(1)
++
++if not all([SUBNET_1, SUBNET_2, SECURITY_GROUP]):
++    print("Error: VPC config (subnets, security group) not found. Run setup.sh first.")
++    sys.exit(1)
++
++PROTOCOL           = "HTTP"
++S3FILES_MOUNT_PATH = "/mnt/s3files"
++
++print(f"Region:   {REGION}")
++print(f"Account:  {ACCOUNT_ID}")
++print(f"Agent:    {AGENT_NAME}")
++print(f"Image:    {ECR_URI}")
++print(f"Subnets:  {SUBNET_1}, {SUBNET_2}")
++print(f"SG:       {SECURITY_GROUP}")
++if S3FILES_AP_ARN:
++    print(f"S3 Files: {S3FILES_AP_ARN}")
++    print(f"Mount:    {S3FILES_MOUNT_PATH}")
++
++
++# ── Step 1: Create IAM Execution Role ────────────────────────────────────────
++
++def create_execution_role() -> str:
++    iam = session.client("iam")
++    role_name = f"agentcore-{AGENT_NAME}-role"
++
++    trust_policy = {
++        "Version": "2012-10-17",
++        "Statement": [
++            {
++                "Effect": "Allow",
++                "Principal": {"Service": "bedrock-agentcore.amazonaws.com"},
++                "Action": "sts:AssumeRole",
++                "Condition": {"StringEquals": {"aws:SourceAccount": ACCOUNT_ID}},
++            },
++            {
++                "Sid": "AllowS3FilesAssumeRole",
++                "Effect": "Allow",
++                "Principal": {"Service": "elasticfilesystem.amazonaws.com"},
++                "Action": "sts:AssumeRole",
++                "Condition": {
++                    "StringEquals": {"aws:SourceAccount": ACCOUNT_ID},
++                    "ArnLike": {"aws:SourceArn": f"arn:aws:s3files:{REGION}:{ACCOUNT_ID}:file-system/*"},
++                },
++            },
++        ],
++    }
++
++    inline_policy = {
++        "Version": "2012-10-17",
++        "Statement": [
++            {
++                "Effect": "Allow",
++                "Action": ["logs:DescribeLogStreams", "logs:CreateLogGroup"],
++                "Resource": [f"arn:aws:logs:{REGION}:{ACCOUNT_ID}:log-group:/aws/bedrock-agentcore/runtimes/*"],
++            },
++            {
++                "Effect": "Allow",
++                "Action": ["logs:DescribeLogGroups"],
++                "Resource": [f"arn:aws:logs:{REGION}:{ACCOUNT_ID}:log-group:*"],
++            },
++            {
++                "Effect": "Allow",
++                "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
++                "Resource": [f"arn:aws:logs:{REGION}:{ACCOUNT_ID}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*"],
++            },
++            {
++                "Effect": "Allow",
++                "Action": ["xray:PutTraceSegments", "xray:PutTelemetryRecords", "xray:GetSamplingRules", "xray:GetSamplingTargets"],
++                "Resource": ["*"],
++            },
++            {
++                "Effect": "Allow",
++                "Action": "cloudwatch:PutMetricData",
++                "Resource": "*",
++                "Condition": {"StringEquals": {"cloudwatch:namespace": "bedrock-agentcore"}},
++            },
++            {
++                "Sid": "SecretsManager",
++                "Effect": "Allow",
++                "Action": ["secretsmanager:GetSecretValue"],
++                "Resource": f"{OPENAI_SECRET_ARN}*",
++            },
++            {
++                "Sid": "ECRPull",
++                "Effect": "Allow",
++                "Action": ["ecr:GetAuthorizationToken"],
++                "Resource": ["*"],
++            },
++            {
++                "Sid": "ECRImage",
++                "Effect": "Allow",
++                "Action": ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
++                "Resource": [f"arn:aws:ecr:{REGION}:{ACCOUNT_ID}:repository/agentcore-codex"],
++            },
++            {
++                "Sid": "S3Files",
++                "Effect": "Allow",
++                "Action": [
++                    "s3files:GetAccessPoint",
++                    "s3files:GetFileSystem",
++                    "s3files:GetMountTarget",
++                    "s3files:DescribeMountTargets",
++                    "s3files:ListMountTargets",
++                    "s3files:ClientMount",
++                    "s3files:ClientWrite",
++                    "s3files:ClientRootAccess",
++                ],
++                "Resource": [
++                    S3FILES_AP_ARN,
++                    S3FILES_AP_ARN.rsplit("/access-point/", 1)[0],
++                ],
++            },
++            {
++                "Sid": "EFSClientAccess",
++                "Effect": "Allow",
++                "Action": [
++                    "elasticfilesystem:ClientMount",
++                    "elasticfilesystem:ClientWrite",
++                ],
++                "Resource": f"arn:aws:elasticfilesystem:{REGION}:{ACCOUNT_ID}:file-system/*",
++                "Condition": {
++                    "ArnLike": {
++                        "elasticfilesystem:AccessPointArn": f"arn:aws:elasticfilesystem:{REGION}:{ACCOUNT_ID}:access-point/*",
++                    }
++                },
++            },
++            {
++                "Sid": "EFSDescribe",
++                "Effect": "Allow",
++                "Action": [
++                    "elasticfilesystem:DescribeAccessPoints",
++                    "elasticfilesystem:DescribeMountTargets",
++                ],
++                "Resource": [
++                    f"arn:aws:elasticfilesystem:{REGION}:{ACCOUNT_ID}:file-system/*",
++                    f"arn:aws:elasticfilesystem:{REGION}:{ACCOUNT_ID}:access-point/*",
++                ],
++            },
++            {
++                "Sid": "S3BucketPermissions",
++                "Effect": "Allow",
++                "Action": [
++                    "s3:ListBucket",
++                    "s3:ListBucketVersions",
++                ],
++                "Resource": [f"arn:aws:s3:::{S3FILES_BUCKET}"],
++                "Condition": {"StringEquals": {"aws:ResourceAccount": ACCOUNT_ID}},
++            },
++            {
++                "Sid": "S3ObjectPermissions",
++                "Effect": "Allow",
++                "Action": [
++                    "s3:AbortMultipartUpload",
++                    "s3:DeleteObject*",
++                    "s3:GetObject*",
++                    "s3:List*",
++                    "s3:PutObject*",
++                ],
++                "Resource": [f"arn:aws:s3:::{S3FILES_BUCKET}/*"],
++                "Condition": {"StringEquals": {"aws:ResourceAccount": ACCOUNT_ID}},
++            },
++            {
++                "Sid": "EventBridgeManage",
++                "Effect": "Allow",
++                "Action": [
++                    "events:DeleteRule",
++                    "events:DisableRule",
++                    "events:EnableRule",
++                    "events:PutRule",
++                    "events:PutTargets",
++                    "events:RemoveTargets",
++                ],
++                "Resource": ["arn:aws:events:*:*:rule/DO-NOT-DELETE-S3-Files*"],
++                "Condition": {"StringEquals": {"events:ManagedBy": "elasticfilesystem.amazonaws.com"}},
++            },
++            {
++                "Sid": "EventBridgeRead",
++                "Effect": "Allow",
++                "Action": [
++                    "events:DescribeRule",
++                    "events:ListRuleNamesByTarget",
++                    "events:ListRules",
++                    "events:ListTargetsByRule",
++                ],
++                "Resource": ["arn:aws:events:*:*:rule/*"],
++            },
++        ],
++    }
++
++    try:
++        resp = iam.create_role(
++            RoleName=role_name,
++            AssumeRolePolicyDocument=json.dumps(trust_policy),
++            Description=f"Execution role for {AGENT_NAME}",
++        )
++        role_arn = resp["Role"]["Arn"]
++        print(f"\nCreated IAM role: {role_arn}")
++    except iam.exceptions.EntityAlreadyExistsException:
++        role_arn = f"arn:aws:iam::{ACCOUNT_ID}:role/{role_name}"
++        print(f"\nIAM role exists: {role_arn}")
++
++    iam.put_role_policy(
++        RoleName=role_name,
++        PolicyName=f"{AGENT_NAME}-policy",
++        PolicyDocument=json.dumps(inline_policy),
++    )
++
++    print("Waiting 10s for IAM propagation...")
++    time.sleep(10)
++    return role_arn
++
++
++# ── Step 2: Create AgentCore Runtime ─────────────────────────────────────────
++
++def create_runtime(role_arn: str) -> dict:
++    control = session.client("bedrock-agentcore-control", region_name=REGION)
++
++    create_params = dict(
++        agentRuntimeName=AGENT_NAME,
++        agentRuntimeArtifact={
++            "containerConfiguration": {
++                "containerUri": ECR_URI,
++            }
++        },
++        roleArn=role_arn,
++        networkConfiguration={
++            "networkMode": "VPC",
++            "networkModeConfig": {
++                "subnets": [SUBNET_1, SUBNET_2],
++                "securityGroups": [SECURITY_GROUP],
++            },
++        },
++        protocolConfiguration={"serverProtocol": PROTOCOL},
++        environmentVariables={
++            "AWS_REGION": REGION,
++        },
++        description="Codex agent on AgentCore Runtime with S3 Files, backed by OpenAI gpt-4o",
++    )
++
++    if S3FILES_AP_ARN:
++        create_params["filesystemConfigurations"] = [
++            {
++                "s3FilesAccessPoint": {
++                    "accessPointArn": S3FILES_AP_ARN,
++                    "mountPath": S3FILES_MOUNT_PATH,
++                }
++            }
++        ]
++
++    print(f"\nCreating AgentCore Runtime '{AGENT_NAME}'...")
++    response = control.create_agent_runtime(**create_params)
++
++    runtime_id  = response["agentRuntimeId"]
++    runtime_arn = response["agentRuntimeArn"]
++    print(f"Runtime created: {runtime_id}")
++
++    print("Waiting for runtime to be ready...")
++    while True:
++        status_resp = control.get_agent_runtime(agentRuntimeId=runtime_id)
++        status = status_resp["status"]
++        print(f"  Status: {status}")
++        if status == "READY":
++            break
++        if status in ("CREATE_FAILED", "UPDATE_FAILED"):
++            print(f"Failed: {status_resp.get('failureReason', 'Unknown')}")
++            sys.exit(1)
++        time.sleep(15)
++
++    return {"runtime_id": runtime_id, "runtime_arn": runtime_arn}
++
++
++# ── Main ─────────────────────────────────────────────────────────────────────
++
++def main():
++    print("=" * 60)
++    print(f"Deploying {AGENT_NAME} to AgentCore Runtime")
++    print("  (VPC mode + Codex CLI + OpenAI gpt-4o + S3 Files)")
++    print("=" * 60)
++
++    role_arn = create_execution_role()
++    runtime  = create_runtime(role_arn)
++
++    config = {
++        "agent_name":  AGENT_NAME,
++        "runtime_id":  runtime["runtime_id"],
++        "runtime_arn": runtime["runtime_arn"],
++        "region":      REGION,
++        "ecr_uri":     ECR_URI,
++    }
++    if S3FILES_AP_ARN:
++        config["s3files_access_point_arn"] = S3FILES_AP_ARN
++        config["s3files_mount_path"]       = S3FILES_MOUNT_PATH
++
++    config_path = os.path.join(os.path.dirname(__file__), "runtime_config.json")
++    with open(config_path, "w") as f:
++        json.dump(config, f, indent=2)
++
++    print("\n" + "=" * 60)
++    print("Deployment complete!")
++    print(f"  Runtime ARN: {runtime['runtime_arn']}")
++    if S3FILES_AP_ARN:
++        print(f"  S3 Files mounted at: {S3FILES_MOUNT_PATH}")
++    print("  Config saved to: runtime_config.json")
++    print("\n  Test with: python invoke.py")
++    print("=" * 60)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/entrypoint.sh b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/entrypoint.sh
+new file mode 100644
+index 000000000..d82bbf8f4
+--- /dev/null
++++ b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/entrypoint.sh
+@@ -0,0 +1,28 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++echo "Fetching OpenAI credentials from Secrets Manager..."
++
++if ! SECRET=$(aws secretsmanager get-secret-value \
++    --secret-id "openai/codex" \
++    --region "${AWS_REGION:-us-west-2}" \
++    --query SecretString \
++    --output text 2>&1); then
++    echo "ERROR: Failed to fetch secret 'openai/codex' from Secrets Manager"
++    echo "Please create the secret first:"
++    echo "  aws secretsmanager create-secret \\"
++    echo "    --name 'openai/codex' \\"
++    echo "    --secret-string '{\"api_key\":\"sk-YOUR-KEY\"}' \\"
++    echo "    --region ${AWS_REGION:-us-west-2}"
++    exit 1
++fi
++
++export CODEX_API_KEY=$(echo "$SECRET" | jq -r .api_key)
++
++if [ -z "$CODEX_API_KEY" ] || [ "$CODEX_API_KEY" = "null" ]; then
++    echo "ERROR: api_key not found in secret. Expected format: {\"api_key\":\"sk-...\"}"
++    exit 1
++fi
++
++echo "Credentials loaded. Starting server..."
++exec node /app/server.js
+diff --git a/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/exec_cmd.py b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/exec_cmd.py
+new file mode 100644
+index 000000000..fece1cbf2
+--- /dev/null
++++ b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/exec_cmd.py
+@@ -0,0 +1,112 @@
++"""
++Execute a shell command on a running AgentCore Runtime session and stream output.
++
++Usage:
++    python exec_cmd.py --session <id> "ls -la /mnt/s3files"
++"""
++
++import json
++import os
++import sys
++
++import boto3
++from botocore.config import Config
++
++# ── Load config ──────────────────────────────────────────────────────────────
++
++def load_dotconfig():
++    config_path = os.path.join(os.path.dirname(__file__), "envvars.config")
++    cfg = {}
++    if os.path.exists(config_path):
++        with open(config_path) as f:
++            for line in f:
++                line = line.strip()
++                if line and "=" in line and not line.startswith("#"):
++                    key, value = line.split("=", 1)
++                    cfg[key] = value.strip('"').strip("'")
++    return cfg
++
++file_cfg = load_dotconfig()
++
++def cfg(key, default=None):
++    return file_cfg.get(key) or os.environ.get(key) or default
++
++# ── Configuration ────────────────────────────────────────────────────────────
++
++REGION = cfg("AGENTCORE_REGION", "us-west-2")
++
++
++def load_config() -> dict:
++    config_path = os.path.join(os.path.dirname(__file__), "runtime_config.json")
++    try:
++        with open(config_path) as f:
++            return json.load(f)
++    except FileNotFoundError:
++        print("Error: runtime_config.json not found. Run deploy.py first.")
++        sys.exit(1)
++
++
++def exec_command(runtime_arn: str, session_id: str, command: str):
++    client = boto3.client(
++        "bedrock-agentcore",
++        region_name=REGION,
++        config=Config(read_timeout=900),
++    )
++
++    body = {"command": command}
++
++    response = client.invoke_agent_runtime_command(
++        agentRuntimeArn=runtime_arn,
++        runtimeSessionId=session_id,
++        body=body,
++    )
++
++    request_id = response.get("ResponseMetadata", {}).get("RequestId", "N/A")
++
++    print(f"Session:    {response.get('runtimeSessionId', 'N/A')}")
++    print(f"Request ID: {request_id}")
++    print(f"Status:     {response.get('statusCode', 'N/A')}")
++    print()
++
++    for event in response["stream"]:
++        chunk = event.get("chunk", {})
++        if "contentDelta" in chunk:
++            delta = chunk["contentDelta"]
++            print(delta.get("stdout", ""), end="", flush=True)
++            print(delta.get("stderr", ""), end="", flush=True)
++
++
++def main():
++    config = load_config()
++    runtime_arn = config["runtime_arn"]
++
++    args = sys.argv[1:]
++    session_id = None
++
++    if "--session" in args:
++        idx = args.index("--session")
++        session_id = args[idx + 1]
++        args = args[:idx] + args[idx + 2:]
++
++    if not session_id:
++        session_id = os.environ.get("SESSION_ID")
++
++    if not session_id:
++        print("Error: session ID required. Use --session <id> or set SESSION_ID env var.")
++        sys.exit(1)
++
++    if not args:
++        print("Usage: python exec_cmd.py --session <id> '<command>'")
++        sys.exit(1)
++
++    command = " ".join(args)
++
++    print(f"Runtime: {runtime_arn}")
++    print(f"Command: {command}")
++    print()
++
++    exec_command(runtime_arn, session_id, command)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/invoke.py b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/invoke.py
+new file mode 100644
+index 000000000..16f4e7347
+--- /dev/null
++++ b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/invoke.py
+@@ -0,0 +1,130 @@
++"""
++Invoke the Codex CLI agent deployed on AgentCore Runtime.
++
++Usage:
++    python invoke.py
++    python invoke.py "Write a Python function that sorts a list"
++    python invoke.py --session <id> "Now add type hints to it"
++"""
++
++import json
++import os
++import sys
++import uuid
++
++import boto3
++from botocore.config import Config
++from botocore.exceptions import ClientError
++
++# ── Load config ──────────────────────────────────────────────────────────────
++
++def load_dotconfig():
++    config_path = os.path.join(os.path.dirname(__file__), "envvars.config")
++    cfg = {}
++    if os.path.exists(config_path):
++        with open(config_path) as f:
++            for line in f:
++                line = line.strip()
++                if line and "=" in line and not line.startswith("#"):
++                    key, value = line.split("=", 1)
++                    cfg[key] = value.strip('"').strip("'")
++    return cfg
++
++file_cfg = load_dotconfig()
++
++def cfg(key, default=None):
++    return file_cfg.get(key) or os.environ.get(key) or default
++
++# ── Configuration ────────────────────────────────────────────────────────────
++
++REGION = cfg("AGENTCORE_REGION", "us-west-2")
++
++
++def load_config() -> dict:
++    config_path = os.path.join(os.path.dirname(__file__), "runtime_config.json")
++    try:
++        with open(config_path) as f:
++            return json.load(f)
++    except FileNotFoundError:
++        print("Error: runtime_config.json not found. Run deploy.py first.")
++        sys.exit(1)
++
++
++def invoke(runtime_arn: str, prompt: str, region: str, session_id: str = None) -> dict:
++    client = boto3.client(
++        "bedrock-agentcore",
++        region_name=region,
++        config=Config(read_timeout=900),
++    )
++
++    if not session_id:
++        session_id = str(uuid.uuid4())
++
++    payload_data = {"prompt": prompt}
++
++    try:
++        response = client.invoke_agent_runtime(
++            agentRuntimeArn=runtime_arn,
++            runtimeSessionId=session_id,
++            payload=json.dumps(payload_data).encode("utf-8"),
++        )
++    except ClientError as exc:
++        request_id = exc.response.get("ResponseMetadata", {}).get("RequestId", "N/A")
++        print(f"  Session ID:      {session_id}")
++        print(f"  Request ID:      {request_id}")
++        print(f"  Error:           {exc}")
++        return {"_runtimeSessionId": session_id}
++
++    body = json.loads(response["response"].read().decode("utf-8"))
++    runtime_session = response.get("runtimeSessionId", session_id)
++    request_id = response.get("ResponseMetadata", {}).get("RequestId", "N/A")
++
++    print(f"  Session ID:      {runtime_session}")
++    print(f"  Request ID:      {request_id}")
++    print(f"  Status:          {response.get('statusCode', 'N/A')}")
++
++    body["_runtimeSessionId"] = runtime_session
++    return body
++
++
++def main():
++    config = load_config()
++    runtime_arn = config["runtime_arn"]
++    region = config["region"]
++
++    args = sys.argv[1:]
++    session_id = None
++
++    if "--session" in args:
++        idx = args.index("--session")
++        session_id = args[idx + 1]
++        args = args[:idx] + args[idx + 2:]
++
++    if args:
++        prompts = [" ".join(args)]
++    else:
++        prompts = [
++            "What is 2 + 2?",
++            "Now multiply that result by 10.",
++        ]
++
++    print(f"Invoking agent: {runtime_arn}")
++    if session_id:
++        print(f"Resuming session: {session_id}")
++    print()
++
++    for prompt in prompts:
++        print(f"--- Prompt: {prompt}")
++        result = invoke(runtime_arn, prompt, region, session_id)
++        print(f"--- Response:\n{result.get('response', result)}")
++        session_id = result.get("_runtimeSessionId", session_id)
++        print(f"--- Session ID: {session_id}")
++        print()
++
++    if session_id:
++        print("To continue this conversation:")
++        print(f"  python invoke.py --session {session_id} \"your next prompt\"")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/server.js b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/server.js
+new file mode 100644
+index 000000000..ff28a9a1b
+--- /dev/null
++++ b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/server.js
+@@ -0,0 +1,88 @@
++const http = require("http");
++const { spawn } = require("child_process");
++
++const PORT = process.env.PORT || 8080;
++
++function runCodex(prompt, sessionId) {
++  return new Promise((resolve, reject) => {
++    let args;
++    if (sessionId) {
++      args = ["exec", "resume", sessionId, prompt, "--json", "--sandbox", "danger-full-access", "--skip-git-repo-check"];
++    } else {
++      args = ["exec", prompt, "--json", "--sandbox", "danger-full-access", "--skip-git-repo-check"];
++    }
++
++    console.log(`[runCodex] sessionId=${sessionId || "(none)"} prompt="${prompt}"`);
++    console.log(`[runCodex] args: ${JSON.stringify(args)}`);
++
++    const proc = spawn("codex", args, {
++      env: { ...process.env, HOME: "/home/agent" },
++      cwd: "/home/agent",
++      timeout: 300_000,
++      stdio: ["ignore", "pipe", "pipe"],
++    });
++
++    let stdout = "";
++    let stderr = "";
++
++    proc.stdout.on("data", (d) => (stdout += d));
++    proc.stderr.on("data", (d) => (stderr += d));
++
++    proc.on("close", (code) => {
++      console.log(`[runCodex] exited code=${code} stderr="${stderr}" stdout="${stdout.slice(0, 200)}"`);
++      if (code !== 0) {
++        reject(new Error(`codex exited ${code}: ${stderr}`));
++        return;
++      }
++      // --json emits one JSON object per line, last one has the result
++      const lines = stdout.trim().split("\n").filter(Boolean);
++      try {
++        const last = JSON.parse(lines[lines.length - 1]);
++        resolve({
++          response: last.result || last.message || stdout.trim(),
++          sessionId: last.session_id || null,
++        });
++      } catch {
++        resolve({ response: stdout.trim(), sessionId: null });
++      }
++    });
++    proc.on("error", reject);
++  });
++}
++
++function readBody(req) {
++  return new Promise((resolve) => {
++    let data = "";
++    req.on("data", (chunk) => (data += chunk));
++    req.on("end", () => resolve(data));
++  });
++}
++
++const server = http.createServer(async (req, res) => {
++  if (req.method === "GET") {
++    res.writeHead(200, { "Content-Type": "application/json" });
++    res.end(JSON.stringify({ status: "healthy" }));
++    return;
++  }
++
++  if (req.method === "POST") {
++    try {
++      const body = await readBody(req);
++      const { prompt, sessionId } = JSON.parse(body);
++      const result = await runCodex(prompt, sessionId);
++      res.writeHead(200, { "Content-Type": "application/json" });
++      res.end(JSON.stringify(result));
++    } catch (err) {
++      res.writeHead(500, { "Content-Type": "application/json" });
++      res.end(JSON.stringify({ error: err.message }));
++    }
++    return;
++  }
++
++  res.writeHead(405);
++  res.end();
++});
++
++server.listen(PORT, () => {
++  console.log(`Codex agent listening on port ${PORT}`);
++});
+diff --git a/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/setup.sh b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/setup.sh
+new file mode 100755
+index 000000000..1019e1392
+--- /dev/null
++++ b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/setup.sh
+@@ -0,0 +1,136 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++REGION="${1:-us-west-2}"
++STACK_NAME="agentcore-codex-demo"
++
++ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
++BUCKET_NAME="agentcore-${ACCOUNT_ID}"
++AGENT_NAME="codex_$(date +%s | tail -c 6)"
++ECR_REPO="agentcore-codex"
++IMAGE_TAG="${AGENT_NAME}"
++ECR_URI="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG}"
++
++echo "Region:     ${REGION}"
++echo "Account:    ${ACCOUNT_ID}"
++echo "Bucket:     ${BUCKET_NAME}"
++echo "Agent:      ${AGENT_NAME}"
++echo "Stack:      ${STACK_NAME}"
++
++# ── Create S3 bucket (skip if it already exists) ─────────────────────────────
++
++if aws s3api head-bucket --bucket "${BUCKET_NAME}" 2>/dev/null; then
++    echo "Bucket already exists: ${BUCKET_NAME}"
++else
++    echo "Creating bucket: ${BUCKET_NAME}"
++    if [ "${REGION}" = "us-east-1" ]; then
++        aws s3api create-bucket --bucket "${BUCKET_NAME}" --region "${REGION}"
++    else
++        aws s3api create-bucket \
++            --bucket "${BUCKET_NAME}" \
++            --region "${REGION}" \
++            --create-bucket-configuration LocationConstraint="${REGION}"
++    fi
++    echo "Bucket created: ${BUCKET_NAME}"
++fi
++
++aws s3api put-bucket-versioning \
++    --bucket "${BUCKET_NAME}" \
++    --versioning-configuration Status=Enabled \
++    --region "${REGION}"
++echo "Bucket versioning enabled"
++
++# ── Deploy CloudFormation stack ──────────────────────────────────────────────
++
++echo ""
++echo "Deploying CloudFormation stack: ${STACK_NAME}..."
++aws cloudformation deploy \
++    --template-file cfn-vpc.yaml \
++    --stack-name "${STACK_NAME}" \
++    --region "${REGION}" \
++    --parameter-overrides BucketName="${BUCKET_NAME}" \
++    --capabilities CAPABILITY_NAMED_IAM \
++    --no-fail-on-empty-changeset
++
++echo "Reading stack outputs..."
++CFN_OUTPUTS=$(aws cloudformation describe-stacks \
++    --stack-name "${STACK_NAME}" \
++    --region "${REGION}" \
++    --query "Stacks[0].Outputs" \
++    --output json)
++
++get_output() {
++    echo "${CFN_OUTPUTS}" | python3 -c "
++import json, sys
++outputs = json.load(sys.stdin)
++for o in outputs:
++    if o['OutputKey'] == '$1':
++        print(o['OutputValue'])
++        break
++"
++}
++
++VPC_ID=$(get_output VpcId)
++PRIVATE_SUBNET_1=$(get_output PrivateSubnet1Id)
++PRIVATE_SUBNET_2=$(get_output PrivateSubnet2Id)
++SECURITY_GROUP_ID=$(get_output SecurityGroupId)
++S3FILES_FS_ID=$(get_output S3FilesFileSystemId)
++S3FILES_AP_ID=$(get_output S3FilesAccessPointId)
++S3FILES_AP_ARN=$(get_output S3FilesAccessPointArn)
++
++echo "  VPC:             ${VPC_ID}"
++echo "  Private Subnet1: ${PRIVATE_SUBNET_1}"
++echo "  Private Subnet2: ${PRIVATE_SUBNET_2}"
++echo "  Security Group:  ${SECURITY_GROUP_ID}"
++echo "  S3 Files FS:     ${S3FILES_FS_ID}"
++echo "  S3 Files AP:     ${S3FILES_AP_ID}"
++
++# ── Create ECR repository (skip if it already exists) ────────────────────────
++
++if aws ecr describe-repositories --repository-names "${ECR_REPO}" --region "${REGION}" >/dev/null 2>&1; then
++    echo "ECR repo already exists: ${ECR_REPO}"
++else
++    echo "Creating ECR repo: ${ECR_REPO}"
++    aws ecr create-repository --repository-name "${ECR_REPO}" --region "${REGION}"
++    echo "ECR repo created"
++fi
++
++# ── Build arm64 Docker image and push to ECR ─────────────────────────────────
++
++echo "Logging into ECR..."
++aws ecr get-login-password --region "${REGION}" | \
++    docker login --username AWS --password-stdin "${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
++
++echo "Building arm64 Docker image..."
++docker buildx build \
++    --platform linux/arm64 \
++    -t "${ECR_URI}" \
++    -f Dockerfile \
++    --push \
++    .
++
++echo "Image pushed: ${ECR_URI}"
++
++# ── Save config ──────────────────────────────────────────────────────────────
++
++cat > envvars.config <<CFGEOF
++AGENTCORE_BUCKET=${BUCKET_NAME}
++AGENTCORE_AGENT_NAME=${AGENT_NAME}
++AGENTCORE_REGION=${REGION}
++AGENTCORE_ECR_URI=${ECR_URI}
++AGENTCORE_STACK_NAME=${STACK_NAME}
++AGENTCORE_VPC_ID=${VPC_ID}
++AGENTCORE_SUBNET_1=${PRIVATE_SUBNET_1}
++AGENTCORE_SUBNET_2=${PRIVATE_SUBNET_2}
++AGENTCORE_SECURITY_GROUP=${SECURITY_GROUP_ID}
++AGENTCORE_S3FILES_FS_ID=${S3FILES_FS_ID}
++AGENTCORE_S3FILES_AP_ID=${S3FILES_AP_ID}
++AGENTCORE_S3FILES_AP_ARN=${S3FILES_AP_ARN}
++CFGEOF
++
++echo ""
++echo "Config saved to envvars.config:"
++cat envvars.config
++echo ""
++echo "Run the deploy script next:"
++echo "  python deploy.py"
+diff --git a/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/update.py b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/update.py
+new file mode 100644
+index 000000000..2524af14f
+--- /dev/null
++++ b/01-tutorials/01-AgentCore-runtime/12-coding-agents/03-codex-with-s3-files-openai-api-key/update.py
+@@ -0,0 +1,153 @@
++"""
++Update an existing AgentCore Runtime (e.g. after changing access point, image, or config).
++
++Reads runtime_id from runtime_config.json and current settings from envvars.config.
++
++Usage:
++    python update.py
++"""
++
++import json
++import os
++import sys
++import time
++
++import boto3
++
++# ── Load config ──────────────────────────────────────────────────────────────
++
++def load_dotconfig():
++    config_path = os.path.join(os.path.dirname(__file__), "envvars.config")
++    cfg = {}
++    if os.path.exists(config_path):
++        with open(config_path) as f:
++            for line in f:
++                line = line.strip()
++                if line and "=" in line and not line.startswith("#"):
++                    key, value = line.split("=", 1)
++                    cfg[key] = value.strip('"').strip("'")
++    return cfg
++
++file_cfg = load_dotconfig()
++
++def cfg(key, default=None):
++    return file_cfg.get(key) or os.environ.get(key) or default
++
++# ── Configuration ────────────────────────────────────────────────────────────
++
++REGION = cfg("AGENTCORE_REGION", boto3.session.Session().region_name or "us-west-2")
++
++session = boto3.Session(region_name=REGION)
++ACCOUNT_ID = session.client("sts").get_caller_identity()["Account"]
++
++ECR_URI = cfg("AGENTCORE_ECR_URI")
++SUBNET_1 = cfg("AGENTCORE_SUBNET_1")
++SUBNET_2 = cfg("AGENTCORE_SUBNET_2")
++SECURITY_GROUP = cfg("AGENTCORE_SECURITY_GROUP")
++S3FILES_AP_ARN = cfg("AGENTCORE_S3FILES_AP_ARN")
++
++PROTOCOL = "HTTP"
++S3FILES_MOUNT_PATH = "/mnt/s3files"
++
++
++def load_runtime_config() -> dict:
++    config_path = os.path.join(os.path.dirname(__file__), "runtime_config.json")
++    try:
++        with open(config_path) as f:
++            return json.load(f)
++    except FileNotFoundError:
++        print("Error: runtime_config.json not found. Run deploy.py first.")
++        sys.exit(1)
++
++
++def update_runtime(runtime_id: str, role_arn: str) -> dict:
++    control = session.client("bedrock-agentcore-control", region_name=REGION)
++
++    update_params = dict(
++        agentRuntimeId=runtime_id,
++        agentRuntimeArtifact={
++            "containerConfiguration": {
++                "containerUri": ECR_URI,
++            }
++        },
++        roleArn=role_arn,
++        networkConfiguration={
++            "networkMode": "VPC",
++            "networkModeConfig": {
++                "subnets": [SUBNET_1, SUBNET_2],
++                "securityGroups": [SECURITY_GROUP],
++            },
++        },
++        protocolConfiguration={"serverProtocol": PROTOCOL},
++        description="Codex CLI agent on AgentCore Runtime with S3 Files, backed by OpenAI gpt-4o",
++    )
++
++    if S3FILES_AP_ARN:
++        update_params["filesystemConfigurations"] = [
++            {
++                "s3FilesAccessPoint": {
++                    "accessPointArn": S3FILES_AP_ARN,
++                    "mountPath": S3FILES_MOUNT_PATH,
++                }
++            }
++        ]
++
++    print(f"\nUpdating AgentCore Runtime '{runtime_id}'...")
++    response = control.update_agent_runtime(**update_params)
++
++    runtime_arn = response["agentRuntimeArn"]
++    print(f"Update initiated: {runtime_id}")
++
++    print("Waiting for runtime to be ready...")
++    while True:
++        status_resp = control.get_agent_runtime(agentRuntimeId=runtime_id)
++        status = status_resp["status"]
++        print(f"  Status: {status}")
++        if status == "READY":
++            break
++        if status in ("CREATE_FAILED", "UPDATE_FAILED"):
++            print(f"Failed: {status_resp.get('failureReason', 'Unknown')}")
++            sys.exit(1)
++        time.sleep(15)
++
++    return {"runtime_id": runtime_id, "runtime_arn": runtime_arn}
++
++
++def main():
++    existing = load_runtime_config()
++    runtime_id = existing["runtime_id"]
++    role_arn = f"arn:aws:iam::{ACCOUNT_ID}:role/agentcore-{existing['agent_name']}-role"
++
++    print("=" * 60)
++    print(f"Updating runtime: {runtime_id}")
++    print(f"  Image:      {ECR_URI}")
++    print(f"  Role:       {role_arn}")
++    if S3FILES_AP_ARN:
++        print(f"  S3 Files:   {S3FILES_AP_ARN}")
++        print(f"  Mount:      {S3FILES_MOUNT_PATH}")
++    print("=" * 60)
++
++    runtime = update_runtime(runtime_id, role_arn)
++
++    existing.update({
++        "runtime_id": runtime["runtime_id"],
++        "runtime_arn": runtime["runtime_arn"],
++        "ecr_uri": ECR_URI,
++    })
++    if S3FILES_AP_ARN:
++        existing["s3files_access_point_arn"] = S3FILES_AP_ARN
++        existing["s3files_mount_path"] = S3FILES_MOUNT_PATH
++
++    config_path = os.path.join(os.path.dirname(__file__), "runtime_config.json")
++    with open(config_path, "w") as f:
++        json.dump(existing, f, indent=2)
++
++    print("\n" + "=" * 60)
++    print("Update complete!")
++    print(f"  Runtime ARN: {runtime['runtime_arn']}")
++    print("  Config saved to: runtime_config.json")
++    print("=" * 60)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/CONTRIBUTORS.md b/CONTRIBUTORS.md
+index 1460dc751..faa22e96a 100644
+--- a/CONTRIBUTORS.md
++++ b/CONTRIBUTORS.md
+@@ -40,6 +40,7 @@
+ - Shanicus Yee
+ - sssumarss
+ - sundargthb
++- Sushant20
+ - vedashree1110
+ - vedashreevinay
+ - Venkatakrishna Pullela

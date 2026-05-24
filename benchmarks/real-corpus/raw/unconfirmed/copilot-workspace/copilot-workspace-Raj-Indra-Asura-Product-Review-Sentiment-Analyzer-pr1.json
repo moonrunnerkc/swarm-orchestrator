@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-Raj-Indra-Asura-Product-Review-Sentiment-Analyzer-pr1",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "3ff991cab467085cfa1018f178737eafac0dbd18",
+    "baseSha": "85bcc230544fec5ae5e6afb9650cd70bef9b530e",
+    "title": "Add 6-day learning repository for Product Review Sentiment Analyzer",
+    "body": "Repo was an empty stub. Built it out as a 6-day guided learning journey that incrementally constructs a Product Review Sentiment Analyzer using Hugging Face + OpenAI + Gradio + LLMOps practices, with each day teaching new concepts via problem → solution → explained code.\n\n### Structure\n- **Root** — `README.md` (journey overview, prerequisites, final layout), `.gitignore` (protects `.env`, caches, logs)\n- **Day-1** — venv setup; first HF `pipeline(\"sentiment-analysis\")` script (~10 lines)\n- **Day-2** — OpenAI Chat Completions; system/user prompts; JSON-forced output; `.env` for keys; gains Neutral + sarcasm handling\n- **Day-3** — wraps Day-2 analyzer in a `gr.Interface` web app with examples\n- **Day-4** — batch input (one review per line); swaps in `cardiffnlp/twitter-roberta-base-sentiment-latest` for Neutral + per-class confidence; HF vs OpenAI side-by-side `gr.Dataframe`\n- **Day-5** — richer prompt returning aspects, keywords, language, translation; aggregation helpers (`aspect_summary`, `top_keywords` via `Counter`, `overall_score` 0–10); `gr.Blocks` dashboard\n- **Day-6** — prompt moved to `prompts/sentiment_prompt.txt` (file stem = version); `logger.py` appends every call to `logs/results.csv` (timestamp, prompt_version, model, review, sentiment, reason); final `analyzer.py` + `app.py`; HF Spaces deployment notes\n\n### Teaching format (identical every day, for predictability)\n🎯 What you'll learn → 🤔 Problem → 💡 Solution → 🧑‍💻 Line-by-line explained code → ▶️ Try it yourself → 🧪 Mini-experiments → 🔭 Tomorrow's preview\n\n### Design choices\n- Code kept intentionally short and readable over clever; each new day reuses/extends the prior day's files rather than rewriting\n- Per-day `requirements.txt` so a learner who stops at Day 2 doesn't need Gradio/Transformers\n- `gpt-4o-mini` + `temperature=0` throughout (cheap, deterministic, classification-appropriate)\n- LLMOps introduced as the *simplest* working version (text-file prompt versioning + CSV log) rather than over-engineered tooling\n- `.env.example` provided; real `.env` gitignored\n\n### Example — the prompt-versioning pattern (Day 6)\n```python\nPROMPT_FILE    = Path(__file__).parent / \"prompts\" / \"sentiment_prompt.txt\"\nPROMPT_TEXT    = PROMPT_FILE.read_text(encoding=\"utf-8\")\nPROMPT_VERSION = PROMPT_FILE.stem   # swap file → swap version, no code change\n\nresult = client.chat.completions.create(\n    model=MODEL, temperature=0,\n    messages=[{\"role\": \"system\", \"content\": PROMPT_TEXT},\n              {\"role\": \"user\",   \"content\": review}],\n)\nlog_result(PROMPT_VERSION, MODEL, review, json.loads(result.choices[0].message.content))\n```",
+    "author": "Copilot",
+    "headRef": "copilot/add-ai-powered-resume-reviewer",
+    "repository": "Raj-Indra-Asura/Product-Review-Sentiment-Analyzer"
+  },
+  "diffRef": {
+    "repository": "Raj-Indra-Asura/Product-Review-Sentiment-Analyzer",
+    "headSha": "3ff991cab467085cfa1018f178737eafac0dbd18",
+    "baseSha": "85bcc230544fec5ae5e6afb9650cd70bef9b530e"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-Raj-Indra-Asura-Product-Review-Sentiment-Analyzer-pr1.diff",
+  "vendoredAt": "2026-05-24T03:05:43.530Z",
+  "collectedAt": "2026-05-24T03:05:43.530Z"
+}

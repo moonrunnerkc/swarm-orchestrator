@@ -1,0 +1,26 @@
+{
+  "id": "devin-manganadda-stalite-frontview-pr2",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "a065ac5d86bd85e215e4deab7d61551ab11ca174",
+    "baseSha": "16c49ea2b3687e03123f7f8a95662f13b3b24625",
+    "title": "Fix empty Zone / State / LGA dropdowns and unresponsive \"I agree\" checkbox",
+    "body": "## Summary\n\nTwo bugs on `register_page.html` (and the related profile / login pages) fixed in this PR.\n\n### 1. Empty Zone / State / LGA dropdowns (the originally reported bug)\n\nPR #1 populated those selects dynamically from `ng_locations.js` after page load — when that script failed to load (e.g. opening the file directly via `file://`, strict cache/network policy, or any JS load error), the selects rendered with only the placeholder option.\n\nFix: follow the original `register_page.html` pattern (inline `<option>` tags) for all three selects.\n- **Zone**: inline all 15 zones as `<option>` tags.\n- **State**: inline all 37 states as `<option>` tags (restores the pre-PR-#1 pattern).\n- **LGA**: inline all 774 LGAs grouped by state with `<optgroup label=\"State\" data-state=\"State\">`. A small `filterLgaByState(state)` helper hides non-matching `<optgroup>` elements when a state is selected.\n- Removed the unused `<script src=\"ng_locations.js\">` include and the `ng_locations.js` file itself.\n\nSame change applied to `user_profile_page.html` Settings → Location.\n\n### 2. \"I agree\" terms checkbox not clickable (follow-up bug)\n\nWhen checking in the browser I found the terms checkbox didn't toggle. Root cause was a *pre-existing* bug in the original upload, surfaced once the form was actually exercised end-to-end:\n\n```js\nfunction tick(){\n  const n=new Date();\n  document.getElementById('clk').textContent = ...   // throws: #clk doesn't exist\n}\ntick(); setInterval(tick, 30000);\n```\n\n`#clk` is referenced but no `<… id=\"clk\">` element exists on these pages. `tick()` therefore throws a `TypeError` at script init, halting the rest of the top-level script. The follow-on effect is that `let termsAccepted = false;` (declared further down) never executes, so when the user clicks the checkbox, `toggleTerms()` tries to read `termsAccepted` and hits the temporal dead zone — silently failing and never adding the `.checked` class.\n\nFix: make `tick()` a no-op when `#clk` isn't on the page. The rest of the top-level script now runs to completion, `termsAccepted` is initialized, and the checkbox toggles. Applied the same guard to `login_page.html` which had the identical pattern.\n\n### Verified\n\n- Loaded `register_page.html`, advanced to Step 2, opened the Zone / State / LGA dropdowns — all populated.\n- Picked **Kano** as the state → LGA dropdown narrowed to Kano's 44 LGAs only.\n- Clicked the \"I agree\" checkbox → orange checkmark appears, click again → unchecks.\n\n![Step 2 with all dropdowns populated and the \"I agree\" checkbox checked](https://app.devin.ai/api/presigned_proxy?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvcmdfaWQiOiJvcmctMTg2NzRhZGVlNjI4NDExMTg2ZGZkNzNhZGNkNDAyOWYiLCJ1c2VyX2lkIjpudWxsLCJidWNrZXRfbmFtZSI6ImRldmluYXR0YWNobWVudHMiLCJidWNrZXRfa2V5IjoiYXR0YWNobWVudHNfcHJpdmF0ZS9vcmctMTg2NzRhZGVlNjI4NDExMTg2ZGZkNzNhZGNkNDAyOWYvNmJhMzliY2YtOGIyZS00M2Y0LWExYjYtNDgwYmQxNzA0M2JjIiwiaWF0IjoxNzc5NTczNzQyLCJleHAiOjE3ODAxNzg1NDIsImZpbGVuYW1lIjoiLnRlcm1zLWZpeC5wbmcifQ.OAB4_XDS9rVRPmLTdsb-w2ObkMwGDuimNy1FftDHuoc)\n\n## Review & Testing Checklist for Human\n\n- [ ] Open `register_page.html`, fill Step 1 (name / phone / password), click **Continue to Location**, then confirm the Zone (15), State (37) and LGA (cascades by state) dropdowns are all populated.\n- [ ] Click the \"I agree to the Terms of Service…\" checkbox — confirm the orange check appears. Click again — confirm it un-checks.\n- [ ] Open `user_profile_page.html`, go to Settings → Location, confirm the same three dropdowns are populated and the State→LGA cascade works.\n\n### Notes\n- This is a follow-up on top of merged PR #1. Base is current `main`.\n- The `#clk` element was never present in the original uploaded HTML — the `tick()` clock was unreachable from the start. This patch makes it gracefully no-op rather than poison the rest of the script. If a clock is desired later, add `<… id=\"clk\">` somewhere on the page and `tick()` will populate it.\n- `ng_locations.js` was removed since its data is now inline.\n\n\nLink to Devin session: https://app.devin.ai/sessions/d1f7dc0349894bc3a946e6e7402e2d49\nRequested by: @manganadda-stalite",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779572615-fix-register-dropdowns",
+    "repository": "manganadda-stalite/frontview"
+  },
+  "diffRef": {
+    "repository": "manganadda-stalite/frontview",
+    "headSha": "a065ac5d86bd85e215e4deab7d61551ab11ca174",
+    "baseSha": "16c49ea2b3687e03123f7f8a95662f13b3b24625"
+  },
+  "vendoredDiffPath": "devin/devin-manganadda-stalite-frontview-pr2.diff",
+  "vendoredAt": "2026-05-24T03:05:20.044Z",
+  "collectedAt": "2026-05-24T03:05:20.044Z"
+}

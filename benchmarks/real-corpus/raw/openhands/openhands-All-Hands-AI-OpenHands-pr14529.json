@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14529",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14529,
+    "headSha": "4bca098cc6b9fc8effa3a1d5636d0d6b24fb2050",
+    "baseSha": "448873519a9952b11140ba2e2bcef6c46ca72d58",
+    "title": "Scope resolver runtime auth to resolved org",
+    "body": "HUMAN:\nThis PR makes resolver-started conversations use the org resolved from repo claims for runtime auth, so settings, secrets, provider tokens, org info, and generated system API keys match the conversation org instead of falling back to the user's default org.\n\n- [x] A human has tested these changes.\n\n## Summary\n\nScopes resolver runtime auth to the org resolved from repo-claim routing.\n\n- when a resolver integration sets `resolver_org_id`, apply it to the underlying SaaS auth object\n- make `SaasUserAuth.get_effective_org_id()` honor that trusted server-side resolver override after verifying membership\n- clear org-scoped caches when the override is applied so settings, secrets, provider tokens, org info, and generated API keys are loaded from the resolved org\n- adds coverage for the generic resolver context, effective-org precedence, and Jira DC's selected-repo org claim path\n\n## Validation\n\nSuccessfully tested on a real OHE instance with Jira Data Center. What was real end-to-end:\n\n- A real Jira comment was created in Jira.\n- Jira delivered the webhook to OpenHands.\n- OpenHands accepted and processed the webhook.\n- Jira DC repo inference selected `alona6-group/alona6-project`.\n- The repo claim resolved to the test OpenHands org.\n- OpenHands created the conversation under that claimed org.\n- Runtime auth used that org too, proven by the system API key being created under the claimed org.\n\nAlso verified the public org/claim API setup path on R02:\n\n- `POST /api/organizations` returned `201` and the org appeared in `GET /api/organizations`.\n- `POST /api/organizations/{org_id}/git-claims` returned `201`, the claim appeared in `GET /git-claims`, and `DELETE /git-claims/{claim_id}` returned `200`.\n\nLocal checks:\n\n- `env PYTHONPATH=enterprise:. uv run --with python-keycloak --with pytest-asyncio --with aiosqlite --with limits --with coredis pytest enterprise/tests/unit/integrations/test_resolver_context.py enterprise/tests/unit/server/auth/test_saas_user_auth_effective_org.py enterprise/tests/unit/integrations/jira_dc/test_jira_dc_view.py` -> 32 passed\n- `env PYTHONPATH=enterprise:. uv run ruff check enterprise/integrations/resolver_context.py enterprise/server/auth/saas_user_auth.py enterprise/tests/unit/integrations/test_resolver_context.py enterprise/tests/unit/server/auth/test_saas_user_auth_effective_org.py enterprise/tests/unit/integrations/jira_dc/test_jira_dc_view.py` -> all checks passed\n\n---\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-4bca098   docker.openhands.dev/openhands/openhands:4bca098\n```",
+    "author": "ak684",
+    "headRef": "alona/resolver-org-runtime-scope",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "4bca098cc6b9fc8effa3a1d5636d0d6b24fb2050",
+    "baseSha": "448873519a9952b11140ba2e2bcef6c46ca72d58"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14529.diff",
+  "vendoredAt": "2026-05-24T03:17:55.310Z",
+  "collectedAt": "2026-05-24T03:17:55.310Z"
+}

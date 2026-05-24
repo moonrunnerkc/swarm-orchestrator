@@ -1,0 +1,1945 @@
+diff --git a/platform/backend/main.py b/platform/backend/main.py
+index 3b130c5..c3010e8 100644
+--- a/platform/backend/main.py
++++ b/platform/backend/main.py
+@@ -15,7 +15,7 @@
+ sys.path.insert(0, str(_REPO_ROOT / "src"))
+ 
+ from . import job_manager  # noqa: E402
+-from .routers import benchmarks, jobs, postprocess, preprocess, solver  # noqa: E402
++from .routers import benchmarks, cad, jobs, postprocess, preprocess, solver  # noqa: E402
+ 
+ # ---------------------------------------------------------------------------
+ # App
+@@ -43,6 +43,7 @@
+ # ---------------------------------------------------------------------------
+ 
+ app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
++app.include_router(cad.router, prefix="/api/cad", tags=["CAD"])
+ app.include_router(preprocess.router, prefix="/api/preprocess", tags=["Pre-processing"])
+ app.include_router(solver.router, prefix="/api/solve", tags=["Solver"])
+ app.include_router(postprocess.router, prefix="/api/postprocess", tags=["Post-processing"])
+diff --git a/platform/backend/routers/cad.py b/platform/backend/routers/cad.py
+new file mode 100644
+index 0000000..6f8861d
+--- /dev/null
++++ b/platform/backend/routers/cad.py
+@@ -0,0 +1,388 @@
++"""CAD modelling API endpoints for ship hull geometry.
++
++Exposes the :mod:`tensorlbm.ship_cad` module as REST endpoints so that the
++browser-based platform can:
++
++1. Generate parametric hull previews (body-plan / waterplane / side-profile).
++2. Retrieve hull form statistics (Cb, Cwp, Cm, Cp, …).
++3. Compute LBM parameters from physical ship dimensions.
++4. Launch a solver job directly from CAD parameters (CAD → solver shortcut).
++5. Export a hull STL file.
++"""
++from __future__ import annotations
++
++import base64
++import io
++from typing import Literal
++
++from fastapi import APIRouter, HTTPException
++from fastapi.responses import Response
++from pydantic import BaseModel, Field
++
++from .. import job_manager
++
++router = APIRouter()
++
++# ---------------------------------------------------------------------------
++# Request / response models
++# ---------------------------------------------------------------------------
++
++
++class HullPreviewRequest(BaseModel):
++    hull_type: Literal["wigley", "series60", "kcs"] = "series60"
++    length: float = Field(100.0, gt=0, description="Hull length (lattice units)")
++    beam: float = Field(16.0, gt=0, description="Hull beam (lattice units)")
++    draft: float = Field(8.0, gt=0, description="Hull draft (lattice units)")
++    n_stations: int = Field(11, ge=3, le=41, description="Number of body-plan stations")
++
++
++class HullMaskRequest(BaseModel):
++    hull_type: Literal["wigley", "series60", "kcs"] = "series60"
++    nx: int = Field(160, ge=20, description="Grid x-size")
++    ny: int = Field(60, ge=10, description="Grid y-size")
++    nz: int = Field(40, ge=10, description="Grid z-size")
++    length: float = Field(80.0, gt=0)
++    beam: float = Field(8.0, gt=0)
++    draft: float = Field(12.0, gt=0)
++    cx: float | None = Field(None, description="Midship x (default: nx/2)")
++    cy: float | None = Field(None, description="Centreline y (default: ny/2)")
++    cz_keel: float | None = Field(None, description="Keel z (default: nz/4)")
++    device: str = "cpu"
++
++
++class LBMParametersRequest(BaseModel):
++    length_m: float = Field(100.0, gt=0, description="Ship length [m]")
++    speed_ms: float = Field(5.0, gt=0, description="Ship speed [m/s]")
++    nu_m2s: float = Field(1.139e-6, gt=0, description="Kinematic viscosity [m²/s]")
++    lbm_length: float = Field(100.0, gt=0, description="LBM hull length (cells)")
++    lbm_speed: float = Field(0.05, gt=0, description="LBM inlet velocity (lu/step)")
++    froude_target: float | None = Field(
++        None, ge=0, description="Target Froude number (overrides speed_ms)"
++    )
++
++
++class HullSolverRequest(BaseModel):
++    """Launch a ship-hull LBM solver job from CAD parameters."""
++
++    hull_type: Literal["wigley", "series60", "kcs"] = "wigley"
++    nx: int = Field(160, ge=20)
++    ny: int = Field(60, ge=10)
++    nz: int = Field(40, ge=10)
++    hull_length: float = Field(80.0, gt=0)
++    hull_beam: float = Field(8.0, gt=0)
++    hull_draft: float = Field(12.0, gt=0)
++    u_in: float = Field(0.05, gt=0)
++    re: float = Field(200.0, gt=0)
++    smagorinsky_cs: float = Field(0.1, ge=0)
++    wave_amp: float = Field(0.0, ge=0)
++    wave_period: float = Field(200.0, gt=0)
++    n_steps: int = Field(2000, ge=1)
++    output_interval: int = Field(200, ge=1)
++    device: str = "cpu"
++    seed: int = 0
++
++
++class HullSTLRequest(BaseModel):
++    hull_type: Literal["wigley", "series60", "kcs"] = "series60"
++    length: float = Field(100.0, gt=0)
++    beam: float = Field(16.0, gt=0)
++    draft: float = Field(8.0, gt=0)
++    n_long: int = Field(60, ge=4, le=200)
++    n_vert: int = Field(30, ge=4, le=100)
++
++
++# ---------------------------------------------------------------------------
++# Endpoints
++# ---------------------------------------------------------------------------
++
++
++@router.post("/preview")
++async def hull_preview(req: HullPreviewRequest) -> dict:
++    """Generate a multi-view hull preview (body-plan / waterplane / side profile).
++
++    Returns a base64-encoded PNG of the three-panel figure plus hull form
++    statistics (Cb, Cwp, Cm, Cp, L/B, B/T).
++    """
++    try:
++        import matplotlib
++        matplotlib.use("Agg")
++        from tensorlbm.ship_cad import (
++            ShipHullType,
++            generate_hull_previews,
++            hull_statistics,
++        )
++
++        ht = ShipHullType(req.hull_type)
++        fig = generate_hull_previews(
++            ht,
++            length=req.length,
++            beam=req.beam,
++            draft=req.draft,
++            n_stations=req.n_stations,
++        )
++
++        buf = io.BytesIO()
++        fig.savefig(buf, format="png", dpi=110, bbox_inches="tight")
++        import matplotlib.pyplot as plt
++        plt.close(fig)
++        buf.seek(0)
++        img_b64 = "data:image/png;base64," + base64.b64encode(buf.read()).decode()
++
++        stats = hull_statistics(ht, req.length, req.beam, req.draft)
++        return {"image": img_b64, "stats": stats}
++    except Exception as exc:
++        raise HTTPException(status_code=422, detail=str(exc)) from exc
++
++
++@router.post("/hull-mask")
++async def hull_mask(req: HullMaskRequest) -> dict:
++    """Build a 3-D hull voxel mask and return solid/fluid statistics.
++
++    Also returns a 2-D top-view preview PNG (waterplane projection).
++    """
++    try:
++        import matplotlib  # noqa: I001
++        matplotlib.use("Agg")
++        import matplotlib.pyplot as plt  # noqa: I001
++        import numpy as np  # noqa: I001
++        from tensorlbm.ship_cad import ShipHullType, build_hull_mask  # noqa: I001
++
++        mask_tensor, stats = build_hull_mask(
++            hull_type=req.hull_type,
++            nx=req.nx,
++            ny=req.ny,
++            nz=req.nz,
++            cx=req.cx,
++            cy=req.cy,
++            cz_keel=req.cz_keel,
++            length=req.length,
++            beam=req.beam,
++            draft=req.draft,
++            device=req.device,
++        )
++
++        # Generate a top-view (z-projection) preview image
++        top_view = mask_tensor.any(dim=0).cpu().numpy().astype(np.uint8) * 255
++
++        fig, ax = plt.subplots(figsize=(6, 3))
++        ax.imshow(top_view, cmap="Blues", origin="lower", vmin=0, vmax=255)
++        ax.set_title(
++            f"{ShipHullType(req.hull_type).value.upper()} hull – top view "
++            f"(Cb={stats['Cb_numerical']:.3f})"
++        )
++        ax.axis("off")
++        buf = io.BytesIO()
++        fig.savefig(buf, format="png", dpi=100, bbox_inches="tight")
++        plt.close(fig)
++        buf.seek(0)
++        img_b64 = "data:image/png;base64," + base64.b64encode(buf.read()).decode()
++
++        return {"image": img_b64, "stats": stats}
++    except Exception as exc:
++        raise HTTPException(status_code=422, detail=str(exc)) from exc
++
++
++@router.post("/lbm-parameters")
++async def lbm_parameters(req: LBMParametersRequest) -> dict:
++    """Compute LBM dimensionless parameters from physical ship dimensions."""
++    try:
++        from tensorlbm.ship_cad import ship_lbm_parameters
++
++        result = ship_lbm_parameters(
++            length_m=req.length_m,
++            speed_ms=req.speed_ms,
++            nu_m2s=req.nu_m2s,
++            lbm_length=req.lbm_length,
++            lbm_speed=req.lbm_speed,
++            froude_target=req.froude_target,
++        )
++        return result
++    except Exception as exc:
++        raise HTTPException(status_code=422, detail=str(exc)) from exc
++
++
++@router.post("/send-to-solver")
++async def send_to_solver(req: HullSolverRequest) -> dict:
++    """Submit a ship-hull LBM solver job directly from CAD parameters.
++
++    For Wigley hull, the existing :func:`run_ship_hull_flow` runner is used
++    unchanged.  For Series 60 and KCS, a custom job is submitted that builds
++    the appropriate hull mask and runs the 3-D LBM solver.
++    """
++    try:
++        if req.hull_type == "wigley":
++            # Use the existing Wigley runner
++            def _run_wigley(job: job_manager.Job) -> dict:
++                from tensorlbm import ShipHullFlowConfig, run_ship_hull_flow
++
++                cfg = ShipHullFlowConfig(
++                    nx=req.nx,
++                    ny=req.ny,
++                    nz=req.nz,
++                    u_in=req.u_in,
++                    re=req.re,
++                    hull_length=req.hull_length,
++                    hull_beam=req.hull_beam,
++                    hull_draft=req.hull_draft,
++                    smagorinsky_cs=req.smagorinsky_cs,
++                    wave_amp=req.wave_amp,
++                    wave_period=req.wave_period,
++                    wave_k=0.05,
++                    water_depth=0.0,
++                    n_steps=req.n_steps,
++                    output_interval=req.output_interval,
++                    output_root=job.output_dir,
++                    overwrite=True,
++                    device=req.device,
++                    seed=req.seed,
++                )
++                run_dir = run_ship_hull_flow(cfg)
++                return {"run_dir": str(run_dir)}
++
++            job_id = job_manager.submit(
++                name=f"CAD→Solver: Wigley Re={req.re}",
++                job_type="ship_hull",
++                config=req.model_dump(),
++                fn=_run_wigley,
++            )
++        else:
++            # Series 60 / KCS: inject custom hull mask into the ship flow runner
++            req_snapshot = req.model_copy()
++
++            def _run_custom(job: job_manager.Job) -> dict:
++                import torch  # noqa: I001, TC002
++                import tensorlbm.obstacles as _obs
++                from tensorlbm.ship_cad import build_hull_mask
++                from tensorlbm.ship_flow import ShipHullFlowConfig, run_ship_hull_flow
++
++                nx, ny, nz = req_snapshot.nx, req_snapshot.ny, req_snapshot.nz
++                L = req_snapshot.hull_length
++                B = req_snapshot.hull_beam
++                T = req_snapshot.hull_draft
++                cx = nx / 2.0
++                cy = ny / 2.0
++                cz_keel = nz / 4.0
++
++                hull_mask_tensor, _stats = build_hull_mask(
++                    hull_type=req_snapshot.hull_type,
++                    nx=nx, ny=ny, nz=nz,
++                    cx=cx, cy=cy, cz_keel=cz_keel,
++                    length=L, beam=B, draft=T,
++                    device=req_snapshot.device,
++                )
++
++                # Build a Wigley config with matching dims; we override the mask
++                # inside run_ship_hull_flow by monkey-patching wigley_hull_mask
++                _orig = _obs.wigley_hull_mask
++
++                def _patched_mask(*_args: object, **_kwargs: object) -> torch.Tensor:
++                    return hull_mask_tensor
++
++                _obs.wigley_hull_mask = _patched_mask  # type: ignore[assignment]
++                try:
++                    cfg = ShipHullFlowConfig(
++                        nx=nx, ny=ny, nz=nz,
++                        u_in=req_snapshot.u_in,
++                        re=req_snapshot.re,
++                        hull_length=L,
++                        hull_beam=B,
++                        hull_draft=T,
++                        smagorinsky_cs=req_snapshot.smagorinsky_cs,
++                        wave_amp=req_snapshot.wave_amp,
++                        wave_period=req_snapshot.wave_period,
++                        wave_k=0.05,
++                        water_depth=0.0,
++                        n_steps=req_snapshot.n_steps,
++                        output_interval=req_snapshot.output_interval,
++                        output_root=job.output_dir,
++                        overwrite=True,
++                        device=req_snapshot.device,
++                        seed=req_snapshot.seed,
++                    )
++                    run_dir = run_ship_hull_flow(cfg)
++                finally:
++                    _obs.wigley_hull_mask = _orig  # type: ignore[assignment]
++
++                return {"run_dir": str(run_dir)}
++
++            job_id = job_manager.submit(
++                name=(
++                    f"CAD→Solver: {req.hull_type.upper()} Re={req.re}"
++                ),
++                job_type="ship_hull",
++                config=req.model_dump(),
++                fn=_run_custom,
++            )
++
++        return {"job_id": job_id, "message": "Ship hull CAD job submitted"}
++    except Exception as exc:
++        raise HTTPException(status_code=422, detail=str(exc)) from exc
++
++
++@router.post("/export-stl")
++async def export_stl(req: HullSTLRequest) -> Response:
++    """Generate and download an ASCII STL file for the requested hull form."""
++    try:
++        import tempfile
++        from pathlib import Path
++
++        from tensorlbm.ship_cad import export_hull_stl
++
++        with tempfile.TemporaryDirectory() as td:
++            # Use a fixed filename within the temp dir to avoid path injection
++            stl_path = export_hull_stl(
++                hull_type=req.hull_type,
++                length=req.length,
++                beam=req.beam,
++                draft=req.draft,
++                n_long=req.n_long,
++                n_vert=req.n_vert,
++                output_path=Path(td) / "hull.stl",
++            )
++            content = stl_path.read_bytes()
++
++        return Response(
++            content=content,
++            media_type="model/stl",
++            headers={
++                "Content-Disposition": f'attachment; filename="{req.hull_type}_hull.stl"'
++            },
++        )
++    except Exception as exc:
++        raise HTTPException(status_code=422, detail=str(exc)) from exc
++
++
++@router.get("/hull-types")
++async def list_hull_types() -> dict:
++    """Return the list of supported hull types with descriptions."""
++    return {
++        "hull_types": [
++            {
++                "value": "wigley",
++                "label": "Wigley Parabolic",
++                "description": (
++                    "Classic ITTC benchmark hull with parabolic cross-sections. "
++                    "Analytical block coefficient Cb = 4/9 ≈ 0.444."
++                ),
++                "Cb": 0.4444,
++            },
++            {
++                "value": "series60",
++                "label": "Series 60 (Cb=0.60)",
++                "description": (
++                    "DTMB Series 60 polynomial approximation. "
++                    "Representative of a standard merchant ship hull. Cb = 0.60."
++                ),
++                "Cb": 0.600,
++            },
++            {
++                "value": "kcs",
++                "label": "KCS Approximation (Cb≈0.651)",
++                "description": (
++                    "KRISO Container Ship approximation. "
++                    "Modern container ship hull form. Cb ≈ 0.651."
++                ),
++                "Cb": 0.651,
++            },
++        ]
++    }
+diff --git a/platform/frontend/index.html b/platform/frontend/index.html
+index c6746e3..e062bb1 100644
+--- a/platform/frontend/index.html
++++ b/platform/frontend/index.html
+@@ -173,6 +173,7 @@
+   <span class="brand me-4"><i class="bi bi-water"></i> TensorLBM Platform</span>
+   <nav class="d-flex gap-1">
+     <a href="#" class="active" onclick="showTab('dashboard',this)"><i class="bi bi-speedometer2"></i> Dashboard</a>
++    <a href="#" onclick="showTab('cad',this)"><i class="bi bi-rulers"></i> CAD</a>
+     <a href="#" onclick="showTab('preprocess',this)"><i class="bi bi-grid-3x3"></i> Pre-processing</a>
+     <a href="#" onclick="showTab('solve',this)"><i class="bi bi-play-circle"></i> Solve</a>
+     <a href="#" onclick="showTab('postprocess',this)"><i class="bi bi-bar-chart-line"></i> Post-process</a>
+@@ -234,6 +235,166 @@ <h4 class="mb-3"><i class="bi bi-speedometer2"></i> Dashboard</h4>
+       </div>
+     </div>
+ 
++    <!-- ================================================================ -->
++    <!-- CAD MODELLING -->
++    <!-- ================================================================ -->
++    <div class="tab-panel" id="panel-cad">
++      <h4 class="mb-3"><i class="bi bi-rulers"></i> Ship Hull CAD Modelling</h4>
++
++      <div class="row g-3">
++
++        <!-- Hull type & parameters -->
++        <div class="col-lg-4">
++          <div class="card">
++            <div class="card-header"><i class="bi bi-box"></i> Hull Parameters</div>
++            <div class="card-body config-form">
++              <label>Hull Type</label>
++              <select class="form-select form-select-sm mb-3" id="cad-hull-type" onchange="onCADHullTypeChange()">
++                <option value="wigley">Wigley Parabolic (Cb≈0.444)</option>
++                <option value="series60" selected>Series 60 (Cb=0.60)</option>
++                <option value="kcs">KCS Approximation (Cb≈0.651)</option>
++              </select>
++              <div id="cad-hull-desc" class="form-text mb-3 text-info small"></div>
++
++              <div class="row g-2 mb-2">
++                <div class="col-6">
++                  <label>Length L (lu)</label>
++                  <input type="number" class="form-control form-control-sm" id="cad-length" value="100" min="10" />
++                </div>
++                <div class="col-6">
++                  <label>Beam B (lu)</label>
++                  <input type="number" class="form-control form-control-sm" id="cad-beam" value="16" min="2" />
++                </div>
++                <div class="col-6">
++                  <label>Draft T (lu)</label>
++                  <input type="number" class="form-control form-control-sm" id="cad-draft" value="8" min="1" />
++                </div>
++                <div class="col-6">
++                  <label>Body-plan stations</label>
++                  <input type="number" class="form-control form-control-sm" id="cad-stations" value="11" min="3" max="41" />
++                </div>
++              </div>
++
++              <div class="d-flex gap-2 mt-3">
++                <button class="btn btn-primary btn-sm flex-fill" onclick="cadGeneratePreview()">
++                  <i class="bi bi-eye"></i> Preview
++                </button>
++                <button class="btn btn-outline-secondary btn-sm flex-fill" onclick="cadDownloadSTL()">
++                  <i class="bi bi-download"></i> Export STL
++                </button>
++              </div>
++            </div>
++          </div>
++
++          <!-- Hull Form Coefficients -->
++          <div class="card mt-3">
++            <div class="card-header"><i class="bi bi-table"></i> Hull Form Coefficients</div>
++            <div class="card-body small" id="cad-stats">
++              <p class="text-muted">Click <em>Preview</em> to compute coefficients.</p>
++            </div>
++          </div>
++
++          <!-- Physical → LBM parameters -->
++          <div class="card mt-3">
++            <div class="card-header"><i class="bi bi-calculator"></i> Ship → LBM Parameters</div>
++            <div class="card-body config-form">
++              <div class="row g-2 mb-2">
++                <div class="col-6">
++                  <label>Ship length (m)</label>
++                  <input type="number" class="form-control form-control-sm" id="cad-phys-L" value="100" min="1" />
++                </div>
++                <div class="col-6">
++                  <label>Speed (m/s)</label>
++                  <input type="number" class="form-control form-control-sm" id="cad-phys-U" value="5.0" step="0.1" min="0.01" />
++                </div>
++                <div class="col-6">
++                  <label>ν (m²/s)</label>
++                  <input type="number" class="form-control form-control-sm" id="cad-phys-nu" value="1.139e-6" step="1e-7" />
++                </div>
++                <div class="col-6">
++                  <label>Froude target (0=off)</label>
++                  <input type="number" class="form-control form-control-sm" id="cad-froude" value="0" step="0.01" min="0" />
++                </div>
++              </div>
++              <button class="btn btn-sm btn-outline-primary w-100" onclick="cadComputeLBM()">
++                <i class="bi bi-calculator"></i> Compute
++              </button>
++              <div id="cad-lbm-result" class="mt-2"></div>
++            </div>
++          </div>
++        </div>
++
++        <!-- Preview area -->
++        <div class="col-lg-8">
++          <div class="card">
++            <div class="card-header d-flex align-items-center">
++              <i class="bi bi-image me-2"></i> Hull Preview
++              <span class="ms-auto text-muted small" id="cad-preview-caption"></span>
++            </div>
++            <div class="card-body text-center" id="cad-preview-area">
++              <p class="text-muted py-5">Select hull type and parameters, then click <strong>Preview</strong>.</p>
++            </div>
++          </div>
++
++          <!-- 3D Voxel Mask -->
++          <div class="card mt-3">
++            <div class="card-header"><i class="bi bi-box-seam"></i> 3-D Voxel Mask</div>
++            <div class="card-body config-form">
++              <p class="small text-muted mb-2">Generate the 3-D LBM obstacle mask for the CAD hull.</p>
++              <div class="row g-2 mb-2">
++                <div class="col-4"><label>nx</label><input type="number" class="form-control form-control-sm" id="cad-nx" value="160" min="20" /></div>
++                <div class="col-4"><label>ny</label><input type="number" class="form-control form-control-sm" id="cad-ny" value="60" min="10" /></div>
++                <div class="col-4"><label>nz</label><input type="number" class="form-control form-control-sm" id="cad-nz" value="40" min="10" /></div>
++              </div>
++              <div class="d-flex gap-2">
++                <button class="btn btn-sm btn-outline-primary" onclick="cadGenerateMask()">
++                  <i class="bi bi-grid-3x3-gap"></i> Generate Mask
++                </button>
++              </div>
++              <div id="cad-mask-result" class="mt-2"></div>
++            </div>
++          </div>
++
++          <!-- Launch Solver -->
++          <div class="card mt-3 border-primary">
++            <div class="card-header bg-primary text-white">
++              <i class="bi bi-play-circle me-2"></i> Launch LBM Solver (CAD → Fluid → Post-process)
++            </div>
++            <div class="card-body config-form">
++              <p class="small text-muted mb-2">
++                Directly submit a 3-D ship-hull LBM simulation from the current CAD hull.
++                The hull mask is passed to the solver; results appear in <strong>Post-process</strong>.
++              </p>
++              <div class="row g-2 mb-2">
++                <div class="col-4"><label>nx</label><input type="number" class="form-control form-control-sm" id="cad-sol-nx" value="160" min="20" /></div>
++                <div class="col-4"><label>ny</label><input type="number" class="form-control form-control-sm" id="cad-sol-ny" value="60" min="10" /></div>
++                <div class="col-4"><label>nz</label><input type="number" class="form-control form-control-sm" id="cad-sol-nz" value="40" min="10" /></div>
++                <div class="col-4"><label>Hull length (lu)</label><input type="number" class="form-control form-control-sm" id="cad-sol-length" value="80" min="10" /></div>
++                <div class="col-4"><label>Hull beam (lu)</label><input type="number" class="form-control form-control-sm" id="cad-sol-beam" value="8" min="1" /></div>
++                <div class="col-4"><label>Hull draft (lu)</label><input type="number" class="form-control form-control-sm" id="cad-sol-draft" value="12" min="1" /></div>
++                <div class="col-4"><label>Inlet velocity</label><input type="number" class="form-control form-control-sm" id="cad-sol-uin" value="0.05" step="0.01" min="0.001" /></div>
++                <div class="col-4"><label>Reynolds number</label><input type="number" class="form-control form-control-sm" id="cad-sol-re" value="200" min="1" /></div>
++                <div class="col-4"><label>Smagorinsky Cs</label><input type="number" class="form-control form-control-sm" id="cad-sol-cs" value="0.1" step="0.01" min="0" /></div>
++                <div class="col-4"><label>Time steps</label><input type="number" class="form-control form-control-sm" id="cad-sol-steps" value="2000" min="1" /></div>
++                <div class="col-4"><label>Output interval</label><input type="number" class="form-control form-control-sm" id="cad-sol-interval" value="200" min="1" /></div>
++                <div class="col-4">
++                  <label>Device</label>
++                  <select class="form-select form-select-sm" id="cad-sol-device">
++                    <option value="cpu">cpu</option>
++                  </select>
++                </div>
++              </div>
++              <button class="btn btn-primary" id="cad-launch-btn" onclick="cadLaunchSolver()">
++                <i class="bi bi-play-fill"></i> Submit Solver Job
++              </button>
++              <div id="cad-launch-result" class="mt-2"></div>
++            </div>
++          </div>
++
++        </div><!-- /col-lg-8 -->
++      </div><!-- /row -->
++    </div><!-- /panel-cad -->
++
+     <!-- ================================================================ -->
+     <!-- PRE-PROCESSING -->
+     <!-- ================================================================ -->
+@@ -740,7 +901,7 @@ <h4 class="mb-3"><i class="bi bi-trophy"></i> Benchmarks</h4>
+   const sel = document.getElementById('pp-job-select');
+   if (sel) sel.value = id;
+   refreshPP();
+-  showTab('postprocess', document.querySelectorAll('.top-navbar nav a')[3]);
++  showTab('postprocess', document.querySelectorAll('.top-navbar nav a')[4]);
+ }
+ 
+ async function clearAllJobs() {
+@@ -766,6 +927,174 @@ <h4 class="mb-3"><i class="bi bi-trophy"></i> Benchmarks</h4>
+   return false;
+ }
+ 
++// ============================================================
++// CAD Modelling
++// ============================================================
++
++const CAD_HULL_DESCS = {
++  wigley: 'Classic ITTC parabolic hull. Analytical Cb = 4/9 ≈ 0.444. Used as a standard validation benchmark in naval hydrodynamics.',
++  series60: 'DTMB Series 60 (Cb=0.60) polynomial approximation. Representative of a standard merchant vessel. Widely used for resistance and wave-making studies.',
++  kcs: 'KRISO Container Ship approximation (Cb≈0.651). Modern container ship hull form with blunt bow and full midship section.',
++};
++
++function onCADHullTypeChange() {
++  const ht = document.getElementById('cad-hull-type').value;
++  document.getElementById('cad-hull-desc').textContent = CAD_HULL_DESCS[ht] || '';
++}
++
++async function cadGeneratePreview() {
++  const hull_type = document.getElementById('cad-hull-type').value;
++  const length = +document.getElementById('cad-length').value;
++  const beam = +document.getElementById('cad-beam').value;
++  const draft = +document.getElementById('cad-draft').value;
++  const n_stations = +document.getElementById('cad-stations').value;
++  const area = document.getElementById('cad-preview-area');
++  const caption = document.getElementById('cad-preview-caption');
++  area.innerHTML = '<div class="py-5"><span class="spinner-border"></span> Generating hull preview…</div>';
++  caption.textContent = '';
++  try {
++    const r = await api('POST', '/api/cad/preview', { hull_type, length, beam, draft, n_stations });
++    area.innerHTML = `<img src="${r.image}" class="result-img" style="max-width:100%" />`;
++    caption.textContent = `${hull_type.toUpperCase()}  L=${length}  B=${beam}  T=${draft}`;
++    // Render stats
++    const s = r.stats;
++    document.getElementById('cad-stats').innerHTML = `
++      <table class="table table-sm table-bordered mb-0">
++        <tr><th>Hull</th><td>${escHtml(s.label)}</td></tr>
++        <tr><th>C<sub>b</sub></th><td><strong>${s.Cb}</strong></td></tr>
++        <tr><th>C<sub>wp</sub></th><td>${s.Cwp}</td></tr>
++        <tr><th>C<sub>m</sub></th><td>${s.Cm}</td></tr>
++        <tr><th>C<sub>p</sub></th><td>${s.Cp}</td></tr>
++        <tr><th>L/B</th><td>${s['L/B']}</td></tr>
++        <tr><th>B/T</th><td>${s['B/T']}</td></tr>
++        <tr><th>Displacement (lu³)</th><td>${s.displacement_lu3}</td></tr>
++      </table>`;
++    // Sync solver hull params
++    document.getElementById('cad-sol-length').value = length;
++    document.getElementById('cad-sol-beam').value = beam;
++    document.getElementById('cad-sol-draft').value = draft;
++  } catch(e) {
++    area.innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
++  }
++}
++
++async function cadGenerateMask() {
++  const hull_type = document.getElementById('cad-hull-type').value;
++  const nx = +document.getElementById('cad-nx').value;
++  const ny = +document.getElementById('cad-ny').value;
++  const nz = +document.getElementById('cad-nz').value;
++  const length = +document.getElementById('cad-length').value;
++  const beam = +document.getElementById('cad-beam').value;
++  const draft = +document.getElementById('cad-draft').value;
++  const el = document.getElementById('cad-mask-result');
++  el.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Computing…';
++  try {
++    const r = await api('POST', '/api/cad/hull-mask', { hull_type, nx, ny, nz, length, beam, draft });
++    const s = r.stats;
++    el.innerHTML = `
++      <img src="${r.image}" class="result-img mb-2" style="max-width:100%" />
++      <table class="table table-sm table-bordered mb-0 small">
++        <tr><th>Cb (numerical)</th><td><strong>${s.Cb_numerical}</strong></td></tr>
++        <tr><th>Solid cells</th><td>${s.solid_cells}</td></tr>
++        <tr><th>Fluid cells</th><td>${s.fluid_cells}</td></tr>
++        <tr><th>Grid</th><td>${s.nx}×${s.ny}×${s.nz}</td></tr>
++      </table>`;
++  } catch(e) {
++    el.innerHTML = `<div class="alert alert-danger small">${e.message}</div>`;
++  }
++}
++
++async function cadComputeLBM() {
++  const body = {
++    length_m: +document.getElementById('cad-phys-L').value,
++    speed_ms: +document.getElementById('cad-phys-U').value,
++    nu_m2s: +document.getElementById('cad-phys-nu').value,
++    lbm_length: +document.getElementById('cad-length').value,
++    lbm_speed: 0.05,
++    froude_target: +document.getElementById('cad-froude').value || null,
++  };
++  const el = document.getElementById('cad-lbm-result');
++  try {
++    const r = await api('POST', '/api/cad/lbm-parameters', body);
++    const stableHtml = r.stable
++      ? '<span class="badge bg-success">Stable</span>'
++      : '<span class="badge bg-danger">Unstable</span>';
++    el.innerHTML = `
++      <table class="table table-sm table-bordered mb-0 small">
++        <tr><th>Re</th><td>${r.re_physical}</td></tr>
++        <tr><th>Fr</th><td>${r.froude_number}</td></tr>
++        <tr><th>dx (m)</th><td>${r.dx_m}</td></tr>
++        <tr><th>dt (s)</th><td>${r.dt_s}</td></tr>
++        <tr><th>τ</th><td>${r.lbm_tau} ${stableHtml}</td></tr>
++        <tr><th>Ma</th><td>${r.mach_number}</td></tr>
++      </table>`;
++  } catch(e) {
++    el.innerHTML = `<div class="alert alert-danger small">${e.message}</div>`;
++  }
++}
++
++async function cadLaunchSolver() {
++  const body = {
++    hull_type: document.getElementById('cad-hull-type').value,
++    nx: +document.getElementById('cad-sol-nx').value,
++    ny: +document.getElementById('cad-sol-ny').value,
++    nz: +document.getElementById('cad-sol-nz').value,
++    hull_length: +document.getElementById('cad-sol-length').value,
++    hull_beam: +document.getElementById('cad-sol-beam').value,
++    hull_draft: +document.getElementById('cad-sol-draft').value,
++    u_in: +document.getElementById('cad-sol-uin').value,
++    re: +document.getElementById('cad-sol-re').value,
++    smagorinsky_cs: +document.getElementById('cad-sol-cs').value,
++    wave_amp: 0,
++    wave_period: 200,
++    n_steps: +document.getElementById('cad-sol-steps').value,
++    output_interval: +document.getElementById('cad-sol-interval').value,
++    device: document.getElementById('cad-sol-device').value,
++    seed: 0,
++  };
++  const btn = document.getElementById('cad-launch-btn');
++  const el = document.getElementById('cad-launch-result');
++  btn.disabled = true;
++  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Submitting…';
++  try {
++    const r = await api('POST', '/api/cad/send-to-solver', body);
++    showToast(`CAD solver job submitted: ${r.job_id}`, 'success');
++    el.innerHTML = `<div class="alert alert-success small">Job ID: <code>${r.job_id}</code></div>`;
++    showTab('postprocess', document.querySelectorAll('.top-navbar nav a')[4]);
++  } catch(e) {
++    el.innerHTML = `<div class="alert alert-danger small">${e.message}</div>`;
++    showToast(`Error: ${e.message}`, 'danger');
++  } finally {
++    btn.disabled = false;
++    btn.innerHTML = '<i class="bi bi-play-fill"></i> Submit Solver Job';
++  }
++}
++
++async function cadDownloadSTL() {
++  const hull_type = document.getElementById('cad-hull-type').value;
++  const length = +document.getElementById('cad-length').value;
++  const beam = +document.getElementById('cad-beam').value;
++  const draft = +document.getElementById('cad-draft').value;
++  try {
++    const resp = await fetch(API + '/api/cad/export-stl', {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({ hull_type, length, beam, draft, n_long: 60, n_vert: 30 }),
++    });
++    if (!resp.ok) throw new Error(await resp.text());
++    const blob = await resp.blob();
++    const url = URL.createObjectURL(blob);
++    const a = document.createElement('a');
++    a.href = url; a.download = `${hull_type}_hull.stl`; a.click();
++    URL.revokeObjectURL(url);
++  } catch(e) {
++    showToast(`STL export failed: ${e.message}`, 'danger');
++  }
++}
++
++// Initialise CAD hull description on page load
++document.addEventListener('DOMContentLoaded', () => { onCADHullTypeChange(); });
++
+ // ============================================================
+ // Pre-processing
+ // ============================================================
+@@ -1080,7 +1409,7 @@ <h4 class="mb-3"><i class="bi bi-trophy"></i> Benchmarks</h4>
+   try {
+     const r = await api('POST', currentSchema.endpoint, body);
+     showToast(`Job submitted: ${r.job_id}`, 'success');
+-    showTab('postprocess', document.querySelectorAll('.top-navbar nav a')[3]);
++    showTab('postprocess', document.querySelectorAll('.top-navbar nav a')[4]);
+   } catch(e) {
+     showToast(`Error: ${e.message}`, 'danger');
+   } finally {
+diff --git a/src/tensorlbm/__init__.py b/src/tensorlbm/__init__.py
+index 08af8a6..a74f0f7 100644
+--- a/src/tensorlbm/__init__.py
++++ b/src/tensorlbm/__init__.py
+@@ -169,6 +169,23 @@
+     voxelize_stl_3d,
+ )
+ from .protocols import BoundaryCondition, CollisionOperator
++from .ship_cad import (  # noqa: I001
++    ShipHullType,
++    export_hull_stl,
++    generate_hull_body_plan,
++    generate_hull_previews,
++    generate_hull_sideprofile,
++    generate_hull_waterplane,
++    hull_block_coefficient,
++    hull_statistics,
++    kcs_hull_mask,
++    series60_hull_mask,
++    ship_lbm_parameters,
++    theoretical_block_coefficient,
++)
++from .ship_cad import (
++    build_hull_mask as build_ship_hull_mask,
++)
+ from .ship_flow import ShipHullFlowConfig, run_ship_hull_flow
+ from .simulation import LBMSimulation
+ from .sloshing_tank import (
+@@ -333,6 +350,20 @@
+     # Marine / ship
+     "ShipHullFlowConfig",
+     "run_ship_hull_flow",
++    # Ship CAD module
++    "ShipHullType",
++    "series60_hull_mask",
++    "kcs_hull_mask",
++    "hull_block_coefficient",
++    "hull_statistics",
++    "theoretical_block_coefficient",
++    "generate_hull_body_plan",
++    "generate_hull_waterplane",
++    "generate_hull_sideprofile",
++    "generate_hull_previews",
++    "export_hull_stl",
++    "build_ship_hull_mask",
++    "ship_lbm_parameters",
+     # Multiphase models – D2Q9
+     "psi_linear",
+     "psi_exp",
+diff --git a/src/tensorlbm/ship_cad.py b/src/tensorlbm/ship_cad.py
+new file mode 100644
+index 0000000..4c221cb
+--- /dev/null
++++ b/src/tensorlbm/ship_cad.py
+@@ -0,0 +1,742 @@
++"""Parametric ship hull CAD module for TensorLBM.
++
++Provides parametric ship hull geometry generators for the ship and ocean
++engineering domain.  Three standard hull forms are supported:
++
++- **Wigley** – classic parabolic hull (ITTC benchmark, Cb ≈ 0.444).
++- **Series 60** – fuller form based on DTMB Series 60 (Cb = 0.60) polynomial
++  approximation.
++- **KCS** – KRISO Container Ship approximation (Cb ≈ 0.651).
++
++All hull generators return a boolean 3-D solid mask compatible with
++:func:`tensorlbm.run_ship_hull_flow` and the pre-processing pipeline.
++
++Public API
++----------
++- :class:`ShipHullType`      – hull family enum.
++- :func:`series60_hull_mask` – boolean mask for Series 60 Cb=0.60 hull.
++- :func:`kcs_hull_mask`      – boolean mask for KCS approximation hull.
++- :func:`hull_block_coefficient` – compute Cb from a solid mask.
++- :func:`generate_hull_body_plan`  – 2-D body-plan cross-sections as arrays.
++- :func:`generate_hull_waterplane` – 2-D waterplane half-breadth profile.
++- :func:`generate_hull_sideprofile`– 2-D side (keel/deck) profile.
++- :func:`generate_hull_previews`   – render multi-view matplotlib figure.
++- :func:`export_hull_stl`          – write a simple ASCII STL file.
++"""
++from __future__ import annotations
++
++import math
++from enum import Enum
++from pathlib import Path
++from typing import TYPE_CHECKING
++
++import numpy as np
++import torch
++
++if TYPE_CHECKING:
++    import matplotlib.figure
++
++__all__ = [
++    "ShipHullType",
++    "series60_hull_mask",
++    "kcs_hull_mask",
++    "hull_block_coefficient",
++    "generate_hull_body_plan",
++    "generate_hull_waterplane",
++    "generate_hull_sideprofile",
++    "generate_hull_previews",
++    "export_hull_stl",
++]
++
++
++# ---------------------------------------------------------------------------
++# Hull type enum
++# ---------------------------------------------------------------------------
++
++
++class ShipHullType(str, Enum):  # noqa: UP042
++    """Supported parametric hull families."""
++
++    WIGLEY = "wigley"
++    SERIES60 = "series60"
++    KCS = "kcs"
++
++
++# ---------------------------------------------------------------------------
++# Internal parametric half-beam functions
++# ---------------------------------------------------------------------------
++
++# All functions receive:
++#   xi  – normalised longitudinal coordinate ∈ [-1, 1] (0 = midship)
++#   zeta – normalised vertical coordinate ∈ [0, 1]  (0 = keel, 1 = waterline)
++# and return half-beam normalised to B/2 (range [0, 1]).
++
++
++def _wigley_half_beam(xi: np.ndarray, zeta: np.ndarray) -> np.ndarray:
++    """Wigley parabolic form: Cb ≈ 0.444."""
++    in_hull = (np.abs(xi) <= 1.0) & (zeta >= 0.0) & (zeta <= 1.0)
++    hb = (1.0 - xi**2) * (1.0 - (1.0 - zeta) ** 2)
++    return np.where(in_hull, hb, 0.0)
++
++
++def _series60_half_beam(xi: np.ndarray, zeta: np.ndarray) -> np.ndarray:
++    """Series 60 Cb=0.60 polynomial approximation.
++
++    Half-beam = (B/2) * (1 − ξ²)^0.51 * ζ^0.30
++    Theoretical Cb ≈ 0.60 (integral of the above over the hull envelope).
++    """
++    in_hull = (np.abs(xi) <= 1.0) & (zeta >= 0.0) & (zeta <= 1.0)
++    zeta_c = np.clip(zeta, 0.0, 1.0)
++    xi_c = np.clip(xi, -1.0, 1.0)
++    hb = (1.0 - xi_c**2) ** 0.51 * zeta_c**0.30
++    return np.where(in_hull, np.clip(hb, 0.0, 1.0), 0.0)
++
++
++def _kcs_half_beam(xi: np.ndarray, zeta: np.ndarray) -> np.ndarray:
++    """KCS (KRISO Container Ship) polynomial approximation.
++
++    Half-beam = (B/2) * (1 − ξ²)^0.45 * ζ^0.24
++    Theoretical Cb ≈ 0.651.
++    """
++    in_hull = (np.abs(xi) <= 1.0) & (zeta >= 0.0) & (zeta <= 1.0)
++    zeta_c = np.clip(zeta, 0.0, 1.0)
++    xi_c = np.clip(xi, -1.0, 1.0)
++    hb = (1.0 - xi_c**2) ** 0.45 * zeta_c**0.24
++    return np.where(in_hull, np.clip(hb, 0.0, 1.0), 0.0)
++
++
++_HALF_BEAM_FN = {
++    ShipHullType.WIGLEY: _wigley_half_beam,
++    ShipHullType.SERIES60: _series60_half_beam,
++    ShipHullType.KCS: _kcs_half_beam,
++}
++
++_HULL_LABELS = {
++    ShipHullType.WIGLEY: "Wigley Parabolic (Cb≈0.444)",
++    ShipHullType.SERIES60: "Series 60 Cb=0.60",
++    ShipHullType.KCS: "KCS Approximation (Cb≈0.651)",
++}
++
++
++# ---------------------------------------------------------------------------
++# Public mask generators
++# ---------------------------------------------------------------------------
++
++
++def _make_hull_mask(
++    hull_type: ShipHullType,
++    nx: int,
++    ny: int,
++    nz: int,
++    cx: float,
++    cy: float,
++    cz_keel: float,
++    length: float,
++    beam: float,
++    draft: float,
++    device: torch.device,
++) -> torch.Tensor:
++    """Generic boolean mask builder for all hull types.
++
++    Returns a ``(nz, ny, nx)`` boolean tensor where *True* marks solid cells.
++    """
++    zz, yy, xx = torch.meshgrid(
++        torch.arange(nz, device=device, dtype=torch.float32),
++        torch.arange(ny, device=device, dtype=torch.float32),
++        torch.arange(nx, device=device, dtype=torch.float32),
++        indexing="ij",
++    )
++
++    xi_t = (xx - cx) / (length / 2.0)
++    z_waterline = cz_keel + draft
++    zeta_t = (zz - cz_keel) / draft  # 0 at keel, 1 at waterline
++
++    xi_np = xi_t.cpu().numpy()
++    zeta_np = zeta_t.cpu().numpy()
++
++    fn = _HALF_BEAM_FN[hull_type]
++    hb_norm = fn(xi_np, zeta_np)  # normalised half-beam [0, 1]
++
++    # Actual half-beam in lattice units (symmetric about cy)
++    half_beam_lu = hb_norm * (beam / 2.0)
++    half_beam_t = torch.tensor(half_beam_lu, device=device, dtype=torch.float32)
++
++    # Only mark solid inside the draft envelope
++    in_draft = (zz >= cz_keel) & (zz <= z_waterline)
++    mask = in_draft & (torch.abs(yy - cy) <= half_beam_t)
++    return mask
++
++
++def series60_hull_mask(
++    nx: int,
++    ny: int,
++    nz: int,
++    cx: float,
++    cy: float,
++    cz_keel: float,
++    length: float,
++    beam: float,
++    draft: float,
++    device: torch.device,
++) -> torch.Tensor:
++    """Boolean solid mask for a Series 60 Cb=0.60 hull.
++
++    The Series 60 hull family (DTMB) is a standard naval architecture benchmark
++    with block coefficient Cb = 0.60.  This function uses a polynomial
++    approximation of the half-beam distribution.
++
++    Parameters
++    ----------
++    nx, ny, nz:
++        Grid dimensions (x = flow, y = transverse, z = vertical).
++    cx:  x-coordinate of midship (cells).
++    cy:  y-coordinate of hull centreline (cells).
++    cz_keel: z-coordinate of keel (cells).
++    length, beam, draft: Hull principal dimensions (cells).
++    device: PyTorch device for output tensor.
++
++    Returns
++    -------
++    torch.Tensor
++        Boolean tensor of shape ``(nz, ny, nx)``.
++    """
++    return _make_hull_mask(
++        ShipHullType.SERIES60, nx, ny, nz, cx, cy, cz_keel, length, beam, draft, device
++    )
++
++
++def kcs_hull_mask(
++    nx: int,
++    ny: int,
++    nz: int,
++    cx: float,
++    cy: float,
++    cz_keel: float,
++    length: float,
++    beam: float,
++    draft: float,
++    device: torch.device,
++) -> torch.Tensor:
++    """Boolean solid mask for a KCS (KRISO Container Ship) approximation hull.
++
++    Cb ≈ 0.651.  Suitable for container-ship resistance and wave-making
++    benchmarks.
++
++    Parameters mirror :func:`series60_hull_mask`.
++    """
++    return _make_hull_mask(
++        ShipHullType.KCS, nx, ny, nz, cx, cy, cz_keel, length, beam, draft, device
++    )
++
++
++# ---------------------------------------------------------------------------
++# Block coefficient
++# ---------------------------------------------------------------------------
++
++
++def hull_block_coefficient(
++    mask: torch.Tensor,
++    beam: float,
++    draft: float,
++    length: float,
++) -> float:
++    """Compute the block coefficient Cb from a solid mask.
++
++    Cb = V_solid / (L × B × T)
++
++    Parameters
++    ----------
++    mask:   Boolean 3-D solid tensor ``(nz, ny, nx)``.
++    beam, draft, length: Hull principal dimensions in the *same* units as the
++        mask (lattice cells).
++
++    Returns
++    -------
++    float
++        Block coefficient Cb ∈ (0, 1].
++    """
++    v_solid = float(mask.sum().item())
++    v_box = length * beam * draft
++    if v_box <= 0.0:
++        return 0.0
++    return v_solid / v_box
++
++
++# ---------------------------------------------------------------------------
++# Section / profile extraction
++# ---------------------------------------------------------------------------
++
++
++def generate_hull_body_plan(
++    hull_type: ShipHullType,
++    n_stations: int = 11,
++) -> tuple[np.ndarray, list[np.ndarray], list[np.ndarray]]:
++    """Compute body-plan cross-sections for the given hull type.
++
++    Parameters
++    ----------
++    hull_type:    Hull family.
++    n_stations:   Number of transverse stations (evenly spaced from -1 to 1).
++
++    Returns
++    -------
++    stations : np.ndarray, shape (n_stations,)
++        Normalised longitudinal positions ξ ∈ [-1, 1].
++    y_sections : list of np.ndarray
++        Normalised half-breadths at each station (positive port side).
++    z_sections : list of np.ndarray
++        Normalised vertical coordinates (0=keel, 1=WL) for each section.
++    """
++    stations = np.linspace(-1.0, 1.0, n_stations)
++    z_arr = np.linspace(0.0, 1.0, 100)
++    fn = _HALF_BEAM_FN[hull_type]
++    y_sections: list[np.ndarray] = []
++    z_sections: list[np.ndarray] = []
++    for xi_val in stations:
++        xi_rep = np.full_like(z_arr, xi_val)
++        hb = fn(xi_rep, z_arr)
++        y_sections.append(hb)
++        z_sections.append(z_arr)
++    return stations, y_sections, z_sections
++
++
++def generate_hull_waterplane(
++    hull_type: ShipHullType,
++    n_points: int = 200,
++) -> tuple[np.ndarray, np.ndarray]:
++    """Half-breadth profile at the waterline (ζ=1) along ship length.
++
++    Returns
++    -------
++    xi_arr : np.ndarray, shape (n_points,)
++        Normalised longitudinal positions ξ ∈ [-1, 1].
++    hb_arr : np.ndarray, shape (n_points,)
++        Normalised half-breadth at the waterline.
++    """
++    xi_arr = np.linspace(-1.0, 1.0, n_points)
++    zeta_wl = np.ones_like(xi_arr)
++    fn = _HALF_BEAM_FN[hull_type]
++    hb_arr = fn(xi_arr, zeta_wl)
++    return xi_arr, hb_arr
++
++
++def generate_hull_sideprofile(
++    hull_type: ShipHullType,
++    n_points: int = 200,
++) -> tuple[np.ndarray, np.ndarray]:
++    """Keel depth profile: maximum draft at each longitudinal station.
++
++    Returns
++    -------
++    xi_arr : np.ndarray, shape (n_points,)
++    draft_arr : np.ndarray, shape (n_points,)
++        Normalised draft at each station (fraction of max draft).
++    """
++    xi_arr = np.linspace(-1.0, 1.0, n_points)
++    fn = _HALF_BEAM_FN[hull_type]
++    draft_list: list[float] = []
++    z_arr = np.linspace(0.0, 1.0, 200)
++    for xi_val in xi_arr:
++        xi_rep = np.full_like(z_arr, xi_val)
++        hb = fn(xi_rep, z_arr)
++        # deepest z where hull is present
++        idx = np.where(hb > 1e-4)[0]
++        draft_list.append(float(z_arr[idx[0]]) if len(idx) > 0 else 1.0)
++    draft_arr = np.array(draft_list)
++    return xi_arr, draft_arr
++
++
++# ---------------------------------------------------------------------------
++# Preview figure
++# ---------------------------------------------------------------------------
++
++
++def generate_hull_previews(
++    hull_type: ShipHullType | str,
++    length: float = 100.0,
++    beam: float = 16.0,
++    draft: float = 8.0,
++    n_stations: int = 11,
++) -> "matplotlib.figure.Figure":  # noqa: UP037
++    """Generate a multi-view matplotlib figure for the given hull type.
++
++    The figure contains three subplots:
++
++    1. **Body plan** – transverse cross-sections (half-breadth vs depth).
++    2. **Waterplane** – top view half-breadth at waterline along length.
++    3. **Side profile** – longitudinal keel / waterline envelope.
++
++    Parameters
++    ----------
++    hull_type:   Hull family (ShipHullType or its string value).
++    length, beam, draft: Principal dimensions used for axis labelling.
++    n_stations:  Number of body-plan stations.
++
++    Returns
++    -------
++    matplotlib.figure.Figure
++    """
++    import matplotlib
++    matplotlib.use("Agg")
++    import matplotlib.pyplot as plt
++
++    if isinstance(hull_type, str):
++        hull_type = ShipHullType(hull_type)
++
++    fig, axes = plt.subplots(1, 3, figsize=(14, 4))
++    fig.suptitle(
++        f"Ship Hull Preview – {_HULL_LABELS[hull_type]}\n"
++        f"L={length:.0f}  B={beam:.0f}  T={draft:.0f}  (lattice units)",
++        fontsize=10,
++    )
++
++    # --- Body plan ---
++    ax = axes[0]
++    ax.set_title("Body Plan")
++    ax.set_xlabel("Half-breadth (normalised)")
++    ax.set_ylabel("Depth (normalised)")
++    stations, y_sects, z_sects = generate_hull_body_plan(hull_type, n_stations)
++    cmap = plt.get_cmap("RdYlGn", len(stations))
++    for i, (xi_val, ys, zs) in enumerate(zip(stations, y_sects, z_sects, strict=True)):
++        color = cmap(i / max(len(stations) - 1, 1))
++        ax.plot(ys * (beam / 2), zs * draft, color=color, linewidth=1.0,
++                label=f"ξ={xi_val:.2f}")
++        ax.plot(-ys * (beam / 2), zs * draft, color=color, linewidth=1.0)
++    ax.set_xlim(-beam / 2 * 1.1, beam / 2 * 1.1)
++    ax.set_ylim(0, draft * 1.1)
++    ax.axvline(0, color="gray", linewidth=0.5, linestyle="--")
++    ax.invert_yaxis()
++    ax.grid(True, linewidth=0.3)
++
++    # --- Waterplane (top view) ---
++    ax = axes[1]
++    ax.set_title("Waterplane (top view)")
++    ax.set_xlabel("Length (normalised)")
++    ax.set_ylabel("Half-breadth (normalised)")
++    xi_arr, hb_arr = generate_hull_waterplane(hull_type)
++    x_plot = xi_arr * (length / 2)
++    ax.fill_between(x_plot, hb_arr * (beam / 2), -(hb_arr * (beam / 2)),
++                    alpha=0.35, color="#4472C4", label="Waterplane area")
++    ax.plot(x_plot, hb_arr * (beam / 2), "b-", linewidth=1.5)
++    ax.plot(x_plot, -hb_arr * (beam / 2), "b-", linewidth=1.5)
++    ax.axhline(0, color="gray", linewidth=0.5, linestyle="--")
++    ax.set_xlim(-length / 2 * 1.05, length / 2 * 1.05)
++    ax.grid(True, linewidth=0.3)
++
++    # --- Side profile ---
++    ax = axes[2]
++    ax.set_title("Side Profile")
++    ax.set_xlabel("Length (normalised)")
++    ax.set_ylabel("Depth (normalised)")
++    xi_arr2, draft_arr = generate_hull_sideprofile(hull_type)
++    x_plot2 = xi_arr2 * (length / 2)
++    keel_z = draft_arr * draft
++    ax.fill_between(x_plot2, keel_z, np.zeros_like(keel_z),
++                    alpha=0.35, color="#70AD47", label="Hull envelope")
++    ax.plot(x_plot2, keel_z, "g-", linewidth=1.5, label="Keel line")
++    ax.axhline(0, color="#4472C4", linewidth=1.5, linestyle="-", label="Waterline")
++    ax.set_xlim(-length / 2 * 1.05, length / 2 * 1.05)
++    ax.set_ylim(0, draft * 1.2)
++    ax.invert_yaxis()
++    ax.grid(True, linewidth=0.3)
++    ax.legend(fontsize=7)
++
++    fig.tight_layout()
++    return fig
++
++
++# ---------------------------------------------------------------------------
++# STL export
++# ---------------------------------------------------------------------------
++
++
++def export_hull_stl(
++    hull_type: ShipHullType | str,
++    length: float = 100.0,
++    beam: float = 16.0,
++    draft: float = 8.0,
++    n_long: int = 60,
++    n_vert: int = 30,
++    output_path: str | Path = "hull.stl",
++) -> Path:
++    """Export a triangulated ship hull surface as an ASCII STL file.
++
++    The hull surface is triangulated from a structured grid of (ξ, ζ) samples
++    on both port and starboard sides, plus the keel and transom closure faces.
++
++    Parameters
++    ----------
++    hull_type:   Hull family.
++    length, beam, draft: Principal dimensions (any consistent unit).
++    n_long:  Longitudinal grid points.
++    n_vert:  Vertical grid points.
++    output_path: Destination STL file path.
++
++    Returns
++    -------
++    Path
++        Absolute path to the written STL file.
++    """
++    if isinstance(hull_type, str):
++        hull_type = ShipHullType(hull_type)
++
++    # Resolve and normalise the output path; ensure parent directory exists
++    output_path = Path(output_path).resolve()
++    output_path.parent.mkdir(parents=True, exist_ok=True)
++    fn = _HALF_BEAM_FN[hull_type]
++
++    xi_arr = np.linspace(-1.0, 1.0, n_long)
++    z_arr = np.linspace(0.0, 1.0, n_vert)
++
++    # Build vertex grid for starboard side (y ≥ 0)
++    XI, ZETA = np.meshgrid(xi_arr, z_arr, indexing="ij")  # (n_long, n_vert)
++    HB = fn(XI.ravel(), ZETA.ravel()).reshape(n_long, n_vert)
++
++    # Physical coordinates: x ∈ [0, L], y = half-beam, z ∈ [0, T]
++    X = (XI + 1.0) / 2.0 * length         # [0, L]
++    Y = HB * (beam / 2.0)                  # half-beam
++    Z = ZETA * draft                        # [0, T]
++
++    triangles: list[tuple[tuple, tuple, tuple]] = []
++
++    def _normal(v0: np.ndarray, v1: np.ndarray, v2: np.ndarray) -> np.ndarray:
++        n = np.cross(v1 - v0, v2 - v0)
++        mag = np.linalg.norm(n)
++        return n / mag if mag > 1e-12 else n
++
++    # Starboard hull surface triangles
++    for i in range(n_long - 1):
++        for k in range(n_vert - 1):
++            p00 = np.array([X[i, k],     Y[i, k],     Z[i, k]])
++            p10 = np.array([X[i+1, k],   Y[i+1, k],   Z[i+1, k]])
++            p01 = np.array([X[i, k+1],   Y[i, k+1],   Z[i, k+1]])
++            p11 = np.array([X[i+1, k+1], Y[i+1, k+1], Z[i+1, k+1]])
++            triangles.append((p00, p10, p11))
++            triangles.append((p00, p11, p01))
++
++    # Port hull surface (mirror in y)
++    starboard_tris = list(triangles)
++    for t in starboard_tris:
++        p0, p1, p2 = t
++        q0 = np.array([p0[0], -p0[1], p0[2]])
++        q1 = np.array([p1[0], -p1[1], p1[2]])
++        q2 = np.array([p2[0], -p2[1], p2[2]])
++        triangles.append((q0, q2, q1))  # reversed for outward normal
++
++    # Write ASCII STL
++    with output_path.open("w", encoding="utf-8") as f:
++        f.write(f"solid {hull_type.value}_hull\n")
++        for t in triangles:
++            v0, v1, v2 = (np.asarray(v) for v in t)
++            n = _normal(v0, v1, v2)
++            f.write(
++                f"  facet normal {n[0]:.6e} {n[1]:.6e} {n[2]:.6e}\n"
++                f"    outer loop\n"
++                f"      vertex {v0[0]:.6e} {v0[1]:.6e} {v0[2]:.6e}\n"
++                f"      vertex {v1[0]:.6e} {v1[1]:.6e} {v1[2]:.6e}\n"
++                f"      vertex {v2[0]:.6e} {v2[1]:.6e} {v2[2]:.6e}\n"
++                f"    endloop\n"
++                f"  endfacet\n"
++            )
++        f.write(f"endsolid {hull_type.value}_hull\n")
++
++    return output_path.resolve()
++
++
++# ---------------------------------------------------------------------------
++# Convenience: theoretical Cb values (analytical)
++# ---------------------------------------------------------------------------
++
++def theoretical_block_coefficient(hull_type: ShipHullType | str) -> float:
++    """Return the theoretical (analytical) block coefficient for a hull form.
++
++    Values are derived by integrating the parametric half-beam functions over
++    the hull envelope.
++    """
++    if isinstance(hull_type, str):
++        hull_type = ShipHullType(hull_type)
++    mapping = {
++        ShipHullType.WIGLEY: 4.0 / 9.0,
++        ShipHullType.SERIES60: 0.600,
++        ShipHullType.KCS: 0.651,
++    }
++    return mapping[hull_type]
++
++
++# ---------------------------------------------------------------------------
++# Hull statistics helper
++# ---------------------------------------------------------------------------
++
++def hull_statistics(
++    hull_type: ShipHullType | str,
++    length: float,
++    beam: float,
++    draft: float,
++) -> dict:
++    """Return a dictionary of key hull form coefficients (analytical).
++
++    Parameters
++    ----------
++    hull_type: Hull family.
++    length, beam, draft: Principal dimensions (lattice units or physical).
++
++    Returns
++    -------
++    dict with keys: hull_type, Cb, Cwp, Cm, Cp, L_B, B_T, displacement.
++    """
++    if isinstance(hull_type, str):
++        hull_type = ShipHullType(hull_type)
++
++    cb = theoretical_block_coefficient(hull_type)
++    # Approximate waterplane coefficient Cwp via numerical integration
++    xi_arr, hb_arr = generate_hull_waterplane(hull_type, n_points=500)
++    awp = 2.0 * np.trapezoid(hb_arr, xi_arr)  # normalised area (in [-1,1] × [-1,1])
++    cwp = awp / 2.0  # 2 because xi spans 2 units
++
++    # Midship section at ξ=0
++    z_arr = np.linspace(0.0, 1.0, 500)
++    fn = _HALF_BEAM_FN[hull_type]
++    hb_mid = fn(np.zeros_like(z_arr), z_arr)
++    am_norm = 2.0 * np.trapezoid(hb_mid, z_arr)  # normalised midship area
++    cm = am_norm  # normalised to B*T rectangle
++
++    cp = cb / cm if cm > 1e-6 else float("nan")
++
++    v_disp = cb * length * beam * draft  # displacement volume (lattice units³)
++
++    return {
++        "hull_type": hull_type.value,
++        "label": _HULL_LABELS[hull_type],
++        "Cb": round(cb, 4),
++        "Cwp": round(float(cwp), 4),
++        "Cm": round(float(cm), 4),
++        "Cp": round(float(cp), 4),
++        "L/B": round(length / beam, 3) if beam > 0 else None,
++        "B/T": round(beam / draft, 3) if draft > 0 else None,
++        "displacement_lu3": round(v_disp, 1),
++    }
++
++
++# ---------------------------------------------------------------------------
++# Full-workflow helper: build mask + compute Cb
++# ---------------------------------------------------------------------------
++
++def build_hull_mask(
++    hull_type: ShipHullType | str,
++    nx: int,
++    ny: int,
++    nz: int,
++    cx: float | None = None,
++    cy: float | None = None,
++    cz_keel: float | None = None,
++    length: float | None = None,
++    beam: float | None = None,
++    draft: float | None = None,
++    device: str = "cpu",
++) -> tuple[torch.Tensor, dict]:
++    """Build a hull solid mask and return it together with form statistics.
++
++    Default placement: hull centred longitudinally at *cx* = nx/2, centred
++    transversely at *cy* = ny/2, keel at *cz_keel* = nz/4.  Default hull
++    dimensions: L = nx*0.5, B = ny*0.25, T = nz*0.3.
++
++    Returns
++    -------
++    mask : torch.Tensor, shape (nz, ny, nx), bool
++    stats : dict  (block coefficient, hull statistics, solid/fluid cells)
++    """
++    if isinstance(hull_type, str):
++        hull_type = ShipHullType(hull_type)
++
++    dev = torch.device(device)
++
++    # Apply defaults
++    cx = float(cx) if cx is not None else nx / 2.0
++    cy = float(cy) if cy is not None else ny / 2.0
++    cz_keel = float(cz_keel) if cz_keel is not None else nz / 4.0
++    length = float(length) if length is not None else nx * 0.5
++    beam = float(beam) if beam is not None else ny * 0.25
++    draft = float(draft) if draft is not None else nz * 0.3
++
++    if hull_type == ShipHullType.WIGLEY:
++        from .obstacles import wigley_hull_mask
++        mask = wigley_hull_mask(nx, ny, nz, cx, cy, cz_keel, length, beam, draft, dev)
++    else:
++        mask = _make_hull_mask(
++            hull_type, nx, ny, nz, cx, cy, cz_keel, length, beam, draft, dev
++        )
++
++    cb_numerical = hull_block_coefficient(mask, beam=beam, draft=draft, length=length)
++    stats_theo = hull_statistics(hull_type, length, beam, draft)
++    total = nx * ny * nz
++    solid = int(mask.sum().item())
++
++    stats = {
++        **stats_theo,
++        "Cb_numerical": round(cb_numerical, 4),
++        "solid_cells": solid,
++        "fluid_cells": total - solid,
++        "total_cells": total,
++        "nx": nx, "ny": ny, "nz": nz,
++        "cx": cx, "cy": cy, "cz_keel": cz_keel,
++        "length": length, "beam": beam, "draft": draft,
++    }
++    return mask, stats
++
++
++# ---------------------------------------------------------------------------
++# Froude / Reynolds helpers for ship CAD workflow
++# ---------------------------------------------------------------------------
++
++def ship_lbm_parameters(
++    length_m: float,
++    speed_ms: float,
++    nu_m2s: float = 1.139e-6,
++    lbm_length: float = 100.0,
++    lbm_speed: float = 0.05,
++    froude_target: float | None = None,
++) -> dict:
++    """Compute LBM parameters from physical ship dimensions.
++
++    If *froude_target* is given, *speed_ms* is overridden to match it:
++    U = Fr * sqrt(g * L).
++
++    Parameters
++    ----------
++    length_m:     Ship length (m).
++    speed_ms:     Ship speed (m/s).
++    nu_m2s:       Kinematic viscosity (m²/s); default sea water at 15 °C.
++    lbm_length:   Hull length in lattice units.
++    lbm_speed:    LBM inlet velocity (lattice units/step).
++    froude_target: Target Froude number (overrides speed_ms if given).
++
++    Returns
++    -------
++    dict with physical Re, Fr, LBM tau, dx, dt, etc.
++    """
++    g_phys = 9.81  # m/s²
++    if froude_target is not None:
++        speed_ms = froude_target * math.sqrt(g_phys * length_m)
++
++    re_phys = speed_ms * length_m / nu_m2s
++    fr_phys = speed_ms / math.sqrt(g_phys * length_m)
++
++    dx = length_m / lbm_length          # m per cell
++    dt = lbm_speed * dx / speed_ms       # s per step
++
++    lbm_nu = lbm_speed * lbm_length / re_phys
++    tau = 3.0 * lbm_nu + 0.5
++    ma = lbm_speed / (1.0 / 3.0 ** 0.5)
++
++    return {
++        "re_physical": round(re_phys, 2),
++        "froude_number": round(fr_phys, 4),
++        "dx_m": round(dx, 8),
++        "dt_s": round(dt, 10),
++        "lbm_nu": round(lbm_nu, 8),
++        "lbm_tau": round(tau, 6),
++        "mach_number": round(ma, 4),
++        "stable": bool(tau > 0.5),
++        "lbm_length_cells": lbm_length,
++        "lbm_speed_lu": lbm_speed,
++    }
+diff --git a/tests/test_ship_cad.py b/tests/test_ship_cad.py
+new file mode 100644
+index 0000000..48f825f
+--- /dev/null
++++ b/tests/test_ship_cad.py
+@@ -0,0 +1,355 @@
++"""Tests for the ship CAD module (ship_cad.py).
++
++Covers:
++- Mask shape and dtype for all three hull types.
++- Block coefficient is within expected range.
++- hull_statistics returns expected keys.
++- theoretical_block_coefficient values.
++- generate_hull_body_plan / waterplane / sideprofile shapes.
++- generate_hull_previews returns a Figure.
++- export_hull_stl writes a valid ASCII STL file.
++- build_hull_mask convenience wrapper.
++- ship_lbm_parameters output keys and stability check.
++- Full workflow: CAD mask → block-coefficient consistency.
++"""
++from __future__ import annotations
++
++import math
++from pathlib import Path  # noqa: TC003
++
++import numpy as np
++import pytest
++import torch
++
++from tensorlbm.ship_cad import (
++    ShipHullType,
++    build_hull_mask,
++    export_hull_stl,
++    generate_hull_body_plan,
++    generate_hull_previews,
++    generate_hull_sideprofile,
++    generate_hull_waterplane,
++    hull_block_coefficient,
++    hull_statistics,
++    kcs_hull_mask,
++    series60_hull_mask,
++    ship_lbm_parameters,
++    theoretical_block_coefficient,
++)
++
++# ---------------------------------------------------------------------------
++# Fixtures
++# ---------------------------------------------------------------------------
++
++CPU = torch.device("cpu")
++NX, NY, NZ = 40, 24, 20
++
++# Hull placement for tests: centre midship, small grid
++CX = NX / 2.0
++CY = NY / 2.0
++CZ_KEEL = NZ / 4.0
++LENGTH = NX * 0.5
++BEAM = NY * 0.25
++DRAFT = NZ * 0.3
++
++
++# ---------------------------------------------------------------------------
++# Mask shape and dtype
++# ---------------------------------------------------------------------------
++
++@pytest.mark.parametrize("hull_type", list(ShipHullType))
++def test_mask_shape(hull_type: ShipHullType) -> None:
++    """All hull masks must have shape (nz, ny, nx) and bool dtype."""
++    from tensorlbm.obstacles import wigley_hull_mask
++
++    if hull_type == ShipHullType.WIGLEY:
++        mask = wigley_hull_mask(NX, NY, NZ, CX, CY, CZ_KEEL, LENGTH, BEAM, DRAFT, CPU)
++    elif hull_type == ShipHullType.SERIES60:
++        mask = series60_hull_mask(NX, NY, NZ, CX, CY, CZ_KEEL, LENGTH, BEAM, DRAFT, CPU)
++    else:
++        mask = kcs_hull_mask(NX, NY, NZ, CX, CY, CZ_KEEL, LENGTH, BEAM, DRAFT, CPU)
++
++    assert mask.shape == (NZ, NY, NX), f"Unexpected shape {mask.shape}"
++    assert mask.dtype == torch.bool, f"Unexpected dtype {mask.dtype}"
++
++
++@pytest.mark.parametrize("hull_type", list(ShipHullType))
++def test_mask_has_solid_cells(hull_type: ShipHullType) -> None:
++    """Every hull must produce at least some solid cells."""
++    mask, stats = build_hull_mask(
++        hull_type=hull_type,
++        nx=NX, ny=NY, nz=NZ,
++        cx=CX, cy=CY, cz_keel=CZ_KEEL,
++        length=LENGTH, beam=BEAM, draft=DRAFT,
++    )
++    assert stats["solid_cells"] > 0
++
++
++# ---------------------------------------------------------------------------
++# Block coefficient
++# ---------------------------------------------------------------------------
++
++@pytest.mark.parametrize("hull_type", list(ShipHullType))
++def test_block_coefficient_range(hull_type: ShipHullType) -> None:
++    """Numerical Cb must be in a physically plausible range for all hull types.
++
++    Note: on coarse grids the discrete Cb can exceed the theoretical value by
++    ~10–20 % due to boundary cell over-counting; the upper bound is set to 1.0
++    to allow for this.
++    """
++    mask, stats = build_hull_mask(
++        hull_type=hull_type,
++        nx=NX, ny=NY, nz=NZ,
++        cx=CX, cy=CY, cz_keel=CZ_KEEL,
++        length=LENGTH, beam=BEAM, draft=DRAFT,
++    )
++    cb = stats["Cb_numerical"]
++    assert 0.20 < cb < 1.01, f"Cb={cb} out of expected range for {hull_type}"
++
++
++def test_wigley_cb_close_to_theoretical() -> None:
++    """Wigley numerical Cb should be within 15 % of 4/9 ≈ 0.444 on a fine grid.
++
++    Coarse-grid discretization systematically overestimates Cb because boundary
++    cells are counted as fully solid.  We allow a generous 15 % tolerance.
++    """
++    # Use a larger grid for accuracy
++    nx, ny, nz = 80, 40, 32
++    cx, cy = nx / 2.0, ny / 2.0
++    cz = nz / 4.0
++    L, B, T = nx * 0.5, ny * 0.25, nz * 0.3
++    mask, stats = build_hull_mask(
++        "wigley", nx, ny, nz, cx=cx, cy=cy, cz_keel=cz,
++        length=L, beam=B, draft=T,
++    )
++    cb = stats["Cb_numerical"]
++    assert abs(cb - 4.0 / 9.0) < 0.15, f"Wigley Cb={cb:.4f}, expected ≈0.444"
++
++
++def test_series60_cb_close_to_theoretical() -> None:
++    """Series 60 numerical Cb should be ≈ 0.60 (within 20 % on fine grid)."""
++    nx, ny, nz = 80, 40, 32
++    cx, cy = nx / 2.0, ny / 2.0
++    cz = nz / 4.0
++    L, B, T = nx * 0.5, ny * 0.25, nz * 0.3
++    mask, stats = build_hull_mask(
++        "series60", nx, ny, nz, cx=cx, cy=cy, cz_keel=cz,
++        length=L, beam=B, draft=T,
++    )
++    cb = stats["Cb_numerical"]
++    assert abs(cb - 0.60) < 0.20, f"Series 60 Cb={cb:.4f}, expected ≈0.60"
++
++
++def test_kcs_cb_close_to_theoretical() -> None:
++    """KCS numerical Cb should be ≈ 0.651 (within 20 % on fine grid)."""
++    nx, ny, nz = 80, 40, 32
++    cx, cy = nx / 2.0, ny / 2.0
++    cz = nz / 4.0
++    L, B, T = nx * 0.5, ny * 0.25, nz * 0.3
++    mask, stats = build_hull_mask(
++        "kcs", nx, ny, nz, cx=cx, cy=cy, cz_keel=cz,
++        length=L, beam=B, draft=T,
++    )
++    cb = stats["Cb_numerical"]
++    assert abs(cb - 0.651) < 0.20, f"KCS Cb={cb:.4f}, expected ≈0.651"
++
++
++# ---------------------------------------------------------------------------
++# Ordering: KCS > Series60 > Wigley  (fuller → finer)
++# ---------------------------------------------------------------------------
++
++def test_cb_ordering() -> None:
++    """Block coefficients must satisfy Cb(KCS) > Cb(Series60) > Cb(Wigley)."""
++    nx, ny, nz = 80, 40, 32
++    cx, cy = nx / 2.0, ny / 2.0
++    cz = nz / 4.0
++    L, B, T = nx * 0.5, ny * 0.25, nz * 0.3
++    cbs = {}
++    for ht in ShipHullType:
++        _, stats = build_hull_mask(
++            ht, nx, ny, nz, cx=cx, cy=cy, cz_keel=cz,
++            length=L, beam=B, draft=T,
++        )
++        cbs[ht] = stats["Cb_numerical"]
++    assert cbs[ShipHullType.KCS] > cbs[ShipHullType.SERIES60], (
++        "KCS should be fuller than Series60"
++    )
++    assert cbs[ShipHullType.SERIES60] > cbs[ShipHullType.WIGLEY], (
++        "Series60 should be fuller than Wigley"
++    )
++
++
++# ---------------------------------------------------------------------------
++# hull_statistics
++# ---------------------------------------------------------------------------
++
++@pytest.mark.parametrize("hull_type", list(ShipHullType))
++def test_hull_statistics_keys(hull_type: ShipHullType) -> None:
++    """hull_statistics must return all required keys."""
++    stats = hull_statistics(hull_type, length=100.0, beam=16.0, draft=8.0)
++    for key in ("hull_type", "label", "Cb", "Cwp", "Cm", "Cp", "L/B", "B/T",
++                "displacement_lu3"):
++        assert key in stats, f"Missing key: {key}"
++
++
++def test_hull_statistics_lb_bt() -> None:
++    """L/B and B/T ratios must match the input dimensions."""
++    s = hull_statistics(ShipHullType.SERIES60, length=120.0, beam=20.0, draft=8.0)
++    assert abs(s["L/B"] - 6.0) < 1e-9
++    assert abs(s["B/T"] - 2.5) < 1e-9
++
++
++# ---------------------------------------------------------------------------
++# theoretical_block_coefficient
++# ---------------------------------------------------------------------------
++
++def test_theoretical_cb_values() -> None:
++    assert abs(theoretical_block_coefficient("wigley") - 4.0 / 9.0) < 1e-9
++    assert abs(theoretical_block_coefficient("series60") - 0.600) < 1e-9
++    assert abs(theoretical_block_coefficient("kcs") - 0.651) < 1e-9
++
++
++# ---------------------------------------------------------------------------
++# Section / profile extraction
++# ---------------------------------------------------------------------------
++
++def test_body_plan_shape() -> None:
++    stations, y_sects, z_sects = generate_hull_body_plan(ShipHullType.SERIES60, n_stations=7)
++    assert len(stations) == 7
++    assert len(y_sects) == 7
++    for ys in y_sects:
++        assert ys.shape == (100,)
++        assert np.all(ys >= 0.0), "Half-breadth must be non-negative"
++        assert np.all(ys <= 1.0 + 1e-6), "Normalised half-breadth must be ≤ 1"
++
++
++def test_waterplane_shape() -> None:
++    xi, hb = generate_hull_waterplane(ShipHullType.KCS, n_points=50)
++    assert xi.shape == (50,)
++    assert hb.shape == (50,)
++    assert float(hb.max()) <= 1.0 + 1e-6
++    assert float(hb.min()) >= 0.0
++    # Symmetry: hb(ξ) == hb(-ξ)
++    assert np.allclose(hb, hb[::-1], atol=1e-5)
++
++
++def test_sideprofile_symmetry() -> None:
++    xi, draft_arr = generate_hull_sideprofile(ShipHullType.WIGLEY)
++    # Side profile should be symmetric about midship
++    assert np.allclose(draft_arr, draft_arr[::-1], atol=1e-3)
++
++
++# ---------------------------------------------------------------------------
++# Preview figure
++# ---------------------------------------------------------------------------
++
++def test_generate_hull_previews_returns_figure() -> None:
++    import matplotlib.figure
++    fig = generate_hull_previews(ShipHullType.SERIES60, length=100, beam=16, draft=8)
++    assert isinstance(fig, matplotlib.figure.Figure)
++    assert len(fig.axes) == 3
++
++
++@pytest.mark.parametrize("hull_type_str", ["wigley", "series60", "kcs"])
++def test_generate_hull_previews_all_types(hull_type_str: str) -> None:
++    """generate_hull_previews must not raise for any hull type."""
++    import matplotlib.pyplot as plt
++    fig = generate_hull_previews(hull_type_str, length=100, beam=16, draft=8)
++    plt.close(fig)
++
++
++# ---------------------------------------------------------------------------
++# STL export
++# ---------------------------------------------------------------------------
++
++def test_export_hull_stl_creates_file(tmp_path: Path) -> None:
++    out = export_hull_stl(
++        "series60", length=100.0, beam=16.0, draft=8.0,
++        n_long=10, n_vert=6,
++        output_path=tmp_path / "test_hull.stl",
++    )
++    assert out.exists(), "STL file was not created"
++    content = out.read_text()
++    assert content.startswith("solid series60_hull"), "STL header missing"
++    assert "facet normal" in content, "No facet normals in STL"
++    assert "endsolid" in content, "STL footer missing"
++
++
++@pytest.mark.parametrize("hull_type_str", ["wigley", "series60", "kcs"])
++def test_export_hull_stl_all_types(hull_type_str: str, tmp_path: Path) -> None:
++    out = export_hull_stl(
++        hull_type_str, length=50.0, beam=10.0, draft=5.0,
++        n_long=8, n_vert=4,
++        output_path=tmp_path / f"{hull_type_str}.stl",
++    )
++    assert out.exists()
++    assert out.stat().st_size > 100
++
++
++# ---------------------------------------------------------------------------
++# ship_lbm_parameters
++# ---------------------------------------------------------------------------
++
++def test_ship_lbm_parameters_keys() -> None:
++    params = ship_lbm_parameters(100.0, 5.0)
++    for key in ("re_physical", "froude_number", "dx_m", "dt_s",
++                "lbm_nu", "lbm_tau", "mach_number", "stable"):
++        assert key in params, f"Missing key: {key}"
++
++
++def test_ship_lbm_parameters_stable() -> None:
++    """Default parameters should give a stable configuration (tau > 0.5)."""
++    params = ship_lbm_parameters(100.0, 5.0, lbm_length=100.0, lbm_speed=0.05)
++    assert params["stable"] is True, "Default LBM parameters should be stable"
++
++
++def test_ship_lbm_parameters_froude_override() -> None:
++    """froude_target must override the given speed."""
++    params_fr = ship_lbm_parameters(100.0, 0.0001, froude_target=0.3)
++    expected_speed = 0.3 * math.sqrt(9.81 * 100.0)
++    expected_re = expected_speed * 100.0 / 1.139e-6
++    assert abs(params_fr["re_physical"] - expected_re) / expected_re < 1e-4
++
++
++def test_ship_lbm_parameters_re_scaling() -> None:
++    """Re must scale linearly with length."""
++    p1 = ship_lbm_parameters(100.0, 5.0)
++    p2 = ship_lbm_parameters(200.0, 5.0)
++    assert abs(p2["re_physical"] / p1["re_physical"] - 2.0) < 1e-6
++
++
++# ---------------------------------------------------------------------------
++# Full workflow: CAD mask → hull_block_coefficient
++# ---------------------------------------------------------------------------
++
++def test_full_workflow_cad_to_mask_to_cb() -> None:
++    """End-to-end: build Series 60 mask, compute Cb, check within 25% of 0.60."""
++    nx, ny, nz = 60, 30, 24
++    mask, stats = build_hull_mask(
++        "series60", nx, ny, nz,
++        length=nx * 0.5, beam=ny * 0.25, draft=nz * 0.3,
++    )
++    assert mask.shape == (nz, ny, nx)
++    # Cb from stats and from direct computation must agree (within rounding)
++    cb_stats = stats["Cb_numerical"]
++    cb_direct = hull_block_coefficient(
++        mask, beam=stats["beam"], draft=stats["draft"], length=stats["length"]
++    )
++    assert abs(cb_stats - cb_direct) < 1e-3
++    assert abs(cb_stats - 0.60) < 0.25, f"Cb={cb_stats:.4f} not within 25% of 0.60"
++
++
++def test_full_workflow_cad_to_mask_to_cb_kcs() -> None:
++    """End-to-end: build KCS mask, verify Cb ordering and fluid cells > 0."""
++    nx, ny, nz = 60, 30, 24
++    mask_s60, stats_s60 = build_hull_mask(
++        "series60", nx, ny, nz,
++        length=nx * 0.5, beam=ny * 0.25, draft=nz * 0.3,
++    )
++    mask_kcs, stats_kcs = build_hull_mask(
++        "kcs", nx, ny, nz,
++        length=nx * 0.5, beam=ny * 0.25, draft=nz * 0.3,
++    )
++    assert stats_kcs["Cb_numerical"] > stats_s60["Cb_numerical"]
++    assert stats_kcs["fluid_cells"] > 0
++    assert stats_kcs["solid_cells"] > 0

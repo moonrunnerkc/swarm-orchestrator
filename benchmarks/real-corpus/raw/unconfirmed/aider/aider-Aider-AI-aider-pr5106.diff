@@ -1,0 +1,79 @@
+diff --git a/aider/coders/wholefile_coder.py b/aider/coders/wholefile_coder.py
+index ad93aff69a1..c1227ef6622 100644
+--- a/aider/coders/wholefile_coder.py
++++ b/aider/coders/wholefile_coder.py
+@@ -33,9 +33,23 @@ def get_edits(self, mode="update"):
+         fname = None
+         fname_source = None
+         new_lines = []
++        inner_fence_depth = 0
+         for i, line in enumerate(lines):
+             if line.startswith(self.fence[0]) or line.startswith(self.fence[1]):
+                 if fname is not None:
++                    # Check if this fence is nested inside the file block
++                    stripped = line.strip()
++                    if stripped != self.fence[0] and stripped != self.fence[1]:
++                        # Has a language specifier — opening inner fence, treat as content
++                        inner_fence_depth += 1
++                        new_lines.append(line)
++                        continue
++                    elif inner_fence_depth > 0:
++                        # Plain fence closing an inner fence
++                        inner_fence_depth -= 1
++                        new_lines.append(line)
++                        continue
++
+                     # ending an existing block
+                     saw_fname = None
+ 
+@@ -49,9 +63,11 @@ def get_edits(self, mode="update"):
+                     fname = None
+                     fname_source = None
+                     new_lines = []
++                    inner_fence_depth = 0
+                     continue
+ 
+                 # fname==None ... starting a new block
++                inner_fence_depth = 0
+                 if i > 0:
+                     fname_source = "block"
+                     fname = lines[i - 1].strip()
+diff --git a/tests/basic/test_wholefile.py b/tests/basic/test_wholefile.py
+index deb192ec7e4..24b9a544bfc 100644
+--- a/tests/basic/test_wholefile.py
++++ b/tests/basic/test_wholefile.py
+@@ -316,6 +316,34 @@ def test_update_named_file_but_extra_unnamed_code_block(self):
+             updated_content = f.read()
+         self.assertEqual(updated_content, new_content)
+ 
++    def test_nested_code_blocks_in_file_content(self):
++        # Issue #4225: README.md with inner ```bash blocks caused inner fence lines
++        # to be treated as file block boundaries, splitting content incorrectly.
++        sample_file = "README.md"
++
++        io = InputOutput(yes=True)
++        coder = WholeFileCoder(main_model=self.GPT35, io=io, fnames=[sample_file])
++
++        expected_content = (
++            "# My Project\n\n"
++            "## Installation\n\n"
++            "```bash\n"
++            "git clone <this-repo>\n"
++            "npm install\n"
++            "```\n\n"
++            "## Usage\n\n"
++            "```bash\n"
++            "npm run dev\n"
++            "```\n"
++        )
++
++        coder.partial_response_content = f"{sample_file}\n```\n{expected_content}```"
++
++        edited_files = coder.apply_updates()
++
++        self.assertIn(sample_file, edited_files)
++        self.assertEqual(Path(sample_file).read_text(), expected_content)
++
+     def test_full_edit(self):
+         # Create a few temporary files
+         _, file1 = tempfile.mkstemp()

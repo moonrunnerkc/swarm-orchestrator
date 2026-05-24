@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Solid hotfix matching the diagnosed problem exactly. `backend/games/base.py` defines `STEAMCMD_CAPS = [\"DAC_OVERRIDE\", \"DAC_READ_SEARCH\", \"CHOWN\", \"FOWNER\"]` with an inline comment explaining each cap's purpose (traversal of mode-700 `/home/steam`, chown of `/data` after the run). `run_steamcmd_install` and `run_steamcmd_workshop_download` switch `user=None` to `user=\"0:0\"` and pass `cap_adds=STEAMCMD_CAPS`. `backend/services/docker_service.py` adds the `cap_adds: list[str] | None` parameter to `run_ephemeral` and emits `--cap-add <CAP>` pairs *after* `_HARDENING_FLAGS` (which contain `--cap-drop=ALL`), preserving correct Docker arg order. Four new/updated tests verify the change: `test_cap_adds_appear_after_cap_drop_in_args` programmatically walks `mock_run.call_args.args[0]`, finds the index of `--cap-drop=ALL`, and asserts each `--cap-add <CAP>` pair appears later in the list with adjacent name; `test_steamcmd_install_runs_as_root_and_chowns` and `test_workshop_download_runs_as_root_and_chowns` assert `user==\"0:0\"` and `cap_adds==STEAMCMD_CAPS`; the existing shell-injection test is preserved. `docs/agent-rules/architecture.md` §12.4 is updated with the new cap-set rationale. Nothing cheaty.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T13:40:00.000Z"
+}

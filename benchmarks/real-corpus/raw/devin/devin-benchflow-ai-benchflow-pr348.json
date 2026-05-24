@@ -1,0 +1,26 @@
+{
+  "id": "devin-benchflow-ai-benchflow-pr348",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 348,
+    "headSha": "511e946a0868639e1d2ca26d5a411b4b328161fc",
+    "baseSha": "e1f69598fa8c28ad2744c0ceb3c0b2199df4e97e",
+    "title": "feat: add --include/--exclude to bench eval create + address PR #347 review findings",
+    "body": "## Summary\n\nThree changes in this PR:\n\n**ENG-159: CLI `--include` / `--exclude` flags**\n- Adds `--include` and `--exclude` repeatable flags to `bench eval create`\n- Wires them into `EvaluationConfig.include_tasks` / `exclude_tasks` across all three batch code paths (`--config`, `--source-repo`, `--tasks-dir`)\n- CLI flags override YAML values when both are provided; without CLI flags, YAML values are preserved\n- Example: `bench eval create --source-repo benchflow-ai/skillsbench --include jax-computing-basics --include data-to-d3 --exclude quantum-numerical-simulation`\n- `include_tasks` / `exclude_tasks` already existed in `EvaluationConfig` and `Evaluation.from_yaml` but were unreachable from the CLI\n\n**PR #347 thermo-nuclear review finding 1: Move `tomli_w` to core deps**\n- `model_dump_toml()` in `TaskConfig` is production code, but `tomli_w` was only in `[project.optional-dependencies] dev`\n- Moved to `[project] dependencies` so it's always available at runtime (6.7 KB, zero transitive deps)\n\n**PR #347 thermo-nuclear review finding 2: Deterministic mtime tiebreaker**\n- Changed `_latest_result_entries_by_task` comparison from `mtime >= previous[0]` to `(mtime, str(rfile)) >= (previous[0], str(previous[1]))`\n- Equal-mtime ties now resolve deterministically by path instead of depending on iteration order\n\n## Review & Testing Checklist for Human\n- [ ] Run `bench eval create --tasks-dir <some-tasks-dir> --include <task-name>` and confirm only the included task runs\n- [ ] Run `bench eval create --config <yaml-with-include> --include <different-task>` and confirm CLI flag overrides YAML\n- [ ] Verify `tomli_w` installs correctly as a core dep: `pip install -e .` in a clean venv, then `python -c \"from benchflow.task.config import TaskConfig\"`\n- [ ] Full test suite: `uv run python -m pytest tests -q` → expect 1827 passed, 38 skipped, 0 failed\n\n### Notes\n- 4 new tests in `TestEvalCreateIncludeExclude` covering: tasks-dir batch, config override, config preservation, CliRunner end-to-end\n- ruff, ty, and full pytest suite all pass locally\n- The `--include`/`--exclude` flags are ignored for single-task runs (when `tasks_dir` points to a dir with `task.toml`) — this matches the existing behavior where `include_tasks` only filters batch discovery\n\nLink to Devin session: https://app.devin.ai/sessions/d30db77671094a719a2d951dde637750\nRequested by: @xdotli\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/benchflow-ai/benchflow/pull/348\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779577792-cli-include-and-review-fixes",
+    "repository": "benchflow-ai/benchflow"
+  },
+  "diffRef": {
+    "repository": "benchflow-ai/benchflow",
+    "headSha": "511e946a0868639e1d2ca26d5a411b4b328161fc",
+    "baseSha": "e1f69598fa8c28ad2744c0ceb3c0b2199df4e97e"
+  },
+  "vendoredDiffPath": "devin/devin-benchflow-ai-benchflow-pr348.diff",
+  "vendoredAt": "2026-05-24T03:04:47.448Z",
+  "collectedAt": "2026-05-24T03:04:47.448Z"
+}

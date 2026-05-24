@@ -1,0 +1,88 @@
+diff --git a/addons/nexus_coda/editor/browser/coda_state.gd b/addons/nexus_coda/editor/browser/coda_state.gd
+index bf01ff0..ab2482d 100644
+--- a/addons/nexus_coda/editor/browser/coda_state.gd
++++ b/addons/nexus_coda/editor/browser/coda_state.gd
+@@ -527,7 +527,12 @@ func rename_node(target_id: String, new_name: String) -> bool:
+ 
+ 
+ func delete_node(target_id: String) -> bool:
++	var purge_event_ids: PackedStringArray = PackedStringArray()
++	var events_node: CodaBrowserNode = events_root.find_by_id(target_id)
++	if events_node != null:
++		purge_event_ids = _collect_event_ids_in_subtree(events_node)
+ 	if events_root.remove_child_by_id(target_id):
++		_purge_event_ids_from_banks(purge_event_ids)
+ 		structure_changed.emit()
+ 		return true
+ 	if assets_root.remove_child_by_id(target_id):
+@@ -536,6 +541,26 @@ func delete_node(target_id: String) -> bool:
+ 	return false
+ 
+ 
++func _collect_event_ids_in_subtree(node: CodaBrowserNode) -> PackedStringArray:
++	var out: PackedStringArray = PackedStringArray()
++	if node == null:
++		return out
++	if node.kind == CodaBrowserNode.Kind.EVENT:
++		out.append(node.id)
++	for child in node.children:
++		for eid in _collect_event_ids_in_subtree(child):
++			out.append(eid)
++	return out
++
++
++func _purge_event_ids_from_banks(event_ids: PackedStringArray) -> void:
++	if event_ids.is_empty():
++		return
++	for b in banks:
++		for eid in event_ids:
++			b.remove_event_id(eid)
++
++
+ func _events_visual_list(parent: CodaBrowserNode) -> Array[CodaBrowserNode]:
+ 	var out: Array[CodaBrowserNode] = []
+ 	for c in parent.children:
+diff --git a/addons/nexus_coda/tests/test_editor_shell.gd b/addons/nexus_coda/tests/test_editor_shell.gd
+index 4caf317..7a81f1e 100644
+--- a/addons/nexus_coda/tests/test_editor_shell.gd
++++ b/addons/nexus_coda/tests/test_editor_shell.gd
+@@ -19,6 +19,7 @@ func _init() -> void:
+ 	failed += _test_layout_store()
+ 	failed += _test_bank_rename_duplicate()
+ 	failed += _test_event_duplicate_ids()
++	failed += _test_delete_event_clears_banks()
+ 	failed += _test_marker_ui()
+ 	if failed > 0:
+ 		push_error("Editor shell tests failed (%d)" % failed)
+@@ -112,6 +113,31 @@ static func _test_event_duplicate_ids() -> int:
+ 	return 0
+ 
+ 
++static func _test_delete_event_clears_banks() -> int:
++	var state: CodaState = CodaStateScript.new()
++	var ev: CodaBrowserNode = state.add_events_event(state.events_root.id, "Gone")
++	if ev == null:
++		push_error("add_events_event failed")
++		return 1
++	var bank: CodaBank = state.add_bank("Test")
++	if bank == null:
++		push_error("add_bank failed")
++		return 1
++	if not state.add_event_to_bank(bank.id, ev.id):
++		push_error("add_event_to_bank failed")
++		return 1
++	if not state.delete_node(ev.id):
++		push_error("delete_node failed")
++		return 1
++	if state.events_root.find_by_id(ev.id) != null:
++		push_error("deleted event still in tree")
++		return 1
++	if bank.contains_event(ev.id):
++		push_error("bank still references deleted event")
++		return 1
++	return 0
++
++
+ static func _test_marker_ui() -> int:
+ 	var tl: CodaEventTimeline = CodaEventTimelineScript.new()
+ 	var m: CodaTimelineMarker = CodaTimelineMarkerScript.new()

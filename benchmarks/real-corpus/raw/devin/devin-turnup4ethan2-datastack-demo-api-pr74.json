@@ -1,0 +1,26 @@
+{
+  "id": "devin-turnup4ethan2-datastack-demo-api-pr74",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 74,
+    "headSha": "dc17592ace9d9f9a01ea99d0e611ef0e53d00360",
+    "baseSha": "596063fe28cf0211968d1a1e9ec38c16fec75331",
+    "title": "docs: auto-update API reference",
+    "body": "## Summary\n\nFull documentation audit of `docs/api-reference.md` against all route files in `app/routes/`. Every endpoint was compared and the docs rewritten to match the current code.\n\n### Discrepancy Summary\n\n| Endpoint | Change | Summary |\n|----------|--------|---------|\n| **Authentication** | Fixed | Changed from deprecated query-param `api_key` to `Authorization: Bearer <token>` header |\n| `GET /users` | Fixed | Added required `organization_id` query param; added missing `role`, `organization_id`, `created_at` response fields |\n| `POST /users` | Fixed | Added `role` and `organization_id` request fields; documented `201` status code; full response schema |\n| `GET /users/{user_id}` | Fixed | Added `role`, `organization_id`, `created_at` response fields; corrected path param name |\n| `DELETE /users/{user_id}` | Added | Endpoint was entirely missing from docs |\n| `GET /products` | Fixed | Replaced `api_key` param with optional `tag` filter; replaced `price` (float) with `price_cents` (integer); added `sku`, `inventory_count`, `tags`, `created_at` |\n| `POST /products` | Fixed | Added `price_cents`, `sku`, `inventory_count`, `tags` to request/response; documented `201` status code |\n| `GET /products/{product_id}` | Fixed | Full response schema with correct field names and types |\n| `POST /orders` | Added | Entire Orders section was a stub (\"coming soon\") — now fully documented |\n| `GET /orders/{order_id}` | Added | New endpoint documentation |\n| `PATCH /orders/{order_id}/status` | Added | New endpoint documentation |\n| **Error Codes** | Fixed | Added `422` code; updated `401` description from \"Invalid API key\" to \"Unauthorized — invalid or missing Bearer token\" |\n\nTriggered by scheduled full sweep against commit: [`596063f`](https://github.com/turnup4ethan2/datastack-demo-api/commit/596063fe28cf0211968d1a1e9ec38c16fec75331)\n\n> Generated automatically by Devin\n\n## Review & Testing Checklist for Human\n\n- [ ] Verify all endpoint paths match the route registrations in `app/main.py` (prefixes: `/users`, `/products`, `/orders`)\n- [ ] Confirm request body fields and types match the Pydantic models in each route file\n- [ ] Check that response schemas include every field from the response models\n- [ ] Run the API locally (`uvicorn app.main:app --reload`) and compare Swagger UI at `/docs` against documented endpoints\n\n### Notes\n\n- The `GET /health` endpoint from `app/main.py` is not included since it is an infrastructure endpoint, not a business API endpoint\n- All curl examples use `https://api.datastack.io` as the base URL — update if your deployment URL differs\n\nLink to Devin session: https://app.devin.ai/sessions/e1d3c088475c4cf5ac9aa388fc2c65ab",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779588509-docs-audit",
+    "repository": "turnup4ethan2/datastack-demo-api"
+  },
+  "diffRef": {
+    "repository": "turnup4ethan2/datastack-demo-api",
+    "headSha": "dc17592ace9d9f9a01ea99d0e611ef0e53d00360",
+    "baseSha": "596063fe28cf0211968d1a1e9ec38c16fec75331"
+  },
+  "vendoredDiffPath": "devin/devin-turnup4ethan2-datastack-demo-api-pr74.diff",
+  "vendoredAt": "2026-05-24T03:04:07.953Z",
+  "collectedAt": "2026-05-24T03:04:07.953Z"
+}

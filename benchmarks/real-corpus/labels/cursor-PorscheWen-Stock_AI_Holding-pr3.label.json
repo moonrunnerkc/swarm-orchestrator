@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Adds `utils/yfinance_utils.py` exposing `is_rate_limit_error(exc)` (keyword match on `429`, `too many requests`, `rate limit`, `ratelimit`, `throttle`, `exceeded`), `yf_info_with_retry(symbol, max_retries=3, base_delay=5.0)` (exponential back-off, 5-min TTL cache keyed by symbol uppercase, always returns a dict), and `yf_history_with_retry(symbol, period)` (same back-off, returns None on failure). `agents/holding_advisor_agent.py` removes the direct `yfinance as yf` import, replaces `yf.Ticker(symbol).info`/`.history(...)` in `_analyze_one` with the new helpers, refactors `_yahoo_price_and_bar` to take a plain `info` dict instead of a `Ticker` object, bumps `REQUEST_DELAY` from 1.0 to 1.5, and reuses `is_rate_limit_error` in the except handler with an updated user message stating auto-retry was already attempted. `agents/tw_market_agent.py` swaps the index loop to `yf_history_with_retry(sym, '4mo')`. `app.py` `/api/portfolio/prices` adds a 0.5s inter-symbol sleep via `enumerate(stocks)`/`if idx > 0`, uses `yf_info_with_retry`, and distinguishes rate-limit warnings from generic debug logs. All claims in the PR body are implemented end-to-end; no detectors fired and there are no test-modification or assertion-strip patterns.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T14:00:00.000Z"
+}

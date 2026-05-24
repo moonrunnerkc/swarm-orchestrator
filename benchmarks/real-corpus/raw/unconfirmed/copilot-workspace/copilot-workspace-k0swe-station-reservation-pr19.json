@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-k0swe-station-reservation-pr19",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 19,
+    "headSha": "d4311282730c23c490f0991560b3d10559136325",
+    "baseSha": "fe27114caea00b4544e2e77b36f0dd38d5f8564a",
+    "title": "feat: reservation grid on club detail page",
+    "body": "Adds an interactive time × resource reservation grid to the club detail page, inspired by schedulemyop.com. Rows are the user's local-timezone time blocks; columns are active resources. Empty future slots show an \"open\" button; occupied slots show the owner's callsign (falling back to display name). Includes prev/next day navigation.\n\n## Backend\n\n- **New migration** `20260524000001_list_club_reservations.sql`: SECURITY DEFINER RPC `list_club_reservations(p_club_id, p_from, p_to)` that bypasses the existing member-only RLS on `reservations` (which restricts rows to one's own) and returns all active reservations for a club's resources in the time window, joined with each owner's `callsign`/`display_name`. Requires approved club membership.\n\n## Frontend\n\n- **`ReservationGridComponent`** (`club-detail/reservation-grid/`): standalone, signal-based table component.\n  - Row interval = minimum `block_size_minutes` across the club's active resources (so all resources have valid slots per row).\n  - Slot times and the date label are displayed in the user's local timezone; the time column header shows the short timezone abbreviation (e.g. `MDT`, `EST`) via `Intl.DateTimeFormat`.\n  - Cells: \"open\" button for future, block-aligned, unreserved slots; callsign chip for taken slots; greyed/no-op for past or misaligned slots.\n  - Emits `slotClick` with `{resourceId, startsAt, endsAt}`; reservation creation and grid refresh handled by the parent.\n\n- **`ClubDetailPage`** gains:\n  - `selectedDate` signal (local midnight, default today) with `prevDay()`/`nextDay()` navigation that flips at local midnight.\n  - `loadReservations()` queries the backend using the local day's UTC boundaries and is called on init and after each date change or reservation creation.\n  - `onSlotClick()` calls `createReservation` RPC and refreshes.\n\n- **`ClubService`** gains `listClubReservations(clubId, from, to)` and `createReservation(resourceId, startsAt, endsAt)`.",
+    "author": "Copilot",
+    "headRef": "copilot/implement-resource-reservations-table",
+    "repository": "k0swe/station-reservation"
+  },
+  "diffRef": {
+    "repository": "k0swe/station-reservation",
+    "headSha": "d4311282730c23c490f0991560b3d10559136325",
+    "baseSha": "fe27114caea00b4544e2e77b36f0dd38d5f8564a"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-k0swe-station-reservation-pr19.diff",
+  "vendoredAt": "2026-05-24T03:06:13.161Z",
+  "collectedAt": "2026-05-24T03:06:13.161Z"
+}

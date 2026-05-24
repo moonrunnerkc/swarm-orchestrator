@@ -1,0 +1,318 @@
+diff --git a/.agent/AGENT_STATUS.md b/.agent/AGENT_STATUS.md
+index 7b9683f..7c12532 100644
+--- a/.agent/AGENT_STATUS.md
++++ b/.agent/AGENT_STATUS.md
+@@ -12,37 +12,33 @@
+ 3. **When done:** Move your entry to "Recently Completed" and update Linear.
+ 4. **Conflicts:** If two agents claim the same issue, the earlier timestamp wins. The later agent should pick a different task.
+ 
+-**Agent names:** `Claude-Desktop`, `Claude-Web`, `Replit-Codex`, `Antigravity`, `Cowork`
++**Agent names:** `Claude-Code`, `Replit-Agent`, `Codex`, `Antigravity`, `Cowork`
+ 
+ ---
+ 
+ ## 🔴 Currently In Progress
+ 
+-| Issue  | Title                        | Agent          | Started    | Branch                            | Notes                         |
+-| ------ | ---------------------------- | -------------- | ---------- | --------------------------------- | ----------------------------- |
+-| STE-57 | Add pre-commit hooks (Husky) | Claude-Desktop | 2026-02-22 | `feature/STE-57-husky-pre-commit` | STE-56 dependency is complete |
++| Issue                | Title | Agent | Started | Branch | Notes |
++| -------------------- | ----- | ----- | ------- | ------ | ----- |
++| _(no active claims)_ | —     | —     | —       | —      | —     |
+ 
+ ## 🟡 Up Next (Unclaimed — Grab One!)
+ 
+-| Priority  | Issue  | Title                                   | Dependencies                     |
+-| --------- | ------ | --------------------------------------- | -------------------------------- |
+-| 🔴 Urgent | STE-53 | Rotate exposed LINEAR_API_KEY           | Needs Stephanie for key rotation |
+-| 🟡 High   | STE-58 | Add Sentry + Pino logging               | None                             |
+-| 🟡 High   | STE-60 | Add Dockerfile                          | None                             |
+-| 🟡 High   | STE-65 | Update CLAUDE.md for multi-agent DevOps | Update as each issue completes   |
+-| 🟡 High   | STE-67 | Close test gaps (API, schema, data)     | None                             |
+-| 🟢 Medium | STE-61 | Database backup strategy                | None                             |
+-| 🟢 Medium | STE-62 | Rate limiting + CORS                    | None                             |
+-| 🟢 Medium | STE-64 | Semantic versioning                     | None                             |
+-
+-## ✅ Recently Completed
+-
+-| Issue  | Title                       | Agent          | Completed  | PR                                 |
+-| ------ | --------------------------- | -------------- | ---------- | ---------------------------------- |
+-| STE-63 | Branch protection rules     | Claude-Desktop | 2026-02-22 | N/A (GitHub API — no code changes) |
+-| STE-59 | Add Dependabot              | —              | 2026-02-16 | —                                  |
+-| STE-56 | Add ESLint + Prettier       | —              | 2026-02-16 | —                                  |
+-| STE-54 | Set up GitHub Actions CI/CD | Cowork         | 2026-02-15 | —                                  |
++> Check [Linear](https://linear.app/stephs-vibe-coding) for current priority queue. This table is not guaranteed to be current.
++
++| Priority       | Issue | Title | Dependencies |
++| -------------- | ----- | ----- | ------------ |
++| _(see Linear)_ | —     | —     | —            |
++
++## ✅ Recently Completed (STE-66 DevOps Sprint)
++
++| Issue  | Title                        | Agent       | Completed  | PR  |
++| ------ | ---------------------------- | ----------- | ---------- | --- |
++| STE-57 | Add pre-commit hooks (Husky) | Claude-Code | 2026-02-22 | —   |
++| STE-63 | Branch protection rules      | Claude-Code | 2026-02-22 | N/A |
++| STE-59 | Add Dependabot               | —           | 2026-02-16 | —   |
++| STE-56 | Add ESLint + Prettier        | —           | 2026-02-16 | —   |
++| STE-54 | Set up GitHub Actions CI/CD  | Cowork      | 2026-02-15 | —   |
+ 
+ ---
+ 
+@@ -51,7 +47,5 @@
+ 1. **Check this file before starting any STE-xx issue.**
+ 2. **Update Linear status** to "In Progress" when you start, "Done" when you finish.
+ 3. **One agent per issue** — don't duplicate work. If it's claimed, pick something else.
+-4. **STE-57 depends on STE-56** — don't start Husky until ESLint/Prettier is merged.
+-5. **STE-65 is incremental** — update CLAUDE.md as part of each issue, not as a standalone task.
+-6. **Always branch from `main`** using the naming convention: `feature/STE-XX-description` or `fix/STE-XX-description`.
+-7. **Never use `--no-verify`** to skip pre-commit hooks.
++4. **Always branch from `main`** using the naming convention: `feature/STE-XX-description` or `fix/STE-XX-description`.
++5. **Never use `--no-verify`** to skip pre-commit hooks.
+diff --git a/AGENTS.md b/AGENTS.md
+index 038b4c9..8e543e9 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -66,6 +66,25 @@ Linear (Modern Trivia project) is the source of truth for priorities, status, an
+ 3. If a "do not continue" condition is hit, stop and provide a concise warning plus the recommended next step (new branch/worktree, cleanup, or explicit override).
+ 4. Do not silently continue after warning; require explicit user confirmation to override.
+ 
++### Parallel session rules
++
++These rules apply whenever two or more agent sessions (Claude, Codex, or any combination) are running concurrently on independent issues.
++
++1. **One worktree per session, always.** Never share a worktree between sessions. Each session must have its own dedicated folder on disk, on its own branch. One session = one worktree = one branch.
++2. **Always start from latest main.** Before creating a worktree for a new session, pull main first:
++   ```
++   git checkout main && git pull
++   git worktree add <path> <new-branch-name>
++   ```
++   Never branch from another feature branch. Always branch from `main`.
++3. **Sync before resuming any idle worktree.** If a worktree has been idle while other PRs may have merged, pull main into the branch before continuing:
++   ```
++   git fetch origin && git merge origin/main
++   ```
++4. **Sync before opening or merging a PR.** Before opening a PR, and again immediately before merging, pull latest main into the branch and resolve any conflicts. Do not merge a PR whose branch has not been updated against current main.
++5. **Merge PRs one at a time — never simultaneously.** When multiple parallel sessions finish, merge them sequentially. After each merge, every remaining open PR branch must pull the updated main before that PR is reviewed or merged.
++6. **Flag file-level conflict risk before starting.** If a new session's issue is likely to touch the same files as another currently in-progress session, stop and flag this to the user before starting work. Parallel sessions should target different areas of the codebase where possible (e.g. one API, one client).
++
+ ## Commit Messages
+ 
+ Use Conventional Commits: `<type>(<scope>): <description>`
+diff --git a/AGENT_STATUS.md b/AGENT_STATUS.md
+index 9e9c194..30d8cdf 100644
+--- a/AGENT_STATUS.md
++++ b/AGENT_STATUS.md
+@@ -2,6 +2,8 @@
+ 
+ This file prevents duplicate work across agents. Claim a task here before starting.
+ 
+-| Task                     | Agent               | Branch              | Status      | Updated    |
+-| ------------------------ | ------------------- | ------------------- | ----------- | ---------- |
+-| STE-56 ESLint + Prettier | claude/brave-darwin | claude/brave-darwin | In Progress | 2026-02-15 |
++> For a more detailed coordination board (including Up Next and Recently Completed tables), see `.agent/AGENT_STATUS.md`.
++
++| Task                 | Agent | Branch | Status | Updated |
++| -------------------- | ----- | ------ | ------ | ------- |
++| _(no active claims)_ | —     | —      | —      | —       |
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 038b4c9..8e543e9 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -66,6 +66,25 @@ Linear (Modern Trivia project) is the source of truth for priorities, status, an
+ 3. If a "do not continue" condition is hit, stop and provide a concise warning plus the recommended next step (new branch/worktree, cleanup, or explicit override).
+ 4. Do not silently continue after warning; require explicit user confirmation to override.
+ 
++### Parallel session rules
++
++These rules apply whenever two or more agent sessions (Claude, Codex, or any combination) are running concurrently on independent issues.
++
++1. **One worktree per session, always.** Never share a worktree between sessions. Each session must have its own dedicated folder on disk, on its own branch. One session = one worktree = one branch.
++2. **Always start from latest main.** Before creating a worktree for a new session, pull main first:
++   ```
++   git checkout main && git pull
++   git worktree add <path> <new-branch-name>
++   ```
++   Never branch from another feature branch. Always branch from `main`.
++3. **Sync before resuming any idle worktree.** If a worktree has been idle while other PRs may have merged, pull main into the branch before continuing:
++   ```
++   git fetch origin && git merge origin/main
++   ```
++4. **Sync before opening or merging a PR.** Before opening a PR, and again immediately before merging, pull latest main into the branch and resolve any conflicts. Do not merge a PR whose branch has not been updated against current main.
++5. **Merge PRs one at a time — never simultaneously.** When multiple parallel sessions finish, merge them sequentially. After each merge, every remaining open PR branch must pull the updated main before that PR is reviewed or merged.
++6. **Flag file-level conflict risk before starting.** If a new session's issue is likely to touch the same files as another currently in-progress session, stop and flag this to the user before starting work. Parallel sessions should target different areas of the codebase where possible (e.g. one API, one client).
++
+ ## Commit Messages
+ 
+ Use Conventional Commits: `<type>(<scope>): <description>`
+diff --git a/README.md b/README.md
+index b07d93c..3053260 100644
+--- a/README.md
++++ b/README.md
+@@ -6,7 +6,7 @@ Modern Trivia is a browser-based multiplayer trivia party game designed for loca
+ 
+ This project was created using ChatGPT, Replit, and Codex. The original prototype was designed by ChatGPT and built in Replit using the App Connector, and the initial README was created using Codex.
+ 
+-Additionally, Claude Code on web was used to update and enhance the README content to accurately reflect the current state of the application. This project demonstrates collaboration across multiple AI coding tools throughout its development lifecycle.
++Ongoing development uses four AI coding agents working concurrently: **Claude Code**, **Replit Agent**, **Codex**, and **Antigravity**. Each agent reads from `AGENTS.md` / `CLAUDE.md` / `replit.md` (kept in sync) for shared operating rules.
+ 
+ ## Features
+ 
+@@ -22,7 +22,7 @@ Additionally, Claude Code on web was used to update and enhance the README conte
+   - Medium questions: ±2 points
+   - Hard questions: ±3 points
+ - **Round System**: Teams rotate after every 4 questions, with round score displays
+-- **State Machine Architecture**: Ensures consistent game flow (see `docs/STATE_MACHINE.md`)
++- **State Machine Architecture**: Ensures consistent game flow (see `docs/guides/game_state_machine.md`)
+ 
+ ### Authentication & Admin Features
+ 
+@@ -201,8 +201,10 @@ Modern-Trivia/
+ │   ├── schema.ts        # Drizzle ORM database schema
+ │   └── models/          # User and session models
+ ├── docs/
+-│   ├── STATE_MACHINE.md # Game state flow documentation
+-│   └── ADMIN_SETUP.md   # Admin role setup instructions
++│   ├── PRODUCT_ROADMAP.md         # High-level roadmap
++│   └── guides/
++│       ├── game_state_machine.md  # Game state flow documentation
++│       └── admin_setup.md         # Admin role setup instructions
+ └── script/
+     └── build.ts         # Production build script
+ ```
+@@ -219,14 +221,14 @@ The game follows a state machine pattern with these states:
+ 6. **ROUND_SCORE** → Display scores after each complete round
+ 7. **GAME_OVER** → Final scoreboard and winner announcement
+ 
+-See `docs/STATE_MACHINE.md` for detailed state transitions.
++See `docs/guides/game_state_machine.md` for detailed state transitions.
+ 
+ ## Admin Setup
+ 
+ To grant admin access to users:
+ 
+ 1. Ensure the user has logged in at least once (creates user record)
+-2. See `docs/ADMIN_SETUP.md` for instructions on granting admin roles
++2. See `docs/guides/admin_setup.md` for instructions on granting admin roles
+ 3. Admin users can:
+    - View and clear dispute logs
+    - Add/edit/delete custom questions
+diff --git a/docs/PRODUCT_ROADMAP.md b/docs/PRODUCT_ROADMAP.md
+index e100849..f0a3d97 100644
+--- a/docs/PRODUCT_ROADMAP.md
++++ b/docs/PRODUCT_ROADMAP.md
+@@ -30,7 +30,7 @@ This document serves as the high-level roadmap for Modern Trivia, tracking activ
+ **Status:** 🏗️ In Progress
+ **Tracked in:** [Linear — Modern Trivia project](https://linear.app/stephs-vibe-coding/issue/STE-66)
+ 
+-**Why now:** The app is worked on by 4 AI agents (Claude Code Desktop, Claude Code Web, Replit Codex, Antigravity) with no automated quality gates, no testing, no CI/CD, and a security incident (exposed API key). The codebase needs guardrails before it can scale safely.
++**Why now:** The app is worked on by 4 AI agents (Claude Code, Replit Agent, Codex, Antigravity) with no automated quality gates, no testing, no CI/CD, and a security incident (exposed API key). The codebase needs guardrails before it can scale safely.
+ 
+ **Key workstreams:**
+ 
+diff --git a/docs/guides/documentation_standards.md b/docs/guides/documentation_standards.md
+index 63c0b57..7b9ed9e 100644
+--- a/docs/guides/documentation_standards.md
++++ b/docs/guides/documentation_standards.md
+@@ -67,3 +67,33 @@ Every new Epic or Feature **must** be added to `docs/PRODUCT_ROADMAP.md`.
+ 
+ - **Check IDs:** Always check existing IDs in the target directory to find the next available number.
+ - **Categorize:** Never create uncategorized files in the root `docs/` folder.
++
++## 6. Documentation Maintenance Checklist
++
++Run this checklist whenever file paths change, docs are renamed/moved, or agents are added/removed.
++
++### File path references
++
++- [ ] `README.md` — all links in Features, Project Structure, Game Flow, Admin Setup sections resolve
++- [ ] `docs/guides/qa_instructions.md` — Key Files table paths resolve
++- [ ] `docs/guides/quality_criteria.md` — Key Files for Review table paths resolve
++- [ ] `docs/guides/ai_tool_setup.md` — instruction file names match root files
++
++### Agent naming
++
++Active agents: **Claude Code**, **Replit Agent**, **Codex**, **Antigravity**
++
++- [ ] `docs/PRODUCT_ROADMAP.md` — agent list in STE-66 section matches active set
++- [ ] `docs/guides/ai_tool_setup.md` — one section per active agent, none for retired tools
++- [ ] `.agent/AGENT_STATUS.md` — Agent names row matches active set
++- [ ] `AGENTS.md` / `CLAUDE.md` / `replit.md` — Sync Contract: all three files identical (CI enforces via `cmp -s`)
++
++### Shared agent manifest sync
++
++- [ ] After any edit to `AGENTS.md`, mirror the change in `CLAUDE.md` and `replit.md` in the same commit
++- [ ] CI gate `cmp -s AGENTS.md CLAUDE.md replit.md` passes before merge
++
++### Stale coordination files
++
++- [ ] `AGENT_STATUS.md` (root) — clear completed/abandoned claims
++- [ ] `.agent/AGENT_STATUS.md` — move finished issues to Recently Completed; remove stale Up Next rows
+diff --git a/docs/guides/qa_instructions.md b/docs/guides/qa_instructions.md
+index 3a49633..36bb738 100644
+--- a/docs/guides/qa_instructions.md
++++ b/docs/guides/qa_instructions.md
+@@ -12,7 +12,7 @@ Modern Trivia is a browser-based multiplayer trivia party game for 2-6 teams. Th
+ 
+ - `client/src/lib/questions.json` — Main question database (200 questions)
+ - `CONTENT_STRATEGY.md` — Editorial guidelines and pillar definitions
+-- `docs/QUALITY_REVIEW_CONTEXT.md` — Quality review criteria and focus areas
++- `docs/guides/quality_criteria.md` — Quality review criteria and focus areas
+ 
+ ---
+ 
+diff --git a/docs/guides/quality_criteria.md b/docs/guides/quality_criteria.md
+index a59494d..03435e1 100644
+--- a/docs/guides/quality_criteria.md
++++ b/docs/guides/quality_criteria.md
+@@ -191,13 +191,13 @@ _Examples: Poutine, Canadian slang ("double-double", "toque"), CN Tower, cottage
+ 
+ ## Key Files for Review
+ 
+-| File                            | Purpose                                |
+-| ------------------------------- | -------------------------------------- |
+-| `client/src/lib/questions.json` | Main question database (200 questions) |
+-| `CONTENT_STRATEGY.md`           | Content guidelines and pillars         |
+-| `docs/STATE_MACHINE.md`         | Game flow documentation                |
+-| `docs/ADMIN_SETUP.md`           | Admin role setup                       |
+-| `server/routes.ts`              | API routes including disputes          |
++| File                                | Purpose                                |
++| ----------------------------------- | -------------------------------------- |
++| `client/src/lib/questions.json`     | Main question database (200 questions) |
++| `CONTENT_STRATEGY.md`               | Content guidelines and pillars         |
++| `docs/guides/game_state_machine.md` | Game flow documentation                |
++| `docs/guides/admin_setup.md`        | Admin role setup                       |
++| `server/routes.ts`                  | API routes including disputes          |
+ 
+ ---
+ 
+diff --git a/replit.md b/replit.md
+index 038b4c9..8e543e9 100644
+--- a/replit.md
++++ b/replit.md
+@@ -66,6 +66,25 @@ Linear (Modern Trivia project) is the source of truth for priorities, status, an
+ 3. If a "do not continue" condition is hit, stop and provide a concise warning plus the recommended next step (new branch/worktree, cleanup, or explicit override).
+ 4. Do not silently continue after warning; require explicit user confirmation to override.
+ 
++### Parallel session rules
++
++These rules apply whenever two or more agent sessions (Claude, Codex, or any combination) are running concurrently on independent issues.
++
++1. **One worktree per session, always.** Never share a worktree between sessions. Each session must have its own dedicated folder on disk, on its own branch. One session = one worktree = one branch.
++2. **Always start from latest main.** Before creating a worktree for a new session, pull main first:
++   ```
++   git checkout main && git pull
++   git worktree add <path> <new-branch-name>
++   ```
++   Never branch from another feature branch. Always branch from `main`.
++3. **Sync before resuming any idle worktree.** If a worktree has been idle while other PRs may have merged, pull main into the branch before continuing:
++   ```
++   git fetch origin && git merge origin/main
++   ```
++4. **Sync before opening or merging a PR.** Before opening a PR, and again immediately before merging, pull latest main into the branch and resolve any conflicts. Do not merge a PR whose branch has not been updated against current main.
++5. **Merge PRs one at a time — never simultaneously.** When multiple parallel sessions finish, merge them sequentially. After each merge, every remaining open PR branch must pull the updated main before that PR is reviewed or merged.
++6. **Flag file-level conflict risk before starting.** If a new session's issue is likely to touch the same files as another currently in-progress session, stop and flag this to the user before starting work. Parallel sessions should target different areas of the codebase where possible (e.g. one API, one client).
++
+ ## Commit Messages
+ 
+ Use Conventional Commits: `<type>(<scope>): <description>`

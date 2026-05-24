@@ -1,0 +1,452 @@
+diff --git a/frontend/src/components/ui/Sheet.test.tsx b/frontend/src/components/ui/Sheet.test.tsx
+new file mode 100644
+index 0000000..b68e83f
+--- /dev/null
++++ b/frontend/src/components/ui/Sheet.test.tsx
+@@ -0,0 +1,80 @@
++import { describe, expect, it, vi } from "vitest";
++import { fireEvent, render, screen } from "@testing-library/react";
++import { Sheet } from "./Sheet";
++
++/**
++ * Tests for the bottom-sheet primitive.
++ *
++ * Pinned behaviour:
++ *   - Mount lifecycle (``mounted`` vs ``visible``) — the sheet remains
++ *     in the DOM during its 300ms close animation but its
++ *     ``data-state`` flips to ``"closed"`` so consumers can target the
++ *     final frame.
++ *   - The scrollable body opts into ``touch-action: pan-y`` so the
++ *     inner overflow works under Telegram WebView's iOS quirks even
++ *     when ``body.style.overflow = "hidden"`` is set elsewhere
++ *     (``AdminMenu``).
++ *   - Backdrop click + Escape key fire ``onClose`` so the consumer can
++ *     drive the close transition deterministically.
++ */
++
++describe("<Sheet />", () => {
++  it("does not render when closed and never opened", () => {
++    const { container } = render(
++      <Sheet open={false} onClose={() => {}}>
++        <div>hidden</div>
++      </Sheet>,
++    );
++    expect(container.firstChild).toBeNull();
++    expect(screen.queryByTestId("sheet")).not.toBeInTheDocument();
++  });
++
++  it("renders with data-state=open + pan-y touch action when open", () => {
++    render(
++      <Sheet open onClose={() => {}} title="Hello">
++        <div>panel content</div>
++      </Sheet>,
++    );
++    const sheet = screen.getByTestId("sheet");
++    expect(sheet).toHaveAttribute("data-state", "open");
++    expect(screen.getByText("Hello")).toBeInTheDocument();
++    expect(screen.getByText("panel content")).toBeInTheDocument();
++
++    // The body scroll container must expose ``touch-action: pan-y``
++    // — the property survives the Tailwind class soup as an inline
++    // style so it can't be silently dropped by class-merging.
++    const scroller = Array.from(sheet.children).find(
++      (el) => (el as HTMLElement).style.touchAction === "pan-y",
++    ) as HTMLElement | undefined;
++    expect(scroller).toBeDefined();
++    expect(scroller).toHaveClass("overflow-y-auto");
++  });
++
++  it("fires onClose when the backdrop is clicked", () => {
++    const onClose = vi.fn();
++    render(
++      <Sheet open onClose={onClose}>
++        <div>body</div>
++      </Sheet>,
++    );
++
++    // Backdrop is the first sibling of the panel — match by class.
++    const backdrop = document.querySelector(
++      ".fixed.inset-0.bg-black\\/60",
++    ) as HTMLElement;
++    expect(backdrop).not.toBeNull();
++    fireEvent.click(backdrop);
++    expect(onClose).toHaveBeenCalledTimes(1);
++  });
++
++  it("fires onClose on Escape", () => {
++    const onClose = vi.fn();
++    render(
++      <Sheet open onClose={onClose}>
++        <div>body</div>
++      </Sheet>,
++    );
++    fireEvent.keyDown(document, { key: "Escape" });
++    expect(onClose).toHaveBeenCalledTimes(1);
++  });
++});
+diff --git a/frontend/src/components/ui/Sheet.tsx b/frontend/src/components/ui/Sheet.tsx
+index a0c77d1..f4ba700 100644
+--- a/frontend/src/components/ui/Sheet.tsx
++++ b/frontend/src/components/ui/Sheet.tsx
+@@ -10,7 +10,13 @@ interface SheetProps {
+   className?: string;
+ }
+ 
+-export function Sheet({ open, onClose, title, children, className }: SheetProps) {
++export function Sheet({
++  open,
++  onClose,
++  title,
++  children,
++  className,
++}: SheetProps) {
+   const { mounted, visible } = usePresence(open, 300);
+   const drag = useVerticalDrag(onClose);
+ 
+@@ -41,6 +47,8 @@ export function Sheet({ open, onClose, title, children, className }: SheetProps)
+       />
+       <div
+         ref={drag.elRef}
++        data-testid="sheet"
++        data-state={visible ? "open" : "closed"}
+         className={cn(
+           "fixed z-50 left-0 right-0 bottom-0 flex flex-col",
+           // V13 — bump the floor to ``min-h-[80dvh]`` so longer
+@@ -61,12 +69,28 @@ export function Sheet({ open, onClose, title, children, className }: SheetProps)
+           onPointerDown={drag.onPointerDown}
+           onPointerMove={drag.onPointerMove}
+           onPointerUp={drag.onPointerUp}
++          // V13.1 — ``touch-none`` so the dismissal drag doesn't
++          // conflict with vertical scroll inside the sheet body; the
++          // handle is the *only* place that owns vertical pointer
++          // gestures. Body scrolling is opted-in explicitly below.
+           className="shrink-0 bg-panel pt-3 px-4 z-10 touch-none cursor-grab active:cursor-grabbing rounded-t-3xl"
+         >
+           <div className="mx-auto h-1 w-10 rounded-full bg-text-muted/30" />
+           {title && <div className="mt-3 text-lg font-bold">{title}</div>}
+         </div>
+-        <div className="flex-1 overflow-y-auto overscroll-contain px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,16px)+16px)]">
++        <div
++          // V13.1 — ``touch-action: pan-y`` lets Telegram’s iOS
++          // WebView surface the inner overflow scroll even after
++          // ``AdminMenu`` set ``body.style.overflow = "hidden"``.
++          // Without it, long composer forms (broadcasts, filter
++          // sheet on TMA) appear stuck on first paint because the
++          // top of the form is off-screen and the body refuses to
++          // scroll. Children opt into a sticky-footer row inside
++          // ``children`` (see ``AdminBroadcastsPage`` Composer) so
++          // the primary CTA stays visible regardless of form length.
++          style={{ touchAction: "pan-y" }}
++          className="flex-1 overflow-y-auto overscroll-contain px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,16px)+16px)]"
++        >
+           {children}
+         </div>
+       </div>
+diff --git a/frontend/src/lib/animate.ts b/frontend/src/lib/animate.ts
+index 6514b20..61b4884 100644
+--- a/frontend/src/lib/animate.ts
++++ b/frontend/src/lib/animate.ts
+@@ -64,8 +64,14 @@ export function useVerticalDrag(onDismiss: () => void, threshold = 120) {
+       onDismiss();
+     }
+     if (elRef.current) {
++      // V13.1 — clear the inline transform rather than pinning it to
++      // ``translateY(0)`` so the consumer's open/closed Tailwind
++      // class (``translate-y-0`` vs ``translate-y-full``) regains
++      // control. Pinning it inline meant a drag-dismissed sheet
++      // visually stuck around because its inline style overrode
++      // the parent's "closed" class on the very next render.
+       elRef.current.style.transition = "transform .2s ease-out";
+-      elRef.current.style.transform = "translateY(0)";
++      elRef.current.style.transform = "";
+       const el = elRef.current;
+       const cleanup = () => {
+         el.style.transition = "";
+@@ -109,8 +115,11 @@ export function useHorizontalSwipe(onSwipe: () => void, threshold = 50) {
+       onSwipe();
+     }
+     if (elRef.current) {
++      // V13.1 — clear the inline transform so the consumer's
++      // open/closed class regains control after a swipe (mirrors the
++      // ``useVerticalDrag`` fix; same root-cause).
+       elRef.current.style.transition = "transform .2s ease-out";
+-      elRef.current.style.transform = "translateX(0)";
++      elRef.current.style.transform = "";
+       const el = elRef.current;
+       const cleanup = () => {
+         el.style.transition = "";
+diff --git a/frontend/src/pages/admin/AdminBroadcastsPage.test.tsx b/frontend/src/pages/admin/AdminBroadcastsPage.test.tsx
+index 48e00a0..b3ea884 100644
+--- a/frontend/src/pages/admin/AdminBroadcastsPage.test.tsx
++++ b/frontend/src/pages/admin/AdminBroadcastsPage.test.tsx
+@@ -289,4 +289,72 @@ describe("<AdminBroadcastsPage />", () => {
+       ),
+     );
+   });
++
++  it("renders a live char-counter for the body and blocks submit past the 4096 limit", async () => {
++    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
++    const user = userEvent.setup();
++    renderPage();
++    await user.click(screen.getByRole("button", { name: "Новая" }));
++
++    // Counter starts at 0/4096 with no body typed.
++    expect(await screen.findByText(/0\/4096/)).toBeInTheDocument();
++
++    // Type a short body → counter updates and submit becomes enabled.
++    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
++      target: { value: "Hi" },
++    });
++    expect(screen.getByText(/2\/4096/)).toBeInTheDocument();
++    expect(screen.getByRole("button", { name: /Отправить/ })).not.toBeDisabled();
++
++    // Exceed the limit → counter colours red, submit goes back to
++    // disabled, no mutation fires when clicked.
++    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
++      target: { value: "x".repeat(4097) },
++    });
++    expect(screen.getByText(/4097\/4096/)).toBeInTheDocument();
++    expect(
++      screen.getByText(/Текст слишком длинный/),
++    ).toBeInTheDocument();
++    expect(screen.getByRole("button", { name: /Отправить/ })).toBeDisabled();
++  });
++
++  it("inline-validates the deeplink and blocks send on invalid schemes", async () => {
++    mockState.list = { items: [], total: 0, page: 1, page_size: 50 };
++    const user = userEvent.setup();
++    renderPage();
++    await user.click(screen.getByRole("button", { name: "Новая" }));
++
++    fireEvent.change(screen.getByPlaceholderText("Что отправляем..."), {
++      target: { value: "Hi" },
++    });
++
++    const deeplinkInput = screen.getByPlaceholderText(
++      /https:\/\/t\.me\/your_bot\/app/,
++    );
++
++    // ``http://`` is rejected (mirror backend validator).
++    fireEvent.change(deeplinkInput, {
++      target: { value: "http://example.com" },
++    });
++    expect(
++      screen.getByText(/начинаться с https:\/\/ или tg:\/\//),
++    ).toBeInTheDocument();
++    expect(screen.getByRole("button", { name: /Отправить/ })).toBeDisabled();
++    expect(screen.getByRole("button", { name: "Предпросмотр" })).toBeDisabled();
++
++    // ``https://`` is accepted.
++    fireEvent.change(deeplinkInput, {
++      target: { value: "https://t.me/garant_bot/app" },
++    });
++    expect(
++      screen.queryByText(/начинаться с https:\/\/ или tg:\/\//),
++    ).not.toBeInTheDocument();
++    expect(screen.getByRole("button", { name: /Отправить/ })).not.toBeDisabled();
++
++    // ``tg://`` is accepted too.
++    fireEvent.change(deeplinkInput, {
++      target: { value: "tg://resolve?domain=garant_bot" },
++    });
++    expect(screen.getByRole("button", { name: /Отправить/ })).not.toBeDisabled();
++  });
+ });
+diff --git a/frontend/src/pages/admin/AdminBroadcastsPage.tsx b/frontend/src/pages/admin/AdminBroadcastsPage.tsx
+index 85d0870..5020c23 100644
+--- a/frontend/src/pages/admin/AdminBroadcastsPage.tsx
++++ b/frontend/src/pages/admin/AdminBroadcastsPage.tsx
+@@ -103,13 +103,36 @@ export default function AdminBroadcastsPage() {
+         )}
+       </div>
+ 
+-      <Sheet open={composerOpen} onClose={() => setComposerOpen(false)} title="Новая рассылка">
++      <Sheet
++        open={composerOpen}
++        onClose={() => setComposerOpen(false)}
++        title="Новая рассылка"
++      >
+         <Composer onClose={() => setComposerOpen(false)} />
+       </Sheet>
+     </Page>
+   );
+ }
+ 
++// Mirrors the backend ``AdminBroadcastCreateIn`` field validators
++// (``schemas.py``). Keep these in sync so the live UI counter and
++// inline deeplink error match what the server would reject.
++const BODY_MAX_LEN = 4096;
++const DEEPLINK_MAX_LEN = 256;
++
++function validateDeeplink(raw: string): string | null {
++  const v = raw.trim();
++  if (!v) return null;
++  if (v.length > DEEPLINK_MAX_LEN) {
++    return `Ссылка слишком длинная (≤${DEEPLINK_MAX_LEN})`;
++  }
++  const low = v.toLowerCase();
++  if (!(low.startsWith("https://") || low.startsWith("tg://"))) {
++    return "Ссылка должна начинаться с https:// или tg://";
++  }
++  return null;
++}
++
+ function Composer({ onClose }: { onClose: () => void }) {
+   const [body, setBody] = useState("");
+   const [title, setTitle] = useState("");
+@@ -127,6 +150,11 @@ function Composer({ onClose }: { onClose: () => void }) {
+   const create = useAdminCreateBroadcast();
+   const toast = useToast();
+ 
++  const deeplinkError = validateDeeplink(deeplink);
++  const bodyOverLimit = body.length > BODY_MAX_LEN;
++  const submitBlocked =
++    !body.trim() || bodyOverLimit || deeplinkError !== null;
++
+   const buildBody = (): AdminBroadcastCreateBody => ({
+     title: title.trim() || undefined,
+     body: body.trim(),
+@@ -146,12 +174,23 @@ function Composer({ onClose }: { onClose: () => void }) {
+         <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+       </div>
+       <div>
+-        <label className="block text-xs text-text-muted mb-1">Текст</label>
++        <div className="flex items-end justify-between mb-1">
++          <label className="block text-xs text-text-muted">Текст</label>
++          <span
++            className={`text-[11px] tabular-nums ${
++              bodyOverLimit ? "text-danger" : "text-text-muted"
++            }`}
++            aria-live="polite"
++          >
++            {body.length}/{BODY_MAX_LEN}
++          </span>
++        </div>
+         <Textarea
+           value={body}
+           onChange={(e) => setBody(e.target.value)}
+           rows={4}
+           placeholder="Что отправляем..."
++          error={bodyOverLimit ? `Текст слишком длинный (≤${BODY_MAX_LEN})` : undefined}
+         />
+       </div>
+       <div>
+@@ -159,7 +198,8 @@ function Composer({ onClose }: { onClose: () => void }) {
+         <Input
+           value={deeplink}
+           onChange={(e) => setDeeplink(e.target.value)}
+-          placeholder="https://t.me/your_bot/app?... или /deals/123"
++          placeholder="https://t.me/your_bot/app?... или tg://resolve?domain=..."
++          error={deeplinkError ?? undefined}
+         />
+       </div>
+       <div>
+@@ -223,51 +263,63 @@ function Composer({ onClose }: { onClose: () => void }) {
+           Будет отправлено: {previewCount}
+         </div>
+       )}
+-      <div className="flex gap-2">
+-        <Button
+-          type="button"
+-          variant="ghost"
+-          className="flex-1"
+-          disabled={!body.trim() || preview.isPending}
+-          onClick={async () => {
+-            try {
+-              const res = await preview.mutateAsync(buildBody());
+-              setPreviewCount(res.total_recipients);
+-            } catch (e) {
+-              toast.show({
+-                kind: "error",
+-                title: "Ошибка",
+-                body: (e as Error).message,
+-              });
+-            }
+-          }}
+-        >
+-          Предпросмотр
+-        </Button>
+-        <Button
+-          type="button"
+-          disabled={!body.trim() || create.isPending}
+-          className="flex-1"
+-          onClick={async () => {
+-            try {
+-              const res = await create.mutateAsync(buildBody());
+-              toast.show({
+-                kind: "success",
+-                title: "Отправлено",
+-                body: `${res.total_recipients} получателей`,
+-              });
+-              onClose();
+-            } catch (e) {
+-              toast.show({
+-                kind: "error",
+-                title: "Ошибка",
+-                body: (e as Error).message,
+-              });
+-            }
+-          }}
+-        >
+-          <Send size={14} className="mr-1" /> Отправить
+-        </Button>
++      {/*
++        Sticky-footer for the primary actions. The Composer form has
++        grown long enough that the «Отправить» button used to fall
++        below the fold on TMA, leaving the operator with no visible
++        affordance and the impression that the page was broken.
++        ``sticky bottom-0`` keeps the action row anchored to the
++        Sheet body's viewport while the form above stays scrollable.
++        The ``-mx-4`` neutralises the scroll container's ``px-4`` so
++        the border/background run edge-to-edge.
++      */}
++      <div className="sticky bottom-0 -mx-4 mt-2 border-t border-border bg-panel/95 backdrop-blur px-4 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+12px)]">
++        <div className="flex gap-2">
++          <Button
++            type="button"
++            variant="ghost"
++            className="flex-1"
++            disabled={submitBlocked || preview.isPending}
++            onClick={async () => {
++              try {
++                const res = await preview.mutateAsync(buildBody());
++                setPreviewCount(res.total_recipients);
++              } catch (e) {
++                toast.show({
++                  kind: "error",
++                  title: "Ошибка",
++                  body: (e as Error).message,
++                });
++              }
++            }}
++          >
++            Предпросмотр
++          </Button>
++          <Button
++            type="button"
++            disabled={submitBlocked || create.isPending}
++            className="flex-1"
++            onClick={async () => {
++              try {
++                const res = await create.mutateAsync(buildBody());
++                toast.show({
++                  kind: "success",
++                  title: "Отправлено",
++                  body: `${res.total_recipients} получателей`,
++                });
++                onClose();
++              } catch (e) {
++                toast.show({
++                  kind: "error",
++                  title: "Ошибка",
++                  body: (e as Error).message,
++                });
++              }
++            }}
++          >
++            <Send size={14} className="mr-1" /> Отправить
++          </Button>
++        </div>
+       </div>
+     </div>
+   );

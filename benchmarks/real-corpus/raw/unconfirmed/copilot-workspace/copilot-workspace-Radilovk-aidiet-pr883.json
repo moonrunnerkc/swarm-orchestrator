@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-Radilovk-aidiet-pr883",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 883,
+    "headSha": "33bc4e983bec8124c78366492ee4b46bc4cf0e1c",
+    "baseSha": "c664a3df7352233a2c4a0d13cbf316be664fb940",
+    "title": "Unify chat overlay across all tabs; remove analytics container collapse",
+    "body": "Chat opened from the plan tab was a local DOM overlay inside `plan.html`'s iframe, disconnected from the shell-level overlay used by all other tabs — causing inconsistent sizing and losing chat state on tab switch. Separately, the analytics tab header exposed a collapse toggle that should not be user-controllable.\n\n## Chat — one shared shell overlay for all tabs (`plan.html`)\n\n`openChat()` now delegates to the shell when running as a regular embedded tab:\n\n```js\nfunction openChat() {\n    // In regular embedded tab (not shellChat overlay) delegate to the shell's shared chat\n    if (document.documentElement.getAttribute('data-embedded-tab') === '1' &&\n        document.documentElement.getAttribute('data-shell-chat') !== '1') {\n        requestShellAction('NUTRIPLAN_OPEN_CHAT');\n        return;\n    }\n    // existing logic runs only inside the shellChat iframe itself\n    ...\n}\n```\n\n- All tabs now open the same `spaShellChatFrame` overlay (`plan.html?chat=1&embedded=1&shellChat=1`)\n- Chat content persists across tab switches — the iframe is hidden/shown, not destroyed\n- `shellChat` guard prevents infinite delegation when the overlay iframe calls `openChat()` on load\n\n## Analytics container — permanently expanded (`game-analytics.html`)\n\n- Removed `onclick`/`role=\"button\"`/`tabindex`/keyboard handler from `.game-analytics-header`\n- Removed chevron icon and its CSS (`.game-analytics-chevron`, `cursor:pointer`, `user-select`)\n- Removed `toggleGameAnalytics()` function entirely\n- Container initialises expanded and has no collapse affordance",
+    "author": "Copilot",
+    "headRef": "copilot/fix-chat-window-size",
+    "repository": "Radilovk/aidiet"
+  },
+  "diffRef": {
+    "repository": "Radilovk/aidiet",
+    "headSha": "33bc4e983bec8124c78366492ee4b46bc4cf0e1c",
+    "baseSha": "c664a3df7352233a2c4a0d13cbf316be664fb940"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-Radilovk-aidiet-pr883.diff",
+  "vendoredAt": "2026-05-24T03:05:39.890Z",
+  "collectedAt": "2026-05-24T03:05:39.890Z"
+}

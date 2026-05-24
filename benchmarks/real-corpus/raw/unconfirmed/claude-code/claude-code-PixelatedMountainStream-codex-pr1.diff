@@ -1,0 +1,199 @@
+diff --git a/codex-rs/cli/src/main.rs b/codex-rs/cli/src/main.rs
+index 988187855412..1c0450538e3b 100644
+--- a/codex-rs/cli/src/main.rs
++++ b/codex-rs/cli/src/main.rs
+@@ -1342,6 +1342,12 @@ async fn run_debug_prompt_input_command(
+     arg0_paths: Arg0DispatchPaths,
+ ) -> anyhow::Result<()> {
+     let shared = interactive.shared.into_inner();
++    if let Err(msg) = codex_utils_cli::validate_local_provider_requires_oss(
++        shared.oss,
++        shared.oss_provider.as_deref(),
++    ) {
++        return Err(anyhow::anyhow!(msg));
++    }
+     let mut cli_kv_overrides = root_config_overrides
+         .parse_overrides()
+         .map_err(anyhow::Error::msg)?;
+diff --git a/codex-rs/cli/tests/debug_prompt_input.rs b/codex-rs/cli/tests/debug_prompt_input.rs
+new file mode 100644
+index 000000000000..56ad7c074eae
+--- /dev/null
++++ b/codex-rs/cli/tests/debug_prompt_input.rs
+@@ -0,0 +1,29 @@
++use std::path::Path;
++
++use anyhow::Result;
++use predicates::str::contains;
++use tempfile::TempDir;
++
++fn codex_command(codex_home: &Path) -> Result<assert_cmd::Command> {
++    let mut cmd = assert_cmd::Command::new(codex_utils_cargo_bin::cargo_bin("codex")?);
++    cmd.env("CODEX_HOME", codex_home);
++    Ok(cmd)
++}
++
++#[test]
++fn debug_prompt_input_rejects_local_provider_without_oss() -> Result<()> {
++    let codex_home = TempDir::new()?;
++    let mut cmd = codex_command(codex_home.path())?;
++    cmd.args([
++        "--local-provider",
++        "ollama",
++        "debug",
++        "prompt-input",
++        "hello",
++    ])
++    .assert()
++    .failure()
++    .stderr(contains("--local-provider requires --oss"));
++
++    Ok(())
++}
+diff --git a/codex-rs/exec/src/lib.rs b/codex-rs/exec/src/lib.rs
+index 784653620639..e609d2152d8c 100644
+--- a/codex-rs/exec/src/lib.rs
++++ b/codex-rs/exec/src/lib.rs
+@@ -359,6 +359,12 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
+     let run_loader_overrides = loader_overrides.clone();
+     let run_cloud_requirements = cloud_requirements.clone();
+ 
++    if let Err(msg) =
++        codex_utils_cli::validate_local_provider_requires_oss(oss, oss_provider.as_deref())
++    {
++        return Err(anyhow::anyhow!(msg));
++    }
++
+     let model_provider = if oss {
+         let resolved = resolve_oss_provider(
+             oss_provider.as_deref(),
+diff --git a/codex-rs/tui/src/lib.rs b/codex-rs/tui/src/lib.rs
+index 39b4294b4aae..69a31479cc8a 100644
+--- a/codex-rs/tui/src/lib.rs
++++ b/codex-rs/tui/src/lib.rs
+@@ -801,6 +801,12 @@ pub async fn run_main(
+     )
+     .await;
+ 
++    if let Err(msg) =
++        codex_utils_cli::validate_local_provider_requires_oss(cli.oss, cli.oss_provider.as_deref())
++    {
++        return Err(std::io::Error::other(msg));
++    }
++
+     let model_provider_override = if cli.oss {
+         let resolved = resolve_oss_provider(
+             cli.oss_provider.as_deref(),
+diff --git a/codex-rs/utils/cli/src/lib.rs b/codex-rs/utils/cli/src/lib.rs
+index 35e4fd1daf4d..e6f307951002 100644
+--- a/codex-rs/utils/cli/src/lib.rs
++++ b/codex-rs/utils/cli/src/lib.rs
+@@ -8,4 +8,6 @@ pub use approval_mode_cli_arg::ApprovalModeCliArg;
+ pub use config_override::CliConfigOverrides;
+ pub use format_env_display::format_env_display;
+ pub use sandbox_mode_cli_arg::SandboxModeCliArg;
++pub use shared_options::LOCAL_PROVIDER_REQUIRES_OSS_MSG;
+ pub use shared_options::SharedCliOptions;
++pub use shared_options::validate_local_provider_requires_oss;
+diff --git a/codex-rs/utils/cli/src/shared_options.rs b/codex-rs/utils/cli/src/shared_options.rs
+index c174a7b5a654..d45bdceb07d2 100644
+--- a/codex-rs/utils/cli/src/shared_options.rs
++++ b/codex-rs/utils/cli/src/shared_options.rs
+@@ -25,7 +25,8 @@ pub struct SharedCliOptions {
+     pub oss: bool,
+ 
+     /// Specify which local provider to use (lmstudio or ollama).
+-    /// If not specified with --oss, will use config default or show selection.
++    /// Requires `--oss`; rerun with `--oss --local-provider <id> --model <slug>`.
++    /// When omitted under `--oss`, the config default is used or a selection prompt appears.
+     #[arg(long = "local-provider")]
+     pub oss_provider: Option<String>,
+ 
+@@ -56,6 +57,26 @@ pub struct SharedCliOptions {
+     pub add_dir: Vec<PathBuf>,
+ }
+ 
++/// Error returned when `--local-provider` is supplied without `--oss`.
++///
++/// `--local-provider` only takes effect inside the `--oss` code path; without
++/// `--oss` the flag would be silently dropped and the session would fall back
++/// to the default cloud provider, which is a confusing footgun.
++pub const LOCAL_PROVIDER_REQUIRES_OSS_MSG: &str =
++    "--local-provider requires --oss; rerun with: codex --oss --local-provider <id> --model <slug>";
++
++/// Validate that `--local-provider` is only used together with `--oss`.
++pub fn validate_local_provider_requires_oss(
++    oss: bool,
++    oss_provider: Option<&str>,
++) -> Result<(), &'static str> {
++    if oss_provider.is_some() && !oss {
++        Err(LOCAL_PROVIDER_REQUIRES_OSS_MSG)
++    } else {
++        Ok(())
++    }
++}
++
+ impl SharedCliOptions {
+     pub fn inherit_exec_root_options(&mut self, root: &Self) {
+         let self_selected_sandbox_mode =
+@@ -160,3 +181,30 @@ impl SharedCliOptions {
+         }
+     }
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn local_provider_without_oss_is_rejected() {
++        assert_eq!(
++            validate_local_provider_requires_oss(false, Some("ollama")),
++            Err(LOCAL_PROVIDER_REQUIRES_OSS_MSG),
++        );
++    }
++
++    #[test]
++    fn local_provider_with_oss_is_accepted() {
++        assert_eq!(
++            validate_local_provider_requires_oss(true, Some("ollama")),
++            Ok(()),
++        );
++    }
++
++    #[test]
++    fn no_local_provider_is_accepted() {
++        assert_eq!(validate_local_provider_requires_oss(false, None), Ok(()));
++        assert_eq!(validate_local_provider_requires_oss(true, None), Ok(()));
++    }
++}
+diff --git a/docs/config.md b/docs/config.md
+index fe0c55ee6255..f3a8bb0f550c 100644
+--- a/docs/config.md
++++ b/docs/config.md
+@@ -111,6 +111,25 @@ Plan preset. The string value `none` means "no reasoning" (an explicit Plan
+ override), not "inherit the global default". There is currently no separate
+ config value for "follow the global default in Plan mode".
+ 
++## Switching providers between sessions
++
++To run the main agent against a local provider, start (or resume) Codex with
++both `--oss` and `--local-provider`. `--local-provider` only takes effect
++under `--oss`; passing it alone exits with an error pointing to the correct
++flag combination.
++
++```bash
++# Start a new session against local Ollama.
++codex --oss --local-provider ollama --model gemma4:26b-a4b-it-q4_K_M
++
++# Resume an existing thread on the same provider/model.
++codex resume <thread-id> --oss --local-provider ollama --model gemma4:26b-a4b-it-q4_K_M
++```
++
++Per-task routing for compaction, `/review`, and memories is configured via
++TOML (see below) and is independent of the main-agent provider chosen at
++startup.
++
+ ## Per-task model and provider overrides
+ 
+ Some background tasks can be routed to a different model and provider than

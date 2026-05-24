@@ -1,0 +1,567 @@
+diff --git a/backend/pom.xml b/backend/pom.xml
+index d0726dd..0a9fcc9 100644
+--- a/backend/pom.xml
++++ b/backend/pom.xml
+@@ -84,6 +84,13 @@
+             <scope>runtime</scope>
+         </dependency>
+ 
++        <!-- Intuit QuickBooks Online OAuth2 SDK -->
++        <dependency>
++            <groupId>com.intuit.quickbooks-online</groupId>
++            <artifactId>oauth2-platform-api</artifactId>
++            <version>6.3.0</version>
++        </dependency>
++
+         <!-- Validation -->
+         <dependency>
+             <groupId>org.springframework.boot</groupId>
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/BookkeepingApplication.java b/backend/src/main/java/com/billiontech/bookkeeping/BookkeepingApplication.java
+index 3ffe45d..737094a 100644
+--- a/backend/src/main/java/com/billiontech/bookkeeping/BookkeepingApplication.java
++++ b/backend/src/main/java/com/billiontech/bookkeeping/BookkeepingApplication.java
+@@ -2,8 +2,10 @@
+ 
+ import org.springframework.boot.SpringApplication;
+ import org.springframework.boot.autoconfigure.SpringBootApplication;
++import org.springframework.scheduling.annotation.EnableScheduling;
+ 
+ @SpringBootApplication
++@EnableScheduling
+ public class BookkeepingApplication {
+ 
+     public static void main(String[] args) {
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/config/QboConfig.java b/backend/src/main/java/com/billiontech/bookkeeping/config/QboConfig.java
+new file mode 100644
+index 0000000..77835c1
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/config/QboConfig.java
+@@ -0,0 +1,30 @@
++package com.billiontech.bookkeeping.config;
++
++import org.springframework.boot.context.properties.ConfigurationProperties;
++import org.springframework.context.annotation.Configuration;
++
++@Configuration
++@ConfigurationProperties(prefix = "qbo")
++public class QboConfig {
++
++    private String clientId;
++    private String clientSecret;
++    private String redirectUri;
++    private String environment;
++    private String encryptionKey;
++
++    public String getClientId() { return clientId; }
++    public void setClientId(String clientId) { this.clientId = clientId; }
++
++    public String getClientSecret() { return clientSecret; }
++    public void setClientSecret(String clientSecret) { this.clientSecret = clientSecret; }
++
++    public String getRedirectUri() { return redirectUri; }
++    public void setRedirectUri(String redirectUri) { this.redirectUri = redirectUri; }
++
++    public String getEnvironment() { return environment; }
++    public void setEnvironment(String environment) { this.environment = environment; }
++
++    public String getEncryptionKey() { return encryptionKey; }
++    public void setEncryptionKey(String encryptionKey) { this.encryptionKey = encryptionKey; }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/controller/GlobalExceptionHandler.java b/backend/src/main/java/com/billiontech/bookkeeping/controller/GlobalExceptionHandler.java
+index 4dd6fa5..0b064a4 100644
+--- a/backend/src/main/java/com/billiontech/bookkeeping/controller/GlobalExceptionHandler.java
++++ b/backend/src/main/java/com/billiontech/bookkeeping/controller/GlobalExceptionHandler.java
+@@ -1,6 +1,7 @@
+ package com.billiontech.bookkeeping.controller;
+ 
+ import com.billiontech.bookkeeping.service.AuthService;
++import com.billiontech.bookkeeping.service.qbo.QboOAuthService;
+ import org.springframework.http.ResponseEntity;
+ import org.springframework.web.bind.annotation.ExceptionHandler;
+ import org.springframework.web.bind.annotation.RestControllerAdvice;
+@@ -14,4 +15,9 @@ public class GlobalExceptionHandler {
+     public ResponseEntity<Map<String, String>> handleAuthException(AuthService.AuthException ex) {
+         return ResponseEntity.status(401).body(Map.of("error", ex.getMessage()));
+     }
++
++    @ExceptionHandler(QboOAuthService.QboException.class)
++    public ResponseEntity<Map<String, String>> handleQboException(QboOAuthService.QboException ex) {
++        return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
++    }
+ }
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/controller/QboController.java b/backend/src/main/java/com/billiontech/bookkeeping/controller/QboController.java
+new file mode 100644
+index 0000000..00ab6d6
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/controller/QboController.java
+@@ -0,0 +1,57 @@
++package com.billiontech.bookkeeping.controller;
++
++import com.billiontech.bookkeeping.entity.Client;
++import com.billiontech.bookkeeping.repository.ClientRepository;
++import com.billiontech.bookkeeping.security.TenantContext;
++import com.billiontech.bookkeeping.service.qbo.QboOAuthService;
++import org.springframework.http.ResponseEntity;
++import org.springframework.web.bind.annotation.GetMapping;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestMapping;
++import org.springframework.web.bind.annotation.RequestParam;
++import org.springframework.web.bind.annotation.RestController;
++import org.springframework.web.servlet.view.RedirectView;
++
++import java.util.Map;
++import java.util.UUID;
++
++@RestController
++@RequestMapping("/api")
++public class QboController {
++
++    private final QboOAuthService qboOAuthService;
++    private final ClientRepository clientRepository;
++
++    public QboController(QboOAuthService qboOAuthService, ClientRepository clientRepository) {
++        this.qboOAuthService = qboOAuthService;
++        this.clientRepository = clientRepository;
++    }
++
++    @GetMapping("/clients/{clientId}/qbo/connect")
++    public ResponseEntity<Map<String, String>> connect(@PathVariable UUID clientId) {
++        UUID tenantId = TenantContext.getTenantId();
++
++        // Verify the client belongs to the authenticated user's tenant
++        Client client = clientRepository.findById(clientId)
++                .orElseThrow(() -> new QboOAuthService.QboException("Client not found"));
++
++        if (!client.getTenant().getId().equals(tenantId)) {
++            return ResponseEntity.status(403).build();
++        }
++
++        String authUrl = qboOAuthService.generateAuthUrl(clientId);
++        return ResponseEntity.ok(Map.of("authUrl", authUrl));
++    }
++
++    /**
++     * QBO redirects here after the user authorizes. This endpoint is public
++     * because the redirect comes from Intuit's servers, not from the frontend.
++     */
++    @GetMapping("/qbo/callback")
++    public RedirectView callback(@RequestParam("code") String code,
++                                 @RequestParam("realmId") String realmId,
++                                 @RequestParam("state") String state) {
++        UUID clientId = qboOAuthService.handleCallback(code, realmId, state);
++        return new RedirectView("/clients/" + clientId + "?connected=true");
++    }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/repository/ClientRepository.java b/backend/src/main/java/com/billiontech/bookkeeping/repository/ClientRepository.java
+index d5ff6df..fd7c828 100644
+--- a/backend/src/main/java/com/billiontech/bookkeeping/repository/ClientRepository.java
++++ b/backend/src/main/java/com/billiontech/bookkeeping/repository/ClientRepository.java
+@@ -9,4 +9,6 @@
+ public interface ClientRepository extends JpaRepository<Client, UUID> {
+ 
+     List<Client> findByTenantId(UUID tenantId);
++
++    List<Client> findByQboRealmIdIsNotNull();
+ }
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/security/SecurityConfig.java b/backend/src/main/java/com/billiontech/bookkeeping/security/SecurityConfig.java
+index 7495e24..31eb9c7 100644
+--- a/backend/src/main/java/com/billiontech/bookkeeping/security/SecurityConfig.java
++++ b/backend/src/main/java/com/billiontech/bookkeeping/security/SecurityConfig.java
+@@ -34,6 +34,7 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Excepti
+             .authorizeHttpRequests(auth -> auth
+                 .requestMatchers("/api/auth/**").permitAll()
+                 .requestMatchers("/api/health").permitAll()
++                .requestMatchers("/api/qbo/callback").permitAll()
+                 .requestMatchers("/actuator/**").permitAll()
+                 .requestMatchers("/api/**").authenticated()
+                 .anyRequest().permitAll()
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/service/qbo/QboOAuthService.java b/backend/src/main/java/com/billiontech/bookkeeping/service/qbo/QboOAuthService.java
+new file mode 100644
+index 0000000..e1c230f
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/service/qbo/QboOAuthService.java
+@@ -0,0 +1,106 @@
++package com.billiontech.bookkeeping.service.qbo;
++
++import com.billiontech.bookkeeping.config.QboConfig;
++import com.billiontech.bookkeeping.entity.Client;
++import com.billiontech.bookkeeping.repository.ClientRepository;
++import com.billiontech.bookkeeping.util.AesEncryptionUtil;
++import com.intuit.oauth2.client.OAuth2PlatformClient;
++import com.intuit.oauth2.config.Environment;
++import com.intuit.oauth2.config.OAuth2Config;
++import com.intuit.oauth2.config.Scope;
++import com.intuit.oauth2.data.BearerTokenResponse;
++import com.intuit.oauth2.exception.InvalidRequestException;
++import com.intuit.oauth2.exception.OAuthException;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++import org.springframework.stereotype.Service;
++import org.springframework.transaction.annotation.Transactional;
++
++import java.time.OffsetDateTime;
++import java.util.List;
++import java.util.UUID;
++
++@Service
++public class QboOAuthService {
++
++    private static final Logger log = LoggerFactory.getLogger(QboOAuthService.class);
++
++    private final QboConfig qboConfig;
++    private final ClientRepository clientRepository;
++    private final OAuth2PlatformClient oauthClient;
++    private final OAuth2Config oauthConfig;
++
++    public QboOAuthService(QboConfig qboConfig, ClientRepository clientRepository) {
++        this.qboConfig = qboConfig;
++        this.clientRepository = clientRepository;
++
++        Environment env = "production".equalsIgnoreCase(qboConfig.getEnvironment())
++                ? Environment.PRODUCTION : Environment.SANDBOX;
++
++        this.oauthConfig = new OAuth2Config.OAuth2ConfigBuilder(
++                qboConfig.getClientId(), qboConfig.getClientSecret())
++                .callDiscoveryAPI(env)
++                .buildConfig();
++
++        this.oauthClient = new OAuth2PlatformClient(oauthConfig);
++    }
++
++    /**
++     * Builds the QuickBooks authorization URL. The clientId is encoded in the
++     * state parameter so the callback can associate tokens with the correct client.
++     */
++    public String generateAuthUrl(UUID clientId) {
++        try {
++            String csrf = clientId.toString();
++            List<Scope> scopes = List.of(Scope.Accounting);
++            return oauthConfig.prepareUrl(scopes, qboConfig.getRedirectUri(), csrf);
++        } catch (InvalidRequestException e) {
++            throw new QboException("Failed to generate QBO authorization URL", e);
++        }
++    }
++
++    /**
++     * Exchanges the authorization code for tokens and stores them encrypted.
++     * Called from the OAuth callback endpoint.
++     */
++    @Transactional
++    public UUID handleCallback(String authCode, String realmId, String state) {
++        UUID clientId;
++        try {
++            clientId = UUID.fromString(state);
++        } catch (IllegalArgumentException e) {
++            throw new QboException("Invalid state parameter in QBO callback");
++        }
++
++        Client client = clientRepository.findById(clientId)
++                .orElseThrow(() -> new QboException("Client not found: " + clientId));
++
++        try {
++            BearerTokenResponse tokenResponse =
++                    oauthClient.retrieveBearerTokens(authCode, qboConfig.getRedirectUri());
++
++            String encKey = qboConfig.getEncryptionKey();
++            client.setQboRealmId(realmId);
++            client.setQboAccessToken(AesEncryptionUtil.encrypt(tokenResponse.getAccessToken(), encKey));
++            client.setQboRefreshToken(AesEncryptionUtil.encrypt(tokenResponse.getRefreshToken(), encKey));
++            client.setTokenExpiresAt(
++                    OffsetDateTime.now().plusSeconds(tokenResponse.getExpiresIn()));
++
++            clientRepository.save(client);
++            log.info("QBO tokens stored for client={}, realmId={}", clientId, realmId);
++
++            return clientId;
++        } catch (OAuthException e) {
++            throw new QboException("Failed to exchange QBO authorization code", e);
++        }
++    }
++
++    public OAuth2PlatformClient getOauthClient() {
++        return oauthClient;
++    }
++
++    public static class QboException extends RuntimeException {
++        public QboException(String message) { super(message); }
++        public QboException(String message, Throwable cause) { super(message, cause); }
++    }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/service/qbo/QboTokenService.java b/backend/src/main/java/com/billiontech/bookkeeping/service/qbo/QboTokenService.java
+new file mode 100644
+index 0000000..8aa3c54
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/service/qbo/QboTokenService.java
+@@ -0,0 +1,96 @@
++package com.billiontech.bookkeeping.service.qbo;
++
++import com.billiontech.bookkeeping.config.QboConfig;
++import com.billiontech.bookkeeping.entity.Client;
++import com.billiontech.bookkeeping.repository.ClientRepository;
++import com.billiontech.bookkeeping.util.AesEncryptionUtil;
++import com.intuit.oauth2.data.BearerTokenResponse;
++import com.intuit.oauth2.exception.OAuthException;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++import org.springframework.scheduling.annotation.Scheduled;
++import org.springframework.stereotype.Service;
++import org.springframework.transaction.annotation.Transactional;
++
++import java.time.OffsetDateTime;
++import java.util.List;
++import java.util.UUID;
++
++@Service
++public class QboTokenService {
++
++    private static final Logger log = LoggerFactory.getLogger(QboTokenService.class);
++    private static final int REFRESH_WINDOW_MINUTES = 60;
++
++    private final ClientRepository clientRepository;
++    private final QboOAuthService qboOAuthService;
++    private final QboConfig qboConfig;
++
++    public QboTokenService(ClientRepository clientRepository,
++                           QboOAuthService qboOAuthService,
++                           QboConfig qboConfig) {
++        this.clientRepository = clientRepository;
++        this.qboOAuthService = qboOAuthService;
++        this.qboConfig = qboConfig;
++    }
++
++    public String getAccessToken(UUID clientId) {
++        Client client = clientRepository.findById(clientId)
++                .orElseThrow(() -> new QboOAuthService.QboException("Client not found: " + clientId));
++
++        if (client.getQboAccessToken() == null) {
++            throw new QboOAuthService.QboException("Client is not connected to QBO: " + clientId);
++        }
++
++        return AesEncryptionUtil.decrypt(client.getQboAccessToken(), qboConfig.getEncryptionKey());
++    }
++
++    @Transactional
++    public void refreshTokenIfNeeded(UUID clientId) {
++        Client client = clientRepository.findById(clientId)
++                .orElseThrow(() -> new QboOAuthService.QboException("Client not found: " + clientId));
++
++        if (client.getQboRefreshToken() == null || client.getTokenExpiresAt() == null) {
++            return;
++        }
++
++        // Only refresh if token expires within the refresh window
++        if (client.getTokenExpiresAt().isAfter(
++                OffsetDateTime.now().plusMinutes(REFRESH_WINDOW_MINUTES))) {
++            return;
++        }
++
++        try {
++            String encKey = qboConfig.getEncryptionKey();
++            String decryptedRefresh = AesEncryptionUtil.decrypt(client.getQboRefreshToken(), encKey);
++
++            BearerTokenResponse tokenResponse =
++                    qboOAuthService.getOauthClient().refreshToken(decryptedRefresh);
++
++            client.setQboAccessToken(AesEncryptionUtil.encrypt(tokenResponse.getAccessToken(), encKey));
++            client.setQboRefreshToken(AesEncryptionUtil.encrypt(tokenResponse.getRefreshToken(), encKey));
++            client.setTokenExpiresAt(
++                    OffsetDateTime.now().plusSeconds(tokenResponse.getExpiresIn()));
++
++            clientRepository.save(client);
++            log.info("Refreshed QBO tokens for client={}", clientId);
++        } catch (OAuthException e) {
++            log.error("Failed to refresh QBO token for client={}: {}", clientId, e.getMessage());
++        }
++    }
++
++    /** Runs every 30 minutes to proactively refresh tokens nearing expiry. */
++    @Scheduled(fixedDelay = 1800000)
++    public void scheduledTokenRefresh() {
++        List<Client> connectedClients = clientRepository.findByQboRealmIdIsNotNull();
++        log.debug("Checking {} connected QBO clients for token refresh", connectedClients.size());
++
++        for (Client client : connectedClients) {
++            try {
++                refreshTokenIfNeeded(client.getId());
++            } catch (Exception e) {
++                log.error("Token refresh failed for client={}: {}", client.getId(), e.getMessage());
++            }
++        }
++    }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/util/AesEncryptionUtil.java b/backend/src/main/java/com/billiontech/bookkeeping/util/AesEncryptionUtil.java
+new file mode 100644
+index 0000000..ad4a90c
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/util/AesEncryptionUtil.java
+@@ -0,0 +1,74 @@
++package com.billiontech.bookkeeping.util;
++
++import javax.crypto.Cipher;
++import javax.crypto.spec.GCMParameterSpec;
++import javax.crypto.spec.SecretKeySpec;
++import java.nio.charset.StandardCharsets;
++import java.security.SecureRandom;
++import java.util.Base64;
++
++/**
++ * AES-256-GCM encryption for sensitive data (QBO tokens).
++ * Output format: Base64( IV[12] || ciphertext || authTag[16] )
++ */
++public final class AesEncryptionUtil {
++
++    private static final String ALGORITHM = "AES/GCM/NoPadding";
++    private static final int IV_LENGTH = 12;
++    private static final int TAG_LENGTH_BITS = 128;
++    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
++
++    private AesEncryptionUtil() {}
++
++    public static String encrypt(String plaintext, String key) {
++        try {
++            byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
++            SecretKeySpec secretKey = new SecretKeySpec(keyBytes, "AES");
++
++            byte[] iv = new byte[IV_LENGTH];
++            SECURE_RANDOM.nextBytes(iv);
++
++            Cipher cipher = Cipher.getInstance(ALGORITHM);
++            cipher.init(Cipher.ENCRYPT_MODE, secretKey, new GCMParameterSpec(TAG_LENGTH_BITS, iv));
++
++            byte[] ciphertext = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
++
++            // Prepend IV to ciphertext for self-contained decryption
++            byte[] combined = new byte[IV_LENGTH + ciphertext.length];
++            System.arraycopy(iv, 0, combined, 0, IV_LENGTH);
++            System.arraycopy(ciphertext, 0, combined, IV_LENGTH, ciphertext.length);
++
++            return Base64.getEncoder().encodeToString(combined);
++        } catch (Exception e) {
++            throw new EncryptionException("Encryption failed", e);
++        }
++    }
++
++    public static String decrypt(String encryptedBase64, String key) {
++        try {
++            byte[] combined = Base64.getDecoder().decode(encryptedBase64);
++            byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
++            SecretKeySpec secretKey = new SecretKeySpec(keyBytes, "AES");
++
++            byte[] iv = new byte[IV_LENGTH];
++            System.arraycopy(combined, 0, iv, 0, IV_LENGTH);
++
++            byte[] ciphertext = new byte[combined.length - IV_LENGTH];
++            System.arraycopy(combined, IV_LENGTH, ciphertext, 0, ciphertext.length);
++
++            Cipher cipher = Cipher.getInstance(ALGORITHM);
++            cipher.init(Cipher.DECRYPT_MODE, secretKey, new GCMParameterSpec(TAG_LENGTH_BITS, iv));
++
++            byte[] plaintext = cipher.doFinal(ciphertext);
++            return new String(plaintext, StandardCharsets.UTF_8);
++        } catch (Exception e) {
++            throw new EncryptionException("Decryption failed", e);
++        }
++    }
++
++    public static class EncryptionException extends RuntimeException {
++        public EncryptionException(String message, Throwable cause) {
++            super(message, cause);
++        }
++    }
++}
+diff --git a/backend/src/main/resources/application-test.yml b/backend/src/main/resources/application-test.yml
+index b4f82af..857c045 100644
+--- a/backend/src/main/resources/application-test.yml
++++ b/backend/src/main/resources/application-test.yml
+@@ -20,3 +20,10 @@ spring:
+ 
+ jwt:
+   secret: test-secret-key-must-be-at-least-32-characters-long!!
++
++qbo:
++  client-id: test-client-id
++  client-secret: test-client-secret
++  redirect-uri: http://localhost:8085/api/qbo/callback
++  environment: sandbox
++  encryption-key: 01234567890123456789012345678901
+diff --git a/backend/src/main/resources/application.yml b/backend/src/main/resources/application.yml
+index e855915..b00c57a 100644
+--- a/backend/src/main/resources/application.yml
++++ b/backend/src/main/resources/application.yml
+@@ -38,6 +38,13 @@ spring:
+ jwt:
+   secret: ${JWT_SECRET:default-dev-secret-must-be-at-least-32-chars!!}
+ 
++qbo:
++  client-id: ${QBO_CLIENT_ID:}
++  client-secret: ${QBO_CLIENT_SECRET:}
++  redirect-uri: ${QBO_REDIRECT_URI:http://localhost:8085/api/qbo/callback}
++  environment: ${QBO_ENVIRONMENT:sandbox}
++  encryption-key: ${QBO_ENCRYPTION_KEY:}
++
+ management:
+   endpoints:
+     web:
+diff --git a/backend/src/test/java/com/billiontech/bookkeeping/util/AesEncryptionUtilTest.java b/backend/src/test/java/com/billiontech/bookkeeping/util/AesEncryptionUtilTest.java
+new file mode 100644
+index 0000000..2b06b07
+--- /dev/null
++++ b/backend/src/test/java/com/billiontech/bookkeeping/util/AesEncryptionUtilTest.java
+@@ -0,0 +1,57 @@
++package com.billiontech.bookkeeping.util;
++
++import org.junit.jupiter.api.Test;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertNotEquals;
++import static org.junit.jupiter.api.Assertions.assertThrows;
++
++class AesEncryptionUtilTest {
++
++    // 32-character key for AES-256
++    private static final String KEY = "01234567890123456789012345678901";
++
++    @Test
++    void encryptAndDecrypt_shouldRecoverOriginalValue() {
++        String original = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.sample-qbo-access-token";
++        String encrypted = AesEncryptionUtil.encrypt(original, KEY);
++        String decrypted = AesEncryptionUtil.decrypt(encrypted, KEY);
++        assertEquals(original, decrypted);
++    }
++
++    @Test
++    void encrypt_shouldProduceDifferentCiphertextEachTime() {
++        String original = "same-plaintext-value";
++        String encrypted1 = AesEncryptionUtil.encrypt(original, KEY);
++        String encrypted2 = AesEncryptionUtil.encrypt(original, KEY);
++
++        // GCM uses a random IV so identical plaintext produces different ciphertext
++        assertNotEquals(encrypted1, encrypted2);
++
++        // Both should decrypt to the original
++        assertEquals(original, AesEncryptionUtil.decrypt(encrypted1, KEY));
++        assertEquals(original, AesEncryptionUtil.decrypt(encrypted2, KEY));
++    }
++
++    @Test
++    void decrypt_withWrongKey_shouldThrow() {
++        String encrypted = AesEncryptionUtil.encrypt("secret-token", KEY);
++        String wrongKey = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
++
++        assertThrows(AesEncryptionUtil.EncryptionException.class,
++                () -> AesEncryptionUtil.decrypt(encrypted, wrongKey));
++    }
++
++    @Test
++    void encryptAndDecrypt_emptyString_shouldWork() {
++        String encrypted = AesEncryptionUtil.encrypt("", KEY);
++        assertEquals("", AesEncryptionUtil.decrypt(encrypted, KEY));
++    }
++
++    @Test
++    void encryptAndDecrypt_longToken_shouldWork() {
++        String longToken = "A".repeat(2048);
++        String encrypted = AesEncryptionUtil.encrypt(longToken, KEY);
++        assertEquals(longToken, AesEncryptionUtil.decrypt(encrypted, KEY));
++    }
++}

@@ -1,0 +1,19 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.neo4j.md b/src/main/resources/doc/io.kestra.plugin.neo4j.md
+new file mode 100644
+index 0000000..cd9c0bc
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.neo4j.md
+@@ -0,0 +1,13 @@
++# How to use the Neo4j plugin
++
++Run Cypher queries and batch-load data into Neo4j from Kestra flows.
++
++## Authentication
++
++Set `url` to your Neo4j endpoint (Bolt URI, e.g. `bolt://localhost:7687`, or HTTP(S)). For basic auth, set `username` and `password`. For token auth, set `bearerToken` (Base64-encoded). Store secrets in [secrets](https://kestra.io/docs/concepts/secret) and apply connection properties globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
++
++## Tasks
++
++`Query` runs a Cypher statement set in `query`. Control result handling with `storeType`: `NONE` (default, discards results), `FETCH` returns all rows, `FETCHONE` returns the first row, `STORE` writes results to internal storage.
++
++`Batch` bulk-loads data from a file in internal storage — set `from` to a `kestra://` URI and `query` to a Cypher `UNWIND $props AS ...` statement. Control batch size with `chunk` (default 1000).

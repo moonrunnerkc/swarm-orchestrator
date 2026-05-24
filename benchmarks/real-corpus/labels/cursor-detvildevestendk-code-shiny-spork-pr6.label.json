@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Despite the misleading title 'Scaffold and harden AI futures trading bot' (inherited from a long-running branch), the actual diff in frontend/src/main.tsx does what the body's most-specific claims describe: removes hardcoded placeholder card values from the dashboard. demoPositions, demoTrades, demoViewModel, normalizeSummary(), numberOrFallback(), and DashboardViewModel are deleted; the cards array now maps directly to summary?.live_pnl, openPositions.length, summary?.risk_exposure_pct, summary?.ai_confidence_score, summary?.exchange_connection_status with a `-` placeholder when undefined; formatCurrency now returns '-' on null/NaN; PositionsTable renders 'No open positions returned by API.' when empty; a 'Raw dashboard summary' Panel shows JSON.stringify(summary). The useEffect still fetches DASHBOARD_SUMMARY_URL with `x-api-key: testkey123` and logs 'Fetching dashboard summary...' / 'Dashboard API response:' / console.error on failure, matching the body's promised request behavior. This is the cleanup that undoes the hardcoded-fallback pattern PR #4 introduced; API_KEY = 'testkey123' remains but is documented in the dashboard UI as the test endpoint key.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T14:00:00.000Z"
+}

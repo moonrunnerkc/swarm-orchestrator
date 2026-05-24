@@ -1,0 +1,103 @@
+diff --git a/server/utils/os_test.go b/server/utils/os_test.go
+new file mode 100644
+index 0000000000..be8536726b
+--- /dev/null
++++ b/server/utils/os_test.go
+@@ -0,0 +1,41 @@
++// Copyright 2025 The Atlantis Authors
++// SPDX-License-Identifier: Apache-2.0
++
++package utils_test
++
++import (
++	"os"
++	"path/filepath"
++	"testing"
++
++	"github.com/runatlantis/atlantis/server/utils"
++	. "github.com/runatlantis/atlantis/testing"
++)
++
++func TestRemoveIgnoreNonExistent_FileExists(t *testing.T) {
++	file := filepath.Join(t.TempDir(), "to-remove.txt")
++	Ok(t, os.WriteFile(file, []byte("content"), 0o600))
++
++	err := utils.RemoveIgnoreNonExistent(file)
++	Ok(t, err)
++
++	_, statErr := os.Stat(file)
++	Assert(t, os.IsNotExist(statErr), "expected file to be removed")
++}
++
++func TestRemoveIgnoreNonExistent_FileDoesNotExist(t *testing.T) {
++	file := filepath.Join(t.TempDir(), "does-not-exist.txt")
++
++	err := utils.RemoveIgnoreNonExistent(file)
++	Ok(t, err)
++}
++
++func TestRemoveIgnoreNonExistent_RemoveError(t *testing.T) {
++	nonEmptyDir := filepath.Join(t.TempDir(), "non-empty-dir")
++	Ok(t, os.Mkdir(nonEmptyDir, 0o755))
++	Ok(t, os.WriteFile(filepath.Join(nonEmptyDir, "child.txt"), []byte("x"), 0o600))
++
++	err := utils.RemoveIgnoreNonExistent(nonEmptyDir)
++	Assert(t, err != nil, "expected remove error for non-empty directory")
++	Assert(t, !os.IsNotExist(err), "expected non-not-exist error")
++}
+diff --git a/server/utils/slices_test.go b/server/utils/slices_test.go
+new file mode 100644
+index 0000000000..20534ec5f8
+--- /dev/null
++++ b/server/utils/slices_test.go
+@@ -0,0 +1,50 @@
++// Copyright 2025 The Atlantis Authors
++// SPDX-License-Identifier: Apache-2.0
++
++package utils_test
++
++import (
++	"testing"
++
++	"github.com/runatlantis/atlantis/server/utils"
++	. "github.com/runatlantis/atlantis/testing"
++)
++
++func TestSlicesContains_String(t *testing.T) {
++	cases := []struct {
++		Name string
++		In   []string
++		Find string
++		Want bool
++	}{
++		{
++			Name: "present",
++			In:   []string{"atlantis", "terraform", "opentofu"},
++			Find: "terraform",
++			Want: true,
++		},
++		{
++			Name: "absent",
++			In:   []string{"atlantis", "terraform", "opentofu"},
++			Find: "helm",
++			Want: false,
++		},
++		{
++			Name: "nil slice",
++			In:   nil,
++			Find: "terraform",
++			Want: false,
++		},
++	}
++
++	for _, c := range cases {
++		t.Run(c.Name, func(t *testing.T) {
++			Equals(t, c.Want, utils.SlicesContains(c.In, c.Find))
++		})
++	}
++}
++
++func TestSlicesContains_Int(t *testing.T) {
++	Equals(t, true, utils.SlicesContains([]int{1, 2, 3}, 2))
++	Equals(t, false, utils.SlicesContains([]int{1, 2, 3}, 4))
++}

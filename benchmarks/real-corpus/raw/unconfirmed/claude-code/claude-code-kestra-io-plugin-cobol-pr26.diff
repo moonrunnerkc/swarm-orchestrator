@@ -1,0 +1,21 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.cobol.md b/src/main/resources/doc/io.kestra.plugin.cobol.md
+new file mode 100644
+index 0000000..eb34ff5
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.cobol.md
+@@ -0,0 +1,15 @@
++# How to use the COBOL plugin
++
++Execute COBOL programs and submit jobs on IBM i (AS/400) systems from Kestra flows using the JTOpen library.
++
++## Authentication
++
++Set `host` (required), `user` (required), and `password` (required) on every task to connect to the IBM i system. Store secrets in [secrets](https://kestra.io/docs/concepts/secret) and apply connection properties globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
++
++## Tasks
++
++`CallJob` calls a COBOL program synchronously and waits for the result — set `library` and `program` (both required). Pass input via `parameters` (default empty list). Set `programTimeout` to limit execution time.
++
++`SubmitJob` submits a batch job to the IBM i job queue — set `library` and `program` (both required). Pass input via `parameters`. Optionally set `jobName`, `jobQueue`, and `userProfile` to control job routing.
++
++`CreateProgram` compiles a COBOL source member into an executable program — set `library` and `program` (both required). Provide source via `sourceInline` (inline COBOL text) or `sourceUri` (a `kestra://` URI). Optionally pass `compileOptions` to control the compilation.

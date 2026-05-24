@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-paul-gauthier-aider-pr5176",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer"
+  },
+  "pr": {
+    "number": 5176,
+    "headSha": "4da10cc9af7dd332bc8ba4ef73afc32d08b09a1f",
+    "baseSha": "5dc9490bb35f9729ef2c95d00a19ccd30c26339c",
+    "title": "fix: surface provider API errors instead of showing empty response",
+    "body": "## Summary\n\nFixes #3264 — When OpenRouter or other providers return rate-limit (429) or insufficient-credits (402) errors, LiteLLM may wrap the error in a response object rather than raising an exception. Previously, aider showed \"0 received\" with no explanation, leaving users confused about why no response was generated.\n\n## Changes\n\n1. **Detect API errors in completion responses** (`send()` in `base_coder.py`): After `send_completion` returns, check if the response has an `error` field (populated by LiteLLM for API-level errors). If present, display the error message via `tool_error` and return early — avoiding the misleading token report.\n\n2. **Improve empty-response warning** (`show_send_output_stream`): Replace the generic \"Empty response received from LLM. Check your provider account?\" with a more actionable message that mentions rate limits, insufficient credits, and provider availability as likely causes, and suggests `--verbose` for debugging.\n\n## Test plan\n\n- The error path only activates when `completion.error` is populated (currently for provider errors that LiteLLM wraps in a response)\n- Successful responses are unaffected — the error check returns `None`/falsy for normal completions\n- The improved warning message is a string change only\n\n## Risk\n\nLow. The error check is defensive and only fires when the provider returns an explicit error object. All existing success paths are unchanged.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "superShen0916",
+    "headRef": "fix/surface-provider-errors",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "4da10cc9af7dd332bc8ba4ef73afc32d08b09a1f",
+    "baseSha": "5dc9490bb35f9729ef2c95d00a19ccd30c26339c"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-paul-gauthier-aider-pr5176.diff",
+  "vendoredAt": "2026-05-24T03:18:55.838Z",
+  "collectedAt": "2026-05-24T03:18:55.838Z"
+}

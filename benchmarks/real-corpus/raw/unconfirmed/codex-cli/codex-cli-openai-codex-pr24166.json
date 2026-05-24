@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24166",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24166,
+    "headSha": "33ad2c97377a9a038dce18d2e50f484898e53abb",
+    "baseSha": "7d47056ea42636271ac020b86347fbbef49490aa",
+    "title": "app-server: add turn-scoped MCP metadata by server",
+    "body": "## Why\n\nApp-server clients need a way to pass turn-scoped metadata to model-initiated tool calls for a particular MCP server, such as request location metadata for search, without exposing the broader `responsesapiClientMetadata` bag to every MCP server used during the turn.\n\n## What changed\n\n- Add experimental `turn/start.mcpMetaByServer`, keyed by configured MCP server name, and carry it through turn startup and active-turn steering.\n- Merge each configured metadata object into outbound `_meta` only for model-initiated calls routed through the matching server. An entry for an aggregate server such as `codex_apps` therefore applies to connector tools routed through that server.\n- Keep `responsesapiClientMetadata` scoped to Responses API requests rather than forwarding it to MCP requests.\n- Protect Codex-owned MCP request metadata keys, including turn metadata, app/plugin/thread/sandbox fields, and rollout trace correlation ids, from client override.\n- Document the experimental API and add protocol, core unit, and model-triggered MCP integration coverage.\n\n## Verification\n\n- `cargo test -p codex-protocol`\n- `cargo test -p codex-app-server-protocol`\n- `cargo test -p codex-rollout-trace`\n- `cargo test -p codex-core --lib mcp_tool_call_request_meta`\n- `cargo test -p codex-core --lib turn_metadata_state_merges_client_metadata_without_replacing_reserved_fields`\n- `cargo test -p codex-core --lib steer_input_returns_active_turn_id`\n- `cargo test -p codex-core mcp_tool_call_receives_turn_metadata_for_selected_server`\n- `cargo test -p codex-app-server --test all turn_start_updates_sandbox_and_cwd_between_turns_v2`\n- `cargo check -p codex-mcp-server -p codex-thread-manager-sample`\n- Generated stable and experimental app-server schema fixtures with `just write-app-server-schema` and `just write-app-server-schema --experimental`; stable fixtures remain unchanged because the new field is experimental.\n\n## Known issue\n\n- `cargo test -p codex-core` aborts in `thread_manager::tests::resume_and_fork_do_not_restore_thread_environments_from_rollout` with a stack overflow; the same test reproduces when run in isolation, while the feature-specific core tests above pass.",
+    "author": "mzeng-openai",
+    "headRef": "dev/mzeng/mcp-meta-by-server",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "33ad2c97377a9a038dce18d2e50f484898e53abb",
+    "baseSha": "7d47056ea42636271ac020b86347fbbef49490aa"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24166.diff",
+  "vendoredAt": "2026-05-24T03:20:44.121Z",
+  "collectedAt": "2026-05-24T03:20:44.121Z"
+}

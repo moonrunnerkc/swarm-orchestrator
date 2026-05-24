@@ -1,0 +1,1074 @@
+diff --git a/src/ast/symbol.rs b/src/ast/symbol.rs
+index 8218b8f0900..a8ff9b6359b 100644
+--- a/src/ast/symbol.rs
++++ b/src/ast/symbol.rs
+@@ -574,10 +574,10 @@ impl Map {
+         // The bundler never fabricates Refs from untrusted input.
+         //
+         // (Formerly a separate `get_unchecked` method — inlined: it had no
+-        // external callers, so the unchecked fast path need not be public
+-        // API surface. `follow()` below uses checked indexing for the same
+-        // lookup; this site keeps the unchecked path for the printer's hot
+-        // inner loop, narrowed to where the guard is visible.)
++        // external callers, so the unchecked fast path need not be public API
++        // surface. Keep this raw-pointer lookup narrowed to where the validity
++        // guard is visible; `follow()` uses it for the initial arbitrary Ref,
++        // then plain slice indexing while chasing linker-minted links.)
+         Some(unsafe {
+             let inner = self.symbols_for_source.as_ptr().add(src);
+             debug_assert!(idx < (*inner).len());
+@@ -625,29 +625,20 @@ impl Map {
+     }
+ 
+     pub fn get_with_link(&self, ref_: Ref) -> Option<*mut Symbol> {
+-        let symbol_ptr = self.get(ref_)?;
+-        // Read `link` through the safe shared accessor (same indices as `get`);
+-        // the raw `*mut` is only forwarded to the caller, never derefed here.
+-        let symbol = self.get_const(ref_)?;
+-        if symbol.has_link() {
+-            return Some(self.get(symbol.link.get()).unwrap_or(symbol_ptr));
+-        }
+-        Some(symbol_ptr)
++        // Resolve the full chain; `follow()` no longer path-compresses, so a
++        // caller must not depend on some earlier read having flattened links.
++        self.get(self.follow(ref_))
+     }
+ 
+     pub fn get_with_link_const(&self, ref_: Ref) -> Option<&Symbol> {
+-        let symbol = self.get_const(ref_)?;
+-        if symbol.has_link() {
+-            return Some(self.get_const(symbol.link.get()).unwrap_or(symbol));
+-        }
+-        Some(symbol)
++        self.get_const(self.follow(ref_))
+     }
+ 
+     pub fn follow_all(&mut self) {
+         // TODO(port): bun_perf::trace("Symbols.followAll") — RAII guard
+-        // `link` is `Cell<Ref>`, so we can iterate the table by shared ref and
+-        // mutate `link` in place; `follow()` only takes `&self` and only touches
+-        // `link`, so the nested shared borrows coexist.
++        // This is the only path-compression pass. `follow()` is deliberately
++        // read-only so parallel printer tasks can resolve symbols without
++        // racing on `Symbol::link`.
+         for symbols in self.symbols_for_source.iter() {
+             for symbol in symbols.iter() {
+                 if !symbol.has_link() {
+@@ -659,14 +650,13 @@ impl Map {
+         }
+     }
+ 
+-    /// Equivalent to followSymbols in esbuild.
++    /// Equivalent to followSymbols in esbuild, but intentionally read-only.
+     ///
+-    /// PORT NOTE: Zig's body is naturally recursive (`follow(symbol.link)`).
+-    /// Reshaped to an iterative two-phase walk so the per-hop work is just two
+-    /// raw pointer adds and a load — no call frame, no `Option` unwrap, no
+-    /// repeated tag/null guards. Semantics are identical to Zig's: every node
+-    /// on the path from `ref_` to the union-find root has its `link` rewritten
+-    /// to the root (full path compression).
++    /// PORT NOTE: Zig's `follow()` path-compresses through `symbol.link`.
++    /// In the Rust port, the same symbol map is read by parallel printer tasks,
++    /// so mutating `Cell<Ref>` from this shared `&self` accessor would be a
++    /// non-atomic cross-thread write. `follow_all(&mut self)` still performs
++    /// the single-threaded compression pass; this helper only chases links.
+     pub fn follow(&self, ref_: Ref) -> Ref {
+         // Entry guard — `ref_` may be `Ref::None` / a SourceContentsSlice ref
+         // (callers pass arbitrary Refs read out of AST nodes). After this,
+@@ -674,7 +664,7 @@ impl Map {
+         let Some(symbol) = self.get_const(ref_) else {
+             return ref_;
+         };
+-        let mut link = symbol.link.get();
++        let link = symbol.link.get();
+         // `has_link()` is `link.is_valid()` (tag != RefTag::Invalid). This is
+         // the overwhelmingly common exit — most symbols are roots, especially
+         // after `follow_all` has run once.
+@@ -682,11 +672,11 @@ impl Map {
+             return ref_;
+         }
+ 
+-        // Phase 1: find the root. `link.is_valid()` holds here. The only
+-        // writers of `Symbol::link` are (a) the default `Ref::NONE`
+-        // (tag=Invalid — rejected by `is_valid()` above), (b) `merge()`,
+-        // which stores a Ref that came from `declare_symbol` / `new_symbol` /
+-        // `LinkerGraph::generate_symbol`, and (c) prior `follow()` path
++        // Find the root. `link.is_valid()` holds here. The only writers of
++        // `Symbol::link` are (a) the default `Ref::NONE` (tag=Invalid —
++        // rejected by `is_valid()` above), (b) `merge()`, which stores a Ref
++        // that came from `declare_symbol` / `new_symbol` /
++        // `LinkerGraph::generate_symbol`, and (c) `follow_all()` path
+         // compression, which stores a `root` that itself satisfied (b). All
+         // such refs satisfy the in-bounds contract (see `get_const`):
+         // `(source_index, inner_index)` with tag ∈ {Symbol, AllocatedName},
+@@ -706,29 +696,6 @@ impl Map {
+             root = next;
+         }
+ 
+-        // Phase 2: path compression. Rewrite `link` on the entry node and every
+-        // intermediate node to point directly at `root` (matches the Zig
+-        // recursion's post-order `symbol.link = link` writes). The `!=` gate
+-        // mirrors Zig's `if (!symbol.link.eql(link))` to avoid a redundant
+-        // store when the chain was already length-1. `link` is `Cell<Ref>`, so
+-        // writes go through `&Symbol` safely.
+-        if !link.eql(root) {
+-            symbol.link.set(root);
+-            loop {
+-                let p = lookup(link);
+-                let next = p.link.get();
+-                // `next.eql(root)` ⇔ `p.link` already points at root —
+-                // mirrors Zig's post-order `if (!symbol.link.eql(link))` gate
+-                // and saves a redundant store on the last intermediate plus
+-                // the otherwise-wasted lookup of `root` itself.
+-                if next.eql(root) || !next.is_valid() {
+-                    break;
+-                }
+-                p.link.set(root);
+-                link = next;
+-            }
+-        }
+-
+         root
+     }
+ }
+diff --git a/src/bundler/Chunk.rs b/src/bundler/Chunk.rs
+index 52e43f1be04..1a1d40f6b88 100644
+--- a/src/bundler/Chunk.rs
++++ b/src/bundler/Chunk.rs
+@@ -127,20 +127,16 @@ impl Default for Content {
+ // `files_with_parts_in_chunk` values are bumped via atomic RMW (Zig
+ // `@atomicRmw`); the renamer is fully populated before fan-out and treated as
+ // read-only by the printer.
+-// TODO(ub-audit): `Renamer<'r>` still borrows `&'r mut {Number,Minify}Renamer`,
+-// so the per-chunk renamer is reborrowed mutably from each part-range task;
+-// the printer never writes through it, but the borrow should become `&'r`.
++// `Renamer<'r>` borrows `{Number,Minify}Renamer` through shared references, so
++// parallel part-range printers only read the per-chunk renamer.
+ unsafe impl Send for Chunk {}
+ // SAFETY: shared `&Chunk` access during the worker fan-out touches only
+ // `compile_results_for_chunk` (UnsafeCell-per-slot, disjoint indices) and
+ // `files_with_parts_in_chunk` atomic counters; the remaining fields are
+-// frozen before fan-out and read single-threaded after the pool join —
+-// **except** `renamer`, which the per-part-range printer reborrows `&mut`
+-// from each worker (read-only in practice). See `TODO(ub-audit)` above:
+-// once `Renamer<'r>` borrows `&'r` instead of `&'r mut`, this caveat (and
+-// the matching split-borrow in `generate_compile_result_for_js_chunk`) goes
+-// away. Pre-existing; this impl mirrors `unsafe impl Send for Chunk` and
+-// the Zig single-pointer fan-out it ports.
++// frozen before fan-out and read single-threaded after the pool join. The
++// renamer is also populated before fan-out and borrowed through shared
++// references by each part-range printer. Pre-existing; this impl mirrors
++// `unsafe impl Send for Chunk` and the Zig single-pointer fan-out it ports.
+ unsafe impl Sync for Chunk {}
+ 
+ /// Disjoint-slot output buffer for [`Chunk::compile_results_for_chunk`].
+@@ -242,25 +238,21 @@ impl Chunk {
+         // exclusively owned by this caller.
+         unsafe {
+             // Project to the slots field with no intermediate `&`/`&mut Chunk`.
+-            let slots: *mut CompileResultSlots =
+-                core::ptr::addr_of_mut!((*chunk).compile_results_for_chunk);
+-            // `CompileResultSlots` is `repr(transparent)` over
+-            // `Box<[UnsafeCell<CompileResult>]>`; reading the boxed-slice fat
+-            // pointer in place (no move/drop) yields `*mut [UnsafeCell<_>]`
+-            // without forming `&Box`. `Box<T>` is documented to have the same
+-            // layout/ABI as `*mut T` (and `NonNull<T>`).
+-            let cells: *mut [UnsafeCell<CompileResult>] =
+-                core::ptr::read(slots.cast::<*mut [UnsafeCell<CompileResult>]>());
++            let slots: *const CompileResultSlots =
++                core::ptr::addr_of!((*chunk).compile_results_for_chunk);
++            // Shared references to the slots container are fine: each element is
++            // an `UnsafeCell`, and the caller guarantees that this worker owns
++            // slot `i` exclusively until the pool join.
++            let cells: &[UnsafeCell<CompileResult>] = &(*slots).0;
+             debug_assert!(
+                 i < cells.len(),
+                 "compile_results_for_chunk slot out of bounds"
+             );
+-            let cell: *mut UnsafeCell<CompileResult> =
+-                cells.cast::<UnsafeCell<CompileResult>>().add(i);
++            let cell: *mut CompileResult = cells.get_unchecked(i).get();
+             // `UnsafeCell` is `repr(transparent)` — `*mut UnsafeCell<T>` and
+             // `*mut T` address the same byte. Drop the previous (default)
+             // value in place and store the result.
+-            *cell.cast::<CompileResult>() = result;
++            *cell = result;
+         }
+     }
+ 
+diff --git a/src/bundler/LinkerContext.rs b/src/bundler/LinkerContext.rs
+index 81ee5c30f0d..9a2ca4593b3 100644
+--- a/src/bundler/LinkerContext.rs
++++ b/src/bundler/LinkerContext.rs
+@@ -463,7 +463,7 @@ impl<'a> LinkerContext<'a> {
+     }
+ 
+     pub fn path_with_pretty_initialized(
+-        &mut self,
++        &self,
+         path: &bun_paths::fs::Path<'static>,
+     ) -> Result<bun_paths::fs::Path<'static>, BunError> {
+         let top_level_dir = bun_resolver::fs::FileSystem::get().top_level_dir;
+@@ -1102,7 +1102,7 @@ impl<'a> LinkerContext<'a> {
+     }
+ 
+     pub fn generate_source_map_for_chunk(
+-        &mut self,
++        &self,
+         isolated_hash: u64,
+         _worker: &mut crate::thread_pool::Worker,
+         results: &MultiArrayList<CompileResultForSourceMap>,
+@@ -1693,19 +1693,12 @@ impl<'a> GenerateChunkCtx<'a> {
+         unsafe { &*LinkerContext::bundle_v2_ptr(self.c.as_mut_ptr()) }
+     }
+ 
+-    /// Mutable view of the owning `LinkerContext`. Centralizes the `unsafe`
+-    /// deref of the `c: *mut LinkerContext` backref (set in
+-    /// `generate_chunks_in_parallel`); callers previously open-coded
+-    /// `unsafe { &mut *ctx.c }`. The per-chunk tasks each touch a disjoint
+-    /// chunk, so the linker fields they write don't alias across tasks.
++    /// Shared view of the owning `LinkerContext`. Parallel chunk tasks must not
++    /// materialize `&mut LinkerContext`; per-chunk writes go through the unique
++    /// `*mut Chunk` handed to each worker and disjoint compile-result slots.
+     #[inline]
+-    #[allow(clippy::mut_from_ref)]
+-    pub fn c(&self) -> &mut LinkerContext<'a> {
+-        // SAFETY: ParentRef into `BundleV2.linker`, valid for the
+-        // chunk-generation pass; this task's chunk row is disjoint from peers'.
+-        // Constructed via `from_raw_mut` (write provenance) in
+-        // `generate_chunks_in_parallel`.
+-        unsafe { self.c.assume_mut() }
++    pub fn c(&self) -> &LinkerContext<'a> {
++        self.c.get()
+     }
+ }
+ 
+@@ -1789,7 +1782,55 @@ pub(crate) fn crash_guard_for_part_range(
+ // and un-gate together with `LinkerGraph.rs`.
+ 
+ impl<'a> LinkerContext<'a> {
+-    pub fn generate_isolated_hash(&mut self, chunk: &Chunk) -> u64 {
++    pub fn prepare_pretty_paths_for_isolated_hash(
++        &mut self,
++        chunks: &[Chunk],
++    ) -> Result<(), BunError> {
++        let mut source_indices: Vec<u32> = Vec::new();
++
++        {
++            let sources = self.parse_graph().input_files.items_source();
++            for chunk in chunks {
++                let crate::chunk::Content::Javascript(js) = &chunk.content else {
++                    continue;
++                };
++
++                for part_range in js.parts_in_chunk_in_order.iter() {
++                    let source_index = part_range.source_index.get() as usize;
++                    let Some(source) = sources.get(source_index) else {
++                        continue;
++                    };
++
++                    if source.path.is_file()
++                        && core::ptr::eq(source.path.text.as_ptr(), source.path.pretty.as_ptr())
++                    {
++                        source_indices.push(source_index as u32);
++                    }
++                }
++            }
++        }
++
++        if source_indices.is_empty() {
++            return Ok(());
++        }
++
++        source_indices.sort_unstable();
++        source_indices.dedup();
++
++        for source_index in source_indices {
++            let old_path = {
++                let sources = self.parse_graph().input_files.items_source();
++                sources[source_index as usize].path.clone()
++            };
++            let new_path = self.path_with_pretty_initialized(&old_path)?;
++            self.parse_graph_mut().input_files.items_source_mut()[source_index as usize].path =
++                new_path;
++        }
++
++        Ok(())
++    }
++
++    pub fn generate_isolated_hash(&self, chunk: &Chunk) -> Result<u64, BunError> {
+         let _trace = bun::perf::trace("Bundler.generateIsolatedHash");
+ 
+         let mut hasher = ContentHasher::default();
+@@ -1799,19 +1840,22 @@ impl<'a> LinkerContext<'a> {
+         // that live in separate parts in the same file must not be merged. This only
+         // needs to be done for JavaScript files, not CSS files.
+         if let crate::chunk::Content::Javascript(js) = &chunk.content {
+-            // SAFETY: parse_graph backref; exclusive access via &mut *.
+-            let sources = unsafe { (*self.parse_graph).input_files.items_source_mut() };
++            let sources = self.parse_graph().input_files.items_source();
+             for part_range in js.parts_in_chunk_in_order.iter() {
+-                let source: &mut Source = &mut sources[part_range.source_index.get() as usize];
++                let source: &Source = &sources[part_range.source_index.get() as usize];
+ 
++                let pretty_storage;
+                 let file_path: &[u8] = 'brk: {
+                     if source.path.is_file() {
+                         // Use the pretty path as the file name since it should be platform-
+                         // independent (relative paths and the "/" path separator)
+                         if source.path.text.as_ptr() == source.path.pretty.as_ptr() {
+-                            source.path = self
+-                                .path_with_pretty_initialized(&source.path)
+-                                .expect("OOM");
++                            // `generate_chunks_in_parallel()` initializes this
++                            // serially before worker fan-out. Keep this local
++                            // fallback so the hash remains correct if this
++                            // helper is ever called from another path.
++                            pretty_storage = self.path_with_pretty_initialized(&source.path)?;
++                            break 'brk &pretty_storage.pretty;
+                         }
+                         // PORT NOTE: `Path::assert_pretty_is_valid` lives on the
+                         // resolver-side `Path<'a>`; the logger `Path` has no
+@@ -1848,12 +1892,13 @@ impl<'a> LinkerContext<'a> {
+             .contains(crate::chunk::Flags::IS_BROWSER_CHUNK_FROM_SERVER_BUILD)
+         {
+             // SAFETY: self is BundleV2.linker; container_of recovers the parent.
+-            // `transpiler_for_target` only reads `bundle.browser_transpiler`.
+-            let bundle = unsafe {
+-                &mut *LinkerContext::bundle_v2_ptr(std::ptr::from_mut::<LinkerContext>(self))
+-            };
++            // The browser transpiler is initialized before post-processing any
++            // browser chunk (compute-chunks/template setup needs it too).
++            let bundle =
++                unsafe { &*LinkerContext::bundle_v2_ptr(core::ptr::from_ref(self).cast_mut()) };
+             &bundle
+-                .transpiler_for_target(Target::Browser)
++                .client_transpiler_ref()
++                .expect("browser chunk requires browser transpiler")
+                 .options
+                 .public_path
+         } else {
+@@ -1906,7 +1951,7 @@ impl<'a> LinkerContext<'a> {
+         hasher.write(&chunk.output_source_map.mappings);
+         hasher.write(&chunk.output_source_map.suffix);
+ 
+-        hasher.digest()
++        Ok(hasher.digest())
+     }
+ 
+     pub fn validate_tla(
+@@ -2065,7 +2110,7 @@ impl<'a> LinkerContext<'a> {
+     }
+ 
+     pub fn should_remove_import_export_stmt(
+-        &mut self,
++        &self,
+         stmts: &mut StmtList,
+         loc: Loc,
+         namespace_ref: Ref,
+@@ -2202,7 +2247,7 @@ impl<'a> LinkerContext<'a> {
+     // (see "Forward-decl shims for scanImportsAndExports.rs callees" below).
+ 
+     pub fn print_code_for_file_in_chunk_js(
+-        &mut self,
++        &self,
+         r: renamer::Renamer,
+         alloc: &Bump,
+         writer: &mut js_printer::BufferWriter,
+@@ -2220,9 +2265,7 @@ impl<'a> LinkerContext<'a> {
+             ..Default::default()
+         }];
+ 
+-        // SAFETY: parse_graph backref; raw deref because `parse_graph` is held
+-        // across `RequireOrImportMetaCallback::init(self)` (`&mut self`) below.
+-        let parse_graph = unsafe { &*self.parse_graph };
++        let parse_graph = self.parse_graph();
+ 
+         // PORT NOTE: `Options.arena` / `source_map_allocator` were removed in
+         // the Rust port (printer uses global mimalloc + the explicit `bump`
+@@ -2232,11 +2275,8 @@ impl<'a> LinkerContext<'a> {
+             && parse_graph.input_files.items_loader()[source_index.get() as usize]
+                 .is_javascript_like();
+ 
+-        // PORT NOTE: reshaped for borrowck — `Options` borrows `ts_enums` /
+-        // `line_offset_tables` / `mangled_props` from `self.graph`, but the
+-        // `require_or_import_meta_for_source_callback` field below needs
+-        // `&mut self`. Detach the read-only borrows via raw-pointer round-trip
+-        // (graph SoA storage is never reallocated during the print step).
++        // PORT NOTE: graph SoA storage is never reallocated during the print
++        // step, so these read-only borrows are stable for the printer.
+         // SAFETY: `self.graph` columns are stable heap allocations valid for
+         // the duration of this call; the printer only reads from them.
+         let ts_enums: &bun_ast::ast_result::TsEnumsMap =
+@@ -2370,7 +2410,7 @@ impl<'a> LinkerContext<'a> {
+     }
+ 
+     pub fn require_or_import_meta_for_source(
+-        &mut self,
++        &self,
+         source_index: crate::IndexInt,
+         was_unwrapped_require: bool,
+     ) -> js_printer::RequireOrImportMeta {
+@@ -2632,7 +2672,7 @@ impl<'a> LinkerContext<'a> {
+ impl<'a> js_printer::RequireOrImportMetaSource for LinkerContext<'a> {
+     #[inline]
+     fn require_or_import_meta_for_source(
+-        &mut self,
++        &self,
+         id: u32,
+         was_unwrapped_require: bool,
+     ) -> js_printer::RequireOrImportMeta {
+diff --git a/src/bundler/linker_context/convertStmtsForChunk.rs b/src/bundler/linker_context/convertStmtsForChunk.rs
+index 174bc8d0ab8..12367fb260a 100644
+--- a/src/bundler/linker_context/convertStmtsForChunk.rs
++++ b/src/bundler/linker_context/convertStmtsForChunk.rs
+@@ -40,11 +40,11 @@ use crate::ungate_support::WrapKind;
+ /// namespace object (foo) because we cannot know what they are going to
+ /// attempt to access statically
+ pub fn convert_stmts_for_chunk(
+-    c: &mut LinkerContext<'_>,
++    c: &LinkerContext<'_>,
+     source_index: u32,
+     stmts: &mut StmtList,
+     part_stmts: &[bun_ast::Stmt],
+-    chunk: &mut Chunk,
++    chunk: &Chunk,
+     bump: &Bump,
+     wrap: WrapKind,
+     ast: &JSAst<'_>,
+diff --git a/src/bundler/linker_context/convertStmtsForChunkForDevServer.rs b/src/bundler/linker_context/convertStmtsForChunkForDevServer.rs
+index 2b1cf2e540c..a2cf2dd9483 100644
+--- a/src/bundler/linker_context/convertStmtsForChunkForDevServer.rs
++++ b/src/bundler/linker_context/convertStmtsForChunkForDevServer.rs
+@@ -43,7 +43,7 @@ use crate::linker_context_mod::{LinkerContext, StmtList, StmtListWhich};
+ ///     }, false ],
+ ///        ----- "is the module async?"
+ pub fn convert_stmts_for_chunk_for_dev_server<'bump>(
+-    c: &mut LinkerContext,
++    c: &LinkerContext,
+     stmts: &mut StmtList,
+     part_stmts: &[bun_ast::Stmt],
+     bump: &'bump Bump,
+diff --git a/src/bundler/linker_context/generateChunksInParallel.rs b/src/bundler/linker_context/generateChunksInParallel.rs
+index 5d85ceecfdd..934b2b68f85 100644
+--- a/src/bundler/linker_context/generateChunksInParallel.rs
++++ b/src/bundler/linker_context/generateChunksInParallel.rs
+@@ -310,6 +310,30 @@ pub fn generate_chunks_in_parallel<const IS_DEV_SERVER: bool>(
+             debug_assert!(chunks_to_do.len() > 0);
+             debug!(" START {} postprocess chunks", chunks_to_do.len());
+ 
++            // `generate_isolated_hash()` runs during parallel post-process and
++            // only takes a shared `LinkerContext`. Preserve the old
++            // `transpiler_for_target(Target::Browser)` behavior by doing any
++            // lazy client-transpiler initialization here, while this serial
++            // setup still has exclusive access.
++            if chunks_to_do.iter().any(|chunk| {
++                chunk
++                    .flags
++                    .contains(crate::chunk::Flags::IS_BROWSER_CHUNK_FROM_SERVER_BUILD)
++            }) {
++                // SAFETY: `c` is the `linker` field of `BundleV2`, and this is
++                // still the serial setup phase before worker fan-out.
++                let b: &mut BundleV2 = unsafe {
++                    &mut *LinkerContext::bundle_v2_ptr(std::ptr::from_mut::<LinkerContext>(c))
++                };
++                let _ = b.transpiler_for_target(options::Target::Browser);
++            }
++
++            // `generate_isolated_hash()` only has shared access because it runs
++            // in parallel below. Preserve the old serial side effect of
++            // initializing `Source.path.pretty` before metafile/sourcemap code
++            // observes it later.
++            c.prepare_pretty_paths_for_isolated_hash(chunks_to_do)?;
++
+             // SAFETY: `parse_graph` is the `BundleV2.graph` backref (valid for
+             // the link step); `pool` is the arena-allocated bundler ThreadPool.
+             c.worker_pool().each_ptr(
+diff --git a/src/bundler/linker_context/generateCodeForFileInChunkJS.rs b/src/bundler/linker_context/generateCodeForFileInChunkJS.rs
+index e04c48da7c0..9ff8f587437 100644
+--- a/src/bundler/linker_context/generateCodeForFileInChunkJS.rs
++++ b/src/bundler/linker_context/generateCodeForFileInChunkJS.rs
+@@ -25,10 +25,10 @@ use super::convert_stmts_for_chunk_for_dev_server::convert_stmts_for_chunk_for_d
+ 
+ #[allow(clippy::too_many_arguments)]
+ pub fn generate_code_for_file_in_chunk_js<'r, 'src>(
+-    c: &mut LinkerContext,
++    c: &LinkerContext,
+     writer: &mut js_printer::BufferWriter,
+     r: renamer::Renamer<'r, 'src>,
+-    chunk: &mut Chunk,
++    chunk: &Chunk,
+     part_range: PartRange,
+     to_common_js_ref: Ref,
+     to_esm_ref: Ref,
+@@ -40,18 +40,9 @@ pub fn generate_code_for_file_in_chunk_js<'r, 'src>(
+ ) -> js_printer::PrintResult {
+     let source_index = part_range.source_index.get() as usize;
+ 
+-    // PORT NOTE: reshaped for borrowck — grab raw pointers to the SoA columns up front so
+-    // subsequent `&mut c` borrows (convert_stmts_for_chunk, print_code_for_file_in_chunk_js)
+-    // don't conflict. Matches Zig which slices once at the top.
+-    // SAFETY: the underlying MultiArrayList storage is not resized for the duration of this
+-    // function (linking has already sized everything).
+-    let parts: *mut [Part] = {
+-        let list = &mut c.graph.ast.items_parts_mut()[source_index];
+-        core::ptr::addr_of_mut!(
+-            list.as_mut_slice()
+-                [part_range.part_index_begin as usize..part_range.part_index_end as usize]
+-        )
+-    };
++    let all_parts: &[Part] = c.graph.ast.items_parts()[source_index].as_slice();
++    let parts: &[Part] =
++        &all_parts[part_range.part_index_begin as usize..part_range.part_index_end as usize];
+     let flags: crate::js_meta::Flags = c.graph.meta.items_flags()[source_index];
+     let wrapper_part_index = if flags.wrap != WrapKind::None {
+         c.graph.meta.items_wrapper_part_index()[source_index]
+@@ -81,8 +72,7 @@ pub fn generate_code_for_file_in_chunk_js<'r, 'src>(
+ 
+             let hmr_api_ref = ast.wrapper_ref;
+ 
+-            // SAFETY: see `parts` raw-pointer note above.
+-            for part in unsafe { (*parts).iter() } {
++            for part in parts.iter() {
+                 let part_stmts: &[Stmt] = part.stmts.slice();
+                 if let Err(err) =
+                     convert_stmts_for_chunk_for_dev_server(c, stmts, part_stmts, arena, &mut ast)
+@@ -280,20 +270,19 @@ pub fn generate_code_for_file_in_chunk_js<'r, 'src>(
+             .expect("unreachable");
+     }
+ 
+-    // `convert_stmts_for_chunk` takes `&mut c` inside the loop body, so capture
+-    // the per-file bitset as a BackRef once. The `parts_live` Vec doesn't
+-    // reallocate after `tree_shaking_and_code_splitting` initializes it.
+-    let parts_live: bun_ptr::BackRef<bun_collections::AutoBitSet> =
+-        bun_ptr::BackRef::new(&c.graph.parts_live[source_index]);
++    // Use the post-tree-shaking liveness bitset instead of `Part.is_live`.
++    // This mirrors the current main-thread codegen path and avoids consulting
++    // per-Part liveness after upstream moved the hot check into `parts_live`.
++    let parts_live = &c.graph.parts_live[source_index];
+ 
+     // TODO: handle directive
+     if namespace_export_part_index >= part_range.part_index_begin
+         && namespace_export_part_index < part_range.part_index_end
+         && parts_live.is_set(namespace_export_part_index as usize)
+     {
+-        // SAFETY: see `parts` raw-pointer note above; index bounded by the range check just above.
+-        let ns_part_stmts: &[Stmt] =
+-            unsafe { (*parts)[namespace_export_part_index as usize].stmts }.slice();
++        let ns_part_stmts: &[Stmt] = all_parts[namespace_export_part_index as usize]
++            .stmts
++            .slice();
+         if let Err(err) = convert_stmts_for_chunk(
+             c,
+             source_index as u32,
+@@ -330,16 +319,14 @@ pub fn generate_code_for_file_in_chunk_js<'r, 'src>(
+     }
+ 
+     // Add all other parts in this chunk
+-    // SAFETY: see `parts` raw-pointer note above.
+-    let parts_len = unsafe { (&*parts).len() };
++    let parts_len = parts.len();
+     for index_ in 0..parts_len {
++        let part: &Part = &parts[index_];
+         let index = part_range.part_index_begin + (index_ as u32);
+         if !parts_live.is_set(index as usize) {
+             // Skip the part if it's not in this chunk
+             continue;
+         }
+-        // SAFETY: index in bounds.
+-        let part: &Part = unsafe { &(*parts)[index_] };
+ 
+         if index == namespace_export_part_index {
+             // Skip the namespace export part because we already handled it above
+@@ -934,14 +921,12 @@ pub fn generate_code_for_file_in_chunk_js<'r, 'src>(
+     // postProcessJSChunk, because convertStmtsForChunk transforms the AST
+     // (e.g. export default expr → var, export stripping) and the converted
+     // statements reflect what actually gets printed.
+-    let mut r = r;
+     if let Some(dc) = decl_collector {
+-        dc.collect_from_stmts(out_stmts, &mut r, c);
++        dc.collect_from_stmts(out_stmts, &r, c);
+     }
+ 
+     // `get_source` returns `&'static Source` (parse_graph SoA is append-only and
+-    // outlives the link step), so it does not borrow `c` — no split-borrow needed
+-    // across the `&mut self` call below.
++    // outlives the link step), so it does not borrow `c`.
+     let source: &bun_ast::Source = c.get_source(source_index as u32);
+     c.print_code_for_file_in_chunk_js(
+         r,
+@@ -986,7 +971,7 @@ impl DeclCollector {
+     pub fn collect_from_stmts(
+         &mut self,
+         stmts: &[Stmt],
+-        r: &mut renamer::Renamer<'_, '_>,
++        r: &renamer::Renamer<'_, '_>,
+         c: &LinkerContext,
+     ) {
+         for stmt in stmts {
+@@ -1024,7 +1009,7 @@ impl DeclCollector {
+         &mut self,
+         binding: Binding,
+         kind: DeclInfoKind,
+-        r: &mut renamer::Renamer<'_, '_>,
++        r: &renamer::Renamer<'_, '_>,
+         c: &LinkerContext,
+     ) {
+         match binding.data {
+@@ -1049,7 +1034,7 @@ impl DeclCollector {
+         &mut self,
+         ref_: Ref,
+         kind: DeclInfoKind,
+-        r: &mut renamer::Renamer<'_, '_>,
++        r: &renamer::Renamer<'_, '_>,
+         c: &LinkerContext,
+     ) {
+         let followed = c.graph.symbols.follow(ref_);
+diff --git a/src/bundler/linker_context/generateCompileResultForCssChunk.rs b/src/bundler/linker_context/generateCompileResultForCssChunk.rs
+index aa6ae59cf0d..4e3fa5066d5 100644
+--- a/src/bundler/linker_context/generateCompileResultForCssChunk.rs
++++ b/src/bundler/linker_context/generateCompileResultForCssChunk.rs
+@@ -14,9 +14,9 @@ use crate::{Chunk, CompileResult, Index};
+ 
+ // CONCURRENCY: thread-pool callback — runs on worker threads, one task per
+ // `PendingPartRange`. Writes: `chunk.compile_results_for_chunk[i]` (disjoint
+-// by per-task `i`). Reads `c.graph.ast.css` / `c.options` shared. Never forms
+-// `&mut LinkerContext` — `c_ptr` stays raw; the CSS printer takes
+-// `&LinkerContext`. See `generate_compile_result_for_js_chunk` for the
++// by per-task `i`). Reads `c.graph.ast.css` / `c.options` through shared
++// borrows. Never forms `&mut LinkerContext` or `&mut Chunk`. See
++// `generate_compile_result_for_js_chunk` for the
+ // `PendingPartRange: Send` justification.
+ //
+ /// # Safety
+diff --git a/src/bundler/linker_context/generateCompileResultForJSChunk.rs b/src/bundler/linker_context/generateCompileResultForJSChunk.rs
+index 81d0301ef48..c6bdb2b89ea 100644
+--- a/src/bundler/linker_context/generateCompileResultForJSChunk.rs
++++ b/src/bundler/linker_context/generateCompileResultForJSChunk.rs
+@@ -17,9 +17,8 @@ use super::generate_code_for_file_in_chunk_js::{
+ // CONCURRENCY: thread-pool callback — runs on worker threads, one task per
+ // `PendingPartRange`. Writes: `chunk.compile_results_for_chunk[i]` (disjoint
+ // by per-task `i`), `chunk.files_with_parts_in_chunk[source].counter`
+-// (atomic RMW). Reads `c.graph`/`c.parse_graph` SoA columns shared. Never
+-// forms `&mut LinkerContext` — `c_ptr` stays raw and the printer takes
+-// `&LinkerContext` (see `generate_code_for_file_in_chunk_js`).
++// (atomic RMW). Reads `c.graph`/`c.parse_graph` SoA columns through shared
++// borrows. Never forms `&mut LinkerContext` or `&mut Chunk`.
+ // `PendingPartRange` is `Send` because its only non-auto-`Send` field is
+ // `&GenerateChunkCtx` whose pointee is `unsafe impl Send + Sync`.
+ //
+@@ -56,22 +55,13 @@ pub unsafe fn generate_compile_result_for_js_chunk(task: *mut ThreadPoolLib::Tas
+         }
+     }
+ 
++    // SAFETY: `c_ptr` / `chunk_ptr` remain valid for the fan-out; this phase
++    // only reads them. The per-task output write below uses the raw chunk
++    // pointer and the disjoint slot API.
+     let result = {
+-        // SAFETY: `c_ptr` / `chunk_ptr` carry mutable provenance; the disjoint-write
+-        // contract is documented on `pending_part_range_prologue`. The `&mut`
+-        // borrows below are scoped to the impl call so they do not overlap the
+-        // raw slot write that follows. (Peer tasks still hold their own `&mut`
+-        // views into the same `LinkerContext`/`Chunk` for read-only printer use —
+-        // see TODO(ub-audit) on `unsafe impl Sync for Chunk`.)
+-        let c_mut: &mut LinkerContext = unsafe { &mut *c_ptr };
+-        // SAFETY: same mutable-provenance / disjoint-write contract as `c_ptr` above.
+-        let chunk_mut: &mut Chunk = unsafe { &mut *chunk_ptr };
+-        generate_compile_result_for_js_chunk_impl(
+-            &mut **worker,
+-            c_mut,
+-            chunk_mut,
+-            part_range.part_range,
+-        )
++        let c: &LinkerContext = unsafe { &*c_ptr };
++        let chunk: &Chunk = unsafe { &*chunk_ptr };
++        generate_compile_result_for_js_chunk_impl(&mut **worker, c, chunk, part_range.part_range)
+     };
+ 
+     // SAFETY: per-task unique `i`; see `Chunk::write_compile_result_slot`.
+@@ -82,8 +72,8 @@ pub unsafe fn generate_compile_result_for_js_chunk(task: *mut ThreadPoolLib::Tas
+ 
+ fn generate_compile_result_for_js_chunk_impl(
+     worker: &mut Worker,
+-    c: &mut LinkerContext,
+-    chunk: &mut Chunk,
++    c: &LinkerContext,
++    chunk: &Chunk,
+     part_range: PartRange,
+ ) -> CompileResult {
+     let _trace = bun_core::perf::trace("Bundler.generateCodeForFileInChunkJS");
+@@ -125,7 +115,7 @@ fn generate_compile_result_for_js_chunk_impl(
+         .expect("Worker.stmt_list set in create()");
+     stmt_list.reset();
+ 
+-    let runtime_scope: &mut Scope = &mut c.graph.ast.items_module_scope_mut()
++    let runtime_scope: &Scope = &c.graph.ast.items_module_scope()
+         [c.graph.files.items_input_file()[Index::RUNTIME.get() as usize].get() as usize];
+     let runtime_members = &runtime_scope.members;
+     let to_common_js_ref = c.graph.symbols.follow(
+@@ -163,18 +153,10 @@ fn generate_compile_result_for_js_chunk_impl(
+     // `worker.temporary_arena` / `worker.stmt_list` borrowed `&mut` above, so
+     // a direct shared borrow is fine. Heap is pinned; see `Worker::arena`.
+     let worker_alloc = worker.arena.get();
+-    // SAFETY: split borrow of `chunk` — `generate_code_for_file_in_chunk_js` never
+-    // touches `chunk.renamer` through its `chunk` parameter (Zig passes the renamer
+-    // union by value alongside `*Chunk`); take a raw-ptr view so borrowck doesn't
+-    // see two overlapping `&mut chunk` borrows.
+-    let renamer_ptr: *mut crate::bun_renamer::ChunkRenamer = core::ptr::addr_of_mut!(chunk.renamer);
+     let result = generate_code_for_file_in_chunk_js(
+         c,
+         &mut buffer_writer,
+-        // SAFETY: split borrow of `*chunk` — `renamer_ptr` aliases only
+-        // `chunk.renamer`, which the callee never touches via its `chunk`
+-        // parameter, so this deref does not overlap the `chunk` reborrow below.
+-        unsafe { (*renamer_ptr).as_renamer() },
++        chunk.renamer.as_renamer(),
+         chunk,
+         part_range,
+         to_common_js_ref,
+diff --git a/src/bundler/linker_context/postProcessCSSChunk.rs b/src/bundler/linker_context/postProcessCSSChunk.rs
+index 54c558b0bfd..d06f0497271 100644
+--- a/src/bundler/linker_context/postProcessCSSChunk.rs
++++ b/src/bundler/linker_context/postProcessCSSChunk.rs
+@@ -146,7 +146,7 @@ pub fn post_process_css_chunk(
+         bun_core::handle_oom(c.break_output_into_pieces(alloc, &mut j, ctx.chunks.len() as u32));
+     // TODO: meta contents
+ 
+-    chunk.isolated_hash = c.generate_isolated_hash(chunk);
++    chunk.isolated_hash = c.generate_isolated_hash(chunk)?;
+     // chunk.flags.is_executable = is_executable;
+ 
+     if c.options.source_maps != options::SourceMapOption::None {
+diff --git a/src/bundler/linker_context/postProcessHTMLChunk.rs b/src/bundler/linker_context/postProcessHTMLChunk.rs
+index 47d2dd835f8..99d3431d5d5 100644
+--- a/src/bundler/linker_context/postProcessHTMLChunk.rs
++++ b/src/bundler/linker_context/postProcessHTMLChunk.rs
+@@ -38,7 +38,7 @@ pub fn post_process_html_chunk(
+     )); // Zig: `catch |err| bun.handleOom(err)`
+ 
+     // PORT NOTE: reshaped for borrowck (compute hash before assigning into chunk)
+-    let isolated_hash = c.generate_isolated_hash(chunk);
++    let isolated_hash = c.generate_isolated_hash(chunk)?;
+     chunk.isolated_hash = isolated_hash;
+ 
+     Ok(())
+diff --git a/src/bundler/linker_context/postProcessJSChunk.rs b/src/bundler/linker_context/postProcessJSChunk.rs
+index 8148d71b907..24b83e3f832 100644
+--- a/src/bundler/linker_context/postProcessJSChunk.rs
++++ b/src/bundler/linker_context/postProcessJSChunk.rs
+@@ -50,7 +50,7 @@ pub fn post_process_js_chunk(
+     let _trace = perf::trace("Bundler.postProcessJSChunk");
+ 
+     let _ = chunk_index;
+-    let c: &mut LinkerContext = ctx.c();
++    let c: &LinkerContext = ctx.c();
+     debug_assert!(matches!(
+         chunk.content,
+         crate::chunk::Content::Javascript(_)
+@@ -76,8 +76,8 @@ pub fn post_process_js_chunk(
+ 
+     let runtime_input_file =
+         c.graph.files.items_input_file()[Index::RUNTIME.value() as usize].get() as usize;
+-    let runtime_scope: &mut Scope = &mut c.graph.ast.items_module_scope_mut()[runtime_input_file];
+-    let runtime_members = &mut runtime_scope.members;
++    let runtime_scope: &Scope = &c.graph.ast.items_module_scope()[runtime_input_file];
++    let runtime_members = &runtime_scope.members;
+     let to_common_js_ref = c
+         .graph
+         .symbols
+@@ -848,7 +848,7 @@ pub fn post_process_js_chunk(
+ 
+     // TODO: meta contents
+ 
+-    chunk.isolated_hash = c.generate_isolated_hash(chunk);
++    chunk.isolated_hash = c.generate_isolated_hash(chunk)?;
+     chunk
+         .flags
+         .set(crate::chunk::Flags::IS_EXECUTABLE, is_executable);
+@@ -880,7 +880,7 @@ fn add_binding_vars_to_module_info(
+     mi: &mut ModuleInfo,
+     binding: Binding,
+     var_kind: analyze_transpiled_module::VarKind,
+-    r: &mut js_printer::renamer::Renamer<'_, '_>,
++    r: &js_printer::renamer::Renamer<'_, '_>,
+     symbols: &bun_ast::symbol::Map,
+ ) {
+     match binding.data {
+@@ -906,11 +906,10 @@ fn add_binding_vars_to_module_info(
+ }
+ 
+ // PORT NOTE: `js_printer::print` ties bump/Options/import_records/renamer to a
+-// single `'a`, and `Renamer<'r, 'src>` is invariant in `'src` — so the caller's
+-// renamer lifetime fixes `'a`. All by-ref params that flow into `print` must
+-// share that lifetime.
++// single `'a`. All by-ref params that flow into `print` must share that
++// lifetime.
+ pub fn generate_entry_point_tail_js<'a>(
+-    c: &'a mut LinkerContext,
++    c: &'a LinkerContext,
+     to_common_js_ref: Ref,
+     to_esm_ref: Ref,
+     source_index: IndexInt,
+@@ -918,7 +917,7 @@ pub fn generate_entry_point_tail_js<'a>(
+     // TODO(port): thread &'bump Bump from worker.arena end-to-end.
+     arena: &'a Arena,
+     temp_arena: &Arena,
+-    mut r: js_printer::renamer::Renamer<'a, 'a>,
++    r: js_printer::renamer::Renamer<'a, 'a>,
+     mut module_info: Option<&'a mut ModuleInfo>,
+ ) -> CompileResult {
+     let flags: crate::js_meta::Flags = c.graph.meta.items_flags()[source_index as usize];
+@@ -1333,7 +1332,7 @@ pub fn generate_entry_point_tail_js<'a>(
+                             mi,
+                             decl.binding,
+                             var_kind,
+-                            &mut r,
++                            &r,
+                             &c.graph.symbols,
+                         );
+                     }
+diff --git a/src/bundler/ungate_support.rs b/src/bundler/ungate_support.rs
+index 59396217477..908d457accf 100644
+--- a/src/bundler/ungate_support.rs
++++ b/src/bundler/ungate_support.rs
+@@ -486,21 +486,21 @@ pub mod bun_renamer {
+     }
+ 
+     impl ChunkRenamer {
+-        pub fn name_for_symbol(&mut self, ref_: bun_ast::Ref) -> &[u8] {
++        pub fn name_for_symbol(&self, ref_: bun_ast::Ref) -> &[u8] {
+             match self {
+                 ChunkRenamer::None => unreachable!("ChunkRenamer not initialized"),
+                 ChunkRenamer::Number(r) => r.name_for_symbol(ref_),
+                 ChunkRenamer::Minify(r) => r.name_for_symbol(ref_),
+             }
+         }
+-        pub fn as_renamer(&mut self) -> bun_js_printer::renamer::Renamer<'_, '_> {
++        pub fn as_renamer(&self) -> bun_js_printer::renamer::Renamer<'_, '_> {
+             match self {
+                 ChunkRenamer::None => unreachable!("ChunkRenamer not initialized"),
+                 ChunkRenamer::Number(r) => bun_js_printer::renamer::Renamer::NumberRenamer(r),
+-                // PORT NOTE: `Renamer<'r,'src>` borrows the concrete renamer
+-                // (`&'r mut MinifyRenamer`); `ChunkRenamer` owns the `Box`, so
+-                // the deref-coerced `&mut **r` yields a per-call borrowed view
+-                // exactly like the Zig tag+ptr union.
++                // PORT NOTE: `Renamer<'r,'src>` reads the concrete renamer;
++                // `ChunkRenamer` owns the `Box`, so the deref-coerced shared
++                // borrow yields a per-call view exactly like the Zig tag+ptr
++                // union, without claiming exclusivity during parallel printing.
+                 ChunkRenamer::Minify(r) => bun_js_printer::renamer::Renamer::MinifyRenamer(r),
+             }
+         }
+diff --git a/src/js_printer/lib.rs b/src/js_printer/lib.rs
+index 6778e0bff74..6d2cd41e2dd 100644
+--- a/src/js_printer/lib.rs
++++ b/src/js_printer/lib.rs
+@@ -1462,10 +1462,12 @@ impl Default for RequireOrImportMetaCallback {
+ 
+ /// PORTING.md §Dispatch — manual vtable. Zig's `init(comptime Context, ctx, callback)`
+ /// `@ptrCast`-erased the typed callback at comptime. Rust monomorphizes the erased thunk
+-/// over `T: RequireOrImportMetaSource` instead, so `callback` stays a captureless `fn`.
++/// over `T: RequireOrImportMetaSource + Sync` instead, so `callback` stays a
++/// captureless `fn` and any shared context pointer is valid to use from worker
++/// printers.
+ pub trait RequireOrImportMetaSource {
+     fn require_or_import_meta_for_source(
+-        &mut self,
++        &self,
+         id: u32,
+         was_unwrapped_require: bool,
+     ) -> RequireOrImportMeta;
+@@ -1476,19 +1478,22 @@ impl RequireOrImportMetaCallback {
+         (self.callback)(self.ctx.unwrap().as_ptr(), id, was_unwrapped_require)
+     }
+ 
+-    pub fn init<T: RequireOrImportMetaSource>(ctx: &mut T) -> Self {
+-        fn thunk<T: RequireOrImportMetaSource>(
++    pub fn init<T: RequireOrImportMetaSource + Sync>(ctx: &T) -> Self {
++        fn thunk<T: RequireOrImportMetaSource + Sync>(
+             p: *mut (),
+             id: u32,
+             was_unwrapped_require: bool,
+         ) -> RequireOrImportMeta {
+-            // SAFETY: `p` was constructed from `&mut T` in `init` below; caller guarantees
++            // SAFETY: `p` was constructed from `&T` in `init` below; caller guarantees
+             // `ctx` outlives this `RequireOrImportMetaCallback` (same contract as the Zig
+-            // `*anyopaque` erasure), so the cast-back deref is valid and exclusive.
+-            unsafe { (*p.cast::<T>()).require_or_import_meta_for_source(id, was_unwrapped_require) }
++            // `*anyopaque` erasure), so the cast-back shared deref is valid.
++            unsafe {
++                (&*p.cast::<T>()).require_or_import_meta_for_source(id, was_unwrapped_require)
++            }
+         }
+         Self {
+-            // Type-erased to `*mut ()` and cast back to `*mut T` inside the thunk before dereference.
++            // Type-erased to `*mut ()` for the ABI, then cast back to `*const T`
++            // inside the thunk before dereference.
+             ctx: Some(NonNull::from(ctx).cast::<()>()),
+             callback: thunk::<T>,
+         }
+@@ -2783,13 +2788,15 @@ pub mod __gated_printer {
+         }
+ 
+         /// Borrowck-reshape helper: `Renamer::name_for_symbol` returns a slice
+-        /// borrowing `&mut self.renamer`, which conflicts with the immediately
+-        /// following `self.print_*` call. The returned bytes always point into
+-        /// either the AST arena (`Symbol::original_name: *const [u8]`) or the
+-        /// `Source::contents` buffer — both are kept alive for `'a` by the
+-        /// caller of `Printer::init`. Detach the borrow to a raw ptr per the
+-        /// parser's ARENA convention (matching `slice_of` for AST fields).
+-        /// PORT NOTE: reshaped for borrowck — TODO(refactor): thread `'bump` through Renamer.
++        /// tied to `self.renamer`, which conflicts with the immediately
++        /// following `self.print_*` call on the printer. The returned bytes
++        /// always point into either the AST arena (`Symbol::original_name:
++        /// *const [u8]`) or the `Source::contents` buffer — both are kept
++        /// alive for `'a` by the caller of `Printer::init`. Detach the borrow
++        /// to a raw ptr per the parser's ARENA convention (matching `slice_of`
++        /// for AST fields).
++        /// PORT NOTE: reshaped for borrowck — TODO(refactor): thread `'bump`
++        /// through Renamer.
+         #[inline]
+         fn name_for_symbol(&mut self, ref_: Ref) -> &'a [u8] {
+             let p = std::ptr::from_ref::<[u8]>(self.renamer.name_for_symbol(ref_));
+@@ -7971,13 +7978,9 @@ pub fn print_ast<'a, W: WriterTrait, const ASCII_ONLY: bool, const GENERATE_SOUR
+         bun_crash_handler::scoped_action(bun_crash_handler::Action::Print(source.path.text));
+ 
+     // PORT NOTE: Zig declared `renamer`/`no_op_renamer` undefined and assigned per
+-    // branch. `Renamer<'r,'src>` is invariant in `'src` (it holds `&'r mut
+-    // NoOpRenamer<'src>`), so the two arms must agree on `'src`; constructing the
+-    // `MinifyRenamer` variant inline (rather than via `to_renamer() ->
+-    // Renamer<'static,'static>`) lets inference unify it with the no-op arm.
+-    let mut no_op_renamer;
+-    // PORT NOTE: hoisted out of the `minify_identifiers` arm so the
+-    // `&'r mut MinifyRenamer` borrow stored in `renamer` outlives the branch.
++    // branch. Keep the concrete renamer storage outside the branch so the
++    // borrowed `Renamer` view outlives it.
++    let no_op_renamer;
+     let mut minify_renamer;
+     let renamer: rename::Renamer<'_, '_>;
+     // PORT NOTE: Zig copied `tree.module_scope` to a stack local and re-pointed
+@@ -8067,7 +8070,7 @@ pub fn print_ast<'a, W: WriterTrait, const ASCII_ONLY: bool, const GENERATE_SOUR
+         let minifier = tree.char_freq.as_ref().unwrap().compile();
+         minify_renamer.assign_names_by_frequency(&minifier)?;
+ 
+-        renamer = rename::Renamer::MinifyRenamer(&mut *minify_renamer);
++        renamer = rename::Renamer::MinifyRenamer(&*minify_renamer);
+     } else {
+         no_op_renamer = rename::NoOpRenamer::init(symbols, source);
+         renamer = no_op_renamer.to_renamer();
+@@ -8223,8 +8226,7 @@ pub fn print_json<W: WriterTrait>(
+     // `printExpr(expr, ...)` directly without ever walking those parts. Rust
+     // constructs the same empty inputs without round-tripping through `Ast`.
+     let bump = bun_alloc::Arena::new();
+-    let mut no_op =
+-        rename::NoOpRenamer::init(js_ast::symbol::Map::init_list(vec![Vec::new()]), source);
++    let no_op = rename::NoOpRenamer::init(js_ast::symbol::Map::init_list(vec![Vec::new()]), source);
+ 
+     let full_opts = Options {
+         indent: opts.indent,
+@@ -8445,7 +8447,7 @@ pub fn print_common_js<
+     // See `print_ast`: pre-size the output buffer to avoid grow+memmove churn.
+     let _ = writer.reserve(source.contents().len() as u64);
+     let mut opts = opts;
+-    let mut renamer = rename::NoOpRenamer::init(symbols, source);
++    let renamer = rename::NoOpRenamer::init(symbols, source);
+     let source_map_builder = get_source_map_builder::<false>(
+         GenerateSourceMap::lazy_if(GENERATE_SOURCE_MAP),
+         &mut opts,
+diff --git a/src/js_printer/renamer.rs b/src/js_printer/renamer.rs
+index 17fa6a492a7..4972937caaa 100644
+--- a/src/js_printer/renamer.rs
++++ b/src/js_printer/renamer.rs
+@@ -140,19 +140,18 @@ impl<'a> NoOpRenamer<'a> {
+         }
+     }
+ 
+-    pub fn to_renamer(&mut self) -> Renamer<'_, 'a> {
++    pub fn to_renamer(&self) -> Renamer<'_, 'a> {
+         Renamer::NoOpRenamer(self)
+     }
+ }
+ 
+ // PORT NOTE: two lifetime params — `'r` is the borrow of the underlying renamer,
+ // `'src` is `NoOpRenamer`'s borrow of the `Source`. The Zig `Renamer` was a
+-// tag+ptr union that erased both; using `&'a mut NoOpRenamer<'a>` would make
+-// `'a` invariant and lock the source borrow to the renamer borrow.
++// tag+ptr union that erased both.
+ pub enum Renamer<'r, 'src> {
+-    NumberRenamer(&'r mut NumberRenamer),
+-    NoOpRenamer(&'r mut NoOpRenamer<'src>),
+-    MinifyRenamer(&'r mut MinifyRenamer),
++    NumberRenamer(&'r NumberRenamer),
++    NoOpRenamer(&'r NoOpRenamer<'src>),
++    MinifyRenamer(&'r MinifyRenamer),
+ }
+ 
+ impl<'r, 'src> Renamer<'r, 'src> {
+@@ -164,7 +163,7 @@ impl<'r, 'src> Renamer<'r, 'src> {
+         }
+     }
+ 
+-    pub fn name_for_symbol(&mut self, ref_: Ref) -> &[u8] {
++    pub fn name_for_symbol(&self, ref_: Ref) -> &[u8] {
+         match self {
+             Renamer::NumberRenamer(r) => r.name_for_symbol(ref_),
+             Renamer::NoOpRenamer(r) => r.name_for_symbol(ref_),
+@@ -182,8 +181,9 @@ impl<'r, 'src> Renamer<'r, 'src> {
+ }
+ 
+ // PORT NOTE: Zig `Renamer.deinit` freed NumberRenamer/MinifyRenamer internals.
+-// In Rust all three variants are `&'r mut` (caller-owned, Drop on caller's
+-// storage). No explicit deinit needed.
++// In Rust all three variants are shared borrows of caller-owned storage. This
++// lets parallel chunk printers read the precomputed renamer without fabricating
++// aliased `&mut ChunkRenamer` borrows. No explicit deinit needed.
+ 
+ #[derive(Clone, Copy)]
+ pub struct SymbolSlot {
+@@ -230,10 +230,7 @@ impl InlineString {
+         this
+     }
+ 
+-    // do not make this *const or you will run into memory bugs.
+-    // we cannot let the compiler decide to copy this struct because
+-    // that would cause this to become a pointer to stack memory.
+-    pub fn slice(&mut self) -> &[u8] {
++    pub fn slice(&self) -> &[u8] {
+         &self.bytes[0..self.len as usize]
+     }
+ }
+@@ -256,10 +253,7 @@ impl TinyString {
+         }
+     }
+ 
+-    // do not make this *const or you will run into memory bugs.
+-    // we cannot let the compiler decide to copy this struct because
+-    // that would cause this to become a pointer to stack memory.
+-    pub fn slice(&mut self) -> &[u8] {
++    pub fn slice(&self) -> &[u8] {
+         match self {
+             TinyString::InlineString(s) => s.slice(),
+             // `StoreStr::slice` centralises the arena-backed deref; the payload
+@@ -317,11 +311,11 @@ impl MinifyRenamer {
+         }))
+     }
+ 
+-    pub fn to_renamer(&mut self) -> Renamer<'_, 'static> {
++    pub fn to_renamer(&self) -> Renamer<'_, 'static> {
+         Renamer::MinifyRenamer(self)
+     }
+ 
+-    pub fn name_for_symbol(&mut self, ref_: Ref) -> &[u8] {
++    pub fn name_for_symbol(&self, ref_: Ref) -> &[u8] {
+         let ref_ = self.symbols.follow(ref_);
+         let symbol: &Symbol = self.symbols.get_const(ref_).unwrap();
+ 
+@@ -664,7 +658,7 @@ pub struct NumberRenamer {
+ }
+ 
+ impl NumberRenamer {
+-    pub fn to_renamer(&mut self) -> Renamer<'_, 'static> {
++    pub fn to_renamer(&self) -> Renamer<'_, 'static> {
+         Renamer::NumberRenamer(self)
+     }
+ 

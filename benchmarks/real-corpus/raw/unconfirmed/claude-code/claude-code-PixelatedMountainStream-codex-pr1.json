@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-PixelatedMountainStream-codex-pr1",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "e430eec9870e80690a8b453338f2f3a52363e3fa",
+    "baseSha": "d3ba62edd13ce8a0e85bb42174516b8ccd844b82",
+    "title": "fix(cli): require --oss when --local-provider is supplied",
+    "body": "## Summary\n- Add `codex_utils_cli::validate_local_provider_requires_oss` and reject `--local-provider` without `--oss` in the three CLI entry points that consume `SharedCliOptions` (TUI `run_main`, `codex exec`, `codex debug prompt-input`). Without this guard, `--local-provider ollama --model …` was silently dropped and the session fell back to the default cloud provider.\n- Document the supported `codex --oss --local-provider <id> --model <slug>` startup and `codex resume <thread> --oss --local-provider …` resume workflow in `docs/config.md`, and refresh the `--local-provider` help text to state that `--oss` is required.\n\n## Why this shape\n- `--oss` stays the mode gate; `--local-provider` is not promoted to a standalone startup mode. This keeps the diff vs. upstream `openai/codex` small and aligns with the per-task routing already on `feat/local-llm-provider-overrides`.\n- The validator lives in `codex-utils-cli` so all three call sites share one error message and one set of unit tests.\n\n## Test plan\n- [x] `cargo test -p codex-utils-cli`\n- [x] `cargo test -p codex-cli --test debug_prompt_input`\n- [x] `cargo build -p codex-cli -p codex-tui -p codex-exec`\n- [x] `cargo clippy -p codex-utils-cli -p codex-tui -p codex-exec -p codex-cli --all-targets -- -D warnings`\n- [x] `cargo fmt --all -- --check`\n- [ ] Manual: `codex --local-provider ollama --model gemma4:…` exits with the new error\n- [ ] Manual: `codex --oss --local-provider ollama --model gemma4:…` completes one turn against local Ollama\n- [ ] Manual: `codex resume <thread> --oss --local-provider ollama --model gemma4:…` resumes against local Ollama\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "ehrvs",
+    "headRef": "fix/local-provider-requires-oss",
+    "repository": "PixelatedMountainStream/codex"
+  },
+  "diffRef": {
+    "repository": "PixelatedMountainStream/codex",
+    "headSha": "e430eec9870e80690a8b453338f2f3a52363e3fa",
+    "baseSha": "d3ba62edd13ce8a0e85bb42174516b8ccd844b82"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-PixelatedMountainStream-codex-pr1.diff",
+  "vendoredAt": "2026-05-24T03:13:11.456Z",
+  "collectedAt": "2026-05-24T03:13:11.456Z"
+}

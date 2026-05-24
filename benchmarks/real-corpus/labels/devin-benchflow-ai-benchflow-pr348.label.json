@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "PR delivers three claimed changes accurately. (1) src/benchflow/cli/main.py adds `--include` and `--exclude` repeatable typer.Option flags to eval_create, converts them to sets, then wires them into all three batch dispatch branches (the `j._config.include_tasks = include_tasks` override path, the EvaluationConfig(...) kwarg in the source-repo branch, and the inner async _run() in the third branch). (2) pyproject.toml and uv.lock move `tomli-w>=1.0` from [project.optional-dependencies] dev to [project] dependencies, and src/benchflow/task/config.py drops the stale `# optional dep — only needed for TOML serialisation` comment on the import. (3) tests/integration/check_results.py changes the comparison from `mtime >= previous[0]` to `(mtime, str(rfile)) >= (previous[0], str(previous[1]))` for deterministic mtime-tie ordering. tests/test_oracle_chokepoint.py adds a TestEvalCreateIncludeExclude class with four meaningful tests: tasks-dir batch with both flags, CLI override of YAML include, preservation of YAML when CLI omitted, and a CliRunner end-to-end. Real assertions on captured config state, not tautologies.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T14:00:00.000Z"
+}

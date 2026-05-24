@@ -1,0 +1,58 @@
+diff --git a/SECURITY.md b/SECURITY.md
+new file mode 100644
+index 0000000..af5a743
+--- /dev/null
++++ b/SECURITY.md
+@@ -0,0 +1,52 @@
++# Security Policy
++
++## Supported Versions
++
++Athanor is in active development. Security fixes are applied to the latest
++release on `main`. Earlier tags are not patched.
++
++| Version          | Supported |
++|------------------|-----------|
++| latest release   | ✅        |
++| older tags       | ❌        |
++
++## Reporting a Vulnerability
++
++Athanor dispatches shell commands and writes to your filesystem through
++Claude Code hooks, skills, and the Codex CLI. If you find a way to make the
++plugin execute unintended commands, exfiltrate session state, or escape the
++documented project-root and file-access boundaries, please report it privately.
++
++**Preferred channel — GitHub private advisory:**
++
++1. Open <https://github.com/WookLabs/athanor/security/advisories/new>
++2. Describe the issue with reproduction steps and a minimal proof-of-concept
++   if possible.
++
++**Fallback channel — public contact-request issue:**
++
++If you cannot access GitHub Security Advisories, open a public issue titled
++`security: contact request` with no details, and a maintainer will reach out
++to establish a private channel.
++
++## Scope
++
++In scope:
++
++- Hook prompts that execute shell commands beyond what the user authorized
++- Skills that read or write files outside the project root
++- Codex CLI dispatch paths that allow argument injection
++- `.athanor/sessions/` or `.athanor/lessons/` artifacts that leak credentials
++
++Out of scope:
++
++- Vulnerabilities in Claude Code itself (report to Anthropic)
++- Vulnerabilities in vendored upstream skills (report to the upstream project
++  listed in `NOTICE.md`)
++- Issues that require already-elevated privileges or physical access
++
++## Response Expectations
++
++This is a single-maintainer project. Acknowledgement: best-effort within
++7 days. Fixes are released as soon as a verified patch is available and
++disclosed alongside the fix in `CHANGELOG.md`.

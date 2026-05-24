@@ -1,0 +1,562 @@
+diff --git a/README.md b/README.md
+index 76560c5..7b2a7c5 100644
+--- a/README.md
++++ b/README.md
+@@ -51,6 +51,11 @@ LATTICE_LLM_PROVIDER=anthropic LATTICE_API_KEY=sk-ant-xxx \
+ # OpenAI 兼容（包括 MiniMax、vLLM、Ollama 等）
+ LATTICE_API_KEY=sk-xxx LATTICE_API_BASE=http://localhost:8000/v1 \
+   cargo run --example real-agent -- "List files"
++
++# Codex CLI login (uses your ChatGPT/Codex login, no API key)
++# First run `codex` and choose "Sign in with ChatGPT"
++LATTICE_LLM_PROVIDER=codex \
++  cargo run --example real-agent -- "What is 2+2?"
+ ```
+ 
+ ## 平台支持
+@@ -72,6 +77,18 @@ $env:LATTICE_MODEL="claude-sonnet-4-6"
+ cargo run --example real-agent -- "What is 2+2?"
+ ```
+ 
++**Codex CLI login (PowerShell)**:
++```powershell
++# First make sure Codex CLI is signed in.
++codex
++
++$env:LATTICE_LLM_PROVIDER="codex"
++Remove-Item Env:LATTICE_MODEL -ErrorAction SilentlyContinue
++cargo run --example real-agent -- "What is 2+2?"
++```
++
++Codex CLI mode runs local `codex exec`, so authentication, token refresh, model availability, and the ChatGPT/Codex backend protocol are handled by Codex CLI. This mode defaults to `gpt-5.5`; `gpt-4o` is not a supported model name for Codex CLI when using a ChatGPT/Codex account.
++
+ **CMD**：
+ ```cmd
+ set LATTICE_LLM_PROVIDER=anthropic
+diff --git a/crates/llm-openai/src/codex_cli.rs b/crates/llm-openai/src/codex_cli.rs
+new file mode 100644
+index 0000000..04c8304
+--- /dev/null
++++ b/crates/llm-openai/src/codex_cli.rs
+@@ -0,0 +1,458 @@
++//! Codex CLI adapter.
++//!
++//! Delegates model calls to `codex exec`, so authentication, token refresh,
++//! model availability, and ChatGPT/Codex backend transport stay owned by the
++//! installed Codex CLI.
++
++use std::env;
++use std::io::Write;
++use std::path::PathBuf;
++use std::process::{Command, Stdio};
++
++use async_trait::async_trait;
++use lattice_core::error::LLMError;
++use lattice_core::llm::Decision;
++use lattice_core::{Event, EventPayload, ToolDescription};
++use serde::Deserialize;
++use tracing::{info, instrument};
++
++/// LLM client backed by the local `codex` CLI.
++pub struct CodexCliClient {
++    model: String,
++    codex_bin: String,
++}
++
++impl CodexCliClient {
++    /// Create a Codex CLI client with a model name accepted by `codex exec`.
++    pub fn new(model: impl Into<String>) -> Self {
++        Self {
++            model: model.into(),
++            codex_bin: default_codex_bin(),
++        }
++    }
++
++    /// Override the Codex executable path, mainly for tests or custom installs.
++    #[must_use]
++    pub fn with_codex_bin(mut self, codex_bin: impl Into<String>) -> Self {
++        self.codex_bin = codex_bin.into();
++        self
++    }
++
++    fn build_prompt(
++        &self,
++        history: &[Event],
++        available_tools: &[ToolDescription],
++        system_prompt: &str,
++    ) -> String {
++        let mut prompt = String::new();
++
++        if !system_prompt.is_empty() {
++            prompt.push_str("System instructions:\n");
++            prompt.push_str(system_prompt);
++            prompt.push_str("\n\n");
++        }
++
++        if !available_tools.is_empty() {
++            prompt.push_str("Lattice tools available to the outer runtime:\n");
++            for tool in available_tools {
++                prompt.push_str("- ");
++                prompt.push_str(&tool.name);
++                prompt.push_str(": ");
++                prompt.push_str(&tool.description);
++                prompt.push('\n');
++            }
++            prompt.push_str(
++                "\nReturn a final answer. Do not call tools yourself unless the user explicitly asks you to inspect the local system.\n\n",
++            );
++        }
++
++        prompt.push_str("Conversation history:\n");
++        for event in history {
++            match &event.payload {
++                EventPayload::SessionCreated => {}
++                EventPayload::UserMessage { content } => {
++                    prompt.push_str("User: ");
++                    prompt.push_str(content);
++                    prompt.push('\n');
++                }
++                EventPayload::Thinking { reasoning } => {
++                    prompt.push_str("Assistant thinking: ");
++                    prompt.push_str(reasoning);
++                    prompt.push('\n');
++                }
++                EventPayload::ToolCallRequested { tool, params } => {
++                    prompt.push_str("Assistant requested tool ");
++                    prompt.push_str(tool);
++                    prompt.push_str(" with params ");
++                    prompt.push_str(&params.to_string());
++                    prompt.push('\n');
++                }
++                EventPayload::ToolCallResult {
++                    stdout,
++                    stderr,
++                    exit_code,
++                } => {
++                    prompt.push_str("Tool result exit=");
++                    prompt.push_str(&exit_code.to_string());
++                    prompt.push_str(" stdout=");
++                    prompt.push_str(stdout);
++                    if !stderr.is_empty() {
++                        prompt.push_str(" stderr=");
++                        prompt.push_str(stderr);
++                    }
++                    prompt.push('\n');
++                }
++                EventPayload::ToolCallError { error } => {
++                    prompt.push_str("Tool error: ");
++                    prompt.push_str(error);
++                    prompt.push('\n');
++                }
++                EventPayload::FinalAnswer { answer } => {
++                    prompt.push_str("Assistant final answer: ");
++                    prompt.push_str(answer);
++                    prompt.push('\n');
++                }
++                EventPayload::StateChange { from, to } => {
++                    prompt.push_str("State changed: ");
++                    prompt.push_str(from);
++                    prompt.push_str(" -> ");
++                    prompt.push_str(to);
++                    prompt.push('\n');
++                }
++            }
++        }
++
++        prompt.push_str("\nProduce the next assistant final answer.");
++        prompt
++    }
++
++    fn parse_json_output(stdout: &str) -> Result<String, LLMError> {
++        let mut last_message = None;
++        for line in stdout.lines() {
++            let line = line.trim();
++            if line.is_empty() || !line.starts_with('{') {
++                continue;
++            }
++
++            let event: CodexJsonEvent =
++                serde_json::from_str(line).map_err(|e| LLMError::InvalidResponse(e.to_string()))?;
++            if let CodexJsonEvent::ItemCompleted {
++                item: CodexItem::AgentMessage { text },
++            } = event
++            {
++                last_message = Some(text);
++            }
++        }
++
++        last_message.ok_or_else(|| {
++            LLMError::InvalidResponse("codex exec produced no agent_message item".into())
++        })
++    }
++}
++
++fn default_codex_bin() -> String {
++    if let Ok(appdata) = env::var("APPDATA") {
++        let npm_codex = PathBuf::from(appdata).join("npm").join("codex.cmd");
++        if npm_codex.exists() {
++            return npm_codex.to_string_lossy().into_owned();
++        }
++    }
++
++    "codex".into()
++}
++
++#[derive(Debug, Deserialize)]
++#[serde(tag = "type", rename_all = "snake_case")]
++enum CodexJsonEvent {
++    #[serde(rename = "item.completed")]
++    ItemCompleted { item: CodexItem },
++    #[serde(other)]
++    Other,
++}
++
++#[derive(Debug, Deserialize)]
++#[serde(tag = "type", rename_all = "snake_case")]
++enum CodexItem {
++    AgentMessage {
++        text: String,
++    },
++    #[serde(other)]
++    Other,
++}
++
++#[async_trait]
++impl lattice_core::LLMClient for CodexCliClient {
++    #[instrument(skip(self, history, available_tools))]
++    async fn decide(
++        &self,
++        history: &[Event],
++        available_tools: &[ToolDescription],
++        system_prompt: &str,
++    ) -> Result<Decision, LLMError> {
++        let prompt = self.build_prompt(history, available_tools, system_prompt);
++
++        info!("running codex exec: model={}", self.model);
++        let mut child = Command::new(&self.codex_bin)
++            .args([
++                "exec",
++                "--skip-git-repo-check",
++                "--json",
++                "--model",
++                &self.model,
++                "-",
++            ])
++            .stdin(Stdio::piped())
++            .stdout(Stdio::piped())
++            .stderr(Stdio::piped())
++            .spawn()
++            .map_err(|e| LLMError::RequestFailed(format!("failed to run codex exec: {e}")))?;
++
++        if let Some(mut stdin) = child.stdin.take() {
++            stdin.write_all(prompt.as_bytes()).map_err(|e| {
++                LLMError::RequestFailed(format!("failed to write codex stdin: {e}"))
++            })?;
++        }
++
++        let output = child
++            .wait_with_output()
++            .map_err(|e| LLMError::RequestFailed(format!("failed to wait for codex exec: {e}")))?;
++
++        let stdout = String::from_utf8_lossy(&output.stdout);
++        let stderr = String::from_utf8_lossy(&output.stderr);
++
++        if !output.status.success() {
++            let message = if stderr.trim().is_empty() {
++                stdout.trim().to_string()
++            } else {
++                stderr.trim().to_string()
++            };
++            return Err(LLMError::RequestFailed(message));
++        }
++
++        let answer = Self::parse_json_output(&stdout)?;
++        Ok(Decision::FinalAnswer { answer })
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use chrono::Utc;
++    use lattice_core::{Actor, EventId, LLMClient, SessionId};
++    use std::fs;
++    use std::time::{SystemTime, UNIX_EPOCH};
++
++    #[cfg(unix)]
++    use std::os::unix::fs::PermissionsExt;
++
++    #[test]
++    fn parses_last_agent_message() {
++        let stdout = r#"{"type":"thread.started","thread_id":"t"}
++{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"first"}}
++{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"second"}}"#;
++
++        assert_eq!(CodexCliClient::parse_json_output(stdout).unwrap(), "second");
++    }
++
++    #[test]
++    fn rejects_missing_agent_message() {
++        let stdout = r#"{"type":"thread.started","thread_id":"t"}"#;
++        assert!(CodexCliClient::parse_json_output(stdout).is_err());
++    }
++
++    #[test]
++    fn builds_prompt_from_history_and_tools() {
++        let client = CodexCliClient::new("gpt-5.5");
++        let session_id = SessionId::new_v4();
++        let history = vec![
++            event(session_id, EventPayload::SessionCreated),
++            event(
++                session_id,
++                EventPayload::UserMessage {
++                    content: "List files".into(),
++                },
++            ),
++            event(
++                session_id,
++                EventPayload::Thinking {
++                    reasoning: "Need a shell listing".into(),
++                },
++            ),
++            event(
++                session_id,
++                EventPayload::ToolCallRequested {
++                    tool: "bash".into(),
++                    params: serde_json::json!({"command": "ls"}),
++                },
++            ),
++            event(
++                session_id,
++                EventPayload::ToolCallResult {
++                    stdout: "Cargo.toml".into(),
++                    stderr: String::new(),
++                    exit_code: 0,
++                },
++            ),
++            event(
++                session_id,
++                EventPayload::ToolCallError {
++                    error: "boom".into(),
++                },
++            ),
++            event(
++                session_id,
++                EventPayload::FinalAnswer {
++                    answer: "done".into(),
++                },
++            ),
++            event(
++                session_id,
++                EventPayload::StateChange {
++                    from: "running".into(),
++                    to: "done".into(),
++                },
++            ),
++        ];
++        let tools = vec![ToolDescription {
++            name: "bash".into(),
++            description: "Execute shell commands".into(),
++            parameters_schema: serde_json::json!({}),
++        }];
++
++        let prompt = client.build_prompt(&history, &tools, "Be concise.");
++
++        assert!(prompt.contains("System instructions:\nBe concise."));
++        assert!(prompt.contains("- bash: Execute shell commands"));
++        assert!(prompt.contains("User: List files"));
++        assert!(prompt.contains("Assistant thinking: Need a shell listing"));
++        assert!(prompt.contains("Assistant requested tool bash"));
++        assert!(prompt.contains("Tool result exit=0 stdout=Cargo.toml"));
++        assert!(prompt.contains("Tool error: boom"));
++        assert!(prompt.contains("Assistant final answer: done"));
++        assert!(prompt.contains("State changed: running -> done"));
++        assert!(prompt.ends_with("Produce the next assistant final answer."));
++    }
++
++    #[tokio::test]
++    async fn decide_returns_final_answer_from_fake_codex() {
++        let script = fake_codex_script(
++            "success",
++            r#"{"type":"thread.started","thread_id":"t"}
++{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"script answer"}}"#,
++            "",
++            0,
++        );
++        let client = CodexCliClient::new("gpt-5.5").with_codex_bin(script.to_string_lossy());
++        let history = vec![event(
++            SessionId::new_v4(),
++            EventPayload::UserMessage {
++                content: "Hello".into(),
++            },
++        )];
++
++        let decision = client.decide(&history, &[], "").await.unwrap();
++
++        match decision {
++            Decision::FinalAnswer { answer } => assert_eq!(answer, "script answer"),
++            _ => panic!("expected final answer"),
++        }
++    }
++
++    #[tokio::test]
++    async fn decide_returns_error_when_codex_fails() {
++        let script = fake_codex_script("failure", "", "codex failed", 2);
++        let client = CodexCliClient::new("gpt-5.5").with_codex_bin(script.to_string_lossy());
++
++        let err = client.decide(&[], &[], "").await.unwrap_err();
++
++        assert!(err.to_string().contains("codex failed"));
++    }
++
++    #[test]
++    fn with_codex_bin_overrides_default_binary() {
++        let client = CodexCliClient::new("gpt-5.5").with_codex_bin("custom-codex");
++        assert_eq!(client.codex_bin, "custom-codex");
++    }
++
++    fn event(session_id: SessionId, payload: EventPayload) -> Event {
++        Event {
++            event_id: EventId::new_v4(),
++            session_id,
++            timestamp: Utc::now(),
++            actor: Actor::System,
++            payload,
++            parent_event_id: None,
++        }
++    }
++
++    fn fake_codex_script(
++        name: &str,
++        stdout: &str,
++        stderr: &str,
++        exit_code: i32,
++    ) -> std::path::PathBuf {
++        let mut path = std::env::temp_dir();
++        let nanos = SystemTime::now()
++            .duration_since(UNIX_EPOCH)
++            .unwrap()
++            .as_nanos();
++
++        #[cfg(windows)]
++        {
++            path.push(format!("lattice-{name}-{nanos}.cmd"));
++            let mut content = String::from("@echo off\r\n");
++            content.push_str("if not \"%1\"==\"exec\" exit /b 11\r\n");
++            content.push_str("if not \"%2\"==\"--skip-git-repo-check\" exit /b 12\r\n");
++            content.push_str("if not \"%3\"==\"--json\" exit /b 13\r\n");
++            content.push_str("if not \"%4\"==\"--model\" exit /b 14\r\n");
++            content.push_str("if not \"%5\"==\"gpt-5.5\" exit /b 15\r\n");
++            content.push_str("if not \"%6\"==\"-\" exit /b 16\r\n");
++            content.push_str("findstr /C:\"Produce the next assistant final answer.\" >nul\r\n");
++            content.push_str("if errorlevel 1 exit /b 17\r\n");
++            for line in stdout.lines() {
++                content.push_str("echo ");
++                content.push_str(line);
++                content.push_str("\r\n");
++            }
++            for line in stderr.lines() {
++                content.push_str("echo ");
++                content.push_str(line);
++                content.push_str(" 1>&2\r\n");
++            }
++            content.push_str(&format!("exit /b {exit_code}\r\n"));
++            fs::write(&path, content).unwrap();
++        }
++
++        #[cfg(unix)]
++        {
++            path.push(format!("lattice-{name}-{nanos}.sh"));
++            let mut content = String::from(
++                "#!/bin/sh\n\
++                 [ \"$1\" = \"exec\" ] || exit 11\n\
++                 [ \"$2\" = \"--skip-git-repo-check\" ] || exit 12\n\
++                 [ \"$3\" = \"--json\" ] || exit 13\n\
++                 [ \"$4\" = \"--model\" ] || exit 14\n\
++                 [ \"$5\" = \"gpt-5.5\" ] || exit 15\n\
++                 [ \"$6\" = \"-\" ] || exit 16\n\
++                 grep -F \"Produce the next assistant final answer.\" >/dev/null || exit 17\n",
++            );
++            for line in stdout.lines() {
++                content.push_str("printf '%s\\n' '");
++                content.push_str(line);
++                content.push_str("'\n");
++            }
++            for line in stderr.lines() {
++                content.push_str("printf '%s\\n' '");
++                content.push_str(line);
++                content.push_str("' >&2\n");
++            }
++            content.push_str(&format!("exit {exit_code}\n"));
++            fs::write(&path, content).unwrap();
++            let mut permissions = fs::metadata(&path).unwrap().permissions();
++            permissions.set_mode(0o755);
++            fs::set_permissions(&path, permissions).unwrap();
++        }
++
++        path
++    }
++}
+diff --git a/crates/llm-openai/src/lib.rs b/crates/llm-openai/src/lib.rs
+index 1f4a6fe..a5fc4dc 100644
+--- a/crates/llm-openai/src/lib.rs
++++ b/crates/llm-openai/src/lib.rs
+@@ -4,6 +4,8 @@
+ //! Compatible with OpenAI, local deployments (vLLM, Ollama), and third-party proxies.
+ 
+ mod client;
++mod codex_cli;
+ mod types;
+ 
+ pub use client::OpenAIClient;
++pub use codex_cli::CodexCliClient;
+diff --git a/examples/real-agent/src/main.rs b/examples/real-agent/src/main.rs
+index f97f4ad..9ed388f 100644
+--- a/examples/real-agent/src/main.rs
++++ b/examples/real-agent/src/main.rs
+@@ -8,6 +8,11 @@
+ //!   LATTICE_MODEL=MiniMax-M2.7 \
+ //!   cargo run -p real-agent -- "List files in the current directory"
+ //!
++//! # Codex CLI login
++//! LATTICE_LLM_PROVIDER=codex \
++//!   LATTICE_MODEL=gpt-5.5 \
++//!   cargo run -p real-agent -- "List files in the current directory"
++//!
+ //! # Anthropic
+ //! LATTICE_LLM_PROVIDER=anthropic LATTICE_API_KEY=sk-ant-xxx \
+ //!   LATTICE_MODEL=claude-sonnet-4-20250514 \
+@@ -54,10 +59,10 @@ fn main() -> Result<()> {
+ async fn run(task: String) -> Result<()> {
+     // Read configuration from environment variables.
+     let provider = env::var("LATTICE_LLM_PROVIDER").unwrap_or_else(|_| "openai".into());
+-    let api_key = env::var("LATTICE_API_KEY").context("LATTICE_API_KEY not set")?;
+     let api_base = env::var("LATTICE_API_BASE").ok();
+     let model = env::var("LATTICE_MODEL").unwrap_or_else(|_| match provider.as_str() {
+         "anthropic" => "claude-sonnet-4-20250514".into(),
++        "codex" => "gpt-5.5".into(),
+         _ => "gpt-4o".into(),
+     });
+ 
+@@ -66,14 +71,20 @@ async fn run(task: String) -> Result<()> {
+     // Create the LLM client based on provider.
+     let llm: Arc<dyn LLMClient> = match provider.as_str() {
+         "anthropic" => {
++            let api_key = env::var("LATTICE_API_KEY").context("LATTICE_API_KEY not set")?;
+             let mut client = lattice::llm_anthropic::AnthropicClient::new(&api_key, &model);
+             if let Some(base) = api_base {
+                 client = client.with_base_url(base);
+             }
+             Arc::new(client)
+         }
++        "codex" => {
++            let _ = api_base;
++            Arc::new(lattice::llm_openai::CodexCliClient::new(&model))
++        }
+         _ => {
+-            let mut client = lattice::llm_openai::OpenAIClient::new(&api_key, &model);
++            let api_key = env::var("LATTICE_API_KEY").context("LATTICE_API_KEY not set")?;
++            let mut client = lattice::llm_openai::OpenAIClient::new(api_key, &model);
+             if let Some(base) = api_base {
+                 client = client.with_base_url(base);
+             }

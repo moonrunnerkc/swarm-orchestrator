@@ -1,0 +1,26 @@
+{
+  "id": "devin-fullhousedeliveryllc-wq-full-house-delivery-dashboard-pr15",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 15,
+    "headSha": "8ad110313c5ff5b0cc374cce14e437349ef5db86",
+    "baseSha": "b6d306e744d8a2c67d8f2aab40d32244171f5e50",
+    "title": "v15: Editable categories/types with reordering, fix PDF upload",
+    "body": "## Summary\n\nAdds the ability to manually edit and reorder both the **Category** dropdown (Customer & Jobs tab) and the **Type** dropdown (Revenue & Expenses tab). Also fixes PDF file upload in the Bank Statement section.\n\n### Changes:\n\n**1. Category reordering (Customer & Jobs → Data Management)**\n- Added ▲/▼ reorder buttons next to each category in the list\n- `moveCat(i, dir)` function swaps array elements and re-renders all views\n\n**2. Editable Finance Types (Revenue & Expenses tab)**\n- New \"Manage Types\" card with add, remove, and reorder functionality\n- `financeTypes` array stored in localStorage (mirrors the categories pattern)\n- All three type dropdowns (add form, filter, edit modal) now render dynamically from the array\n- `renderFinanceTypes()` populates dropdowns + the management list\n- `addFinType()`, `removeFinType()`, `moveFinType()` functions (same pattern as categories)\n- Edit modal handles entries with types that have been removed from the list\n\n**3. PDF upload fix**\n- PDF.js worker source now set immediately after the library loads (was only set inside `handlePDFUpload`, too late for initialization)\n- Broader `accept` attribute on file input (added `application/pdf,text/csv` MIME types for better mobile compatibility)\n- Better error handling with visible error toasts\n\n## Review & Testing Checklist for Human\n\n- [ ] **Category reordering**: Go to Customer & Jobs → Data Management. Click ▲/▼ arrows next to categories. Verify the order updates in the category list AND in the \\\"Log a New Entry\\\" dropdown\n- [ ] **Finance type management**: Go to Revenue & Expenses → Manage Types. Add a new type, remove one, reorder with arrows. Verify the \\\"Log Revenue/Expense\\\" dropdown, filter dropdown, and edit modal all reflect changes\n- [ ] **PDF upload**: Go to Revenue & Expenses → Upload Bank Statement. Click the upload zone and select a PDF bank statement. Verify it processes and shows a preview (or shows a clear error message if the PDF format isn't supported)\n- [ ] **Cross-device**: After merging, hard refresh (Ctrl+Shift+R) on both desktop and mobile. Verify v15 shows in the top bar\n\n### Test plan:\n1. Hard refresh after merge → confirm v15 in auth bar\n2. Add 2-3 categories, reorder them, verify dropdown order matches\n3. Add a custom finance type, log an expense with it, verify it appears in the breakdown\n4. Upload a PDF bank statement → verify processing toast appears\n5. Check mobile: sign in → verify data syncs and dropdowns are populated\n\n### Notes\n- Finance types are stored in localStorage only (not synced to Supabase yet) — this matches the existing categories pattern\n- Existing finance entries with removed types still display correctly in the edit modal\n\nLink to Devin session: https://app.devin.ai/sessions/6039104f0b2a4194af27b6686cc684be\nRequested by: @fullhousedeliveryllc-wq",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779579073-editable-dropdowns-v15",
+    "repository": "fullhousedeliveryllc-wq/full-house-delivery-dashboard"
+  },
+  "diffRef": {
+    "repository": "fullhousedeliveryllc-wq/full-house-delivery-dashboard",
+    "headSha": "8ad110313c5ff5b0cc374cce14e437349ef5db86",
+    "baseSha": "b6d306e744d8a2c67d8f2aab40d32244171f5e50"
+  },
+  "vendoredDiffPath": "devin/devin-fullhousedeliveryllc-wq-full-house-delivery-dashboard-pr15.diff",
+  "vendoredAt": "2026-05-24T03:04:37.516Z",
+  "collectedAt": "2026-05-24T03:04:37.516Z"
+}

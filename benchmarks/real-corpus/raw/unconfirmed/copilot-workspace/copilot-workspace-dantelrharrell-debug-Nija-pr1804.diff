@@ -1,0 +1,82 @@
+diff --git a/bot.py b/bot.py
+index 26e71846..021f073e 100644
+--- a/bot.py
++++ b/bot.py
+@@ -5582,6 +5582,12 @@ def _run_bot_startup_and_trading_with_retry():
+     transient errors (Kraken nonce, network blip, etc.) never kill the thread
+     permanently.  Only a clean KeyboardInterrupt stops the loop.
+     """
++    logger.info(
++        "DIAG_BOOTSTRAP_BEGIN: entering _run_bot_startup_and_trading_with_retry pid=%d thread=%s",
++        os.getpid(),
++        threading.current_thread().name,
++    )
++
+     # ── Single-owner bootstrap kernel ────────────────────────────────────────
+     if not _BOOTSTRAP_SINGLE_OWNER_LOCK.acquire(blocking=False):
+         logger.error(
+@@ -5642,7 +5648,12 @@ def _run_bot_startup_and_trading_with_retry():
+ 
+                 # Attempt to start the bot
+                 logger.info(
+-                    "DIAG_RETRY_WRAPPER: about to call _run_bot_startup_and_trading() "
++                    "DIAG_STARTUP_DISPATCH: dispatching startup attempt=%d init_done=%s",
++                    _next_attempt,
++                    _init_done,
++                )
++                logger.info(
++                    "DIAG_RETRY_WRAPPER_BEFORE: about to call _run_bot_startup_and_trading() "
+                     "attempt=%d init_done=%s",
+                     _next_attempt,
+                     _init_done,
+@@ -5995,6 +6006,12 @@ def _run_bot_startup_and_trading():  # type: ignore[reportGeneralTypeIssues]
+     # On success it sets NIJA_WRITER_HEARTBEAT_ACTIVE=1, updates
+     # NIJA_WRITER_HEARTBEAT_ALIVE_TS, and writes the heartbeat marker file so
+     # the activation gate's HEARTBEAT_VERIFICATION check passes.
++    logger.info(
++        "DIAG_HEARTBEAT_START: about to call start_authority_heartbeat() "
++        "fencing_token_present=%s fallback=%s",
++        bool(os.environ.get("NIJA_WRITER_FENCING_TOKEN", "").strip()),
++        os.environ.get("NIJA_WRITER_FENCING_TOKEN_FALLBACK", ""),
++    )
+     logger.info(
+         "AUTHORITY_HEARTBEAT: pre-startup check — about to call start_authority_heartbeat() "
+         "fencing_token_present=%s fallback=%s",
+@@ -8313,6 +8330,11 @@ def _get_startup_total_capital() -> float:
+ def main():
+     """Main entry point for NIJA trading bot - Railway optimized"""
+     _emit_boot_trace("BOOT 1", "main() entered")
++    logger.info(
++        "DIAG_MAIN_ENTRY: main entered pid=%d thread=%s",
++        os.getpid(),
++        threading.current_thread().name,
++    )
+ 
+     # ═══════════════════════════════════════════════════════════════════════
+     # CRITICAL: BOOTSTRAP GUARD — Prevent duplicate instances
+@@ -8405,6 +8427,7 @@ def main():
+     health_manager = get_health_manager()
+     logger.info("✅ Health check manager initialized")
+ 
++    _writer_lock_status = {}
+     try:
+         try:
+             from bot.execution_authority_context import get_distributed_writer_authority_status
+@@ -8435,6 +8458,17 @@ def main():
+             logger.error("🔐 WRITER LOCK SELF-TEST ERROR: %s", _writer_lock_status.get("error"))
+     except Exception as _writer_lock_status_err:
+         logger.warning("⚠️ Writer lock self-test unavailable: %s", _writer_lock_status_err)
++
++    _runtime_role = os.getenv("NIJA_RUNTIME_ROLE", "").strip() or (
++        "writer" if bool(_writer_lock_status.get("ok")) else "observer"
++    )
++    logger.info(
++        "DIAG_RUNTIME_ROLE: runtime_role=%s writer_lock_ok=%s strict_required=%s holder_relationship=%s",
++        _runtime_role,
++        _writer_lock_status.get("ok"),
++        _writer_lock_status.get("strict_required"),
++        (_writer_lock_status.get("holder_inspection") or {}).get("relationship", "unknown"),
++    )
+     
+     # Start dedicated heartbeat thread for Railway health checks
+     # This ensures heartbeat is updated frequently (every 10 seconds)

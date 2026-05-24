@@ -1,0 +1,39 @@
+diff --git a/aider/args.py b/aider/args.py
+index 5b3fdf07faf..e6114694430 100644
+--- a/aider/args.py
++++ b/aider/args.py
+@@ -653,6 +653,12 @@ def get_parser(default_config_files, git_root):
+             " (disables chat mode)"
+         ),
+     ).complete = shtab.FILE
++    group.add_argument(
++        "--one-shot",
++        action="store_true",
++        default=False,
++        help="Run a single prompt without git repo, then exit (implies --no-git)",
++    )
+     group.add_argument(
+         "--gui",
+         "--browser",
+diff --git a/aider/main.py b/aider/main.py
+index afb3f836624..12d92e90d58 100644
+--- a/aider/main.py
++++ b/aider/main.py
+@@ -676,6 +676,17 @@ def get_io(pretty):
+         for fname in loaded_dotenvs:
+             io.tool_output(f"Loaded {fname}")
+ 
++    if args.one_shot:
++        args.git = False
++        if not args.message and not args.message_file:
++            if args.files:
++                # Use the first positional arg as the message
++                args.message = args.files.pop(0)
++            else:
++                io.tool_error("--one-shot requires a message, use --message or --message-file")
++                analytics.event("exit", reason="One-shot without message")
++                return 1
++
+     all_files = args.files + (args.file or [])
+     fnames = [str(Path(fn).resolve()) for fn in all_files]
+     read_only_fnames = []

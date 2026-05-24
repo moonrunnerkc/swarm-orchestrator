@@ -1,0 +1,26 @@
+{
+  "id": "devin-wellskii-PupsoidAmneziaBSD-pr2",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "78540703f158e82cf51ebcbe507ec474dd54374e",
+    "baseSha": "32e616511c338d00de9840ffc40e0c11ea6a7d96",
+    "title": "Юзабилити-pass: README в стиле AntiZapret-VPN + CLIENT-SETUP + remove-client helper",
+    "body": "## Summary\n\nОтвет на просьбу «проверь сам себя на юзабильность и посмотри как сделано у Губерниева». Прошёлся по [GubernievS/AntiZapret-VPN README](https://github.com/GubernievS/AntiZapret-VPN/blob/main/README.md), нашёл основные пробелы своих доков и закрыл их.\n\n### Что было плохо\n\n- README сразу прыгал в `pkg add ...` без объяснения, **зачем** вообще нужен AmneziaWG (что решает, чем отличается от обычного WireGuard).\n- Ни слова про **подключение клиента**: какое приложение скачать, как импортировать профиль, как сканировать QR — пользователь должен был догадаться сам.\n- Не было блока **«Внимание!»** с обязательными проверками на клиенте (secure DNS, IPv6, battery saver на Android) — это самые частые причины «у меня не работает».\n- Не было **FAQ** (миграция между серверами, capacity, поддержка роутеров).\n- Не было упоминания **минимальных требований к серверу** (CPU/RAM/диск).\n- Не было команды для **удаления клиента** — был только костыль с `sed` в RUNBOOK с пометкой «будет автоматизирован позже».\n\n### Что сделано\n\n1. **README полностью переписан** в формате близком к AntiZapret-VPN: 10 разделов от «Зачем нужен AmneziaWG» до «Где купить VPS» с встроенным FAQ из 8 пунктов и таблицами команд управления.\n2. **Новый `docs/CLIENT-SETUP.md`** — пошаговый гайд установки клиента и импорта профиля на Windows / macOS / iOS / Android / Linux со ссылками на App Store, Google Play, amnezia.org/downloads. Плюс раздел проверки утечек (ifconfig.me, dnsleaktest, ipv6-test).\n3. **`scripts/setup-vps.sh` обновлён** — реализована команда `amneziawg-remove-client <name>`:\n   - снимает пира с live-интерфейса через `awg set $IFNAME peer $PUBKEY remove`,\n   - вырезает соответствующий блок `[Peer]` из серверного `awg0.conf` (через python3, надёжнее sed),\n   - удаляет файл `<name>.conf` из `/etc/amnezia/amneziawg/clients/`.\n4. **`docs/RUNBOOK.md` B.5** переписан на использование нового хелпера.\n5. **`docs/STATUS.md`** — TL;DR «v0.2.0 готов к использованию», добавлена Phase 7 в таблицу фаз.\n\n## Review & Testing Checklist for Human\n\nРиск: **green** (документация + один новый helper-скрипт, не трогает существующие пути).\n\n- [ ] Прочитать [новый README](https://github.com/wellskii/PupsoidAmneziaBSD/blob/devin/1779575221-usability-pass/README.md) глазами свежего пользователя — понятно ли, что делать и в какой последовательности.\n- [ ] Прочитать [docs/CLIENT-SETUP.md](https://github.com/wellskii/PupsoidAmneziaBSD/blob/devin/1779575221-usability-pass/docs/CLIENT-SETUP.md) — проверить что инструкции по платформам совпадают с актуальными приложениями (за полгода что-то могло измениться).\n- [ ] (Опционально, после merge) Проверить `amneziawg-remove-client` на VPS, где уже стоит наш сервер: добавить тестового клиента → удалить → убедиться что `awg show` его не показывает, файл `.conf` пропал, блок `[Peer]` ушёл из `awg0.conf`.\n\n### Notes\n\n- В разделе «Где купить VPS» намеренно НЕ ставил referral-ссылки (у GubernievS они есть, но это его проект и его договорённости с провайдерами). Если захочешь, можем добавить твои referral-линки потом — пришли список.\n- FAQ-пункт 7.3 «поддержка Keenetic / MikroTik / OpenWrt» — даю ссылки на профильные мануалы amnezia. Прямой интеграции с этими роутерами в нашем пакете нет.\n- Не делал отдельного `docs/FAQ.md` — встроил FAQ прямо в README, как у Губерниева. Если хочешь вынести в отдельный файл — скажи, разнесу.\n- В roadmap (STATUS.md) добавлены v0.3-фичи: автогенерация Outbound NAT-правила при assign-в-Interfaces и кнопка «Download QR» прямо в GUI peers.\n\n\nLink to Devin session: https://app.devin.ai/sessions/f7e2a86c2ec340c2a0b55c48b5b37570\nRequested by: @wellskii",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779575221-usability-pass",
+    "repository": "wellskii/PupsoidAmneziaBSD"
+  },
+  "diffRef": {
+    "repository": "wellskii/PupsoidAmneziaBSD",
+    "headSha": "78540703f158e82cf51ebcbe507ec474dd54374e",
+    "baseSha": "32e616511c338d00de9840ffc40e0c11ea6a7d96"
+  },
+  "vendoredDiffPath": "devin/devin-wellskii-PupsoidAmneziaBSD-pr2.diff",
+  "vendoredAt": "2026-05-24T03:05:03.459Z",
+  "collectedAt": "2026-05-24T03:05:03.459Z"
+}

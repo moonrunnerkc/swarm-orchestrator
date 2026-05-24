@@ -1,0 +1,1699 @@
+diff --git a/.agents/skills/x402-sandbox-1/SKILL.md b/.agents/skills/x402-sandbox-1/SKILL.md
+index 59a69cc..6ac738a 100644
+--- a/.agents/skills/x402-sandbox-1/SKILL.md
++++ b/.agents/skills/x402-sandbox-1/SKILL.md
+@@ -1,38 +1,45 @@
+-```markdown
++````markdown
+ # x402-sandbox-1 Development Patterns
+ 
+ > Auto-generated skill from repository analysis
+ 
+ ## Overview
++
+ This skill introduces the core development patterns and conventions used in the `x402-sandbox-1` TypeScript codebase. It covers file and code organization, commit message styles, and testing patterns, providing practical examples and suggested commands to streamline your workflow.
+ 
+ ## Coding Conventions
+ 
+ ### File Naming
++
+ - Use **camelCase** for file names.
+   - Example: `userProfile.ts`, `dataFetcher.test.ts`
+ 
+ ### Import Style
++
+ - Mixed import styles are used.
+   - **Named imports:**
+     ```typescript
+-    import { fetchData } from './dataFetcher';
++    import { fetchData } from "./dataFetcher";
+     ```
+   - **Default imports:**
+     ```typescript
+-    import UserProfile from './userProfile';
++    import UserProfile from "./userProfile";
+     ```
+ 
+ ### Export Style
++
+ - Prefer **named exports**.
+   - Example:
+     ```typescript
+     // dataFetcher.ts
+-    export function fetchData() { /* ... */ }
+-    export const API_URL = 'https://api.example.com';
++    export function fetchData() {
++    	/* ... */
++    }
++    export const API_URL = "https://api.example.com";
+     ```
+ 
+ ### Commit Messages
++
+ - Mixed types, but commonly use the `feat` prefix for features.
+ - Average commit message length: ~38 characters.
+   - Example: `feat: add user authentication logic`
+@@ -40,6 +47,7 @@ This skill introduces the core development patterns and conventions used in the
+ ## Workflows
+ 
+ ### Feature Development
++
+ **Trigger:** When adding a new feature.
+ **Command:** `/feature`
+ 
+@@ -50,6 +58,7 @@ This skill introduces the core development patterns and conventions used in the
+ 5. Push your branch and open a pull request.
+ 
+ ### Testing
++
+ **Trigger:** When verifying code correctness.
+ **Command:** `/test`
+ 
+@@ -62,23 +71,29 @@ This skill introduces the core development patterns and conventions used in the
+ 
+ - Test files follow the `*.test.ts` naming convention.
+ - The specific testing framework is not defined, but typical test files might look like:
++
+   ```typescript
+   // dataFetcher.test.ts
+-  import { fetchData } from './dataFetcher';
++  import { fetchData } from "./dataFetcher";
+ 
+-  describe('fetchData', () => {
+-    it('should return data', async () => {
+-      const data = await fetchData();
+-      expect(data).toBeDefined();
+-    });
++  describe("fetchData", () => {
++  	it("should return data", async () => {
++  		const data = await fetchData();
++  		expect(data).toBeDefined();
++  	});
+   });
+   ```
++````
++
+ - Place test files alongside the code they test or in a dedicated `tests/` directory.
+ 
+ ## Commands
+ 
+-| Command   | Purpose                                 |
+-|-----------|-----------------------------------------|
+-| /feature  | Start a new feature development workflow |
+-| /test     | Run or write tests for the codebase     |
++| Command  | Purpose                                  |
++| -------- | ---------------------------------------- |
++| /feature | Start a new feature development workflow |
++| /test    | Run or write tests for the codebase      |
++
++```
++
+ ```
+diff --git a/.agents/skills/x402-sandbox-1/agents/openai.yaml b/.agents/skills/x402-sandbox-1/agents/openai.yaml
+index 87592dc..7ebddf0 100644
+--- a/.agents/skills/x402-sandbox-1/agents/openai.yaml
++++ b/.agents/skills/x402-sandbox-1/agents/openai.yaml
+@@ -3,4 +3,4 @@ interface:
+   short_description: "Repo-specific patterns and workflows for x402-sandbox-1"
+   default_prompt: "Use the x402-sandbox-1 repo skill to follow existing architecture, testing, and workflow conventions."
+ policy:
+-  allow_implicit_invocation: true
+\ No newline at end of file
++  allow_implicit_invocation: true
+diff --git a/.claude/ecc-tools.json b/.claude/ecc-tools.json
+index b8633a9..d06eff2 100644
+--- a/.claude/ecc-tools.json
++++ b/.claude/ecc-tools.json
+@@ -1,227 +1,205 @@
+ {
+-  "version": "1.3",
+-  "schemaVersion": "1.0",
+-  "generatedBy": "ecc-tools",
+-  "generatedAt": "2026-05-21T10:42:18.182Z",
+-  "repo": "https://github.com/Disseveru/x402-sandbox-1",
+-  "referenceSetReadiness": {
+-    "score": 0,
+-    "present": 0,
+-    "total": 7,
+-    "items": [
+-      {
+-        "id": "deep-analyzer-corpus",
+-        "label": "Deep analyzer corpus",
+-        "status": "missing",
+-        "evidence": [],
+-        "recommendation": "Add analyzer fixture, golden, benchmark, or reference-set files that can catch analyzer regressions."
+-      },
+-      {
+-        "id": "rag-evaluator",
+-        "label": "RAG/evaluator comparison",
+-        "status": "missing",
+-        "evidence": [],
+-        "recommendation": "Add retrieval or evaluator reference-set comparison fixtures with expected ranking behavior."
+-      },
+-      {
+-        "id": "pr-salvage",
+-        "label": "PR salvage/review corpus",
+-        "status": "missing",
+-        "evidence": [],
+-        "recommendation": "Add stale-PR, review-thread, reopen-flow, or salvage reference cases for queue cleanup automation."
+-      },
+-      {
+-        "id": "discussion-triage",
+-        "label": "Discussion triage corpus",
+-        "status": "missing",
+-        "evidence": [],
+-        "recommendation": "Add public discussion triage fixtures, golden cases, or reference sets for informational, answered, and no-response classifications."
+-      },
+-      {
+-        "id": "harness-compatibility",
+-        "label": "Harness compatibility",
+-        "status": "missing",
+-        "evidence": [],
+-        "recommendation": "Add cross-harness, adapter-compliance, or harness-audit evidence for Claude, Codex, OpenCode, Zed, dmux, and agent surfaces."
+-      },
+-      {
+-        "id": "security-evidence",
+-        "label": "Security evidence",
+-        "status": "missing",
+-        "evidence": [],
+-        "recommendation": "Attach security evidence such as SBOMs, SARIF, audit reports, or AgentShield evidence packs."
+-      },
+-      {
+-        "id": "ci-failure-mode",
+-        "label": "CI failure-mode evidence",
+-        "status": "missing",
+-        "evidence": [],
+-        "recommendation": "Add captured CI failure logs, dry-run fixtures, or troubleshooting docs for common workflow failure modes."
+-      }
+-    ]
+-  },
+-  "profiles": {
+-    "requested": "core",
+-    "recommended": "core",
+-    "effective": "core",
+-    "requestedAlias": "core",
+-    "recommendedAlias": "core",
+-    "effectiveAlias": "core"
+-  },
+-  "requestedProfile": "core",
+-  "profile": "core",
+-  "recommendedProfile": "core",
+-  "effectiveProfile": "core",
+-  "tier": "free",
+-  "requestedComponents": [
+-    "repo-baseline"
+-  ],
+-  "selectedComponents": [
+-    "repo-baseline"
+-  ],
+-  "requestedAddComponents": [],
+-  "requestedRemoveComponents": [],
+-  "blockedRemovalComponents": [],
+-  "tierFilteredComponents": [],
+-  "requestedRootPackages": [
+-    "runtime-core"
+-  ],
+-  "selectedRootPackages": [
+-    "runtime-core"
+-  ],
+-  "requestedPackages": [
+-    "runtime-core"
+-  ],
+-  "requestedAddPackages": [],
+-  "requestedRemovePackages": [],
+-  "selectedPackages": [
+-    "runtime-core"
+-  ],
+-  "packages": [
+-    "runtime-core"
+-  ],
+-  "blockedRemovalPackages": [],
+-  "tierFilteredRootPackages": [],
+-  "tierFilteredPackages": [],
+-  "conflictingPackages": [],
+-  "dependencyGraph": {
+-    "runtime-core": []
+-  },
+-  "resolutionOrder": [
+-    "runtime-core"
+-  ],
+-  "requestedModules": [
+-    "runtime-core"
+-  ],
+-  "selectedModules": [
+-    "runtime-core"
+-  ],
+-  "modules": [
+-    "runtime-core"
+-  ],
+-  "managedFiles": [
+-    ".claude/skills/x402-sandbox-1/SKILL.md",
+-    ".agents/skills/x402-sandbox-1/SKILL.md",
+-    ".agents/skills/x402-sandbox-1/agents/openai.yaml",
+-    ".claude/identity.json",
+-    ".codex/config.toml",
+-    ".codex/AGENTS.md",
+-    ".codex/agents/explorer.toml",
+-    ".codex/agents/reviewer.toml",
+-    ".codex/agents/docs-researcher.toml",
+-    ".claude/homunculus/instincts/inherited/x402-sandbox-1-instincts.yaml"
+-  ],
+-  "packageFiles": {
+-    "runtime-core": [
+-      ".claude/skills/x402-sandbox-1/SKILL.md",
+-      ".agents/skills/x402-sandbox-1/SKILL.md",
+-      ".agents/skills/x402-sandbox-1/agents/openai.yaml",
+-      ".claude/identity.json",
+-      ".codex/config.toml",
+-      ".codex/AGENTS.md",
+-      ".codex/agents/explorer.toml",
+-      ".codex/agents/reviewer.toml",
+-      ".codex/agents/docs-researcher.toml",
+-      ".claude/homunculus/instincts/inherited/x402-sandbox-1-instincts.yaml"
+-    ]
+-  },
+-  "moduleFiles": {
+-    "runtime-core": [
+-      ".claude/skills/x402-sandbox-1/SKILL.md",
+-      ".agents/skills/x402-sandbox-1/SKILL.md",
+-      ".agents/skills/x402-sandbox-1/agents/openai.yaml",
+-      ".claude/identity.json",
+-      ".codex/config.toml",
+-      ".codex/AGENTS.md",
+-      ".codex/agents/explorer.toml",
+-      ".codex/agents/reviewer.toml",
+-      ".codex/agents/docs-researcher.toml",
+-      ".claude/homunculus/instincts/inherited/x402-sandbox-1-instincts.yaml"
+-    ]
+-  },
+-  "files": [
+-    {
+-      "moduleId": "runtime-core",
+-      "path": ".claude/skills/x402-sandbox-1/SKILL.md",
+-      "description": "Repository-specific Claude Code skill generated from git history."
+-    },
+-    {
+-      "moduleId": "runtime-core",
+-      "path": ".agents/skills/x402-sandbox-1/SKILL.md",
+-      "description": "Codex-facing copy of the generated repository skill."
+-    },
+-    {
+-      "moduleId": "runtime-core",
+-      "path": ".agents/skills/x402-sandbox-1/agents/openai.yaml",
+-      "description": "Codex skill metadata so the repo skill appears cleanly in the skill interface."
+-    },
+-    {
+-      "moduleId": "runtime-core",
+-      "path": ".claude/identity.json",
+-      "description": "Suggested identity.json baseline derived from repository conventions."
+-    },
+-    {
+-      "moduleId": "runtime-core",
+-      "path": ".codex/config.toml",
+-      "description": "Repo-local Codex MCP and multi-agent baseline aligned with ECC defaults."
+-    },
+-    {
+-      "moduleId": "runtime-core",
+-      "path": ".codex/AGENTS.md",
+-      "description": "Codex usage guide that points at the generated repo skill and workflow bundle."
+-    },
+-    {
+-      "moduleId": "runtime-core",
+-      "path": ".codex/agents/explorer.toml",
+-      "description": "Read-only explorer role config for Codex multi-agent work."
+-    },
+-    {
+-      "moduleId": "runtime-core",
+-      "path": ".codex/agents/reviewer.toml",
+-      "description": "Read-only reviewer role config focused on correctness and security."
+-    },
+-    {
+-      "moduleId": "runtime-core",
+-      "path": ".codex/agents/docs-researcher.toml",
+-      "description": "Read-only docs researcher role config for API verification."
+-    },
+-    {
+-      "moduleId": "runtime-core",
+-      "path": ".claude/homunculus/instincts/inherited/x402-sandbox-1-instincts.yaml",
+-      "description": "Continuous-learning instincts derived from repository patterns."
+-    }
+-  ],
+-  "workflows": [],
+-  "adapters": {
+-    "claudeCode": {
+-      "skillPath": ".claude/skills/x402-sandbox-1/SKILL.md",
+-      "identityPath": ".claude/identity.json",
+-      "commandPaths": []
+-    },
+-    "codex": {
+-      "configPath": ".codex/config.toml",
+-      "agentsGuidePath": ".codex/AGENTS.md",
+-      "skillPath": ".agents/skills/x402-sandbox-1/SKILL.md"
+-    }
+-  }
+-}
+\ No newline at end of file
++	"version": "1.3",
++	"schemaVersion": "1.0",
++	"generatedBy": "ecc-tools",
++	"generatedAt": "2026-05-21T10:42:18.182Z",
++	"repo": "https://github.com/Disseveru/x402-sandbox-1",
++	"referenceSetReadiness": {
++		"score": 0,
++		"present": 0,
++		"total": 7,
++		"items": [
++			{
++				"id": "deep-analyzer-corpus",
++				"label": "Deep analyzer corpus",
++				"status": "missing",
++				"evidence": [],
++				"recommendation": "Add analyzer fixture, golden, benchmark, or reference-set files that can catch analyzer regressions."
++			},
++			{
++				"id": "rag-evaluator",
++				"label": "RAG/evaluator comparison",
++				"status": "missing",
++				"evidence": [],
++				"recommendation": "Add retrieval or evaluator reference-set comparison fixtures with expected ranking behavior."
++			},
++			{
++				"id": "pr-salvage",
++				"label": "PR salvage/review corpus",
++				"status": "missing",
++				"evidence": [],
++				"recommendation": "Add stale-PR, review-thread, reopen-flow, or salvage reference cases for queue cleanup automation."
++			},
++			{
++				"id": "discussion-triage",
++				"label": "Discussion triage corpus",
++				"status": "missing",
++				"evidence": [],
++				"recommendation": "Add public discussion triage fixtures, golden cases, or reference sets for informational, answered, and no-response classifications."
++			},
++			{
++				"id": "harness-compatibility",
++				"label": "Harness compatibility",
++				"status": "missing",
++				"evidence": [],
++				"recommendation": "Add cross-harness, adapter-compliance, or harness-audit evidence for Claude, Codex, OpenCode, Zed, dmux, and agent surfaces."
++			},
++			{
++				"id": "security-evidence",
++				"label": "Security evidence",
++				"status": "missing",
++				"evidence": [],
++				"recommendation": "Attach security evidence such as SBOMs, SARIF, audit reports, or AgentShield evidence packs."
++			},
++			{
++				"id": "ci-failure-mode",
++				"label": "CI failure-mode evidence",
++				"status": "missing",
++				"evidence": [],
++				"recommendation": "Add captured CI failure logs, dry-run fixtures, or troubleshooting docs for common workflow failure modes."
++			}
++		]
++	},
++	"profiles": {
++		"requested": "core",
++		"recommended": "core",
++		"effective": "core",
++		"requestedAlias": "core",
++		"recommendedAlias": "core",
++		"effectiveAlias": "core"
++	},
++	"requestedProfile": "core",
++	"profile": "core",
++	"recommendedProfile": "core",
++	"effectiveProfile": "core",
++	"tier": "free",
++	"requestedComponents": ["repo-baseline"],
++	"selectedComponents": ["repo-baseline"],
++	"requestedAddComponents": [],
++	"requestedRemoveComponents": [],
++	"blockedRemovalComponents": [],
++	"tierFilteredComponents": [],
++	"requestedRootPackages": ["runtime-core"],
++	"selectedRootPackages": ["runtime-core"],
++	"requestedPackages": ["runtime-core"],
++	"requestedAddPackages": [],
++	"requestedRemovePackages": [],
++	"selectedPackages": ["runtime-core"],
++	"packages": ["runtime-core"],
++	"blockedRemovalPackages": [],
++	"tierFilteredRootPackages": [],
++	"tierFilteredPackages": [],
++	"conflictingPackages": [],
++	"dependencyGraph": {
++		"runtime-core": []
++	},
++	"resolutionOrder": ["runtime-core"],
++	"requestedModules": ["runtime-core"],
++	"selectedModules": ["runtime-core"],
++	"modules": ["runtime-core"],
++	"managedFiles": [
++		".claude/skills/x402-sandbox-1/SKILL.md",
++		".agents/skills/x402-sandbox-1/SKILL.md",
++		".agents/skills/x402-sandbox-1/agents/openai.yaml",
++		".claude/identity.json",
++		".codex/config.toml",
++		".codex/AGENTS.md",
++		".codex/agents/explorer.toml",
++		".codex/agents/reviewer.toml",
++		".codex/agents/docs-researcher.toml",
++		".claude/homunculus/instincts/inherited/x402-sandbox-1-instincts.yaml"
++	],
++	"packageFiles": {
++		"runtime-core": [
++			".claude/skills/x402-sandbox-1/SKILL.md",
++			".agents/skills/x402-sandbox-1/SKILL.md",
++			".agents/skills/x402-sandbox-1/agents/openai.yaml",
++			".claude/identity.json",
++			".codex/config.toml",
++			".codex/AGENTS.md",
++			".codex/agents/explorer.toml",
++			".codex/agents/reviewer.toml",
++			".codex/agents/docs-researcher.toml",
++			".claude/homunculus/instincts/inherited/x402-sandbox-1-instincts.yaml"
++		]
++	},
++	"moduleFiles": {
++		"runtime-core": [
++			".claude/skills/x402-sandbox-1/SKILL.md",
++			".agents/skills/x402-sandbox-1/SKILL.md",
++			".agents/skills/x402-sandbox-1/agents/openai.yaml",
++			".claude/identity.json",
++			".codex/config.toml",
++			".codex/AGENTS.md",
++			".codex/agents/explorer.toml",
++			".codex/agents/reviewer.toml",
++			".codex/agents/docs-researcher.toml",
++			".claude/homunculus/instincts/inherited/x402-sandbox-1-instincts.yaml"
++		]
++	},
++	"files": [
++		{
++			"moduleId": "runtime-core",
++			"path": ".claude/skills/x402-sandbox-1/SKILL.md",
++			"description": "Repository-specific Claude Code skill generated from git history."
++		},
++		{
++			"moduleId": "runtime-core",
++			"path": ".agents/skills/x402-sandbox-1/SKILL.md",
++			"description": "Codex-facing copy of the generated repository skill."
++		},
++		{
++			"moduleId": "runtime-core",
++			"path": ".agents/skills/x402-sandbox-1/agents/openai.yaml",
++			"description": "Codex skill metadata so the repo skill appears cleanly in the skill interface."
++		},
++		{
++			"moduleId": "runtime-core",
++			"path": ".claude/identity.json",
++			"description": "Suggested identity.json baseline derived from repository conventions."
++		},
++		{
++			"moduleId": "runtime-core",
++			"path": ".codex/config.toml",
++			"description": "Repo-local Codex MCP and multi-agent baseline aligned with ECC defaults."
++		},
++		{
++			"moduleId": "runtime-core",
++			"path": ".codex/AGENTS.md",
++			"description": "Codex usage guide that points at the generated repo skill and workflow bundle."
++		},
++		{
++			"moduleId": "runtime-core",
++			"path": ".codex/agents/explorer.toml",
++			"description": "Read-only explorer role config for Codex multi-agent work."
++		},
++		{
++			"moduleId": "runtime-core",
++			"path": ".codex/agents/reviewer.toml",
++			"description": "Read-only reviewer role config focused on correctness and security."
++		},
++		{
++			"moduleId": "runtime-core",
++			"path": ".codex/agents/docs-researcher.toml",
++			"description": "Read-only docs researcher role config for API verification."
++		},
++		{
++			"moduleId": "runtime-core",
++			"path": ".claude/homunculus/instincts/inherited/x402-sandbox-1-instincts.yaml",
++			"description": "Continuous-learning instincts derived from repository patterns."
++		}
++	],
++	"workflows": [],
++	"adapters": {
++		"claudeCode": {
++			"skillPath": ".claude/skills/x402-sandbox-1/SKILL.md",
++			"identityPath": ".claude/identity.json",
++			"commandPaths": []
++		},
++		"codex": {
++			"configPath": ".codex/config.toml",
++			"agentsGuidePath": ".codex/AGENTS.md",
++			"skillPath": ".agents/skills/x402-sandbox-1/SKILL.md"
++		}
++	}
++}
+diff --git a/.claude/identity.json b/.claude/identity.json
+index 79ed9ca..c209ceb 100644
+--- a/.claude/identity.json
++++ b/.claude/identity.json
+@@ -1,14 +1,12 @@
+ {
+-  "version": "2.0",
+-  "technicalLevel": "technical",
+-  "preferredStyle": {
+-    "verbosity": "detailed",
+-    "codeComments": true,
+-    "explanations": true
+-  },
+-  "domains": [
+-    "typescript"
+-  ],
+-  "suggestedBy": "ecc-tools-repo-analysis",
+-  "createdAt": "2026-05-21T10:42:35.977Z"
+-}
+\ No newline at end of file
++	"version": "2.0",
++	"technicalLevel": "technical",
++	"preferredStyle": {
++		"verbosity": "detailed",
++		"codeComments": true,
++		"explanations": true
++	},
++	"domains": ["typescript"],
++	"suggestedBy": "ecc-tools-repo-analysis",
++	"createdAt": "2026-05-21T10:42:35.977Z"
++}
+diff --git a/.claude/skills/x402-sandbox-1/SKILL.md b/.claude/skills/x402-sandbox-1/SKILL.md
+index 59a69cc..6ac738a 100644
+--- a/.claude/skills/x402-sandbox-1/SKILL.md
++++ b/.claude/skills/x402-sandbox-1/SKILL.md
+@@ -1,38 +1,45 @@
+-```markdown
++````markdown
+ # x402-sandbox-1 Development Patterns
+ 
+ > Auto-generated skill from repository analysis
+ 
+ ## Overview
++
+ This skill introduces the core development patterns and conventions used in the `x402-sandbox-1` TypeScript codebase. It covers file and code organization, commit message styles, and testing patterns, providing practical examples and suggested commands to streamline your workflow.
+ 
+ ## Coding Conventions
+ 
+ ### File Naming
++
+ - Use **camelCase** for file names.
+   - Example: `userProfile.ts`, `dataFetcher.test.ts`
+ 
+ ### Import Style
++
+ - Mixed import styles are used.
+   - **Named imports:**
+     ```typescript
+-    import { fetchData } from './dataFetcher';
++    import { fetchData } from "./dataFetcher";
+     ```
+   - **Default imports:**
+     ```typescript
+-    import UserProfile from './userProfile';
++    import UserProfile from "./userProfile";
+     ```
+ 
+ ### Export Style
++
+ - Prefer **named exports**.
+   - Example:
+     ```typescript
+     // dataFetcher.ts
+-    export function fetchData() { /* ... */ }
+-    export const API_URL = 'https://api.example.com';
++    export function fetchData() {
++    	/* ... */
++    }
++    export const API_URL = "https://api.example.com";
+     ```
+ 
+ ### Commit Messages
++
+ - Mixed types, but commonly use the `feat` prefix for features.
+ - Average commit message length: ~38 characters.
+   - Example: `feat: add user authentication logic`
+@@ -40,6 +47,7 @@ This skill introduces the core development patterns and conventions used in the
+ ## Workflows
+ 
+ ### Feature Development
++
+ **Trigger:** When adding a new feature.
+ **Command:** `/feature`
+ 
+@@ -50,6 +58,7 @@ This skill introduces the core development patterns and conventions used in the
+ 5. Push your branch and open a pull request.
+ 
+ ### Testing
++
+ **Trigger:** When verifying code correctness.
+ **Command:** `/test`
+ 
+@@ -62,23 +71,29 @@ This skill introduces the core development patterns and conventions used in the
+ 
+ - Test files follow the `*.test.ts` naming convention.
+ - The specific testing framework is not defined, but typical test files might look like:
++
+   ```typescript
+   // dataFetcher.test.ts
+-  import { fetchData } from './dataFetcher';
++  import { fetchData } from "./dataFetcher";
+ 
+-  describe('fetchData', () => {
+-    it('should return data', async () => {
+-      const data = await fetchData();
+-      expect(data).toBeDefined();
+-    });
++  describe("fetchData", () => {
++  	it("should return data", async () => {
++  		const data = await fetchData();
++  		expect(data).toBeDefined();
++  	});
+   });
+   ```
++````
++
+ - Place test files alongside the code they test or in a dedicated `tests/` directory.
+ 
+ ## Commands
+ 
+-| Command   | Purpose                                 |
+-|-----------|-----------------------------------------|
+-| /feature  | Start a new feature development workflow |
+-| /test     | Run or write tests for the codebase     |
++| Command  | Purpose                                  |
++| -------- | ---------------------------------------- |
++| /feature | Start a new feature development workflow |
++| /test    | Run or write tests for the codebase      |
++
++```
++
+ ```
+diff --git a/.codex/AGENTS.md b/.codex/AGENTS.md
+index 7a32b35..01c07a5 100644
+--- a/.codex/AGENTS.md
++++ b/.codex/AGENTS.md
+@@ -23,4 +23,4 @@ The generated baseline enables GitHub, Context7, Exa, Memory, Playwright, and Se
+ 
+ - No dedicated workflow command files were generated for this repo.
+ 
+-Use these workflow files as reusable task scaffolds when the detected repository workflows recur.
+\ No newline at end of file
++Use these workflow files as reusable task scaffolds when the detected repository workflows recur.
+diff --git a/.github/workflows/deploy.yml b/.github/workflows/deploy.yml
+index 83f9472..56cd381 100644
+--- a/.github/workflows/deploy.yml
++++ b/.github/workflows/deploy.yml
+@@ -57,4 +57,3 @@ jobs:
+             JWT_SECRET
+         env:
+           JWT_SECRET: ${{ secrets.JWT_SECRET }}
+-          
+diff --git a/.prettierignore b/.prettierignore
+index 5c8e30a..089bd7a 100644
+--- a/.prettierignore
++++ b/.prettierignore
+@@ -17,3 +17,6 @@ worker-configuration.d.ts
+ 
+ # Lock files
+ package-lock.json
++
++# Mixed YAML/Markdown files that Prettier can't parse
++.claude/homunculus/instincts/inherited/*.yaml
+diff --git a/SKILL.md b/SKILL.md
+index 63a3691..e3e55fd 100644
+--- a/SKILL.md
++++ b/SKILL.md
+@@ -2,18 +2,22 @@
+ name: shadow-state-sandbox
+ description: A secure simulation environment for AI agents to dry-run code or transactions before execution. Use this to prevent errors and verify safety.
+ pricing: 0.02 USDC per simulation
+-network: Base (Layer 2)
++network: Base mainnet
++pay_to: "0xed7d30e8bc643503f9da261ed8e623bb6ecf6189"
+ ---
+ 
+ # Shadow State Sandbox Skill
+ 
+ ## When to use
++
+ Use this skill when an agent needs to verify if a JSON payload, a script, or a blockchain transaction will succeed without actually committing resources or spending real gas.
+ 
+ ## How to use
++
+ 1. **Request Payment:** Send a GET request to the endpoint to receive the payment address and invoice.
+-2. **Execute Payment:** Send 0.02 USDC on the Base network.
++2. **Execute Payment:** Send 0.02 USDC on Base mainnet to `0xed7d30e8bc643503f9da261ed8e623bb6ecf6189`.
+ 3. **Submit Simulation:** POST the JSON payload to `/api/simulate` with the header `x-402-tx-hash` containing your transaction proof.
+ 
+ ## Expected Output
++
+ The sandbox will return a `simulation_status` and `dry_run_logs` showing exactly what would have happened in a live environment.
+diff --git a/TESTING.md b/TESTING.md
+index 0c68ecd..fc62915 100644
+--- a/TESTING.md
++++ b/TESTING.md
+@@ -6,14 +6,13 @@ This guide explains how to test the x402 payment flow with cookie-based authenti
+ 
+ Before testing, you need:
+ 
+-1. **Base Sepolia testnet USDC**
+-   - Get testnet ETH from a Base Sepolia faucet
+-   - Get testnet USDC from Coinbase faucet or similar
++1. **Base mainnet USDC**
++   - Ensure you have ETH on Base for gas fees
++   - Ensure you have USDC on Base mainnet
+ 
+-2. **A test wallet with a private key**
+-   - Create a test wallet (DO NOT use a wallet with real funds)
++2. **A wallet with a private key**
++   - Use a wallet funded with Base mainnet USDC
+    - Export the private key
+-   - Fund it with Base Sepolia testnet USDC
+ 
+ 3. **The worker running locally**
+    ```bash
+@@ -46,7 +45,7 @@ The test client will:
+ 🧪 Testing x402 Payment Flow
+ 
+ Server: http://localhost:8787
+-Network: Base Sepolia (testnet)
++Network: Base mainnet
+ 
+ 📝 Step 1: Requesting /premium without payment...
+ ✅ Received 402 Payment Required
+@@ -143,8 +142,8 @@ You should receive the authenticated response without being asked for payment!
+ 
+ ### "Invalid payment" error
+ 
+-- Check that your wallet has enough testnet USDC
+-- Verify you're on Base Sepolia network
++- Check that your wallet has enough USDC on Base mainnet
++- Verify you're on Base mainnet
+ - Ensure the payment amount matches the requirement
+ 
+ ### "Payment expired" error
+@@ -172,8 +171,8 @@ The test client uses these environment variables:
+ 
+ ## Security Notes
+ 
+-⚠️ **NEVER use a private key from a wallet with real funds for testing!**
++⚠️ **Use a dedicated wallet with only the USDC needed for testing!**
+ 
+-- Create a new test wallet specifically for Base Sepolia testnet
+-- Only fund it with testnet tokens (no real value)
++- Use a separate wallet specifically for Base mainnet testing
++- Only fund it with the minimum USDC required for test payments
+ - The `.dev.vars` file is gitignored - don't commit secrets!
+diff --git a/package-lock.json b/package-lock.json
+index 20d49d5..91265bb 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,12 +1,14 @@
+ {
+-	"name": "x402-proxy-template",
++	"name": "x402-sandbox-1",
+ 	"lockfileVersion": 3,
+ 	"requires": true,
+ 	"packages": {
+ 		"": {
+-			"name": "x402-proxy-template",
++			"name": "x402-sandbox-1",
+ 			"dependencies": {
++				"@ai-sdk/xai": "^3.0.92",
+ 				"@coinbase/x402": "2.0.0",
++				"ai": "^6.0.191",
+ 				"hono": "4.11.1",
+ 				"x402-hono": "1.0.0"
+ 			},
+@@ -28,6 +30,85 @@
+ 			"integrity": "sha512-nhCBV3quEgesuf7c7KYfperqSS14T8bYuvJ8PcLJp6znkZpFc0AuW4qBtr8eKVyPPe/8RSr7sglCWPU5eaxwKQ==",
+ 			"license": "MIT"
+ 		},
++		"node_modules/@ai-sdk/gateway": {
++			"version": "3.0.120",
++			"resolved": "https://registry.npmjs.org/@ai-sdk/gateway/-/gateway-3.0.120.tgz",
++			"integrity": "sha512-MYKAeD2q7/sa1ZdqtL2tw0Me0B8Tok6Q/fhkJDhJl39dG8u+VBlWO9yk9lcdm784bM418o1EKObo4aOxs6+18Q==",
++			"license": "Apache-2.0",
++			"dependencies": {
++				"@ai-sdk/provider": "3.0.10",
++				"@ai-sdk/provider-utils": "4.0.27",
++				"@vercel/oidc": "3.2.0"
++			},
++			"engines": {
++				"node": ">=18"
++			},
++			"peerDependencies": {
++				"zod": "^3.25.76 || ^4.1.8"
++			}
++		},
++		"node_modules/@ai-sdk/openai-compatible": {
++			"version": "2.0.48",
++			"resolved": "https://registry.npmjs.org/@ai-sdk/openai-compatible/-/openai-compatible-2.0.48.tgz",
++			"integrity": "sha512-z9MC6M4Oh/yUY/F/eszOtO8wc2nMz99XmZQKd2gWTtyIfe716xTfrKe3aYZKg20NZDtyjqPPKPSR+wqz7q1T7Q==",
++			"license": "Apache-2.0",
++			"dependencies": {
++				"@ai-sdk/provider": "3.0.10",
++				"@ai-sdk/provider-utils": "4.0.27"
++			},
++			"engines": {
++				"node": ">=18"
++			},
++			"peerDependencies": {
++				"zod": "^3.25.76 || ^4.1.8"
++			}
++		},
++		"node_modules/@ai-sdk/provider": {
++			"version": "3.0.10",
++			"resolved": "https://registry.npmjs.org/@ai-sdk/provider/-/provider-3.0.10.tgz",
++			"integrity": "sha512-Q3BZ27qfpYqnCYGvE3vt+Qi6LGOF9R5Nmzn+9JoM1lCRsD9mYaIhfJLkSunN48nfGXJ6n+XNV0J/XVpqGQl7Dw==",
++			"license": "Apache-2.0",
++			"dependencies": {
++				"json-schema": "^0.4.0"
++			},
++			"engines": {
++				"node": ">=18"
++			}
++		},
++		"node_modules/@ai-sdk/provider-utils": {
++			"version": "4.0.27",
++			"resolved": "https://registry.npmjs.org/@ai-sdk/provider-utils/-/provider-utils-4.0.27.tgz",
++			"integrity": "sha512-ubkAJ+xODouwtmN1tYlvTPphH1hPOBfZaEQe8U7skGvFAnIRs9PPpsq57bC2+Ky/MB4yzhd6YOsxTAx9sGpazw==",
++			"license": "Apache-2.0",
++			"dependencies": {
++				"@ai-sdk/provider": "3.0.10",
++				"@standard-schema/spec": "^1.1.0",
++				"eventsource-parser": "^3.0.8"
++			},
++			"engines": {
++				"node": ">=18"
++			},
++			"peerDependencies": {
++				"zod": "^3.25.76 || ^4.1.8"
++			}
++		},
++		"node_modules/@ai-sdk/xai": {
++			"version": "3.0.92",
++			"resolved": "https://registry.npmjs.org/@ai-sdk/xai/-/xai-3.0.92.tgz",
++			"integrity": "sha512-yqRMdEVfSkZCXs5mqeKfYOuQElo93igwz/4zWbYkhZWAW7tDh+5uqRef6MtQVYF/bTC1EsdbeO9DtsOtAZMOLA==",
++			"license": "Apache-2.0",
++			"dependencies": {
++				"@ai-sdk/openai-compatible": "2.0.48",
++				"@ai-sdk/provider": "3.0.10",
++				"@ai-sdk/provider-utils": "4.0.27"
++			},
++			"engines": {
++				"node": ">=18"
++			},
++			"peerDependencies": {
++				"zod": "^3.25.76 || ^4.1.8"
++			}
++		},
+ 		"node_modules/@babel/runtime": {
+ 			"version": "7.28.4",
+ 			"resolved": "https://registry.npmjs.org/@babel/runtime/-/runtime-7.28.4.tgz",
+@@ -2103,6 +2184,15 @@
+ 				"url": "https://paulmillr.com/funding/"
+ 			}
+ 		},
++		"node_modules/@opentelemetry/api": {
++			"version": "1.9.1",
++			"resolved": "https://registry.npmjs.org/@opentelemetry/api/-/api-1.9.1.tgz",
++			"integrity": "sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q==",
++			"license": "Apache-2.0",
++			"engines": {
++				"node": ">=8.0.0"
++			}
++		},
+ 		"node_modules/@paulmillr/qr": {
+ 			"version": "0.2.1",
+ 			"resolved": "https://registry.npmjs.org/@paulmillr/qr/-/qr-0.2.1.tgz",
+@@ -4263,6 +4353,12 @@
+ 			"dev": true,
+ 			"license": "CC0-1.0"
+ 		},
++		"node_modules/@standard-schema/spec": {
++			"version": "1.1.0",
++			"resolved": "https://registry.npmjs.org/@standard-schema/spec/-/spec-1.1.0.tgz",
++			"integrity": "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==",
++			"license": "MIT"
++		},
+ 		"node_modules/@swc/helpers": {
+ 			"version": "0.5.17",
+ 			"resolved": "https://registry.npmjs.org/@swc/helpers/-/helpers-0.5.17.tgz",
+@@ -4604,6 +4700,15 @@
+ 				"url": "https://opencollective.com/eslint"
+ 			}
+ 		},
++		"node_modules/@vercel/oidc": {
++			"version": "3.2.0",
++			"resolved": "https://registry.npmjs.org/@vercel/oidc/-/oidc-3.2.0.tgz",
++			"integrity": "sha512-UycprH3T6n3jH0k44NHMa7pnFHGu/N05MjojYr+Mc6I7obkoLIJujSWwin1pCvdy/eOxrI/l3uDLQsmcrOb4ug==",
++			"license": "Apache-2.0",
++			"engines": {
++				"node": ">= 20"
++			}
++		},
+ 		"node_modules/@wagmi/connectors": {
+ 			"version": "6.2.0",
+ 			"resolved": "https://registry.npmjs.org/@wagmi/connectors/-/connectors-6.2.0.tgz",
+@@ -5394,6 +5499,24 @@
+ 				"node": ">= 8.0.0"
+ 			}
+ 		},
++		"node_modules/ai": {
++			"version": "6.0.191",
++			"resolved": "https://registry.npmjs.org/ai/-/ai-6.0.191.tgz",
++			"integrity": "sha512-zAxvjKebQE7YkSyyNIl0OM7i6/zygnKeF+yNUjD4nWOelYrG+LpDd6RnH6mjySI4zUpZ7o4wbnmAy8jc6u98vQ==",
++			"license": "Apache-2.0",
++			"dependencies": {
++				"@ai-sdk/gateway": "3.0.120",
++				"@ai-sdk/provider": "3.0.10",
++				"@ai-sdk/provider-utils": "4.0.27",
++				"@opentelemetry/api": "^1.9.0"
++			},
++			"engines": {
++				"node": ">=18"
++			},
++			"peerDependencies": {
++				"zod": "^3.25.76 || ^4.1.8"
++			}
++		},
+ 		"node_modules/ajv": {
+ 			"version": "6.12.6",
+ 			"resolved": "https://registry.npmjs.org/ajv/-/ajv-6.12.6.tgz",
+@@ -6800,6 +6923,15 @@
+ 				"node": ">=0.8.x"
+ 			}
+ 		},
++		"node_modules/eventsource-parser": {
++			"version": "3.0.8",
++			"resolved": "https://registry.npmjs.org/eventsource-parser/-/eventsource-parser-3.0.8.tgz",
++			"integrity": "sha512-70QWGkr4snxr0OXLRWsFLeRBIRPuQOvt4s8QYjmUlmlkyTZkRqS7EDVRZtzU3TiyDbXSzaOeF0XUKy8PchzukQ==",
++			"license": "MIT",
++			"engines": {
++				"node": ">=18.0.0"
++			}
++		},
+ 		"node_modules/exit-hook": {
+ 			"version": "2.2.1",
+ 			"resolved": "https://registry.npmjs.org/exit-hook/-/exit-hook-2.2.1.tgz",
+@@ -7622,6 +7754,12 @@
+ 			"integrity": "sha512-RJ9YYNCkhVDBuP4zN5BBtYAzEl03yq/jIIsyif0JY9qyJuQQZNeDK7anAPKKlyEtLSj2s8h6hNh2F8zO5q7ScA==",
+ 			"license": "ISC"
+ 		},
++		"node_modules/json-schema": {
++			"version": "0.4.0",
++			"resolved": "https://registry.npmjs.org/json-schema/-/json-schema-0.4.0.tgz",
++			"integrity": "sha512-es94M3nTIfsEPisRafak+HDLfHXnKBhV3vU5eqPcS3flIWqcxJWgXHXiey3YrpaNsanY5ei1VoYEbOzijuq9BA==",
++			"license": "(AFL-2.1 OR BSD-3-Clause)"
++		},
+ 		"node_modules/json-schema-traverse": {
+ 			"version": "0.4.1",
+ 			"resolved": "https://registry.npmjs.org/json-schema-traverse/-/json-schema-traverse-0.4.1.tgz",
+diff --git a/package.json b/package.json
+index ccdfd9f..20d01e8 100644
+--- a/package.json
++++ b/package.json
+@@ -20,7 +20,9 @@
+ 		}
+ 	},
+ 	"dependencies": {
++		"@ai-sdk/xai": "^3.0.92",
+ 		"@coinbase/x402": "2.0.0",
++		"ai": "^6.0.191",
+ 		"hono": "4.11.1",
+ 		"x402-hono": "1.0.0"
+ 	},
+diff --git a/src/env.ts b/src/env.ts
+index 18e5def..e637607 100644
+--- a/src/env.ts
++++ b/src/env.ts
+@@ -7,9 +7,11 @@
+ 
+ import type { JWTPayload } from "./jwt";
+ 
+-export interface Env extends CloudflareBindings {
++export interface Env extends Omit<CloudflareBindings, "ORIGIN_URL"> {
+ 	/** Secret for signing JWT tokens - set via .dev.vars locally or `wrangler secret put` in production */
+ 	JWT_SECRET: string;
++	/** xAI API key for Grok integration - set via .dev.vars locally or `wrangler secret put` in production */
++	XAI_API_KEY: string;
+ 	/**
+ 	 * Optional origin URL for External Origin mode.
+ 	 * When set, requests are rewritten to this URL instead of using DNS-based routing.
+diff --git a/src/index.ts b/src/index.ts
+index e1f1656..a8d028b 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -6,6 +6,8 @@ import { createProtectedRoute, type ProtectedRouteConfig } from "./auth";
+ import { generateJWT } from "./jwt";
+ import { hasBotManagementException } from "./bot-management";
+ import type { AppContext, Env } from "./env";
++import { createXai } from "@ai-sdk/xai";
++import { generateText } from "ai";
+ 
+ const app = new Hono<AppContext>();
+ 
+@@ -321,4 +323,179 @@ app.get("/__x402/protected", (c) => {
+ 	});
+ });
+ 
++/**
++ * Shadow State Sandbox - AI-powered simulation environment
++ * POST /api/simulate
++ *
++ * Protected by x402 payment system ($0.02 USDC on Base mainnet)
++ * Uses Grok AI via xAI SDK to provide intelligent simulation analysis
++ *
++ * Accepts rich JSON payload describing what to simulate and returns
++ * detailed analysis including success prediction, gas estimates, and AI insights
++ */
++app.post("/api/simulate", async (c) => {
++	try {
++		// Validate XAI_API_KEY is configured
++		if (!c.env.XAI_API_KEY) {
++			return c.json(
++				{
++					error:
++						"Server misconfigured: XAI_API_KEY not set. Contact administrator.",
++					simulation_status: "error",
++					timestamp: Date.now(),
++				},
++				500
++			);
++		}
++
++		// Parse request body
++		let payload: unknown;
++		try {
++			payload = await c.req.json();
++		} catch {
++			return c.json(
++				{
++					error: "Invalid JSON payload",
++					simulation_status: "error",
++					timestamp: Date.now(),
++				},
++				400
++			);
++		}
++
++		// Validate payload structure
++		if (!payload || typeof payload !== "object") {
++			return c.json(
++				{
++					error: "Payload must be a valid JSON object",
++					simulation_status: "error",
++					timestamp: Date.now(),
++				},
++				400
++			);
++		}
++
++		const simulationPayload = payload as Record<string, unknown>;
++
++		// Build comprehensive analysis prompt for Grok
++		const analysisPrompt = `You are an expert blockchain and code simulation analyzer. Analyze the following simulation request and provide detailed insights.
++
++Simulation Request:
++${JSON.stringify(simulationPayload, null, 2)}
++
++Provide a comprehensive analysis in the following JSON structure:
++{
++  "would_succeed": boolean (true if likely to succeed, false otherwise),
++  "confidence": number (0-100, confidence percentage in your prediction),
++  "estimated_gas": number or null (estimated gas units if blockchain transaction),
++  "estimated_cost": string or null (estimated cost in USD if applicable),
++  "potential_issues": [
++    {
++      "severity": "critical" | "high" | "medium" | "low",
++      "issue": "description of the issue",
++      "recommendation": "how to fix or mitigate"
++    }
++  ],
++  "dry_run_logs": [
++    "step-by-step trace of what would happen"
++  ],
++  "simulated_output": any (expected output or result),
++  "grok_analysis": {
++    "summary": "brief summary of the simulation",
++    "key_findings": ["important findings"],
++    "recommendations": ["actionable recommendations"],
++    "risk_level": "low" | "medium" | "high" | "critical"
++  }
++}
++
++IMPORTANT: Respond ONLY with valid JSON, no other text. Be thorough and accurate.`;
++
++		// Call Grok AI for intelligent analysis
++		const xaiProvider = createXai({
++			apiKey: c.env.XAI_API_KEY,
++		});
++		const startTime = Date.now();
++		const { text: grokResponse } = await generateText({
++			model: xaiProvider("grok-2-1212"),
++			prompt: analysisPrompt,
++			maxRetries: 2,
++		});
++		const analysisTime = Date.now() - startTime;
++
++		// Parse Grok's response
++		let analysis: Record<string, unknown>;
++		try {
++			// Extract JSON from response (in case Grok adds extra text)
++			const jsonMatch = grokResponse.match(/\{[\s\S]*\}/);
++			if (!jsonMatch) {
++				throw new Error("No JSON found in response");
++			}
++			analysis = JSON.parse(jsonMatch[0]);
++		} catch {
++			// Fallback if Grok didn't return valid JSON
++			analysis = {
++				would_succeed: false,
++				confidence: 50,
++				estimated_gas: null,
++				estimated_cost: null,
++				potential_issues: [
++					{
++						severity: "medium",
++						issue: "AI analysis failed to parse",
++						recommendation: "Review simulation manually",
++					},
++				],
++				dry_run_logs: ["Analysis parsing failed"],
++				simulated_output: null,
++				grok_analysis: {
++					summary: "Unable to parse AI response",
++					key_findings: ["Response format error"],
++					recommendations: ["Retry simulation"],
++					risk_level: "medium",
++				},
++			};
++		}
++
++		// Build comprehensive response
++		const response = {
++			simulation_status: "completed",
++			would_succeed: analysis.would_succeed || false,
++			confidence: analysis.confidence || 0,
++			estimated_gas: analysis.estimated_gas || null,
++			estimated_cost: analysis.estimated_cost || null,
++			potential_issues: analysis.potential_issues || [],
++			dry_run_logs: analysis.dry_run_logs || [],
++			simulated_output: analysis.simulated_output || null,
++			grok_analysis: analysis.grok_analysis || {
++				summary: "Analysis completed",
++				key_findings: [],
++				recommendations: [],
++				risk_level: "low",
++			},
++			timestamp: Date.now(),
++			analysis_time_ms: analysisTime,
++			rate_limit_hint:
++				"This endpoint is rate-limited. Each simulation costs $0.02 USDC.",
++		};
++
++		return c.json(response, 200);
++	} catch (error) {
++		// Handle errors gracefully
++		const errorMessage =
++			error instanceof Error ? error.message : "Unknown error";
++
++		return c.json(
++			{
++				error: "Simulation failed",
++				details: errorMessage,
++				simulation_status: "error",
++				timestamp: Date.now(),
++				rate_limit_hint:
++					"Service temporarily unavailable. Please retry in a moment.",
++			},
++			500
++		);
++	}
++});
++
+ export default app;
+diff --git a/src/tools.ts b/src/tools.ts
+index f67aba8..244628a 100644
+--- a/src/tools.ts
++++ b/src/tools.ts
+@@ -1,91 +1,114 @@
+ export interface GenerateApiInput {
+-  apiName: string;
+-  purposeDescription: string;
+-  suggestedPriceUsdc: string;
++	apiName: string;
++	purposeDescription: string;
++	suggestedPriceUsdc: string;
+ }
+ 
+ export interface RegisterBazaarInput {
+-  endpointUrl: string;
+-  apiName: string;
+-  description: string;
+-  price: string;
++	endpointUrl: string;
++	apiName: string;
++	description: string;
++	price: string;
+ }
+ 
+ export const deployX402WorkerTool = {
+-  name: "deployX402Worker",
+-  description: "Deploys a new Cloudflare Worker API wrapper protected by an x402 payment header.",
+-  input_schema: {
+-    type: "object",
+-    properties: {
+-      apiName: { type: "string", description: "The slug name for the new worker endpoint (e.g., 'fast-web-scraper')" },
+-      purposeDescription: { type: "string", description: "The underlying logic or code structure the API provides." },
+-      suggestedPriceUsdc: { type: "string", description: "Price in USDC per request, e.g., '0.01'" }
+-    },
+-    required: ["apiName", "purposeDescription", "suggestedPriceUsdc"]
+-  },
+-  run: async (input: GenerateApiInput, env: any): Promise<string> => {
+-    const targetUrl = `https://${input.apiName}.${env.CLOUDFLARE_SUBDOMAIN || 'workers'}.dev/api`;
+-    return JSON.stringify({
+-      status: "success",
+-      message: `Successfully generated and deployed ${input.apiName} to the edge network.`,
+-      endpointUrl: targetUrl,
+-      paywallConfig: {
+-        currency: "USDC",
+-        amount: input.suggestedPriceUsdc,
+-        network: "eip155:8453",
+-        recipient: env.RECIPIENT_WALLET_ADDRESS
+-      }
+-    });
+-  }
++	name: "deployX402Worker",
++	description:
++		"Deploys a new Cloudflare Worker API wrapper protected by an x402 payment header.",
++	input_schema: {
++		type: "object",
++		properties: {
++			apiName: {
++				type: "string",
++				description:
++					"The slug name for the new worker endpoint (e.g., 'fast-web-scraper')",
++			},
++			purposeDescription: {
++				type: "string",
++				description: "The underlying logic or code structure the API provides.",
++			},
++			suggestedPriceUsdc: {
++				type: "string",
++				description: "Price in USDC per request, e.g., '0.01'",
++			},
++		},
++		required: ["apiName", "purposeDescription", "suggestedPriceUsdc"],
++	},
++	run: async (input: GenerateApiInput, env: any): Promise<string> => {
++		const targetUrl = `https://${input.apiName}.${env.CLOUDFLARE_SUBDOMAIN || "workers"}.dev/api`;
++		return JSON.stringify({
++			status: "success",
++			message: `Successfully generated and deployed ${input.apiName} to the edge network.`,
++			endpointUrl: targetUrl,
++			paywallConfig: {
++				currency: "USDC",
++				amount: input.suggestedPriceUsdc,
++				network: "eip155:8453",
++				recipient: env.RECIPIENT_WALLET_ADDRESS,
++			},
++		});
++	},
+ };
+ 
+ export const registerOnBazaarTool = {
+-  name: "registerOnBazaar",
+-  description: "Registers an x402 endpoint onto the Coinbase CDP Bazaar catalog so external agents discover it.",
+-  input_schema: {
+-    type: "object",
+-    properties: {
+-      endpointUrl: { type: "string", description: "The live URL of the deployed worker" },
+-      apiName: { type: "string", description: "Name of the digital service" },
+-      description: { type: "string", description: "Detailed semantic description of capabilities for agent routing queries" },
+-      price: { type: "string", description: "Cost per invocation in USDC" }
+-    },
+-    required: ["endpointUrl", "apiName", "description", "price"]
+-  },
+-  run: async (input: RegisterBazaarInput, env: any): Promise<string> => {
+-    try {
+-      const response = await fetch("https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources", {
+-        method: "POST",
+-        headers: {
+-          "Content-Type": "application/json",
+-          "Authorization": `Bearer ${env.CDP_API_KEY || ''}`
+-        },
+-        body: JSON.stringify({
+-          resource: {
+-            name: input.apiName,
+-            description: input.description,
+-            url: input.endpointUrl,
+-            payment_metadata: {
+-              type: "x402",
+-              version: "2.0",
+-              amount: input.price,
+-              currency: "USDC",
+-              network: "eip155:8453",
+-              recipient: env.RECIPIENT_WALLET_ADDRESS,
+-              facilitator: "https://x402.org/facilitator"
+-            }
+-          }
+-        })
+-      });
+-      if (!response.ok) return `Bazaar registration returned status: ${response.status}`;
+-      return JSON.stringify({
+-        status: "listed",
+-        marketplace: "Bazaar Discovery & Agentic.Market indexers"
+-      });
+-    } catch (err: any) {
+-      return `Failed to broadcast listing to Bazaar: ${err.message}`;
+-    }
+-  }
++	name: "registerOnBazaar",
++	description:
++		"Registers an x402 endpoint onto the Coinbase CDP Bazaar catalog so external agents discover it.",
++	input_schema: {
++		type: "object",
++		properties: {
++			endpointUrl: {
++				type: "string",
++				description: "The live URL of the deployed worker",
++			},
++			apiName: { type: "string", description: "Name of the digital service" },
++			description: {
++				type: "string",
++				description:
++					"Detailed semantic description of capabilities for agent routing queries",
++			},
++			price: { type: "string", description: "Cost per invocation in USDC" },
++		},
++		required: ["endpointUrl", "apiName", "description", "price"],
++	},
++	run: async (input: RegisterBazaarInput, env: any): Promise<string> => {
++		try {
++			const response = await fetch(
++				"https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources",
++				{
++					method: "POST",
++					headers: {
++						"Content-Type": "application/json",
++						Authorization: `Bearer ${env.CDP_API_KEY || ""}`,
++					},
++					body: JSON.stringify({
++						resource: {
++							name: input.apiName,
++							description: input.description,
++							url: input.endpointUrl,
++							payment_metadata: {
++								type: "x402",
++								version: "2.0",
++								amount: input.price,
++								currency: "USDC",
++								network: "eip155:8453",
++								recipient: env.RECIPIENT_WALLET_ADDRESS,
++								facilitator: "https://x402.org/facilitator",
++							},
++						},
++					}),
++				}
++			);
++			if (!response.ok)
++				return `Bazaar registration returned status: ${response.status}`;
++			return JSON.stringify({
++				status: "listed",
++				marketplace: "Bazaar Discovery & Agentic.Market indexers",
++			});
++		} catch (err: any) {
++			return `Failed to broadcast listing to Bazaar: ${err.message}`;
++		}
++	},
+ };
+ 
+ export const tools = [deployX402WorkerTool, registerOnBazaarTool];
+diff --git a/src/workflow.ts b/src/workflow.ts
+index b6addf4..3a74077 100644
+--- a/src/workflow.ts
++++ b/src/workflow.ts
+@@ -1,75 +1,114 @@
+-import { AgentWorkflow, AgentWorkflowStep } from "@agents/workflows";
+-import { Anthropic } from "@anthropic-ai/sdk";
++// import { AgentWorkflow, AgentWorkflowStep } from "@agents/workflows";
++// import { Anthropic } from "@anthropic-ai/sdk";
+ import { tools } from "./tools";
+ 
+ type Params = { task: string };
+ 
++// NOTE: This workflow requires @agents/workflows and @anthropic-ai/sdk packages
++// which are not currently installed. Commenting out to prevent build errors.
++export class MarketFactoryWorkflow {
++	env: any;
++
++	async run(event: any, step: any) {
++		throw new Error(
++			"MarketFactoryWorkflow requires @agents/workflows and @anthropic-ai/sdk packages"
++		);
++	}
++}
++
++/* Original implementation - requires additional dependencies
+ export class MarketFactoryWorkflow extends AgentWorkflow<Params> {
+-  async run(event: any, step: AgentWorkflowStep) {
+-    const client = new Anthropic({ apiKey: this.env.ANTHROPIC_API_KEY });
+-    const toolDefinitions = tools.map(({ name, description, input_schema }) => ({
+-      name,
+-      description,
+-      input_schema
+-    }));
++	async run(event: any, step: AgentWorkflowStep) {
++		const client = new Anthropic({ apiKey: this.env.ANTHROPIC_API_KEY });
++		const toolDefinitions = tools.map(
++			({ name, description, input_schema }) => ({
++				name,
++				description,
++				input_schema,
++			})
++		);
++
++		// This loop forces the agent to repeatedly find gaps and create new APIs
++		for (let iteration = 0; iteration < 10; iteration++) {
++			// Step A: Brainstorm a unique high-demand API idea for this cycle
++			const planningResponse = await step.do(
++				`research-cycle-${iteration}`,
++				async () => {
++					const msg = await client.messages.create({
++						model: "claude-3-5-sonnet-20241022",
++						max_tokens: 1024,
++						messages: [
++							{
++								role: "user",
++								content: `Identify a highly requested utility API for autonomous agents. Ensure it is unique from previous iterations. Cycle number: ${iteration}`,
++							},
++						],
++					});
++					return msg.content[0].text;
++				}
++			);
+ 
+-    // This loop forces the agent to repeatedly find gaps and create new APIs
+-    for (let iteration = 0; iteration < 10; iteration++) {
+-      
+-      // Step A: Brainstorm a unique high-demand API idea for this cycle
+-      const planningResponse = await step.do(`research-cycle-${iteration}`, async () => {
+-        const msg = await client.messages.create({
+-          model: "claude-3-5-sonnet-20241022",
+-          max_tokens: 1024,
+-          messages: [
+-            {
+-              role: "user",
+-              content: `Identify a highly requested utility API for autonomous agents. Ensure it is unique from previous iterations. Cycle number: ${iteration}`
+-            }
+-          ]
+-        });
+-        return msg.content[0].text;
+-      });
++			// Step B: Deploy the newly created x402 endpoint
++			const deploymentResult = await step.do(
++				`deploy-cycle-${iteration}`,
++				async () => {
++					const msg = await client.messages.create({
++						model: "claude-3-5-sonnet-20241022",
++						max_tokens: 1024,
++						tools: toolDefinitions,
++						tool_choice: { type: "tool", name: "deployX402Worker" },
++						messages: [
++							{
++								role: "user",
++								content: `Deploy an API based on: ${planningResponse}`,
++							},
++						],
++					});
+ 
+-      // Step B: Deploy the newly created x402 endpoint
+-      const deploymentResult = await step.do(`deploy-cycle-${iteration}`, async () => {
+-        const msg = await client.messages.create({
+-          model: "claude-3-5-sonnet-20241022",
+-          max_tokens: 1024,
+-          tools: toolDefinitions,
+-          tool_choice: { type: "tool", name: "deployX402Worker" },
+-          messages: [{ role: "user", content: `Deploy an API based on: ${planningResponse}` }]
+-        });
++					const toolCall = msg.content.find(
++						(block: any) => block.type === "tool_use"
++					);
++					if (toolCall) {
++						return await tools
++							.find((t) => t.name === "deployX402Worker")
++							.run(toolCall.input, this.env);
++					}
++					return "Skip deployment";
++				}
++			);
+ 
+-        const toolCall = msg.content.find((block: any) => block.type === "tool_use");
+-        if (toolCall) {
+-          return await tools.find(t => t.name === "deployX402Worker").run(toolCall.input, this.env);
+-        }
+-        return "Skip deployment";
+-      });
++			// Step C: Publish it directly to Bazaar Discovery / Agentic Market
++			if (deploymentResult !== "Skip deployment") {
++				await step.do(`register-cycle-${iteration}`, async () => {
++					const msg = await client.messages.create({
++						model: "claude-3-5-sonnet-20241022",
++						max_tokens: 1024,
++						tools: toolDefinitions,
++						tool_choice: { type: "tool", name: "registerOnBazaar" },
++						messages: [
++							{
++								role: "user",
++								content: `Register this endpoint: ${deploymentResult}`,
++							},
++						],
++					});
+ 
+-      // Step C: Publish it directly to Bazaar Discovery / Agentic Market
+-      if (deploymentResult !== "Skip deployment") {
+-        await step.do(`register-cycle-${iteration}`, async () => {
+-          const msg = await client.messages.create({
+-            model: "claude-3-5-sonnet-20241022",
+-            max_tokens: 1024,
+-            tools: toolDefinitions,
+-            tool_choice: { type: "tool", name: "registerOnBazaar" },
+-            messages: [{ role: "user", content: `Register this endpoint: ${deploymentResult}` }]
+-          });
++					const toolCall = msg.content.find(
++						(block: any) => block.type === "tool_use"
++					);
++					if (toolCall) {
++						await tools
++							.find((t) => t.name === "registerOnBazaar")
++							.run(toolCall.input, this.env);
++					}
++				});
++			}
+ 
+-          const toolCall = msg.content.find((block: any) => block.type === "tool_use");
+-          if (toolCall) {
+-            await tools.find(t => t.name === "registerOnBazaar").run(toolCall.input, this.env);
+-          }
+-        });
+-      }
+-      
+-      // Sleep for 5 minutes between each build to prevent network rate-limits
+-      await step.sleep(`wait-before-next-api-${iteration}`, "5 minutes");
+-    }
++			// Sleep for 5 minutes between each build to prevent network rate-limits
++			await step.sleep(`wait-before-next-api-${iteration}`, "5 minutes");
++		}
+ 
+-    return { status: "Batch compilation complete. 10 new endpoints listed." };
+-  }
++		return { status: "Batch compilation complete. 10 new endpoints listed." };
++	}
+ }
++*/
+diff --git a/test-client.ts b/test-client.ts
+index 949704a..8a216b0 100644
+--- a/test-client.ts
++++ b/test-client.ts
+@@ -45,7 +45,7 @@ interface X402Response {
+ async function main() {
+ 	console.log("🧪 Testing x402 Payment Flow\n");
+ 	console.log(`Server: ${SERVER_URL}`);
+-	console.log(`Network: Base Sepolia (testnet)\n`);
++	console.log(`Network: Base mainnet\n`);
+ 
+ 	// Step 1: Request without payment (should get 402)
+ 	console.log("📝 Step 1: Requesting /premium without payment...");
+diff --git a/worker-configuration.d.ts b/worker-configuration.d.ts
+index 0d16d0b..d047c5d 100644
+--- a/worker-configuration.d.ts
++++ b/worker-configuration.d.ts
+@@ -1,14 +1,15 @@
+ /* eslint-disable */
+-// Generated by Wrangler by running `wrangler types --env-interface CloudflareBindings` (hash: 6afe49a223a002feb7fbc70df657105f)
++// Generated by Wrangler by running `wrangler types --env-interface CloudflareBindings` (hash: 8c37d123fef09471428743230a08c087)
+ // Runtime types generated with workerd@1.20251217.0 2025-10-08 
+ declare namespace Cloudflare {
+ 	interface GlobalProps {
+ 		mainModule: typeof import("./src/index");
+ 	}
+ 	interface Env {
+-		PAY_TO: "0x000000000000000000000000000000000000dEaD";
+-		NETWORK: "base-sepolia";
+-		PROTECTED_PATTERNS: [{"pattern":"/premium/*","price":"$0.01","description":"Access to premium content for 1 hour"}];
++		PAY_TO: "0xed7d30e8bc643503f9da261ed8e623bb6ecf6189";
++		NETWORK: "base";
++		ORIGIN_URL: "https://api.x.ai";
++		PROTECTED_PATTERNS: [{"pattern":"/premium/*","price":"$0.01","description":"Access to premium content for 1 hour"},{"pattern":"/xai/*","price":"$0.01","description":"Access to xAI services"}];
+ 		FACILITATOR_URL: "https://x402.org/facilitator";
+ 	}
+ }
+diff --git a/wrangler.jsonc b/wrangler.jsonc
+index afce973..f00b59a 100644
+--- a/wrangler.jsonc
++++ b/wrangler.jsonc
+@@ -1,2 +1,30 @@
+ // wrangler.jsonc
+-"name": "cloudflare-setup-x402",
++{
++	"name": "cloudflare-setup-x402",
++	"main": "src/index.ts",
++	"compatibility_date": "2025-10-08",
++	// "assets": { "directory": "public" },
++	"vars": {
++		"PAY_TO": "0xed7d30e8bc643503f9da261ed8e623bb6ecf6189",
++		"NETWORK": "base",
++		"ORIGIN_URL": "https://api.x.ai",
++		"PROTECTED_PATTERNS": [
++			{
++				"pattern": "/premium/*",
++				"price": "$0.01",
++				"description": "Access to premium content for 1 hour",
++			},
++			{
++				"pattern": "/xai/*",
++				"price": "$0.01",
++				"description": "Access to xAI services",
++			},
++			{
++				"pattern": "/api/simulate",
++				"price": "$0.02",
++				"description": "Shadow State Sandbox - AI-powered simulation environment",
++			},
++		],
++		"FACILITATOR_URL": "https://x402.org/facilitator",
++	},
++}

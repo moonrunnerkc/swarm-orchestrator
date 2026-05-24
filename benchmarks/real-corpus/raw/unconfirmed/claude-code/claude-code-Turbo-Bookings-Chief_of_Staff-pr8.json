@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-Turbo-Bookings-Chief_of_Staff-pr8",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer"
+  },
+  "pr": {
+    "number": 8,
+    "headSha": "f8d89898b8acf3024a81f3e45b1606c1c85f6c69",
+    "baseSha": "cc5f88d662f3df946ce3abc598119db619a8fa64",
+    "title": "fix(clerk): sync workspace Clerk fixes from yesterday's marathon to GitHub",
+    "body": "## Summary\nSyncs three files from the Replit workspace where last night's debugging happened. The Replit Agent's auto-commits never made it to GitHub; this PR is a clean cherry-pick of the final state of those three files onto a fresh branch off origin/main.\n\n## Files\n- \\`artifacts/cos-pwa/src/App.tsx\\` — drop \\`publishableKeyFromHost\\` import, hardcode the TurboBookings dev publishable key\n- \\`artifacts/api-server/src/app.ts\\` — drop \\`publishableKeyFromHost\\`, use \\`process.env.CLERK_PUBLISHABLE_KEY\\` directly in \\`clerkMiddleware\\`\n- \\`.replit\\` line 37 — \\`VITE_CLERK_PUBLISHABLE_KEY\\` updated to TurboBookings key\n\n## Why\nPhase 1's auto-provisioned Replit Clerk integration wired \\`publishableKeyFromHost(host, key)\\` to derive a \\`clerk.<replit-host>.replit.app\\` satellite frontend-API URL. That subdomain has no DNS record, so Clerk JS load fails with \\`ERR_CONNECTION_CLOSED\\` on the production deploy. See \\`docs/state/DECISIONS.md\\` #004 for full context.\n\nThe hardcoded \\`pk_test_*\\` key is a public dev key by design — safe to commit. Production rollout will need a separate prod publishable key, also documented in #004.\n\n## What this PR does NOT include\n- The 11 \\\"Published your App\\\" auto-checkpoint commits from Replit Agent (just noise)\n- \\`replit.md\\` drift (auto-edits, not load-bearing)\n- \\`artifacts/cos-pwa/dist/\\` and \\`artifacts/api-server/dist/\\` rebuilds (deferred per DECISIONS.md #005)\n- \\`.claude/settings.local.json\\` (personal Claude Code settings)\n\n## Test plan\n- [x] Branched off origin/main (not workspace's diverged main) so docs/ stays intact\n- [x] CLAUDE.md and docs/state/ untouched\n- [ ] After merge: workspace's local main hard-reset to origin/main; stash dropped (handled by Replit-Claude post-merge)\n- [ ] After merge: rebuild dist/ in workspace, Republish, verify Clerk JS loads from \\`promoted-elephant-87.clerk.accounts.dev\\`\n- [ ] Then move on to fixing the auth-302 issue (Task #30)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "sel-squared",
+    "headRef": "feature/sync-clerk-fixes-from-workspace",
+    "repository": "Turbo-Bookings/Chief_of_Staff"
+  },
+  "diffRef": {
+    "repository": "Turbo-Bookings/Chief_of_Staff",
+    "headSha": "f8d89898b8acf3024a81f3e45b1606c1c85f6c69",
+    "baseSha": "cc5f88d662f3df946ce3abc598119db619a8fa64"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-Turbo-Bookings-Chief_of_Staff-pr8.diff",
+  "vendoredAt": "2026-05-24T03:15:08.397Z",
+  "collectedAt": "2026-05-24T03:15:08.397Z"
+}

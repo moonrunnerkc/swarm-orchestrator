@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1039",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1039,
+    "headSha": "a763e681afe9a5b4dda6a7ff444af3a4c3187bc7",
+    "baseSha": "e3bcdd4b5dbc73ff2093e4f91dd230fc6b3957ca",
+    "title": "fix(helpers/beta): make betaZodTool return assignable to ToolUnion",
+    "body": "## Summary\n\n`betaZodTool` returns a `BetaRunnableTool<T>` — a union-intersection of beta tool types plus `run`/`parse` methods. The beta tool type (`BetaTool`) and the standard `Tool` type are structurally almost identical but declared separately; minor differences in the `required` field's type signature (`string[] | readonly string[]` vs `Array<string>`) make `BetaTool` not a structural subtype of `Tool`. This means that passing a `betaZodTool` result to `messages.create` or `messages.stream` (which accept `ToolUnion`, a union that includes `Tool`) raises TS2322.\n\nThe fix widens the declared return type to `BetaRunnableTool<T> & Tool`. At runtime the value has always satisfied both shapes; only the static type annotation was wrong. Casting the Zod-generated JSON schema to `Tool.InputSchema` is sound because `Tool.InputSchema.required` (`Array<string> | null`) is a structural subtype of `BetaTool.InputSchema.required` (`string[] | readonly string[] | null`), and the `[k: string]: unknown` index signature absorbs any additional fields.\n\nThe JSDoc is also updated to document both valid usage patterns: automatic execution via `toolRunner()` and manual handling via `messages.create`/`messages.stream`.\n\n## Issue\n\nFixes #1010\n\n## Local verification\n\n```\n$ yarn install --frozen-lockfile --ignore-scripts\nDone in 4.75s.\n\n$ ./node_modules/.bin/tsc --noEmit\n(exit 0 — same 2 pre-existing \"standardwebhooks\" import errors, zero new errors)\n\n$ ./node_modules/.bin/jest tests/helpers/beta/zod.test.ts --no-coverage --verbose\nPASS tests/helpers/beta/zod.test.ts\n  zod helpers\n    zodTool\n      ✓ creates a runnable tool with valid zod schema (8 ms)\n      ✓ throws error for non-object zod schema (7 ms)\n      ✓ throws parse error for invalid input (3 ms)\n      ✓ handles async run functions (5 ms)\n\nTest Suites: 1 passed, 1 total\nTests:       4 passed, 4 total\n\nType-compatibility spot-check (compiled via tsc, no cast required):\n\n  const tool = betaZodTool({ ... });\n  const _asAnthropicTool: Anthropic.Tool = tool;  // no error\n  const _forToolRunner: BetaToolRunnerTools = [tool];  // no error\n\n=== LOCAL_TEST_PASSED ===\n```\n\n## Risk\n\nOnly `src/helpers/beta/zod.ts` is touched; it lives in `src/lib/` (generator-safe). Callers that were already using `as unknown as Anthropic.Tool` still compile — the intersection type is a superset of the previous type. The `toolRunner()` path is exercised by the existing E2E tests.\n",
+    "author": "xodn348",
+    "headRef": "fix/beta-zod-tool-assignable-to-tool",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "a763e681afe9a5b4dda6a7ff444af3a4c3187bc7",
+    "baseSha": "e3bcdd4b5dbc73ff2093e4f91dd230fc6b3957ca"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1039.diff",
+  "vendoredAt": "2026-05-24T03:16:32.801Z",
+  "collectedAt": "2026-05-24T03:16:32.802Z"
+}

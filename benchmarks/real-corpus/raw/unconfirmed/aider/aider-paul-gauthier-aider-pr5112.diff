@@ -1,0 +1,113 @@
+diff --git a/aider/coders/editblock_coder.py b/aider/coders/editblock_coder.py
+index 37d40d97c70..4d535ee80ca 100644
+--- a/aider/coders/editblock_coder.py
++++ b/aider/coders/editblock_coder.py
+@@ -584,6 +584,16 @@ def find_filename(lines, fence, valid_fnames):
+             if fname == Path(vfn).name:
+                 return vfn
+ 
++    # Check for doubled-prefix hallucinations like ".claude/.claude/foo.json"
++    # when valid_fnames contains ".claude/foo.json". Try progressively shorter
++    # suffixes against valid_fnames.
++    for fname in filenames:
++        parts = Path(fname).parts
++        for i in range(1, len(parts)):
++            candidate = str(Path(*parts[i:]))
++            if candidate in valid_fnames:
++                return candidate
++
+     # Perform fuzzy matching with valid_fnames
+     for fname in filenames:
+         close_matches = difflib.get_close_matches(fname, valid_fnames, n=1, cutoff=0.8)
+diff --git a/aider/coders/wholefile_coder.py b/aider/coders/wholefile_coder.py
+index ad93aff69a1..ac6f754c67c 100644
+--- a/aider/coders/wholefile_coder.py
++++ b/aider/coders/wholefile_coder.py
+@@ -68,8 +68,20 @@ def get_edits(self, mode="update"):
+                     # Did gpt prepend a bogus dir? It especially likes to
+                     # include the path/to prefix from the one-shot example in
+                     # the prompt.
+-                    if fname and fname not in chat_files and Path(fname).name in chat_files:
+-                        fname = Path(fname).name
++                    if fname and fname not in chat_files:
++                        if Path(fname).name in chat_files:
++                            fname = Path(fname).name
++                        else:
++                            # Catch doubled-prefix hallucinations like
++                            # ".claude/.claude/foo.json" when chat_files contains
++                            # ".claude/foo.json". Try progressively shorter
++                            # suffixes against chat_files.
++                            parts = Path(fname).parts
++                            for i in range(1, len(parts)):
++                                candidate = str(Path(*parts[i:]))
++                                if candidate in chat_files:
++                                    fname = candidate
++                                    break
+                 if not fname:  # blank line? or ``` was on first line i==0
+                     if saw_fname:
+                         fname = saw_fname
+diff --git a/tests/basic/test_editblock.py b/tests/basic/test_editblock.py
+index e93edb7c32f..bd5fdc05778 100644
+--- a/tests/basic/test_editblock.py
++++ b/tests/basic/test_editblock.py
+@@ -49,6 +49,15 @@ def test_find_filename(self):
+         lines = [r"\windows__init__.py", "```"]
+         self.assertEqual(eb.find_filename(lines, fence, valid_fnames), r"\windows\__init__.py")
+ 
++        # Test doubled-prefix hallucination where fuzzy match falls below cutoff.
++        # LLM emits "sub/dir/sub/dir/foo.py"; valid contains "sub/dir/foo.py".
++        # SequenceMatcher ratio is 0.778 (< 0.8 cutoff) so fuzzy match misses;
++        # basename "foo.py" doesn't equal the full LLM-emitted path. Suffix-strip
++        # is the only mechanism that recovers the canonical path here.
++        valid_fnames_doubled = ["sub/dir/foo.py", "other.py"]
++        lines = ["sub/dir/sub/dir/foo.py", "```"]
++        self.assertEqual(eb.find_filename(lines, fence, valid_fnames_doubled), "sub/dir/foo.py")
++
+     # fuzzy logic disabled v0.11.2-dev
+     def __test_replace_most_similar_chunk(self):
+         whole = "This is a sample text.\nAnother line of text.\nYet another line.\n"
+diff --git a/tests/basic/test_wholefile.py b/tests/basic/test_wholefile.py
+index deb192ec7e4..8ee156a9a02 100644
+--- a/tests/basic/test_wholefile.py
++++ b/tests/basic/test_wholefile.py
+@@ -152,6 +152,40 @@ def test_update_files_bogus_path_prefix(self):
+             updated_content = f.read()
+         self.assertEqual(updated_content, "Updated content\n")
+ 
++    def test_update_files_doubled_path_prefix(self):
++        # Two files in distinct subdirs so that find_common_root resolves to the
++        # tempdir, and chat_files retains the "subdir/" prefix on the target.
++        os.makedirs("subdir", exist_ok=True)
++        os.makedirs("other", exist_ok=True)
++
++        target_rel = "subdir/sample.txt"
++        with open(target_rel, "w") as f:
++            f.write("Original content\n")
++        with open("other/sibling.txt", "w") as f:
++            f.write("sibling\n")
++
++        io = InputOutput(yes=True)
++        coder = WholeFileCoder(
++            main_model=self.GPT35,
++            io=io,
++            fnames=[target_rel, "other/sibling.txt"],
++        )
++
++        # LLM hallucinates a doubled prefix: chat_files contains
++        # "subdir/sample.txt"; LLM emits "subdir/subdir/sample.txt".
++        coder.partial_response_content = (
++            f"subdir/{target_rel}\n```\nUpdated content\n```"
++        )
++
++        edited_files = coder.apply_updates()
++
++        # Canonical path should be edited; doubled path must not be created.
++        self.assertIn(target_rel, edited_files)
++        self.assertFalse(Path("subdir", "subdir", "sample.txt").exists())
++
++        with open(target_rel, "r") as f:
++            self.assertEqual(f.read(), "Updated content\n")
++
+     def test_update_files_not_in_chat(self):
+         # Create a sample file in the temporary directory
+         sample_file = "sample.txt"

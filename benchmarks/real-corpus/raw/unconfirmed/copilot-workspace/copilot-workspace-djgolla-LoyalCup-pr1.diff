@@ -1,0 +1,116 @@
+diff --git a/backend/app/routes/orders.py b/backend/app/routes/orders.py
+index f2d1f2e..3d47be4 100644
+--- a/backend/app/routes/orders.py
++++ b/backend/app/routes/orders.py
+@@ -106,13 +106,13 @@ async def create_order(
+         lb = (
+             db.get_service_client()
+             .table("loyalty_balances")
+-            .select("points_balance")
+-            .eq("customer_id", customer_id)
++            .select("points")
++            .eq("user_id", customer_id)
+             .eq("shop_id", request.shop_id)
+             .limit(1)
+             .execute()
+         )
+-        actual_balance = (lb.data[0].get("points_balance") or 0) if lb.data else 0
++        actual_balance = (lb.data[0].get("points") or 0) if lb.data else 0
+         if request.loyalty_points_to_redeem > actual_balance:
+             raise HTTPException(
+                 status_code=400,
+@@ -161,13 +161,13 @@ async def create_order(
+             "subtotal":        subtotal_dollars,
+             "tax":             tax_dollars,
+             "total":           charged_dollars,
+-            "discount_amount": loyalty_discount_cents / 100 if loyalty_discount_cents else 0,
+             "metadata": {
+                 "square_order_id":         square_order_id,
+                 "square_payment_id":       square_payment_id,
+                 "pos_provider":            "square",
+                 "currency":                currency,
+                 "loyalty_points_redeemed": request.loyalty_points_to_redeem,
++                "loyalty_discount_cents":  loyalty_discount_cents,
+                 "payment_method":          "card" if square_payment_id else "loyalty_free",
+                 "customer_note":           request.customer_note,
+             },
+@@ -202,16 +202,15 @@ async def create_order(
+         if request.loyalty_points_to_redeem > 0:
+             try:
+                 db.get_service_client().table("loyalty_balances").update({
+-                    "points_balance": actual_balance - request.loyalty_points_to_redeem
+-                }).eq("customer_id", customer_id).eq("shop_id", request.shop_id).execute()
++                    "points": actual_balance - request.loyalty_points_to_redeem
++                }).eq("user_id", customer_id).eq("shop_id", request.shop_id).execute()
+ 
+                 db.get_service_client().table("loyalty_transactions").insert({
+-                    "customer_id": customer_id,
+-                    "shop_id":     request.shop_id,
+-                    "order_id":    order_id,
+-                    "type":        "redeem",
+-                    "points":      -request.loyalty_points_to_redeem,
+-                    "description": f"Redeemed {request.loyalty_points_to_redeem} pts",
++                    "user_id":      customer_id,
++                    "shop_id":      request.shop_id,
++                    "order_id":     order_id,
++                    "type":         "redeem",
++                    "points_change": -request.loyalty_points_to_redeem,
+                 }).execute()
+             except Exception as e:
+                 logger.warning(f"[Orders] Points deduction failed order={order_id}: {e}")
+@@ -438,7 +437,7 @@ async def update_order_status(
+                 profile = (
+                     db.get_service_client()
+                     .table("profiles")
+-                    .select("push_token, phone")
++                    .select("push_token")
+                     .eq("id", customer_id)
+                     .single()
+                     .execute()
+@@ -455,7 +454,7 @@ async def update_order_status(
+                 )
+                 await notify_customer_status_change(
+                     push_token=profile.get("push_token"),
+-                    phone=profile.get("phone"),          # SMS on ready
++                    phone=None,
+                     status=request.status,
+                     shop_name=shop.get("name", ""),
+                     order_id=order_id,
+diff --git a/backend/app/services/loyalty_service.py b/backend/app/services/loyalty_service.py
+index aa88041..9e27385 100644
+--- a/backend/app/services/loyalty_service.py
++++ b/backend/app/services/loyalty_service.py
+@@ -54,14 +54,6 @@ async def award_points_for_order(
+         if not use_global:
+             filter_kwargs["shop_id"] = shop_id
+ 
+-        # Upsert the balance
+-        existing_resp = (
+-            db.get_service_client()
+-            .table(table)
+-            .select("*")
+-            .eq("customer_id", customer_id)
+-            .__class__
+-        )
+         # Build query dynamically
+         q = db.get_service_client().table(table).select("*").eq("customer_id", customer_id)
+         if not use_global:
+diff --git a/backend/sql/shop_offers.sql b/backend/sql/shop_offers.sql
+new file mode 100644
+index 0000000..c8f20af
+--- /dev/null
++++ b/backend/sql/shop_offers.sql
+@@ -0,0 +1,13 @@
++create table if not exists shop_offers (
++  id             uuid primary key default gen_random_uuid(),
++  shop_id        uuid not null references shops(id) on delete cascade,
++  title          text not null,
++  description    text,
++  discount_type  text check (discount_type in ('percent', 'flat')),
++  discount_value numeric(10,2),
++  expires_at     timestamptz,
++  is_active      boolean not null default true,
++  created_at     timestamptz not null default now(),
++  updated_at     timestamptz not null default now()
++);
++create index if not exists idx_shop_offers_shop_id on shop_offers(shop_id);

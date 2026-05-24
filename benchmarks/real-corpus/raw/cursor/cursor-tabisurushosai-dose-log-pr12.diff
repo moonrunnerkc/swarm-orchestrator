@@ -1,0 +1,143 @@
+diff --git a/docs/PORTING.md b/docs/PORTING.md
+index 9feb4b0..e8f4895 100644
+--- a/docs/PORTING.md
++++ b/docs/PORTING.md
+@@ -7,11 +7,14 @@ path for future iOS/Android app shells.
+ 
+ - `src/core/` is pure TypeScript domain logic. Do not import or reference
+   `chrome.*`, DOM APIs, network APIs, or platform SDKs from this directory.
++  `npm run typecheck:core` checks this directory without DOM or Chrome ambient
++  types so portability regressions fail during the normal build.
+ - `src/storage/storageAdapter.ts` defines the platform-neutral key/value storage
+-  interface. New platforms should implement this interface instead of changing
+-  core logic.
++  interface. It accepts string keys and unknown persisted values only; app-level
++  key names and normalization stay outside the platform adapter.
+ - `src/storage/appStorage.ts` maps persisted values to the app domain and keeps
+-  the existing storage keys and normalization rules in one place.
++  the existing storage keys (`APP_STORAGE_KEYS`) and normalization rules in one
++  place.
+ - `src/storage/chromeStorageAdapter.ts` is the Chrome extension implementation.
+   Keep Chrome-specific types and `chrome.*` calls in Chrome entry points or
+   Chrome adapters only.
+diff --git a/package.json b/package.json
+index 20e44fa..5d59908 100644
+--- a/package.json
++++ b/package.json
+@@ -7,7 +7,8 @@
+   "scripts": {
+     "dev": "vite --host 0.0.0.0",
+     "generate:icons": "node tools/generate-icons.mjs",
+-    "typecheck": "tsc --noEmit",
++    "typecheck:core": "tsc --project tsconfig.core.json --noEmit",
++    "typecheck": "npm run typecheck:core && tsc --noEmit",
+     "build": "npm run generate:icons && npm run typecheck && vite build"
+   },
+   "devDependencies": {
+diff --git a/src/storage/appStorage.ts b/src/storage/appStorage.ts
+index 981245c..5fb01f3 100644
+--- a/src/storage/appStorage.ts
++++ b/src/storage/appStorage.ts
+@@ -1,6 +1,11 @@
+ import { normalizeDoseRecords, type DoseRecord } from "../core/doseLog";
+ import { normalizePremiumState, type PremiumState } from "../core/premium";
+-import { STORAGE_KEYS, type StorageAdapter } from "./storageAdapter";
++import type { StorageAdapter } from "./storageAdapter";
++
++export const APP_STORAGE_KEYS = {
++  doseRecords: "doseRecords",
++  premiumState: "premiumState"
++} as const;
+ 
+ export interface AppStorage {
+   getDoseRecords(): Promise<DoseRecord[]>;
+@@ -12,15 +17,15 @@ export interface AppStorage {
+ export function createAppStorage(adapter: StorageAdapter): AppStorage {
+   return {
+     async getDoseRecords(): Promise<DoseRecord[]> {
+-      return normalizeDoseRecords(await adapter.get<unknown>(STORAGE_KEYS.doseRecords));
++      return normalizeDoseRecords(await adapter.get<unknown>(APP_STORAGE_KEYS.doseRecords));
+     },
+ 
+     async setDoseRecords(records: readonly DoseRecord[]): Promise<void> {
+-      await adapter.set(STORAGE_KEYS.doseRecords, normalizeDoseRecords(records));
++      await adapter.set(APP_STORAGE_KEYS.doseRecords, normalizeDoseRecords(records));
+     },
+ 
+     async getPremiumState(): Promise<PremiumState | null> {
+-      const state = await adapter.get<unknown>(STORAGE_KEYS.premiumState);
++      const state = await adapter.get<unknown>(APP_STORAGE_KEYS.premiumState);
+       if (state === undefined) {
+         return null;
+       }
+@@ -29,7 +34,7 @@ export function createAppStorage(adapter: StorageAdapter): AppStorage {
+     },
+ 
+     async setPremiumState(state: PremiumState): Promise<void> {
+-      await adapter.set(STORAGE_KEYS.premiumState, normalizePremiumState(state));
++      await adapter.set(APP_STORAGE_KEYS.premiumState, normalizePremiumState(state));
+     }
+   };
+ }
+diff --git a/src/storage/chromeStorageAdapter.ts b/src/storage/chromeStorageAdapter.ts
+index ce4a82d..25a96bf 100644
+--- a/src/storage/chromeStorageAdapter.ts
++++ b/src/storage/chromeStorageAdapter.ts
+@@ -1,8 +1,8 @@
+-import type { StorageAdapter, StorageKey } from "./storageAdapter";
++import type { StorageAdapter } from "./storageAdapter";
+ 
+ type StoredValues = Record<string, unknown>;
+ 
+-function getFromChromeStorage(keys: StorageKey[]): Promise<StoredValues> {
++function getFromChromeStorage(keys: string[]): Promise<StoredValues> {
+   return new Promise((resolve, reject) => {
+     chrome.storage.local.get(keys, (items) => {
+       const error = chrome.runtime.lastError;
+@@ -32,12 +32,12 @@ function setInChromeStorage(values: StoredValues): Promise<void> {
+ 
+ export function createChromeStorageAdapter(): StorageAdapter {
+   return {
+-    async get<TValue = unknown>(key: StorageKey): Promise<TValue | undefined> {
++    async get<TValue = unknown>(key: string): Promise<TValue | undefined> {
+       const items = await getFromChromeStorage([key]);
+       return items[key] as TValue | undefined;
+     },
+ 
+-    async set<TValue>(key: StorageKey, value: TValue): Promise<void> {
++    async set<TValue>(key: string, value: TValue): Promise<void> {
+       await setInChromeStorage({
+         [key]: value
+       });
+diff --git a/src/storage/storageAdapter.ts b/src/storage/storageAdapter.ts
+index 2cca076..9895c5c 100644
+--- a/src/storage/storageAdapter.ts
++++ b/src/storage/storageAdapter.ts
+@@ -1,11 +1,4 @@
+ export interface StorageAdapter {
+-  get<TValue = unknown>(key: StorageKey): Promise<TValue | undefined>;
+-  set<TValue>(key: StorageKey, value: TValue): Promise<void>;
++  get<TValue = unknown>(key: string): Promise<TValue | undefined>;
++  set<TValue>(key: string, value: TValue): Promise<void>;
+ }
+-
+-export const STORAGE_KEYS = {
+-  doseRecords: "doseRecords",
+-  premiumState: "premiumState"
+-} as const;
+-
+-export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];
+diff --git a/tsconfig.core.json b/tsconfig.core.json
+new file mode 100644
+index 0000000..722000c
+--- /dev/null
++++ b/tsconfig.core.json
+@@ -0,0 +1,8 @@
++{
++  "extends": "./tsconfig.json",
++  "compilerOptions": {
++    "lib": ["ES2020"],
++    "types": []
++  },
++  "include": ["src/core/**/*.ts"]
++}

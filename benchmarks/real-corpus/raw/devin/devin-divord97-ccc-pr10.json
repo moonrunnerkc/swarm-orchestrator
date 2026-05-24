@@ -1,0 +1,26 @@
+{
+  "id": "devin-divord97-ccc-pr10",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 10,
+    "headSha": "43bd762959debf63436e409afbd43485fb2c1a1b",
+    "baseSha": "042cddbd1bc8af7284e070f3ed66e2fbb70d0f31",
+    "title": "Phase 8: Omnichannel IM + Email + AI Assist (DDD/TDD)",
+    "body": "## Summary\n\nPhase 8: Omnichannel IM + Email + AI Assist (DDD/TDD)\n\n**New IM Bounded Context** with 3 aggregates (IMChannel, IMSession, IMMessage), 7 TDD test cases, and full Clean Architecture stack:\n- Domain: 6 channel types, session status machine (waiting→active→transferred→closed), agent concurrency limit enforcement\n- Application: IM routing, WebSocket hub (placeholder), email inbound parser, AI assist with pluggable LLM (StubProvider)\n- Infrastructure: 3 MySQL repos, StubProvider LLM\n- HTTP: 17 new API endpoints across 5 handlers\n\n**Key design decisions:**\n- Widget (`/widget/*`) and email inbound (`/email/inbound`) routes are **public** (outside JWT auth group) since visitors and webhook providers don't have tokens\n- AI assist uses `LLMProvider` interface — StubProvider now, Aliyun Tongyi in Phase 9\n- Agent max chat slots enforced in both AssignAgent and TransferSession\n\n**Bug fixes from Devin Review:**\n- Moved widget/email routes outside JWT-protected group\n- Added empty email Subject+Body validation to prevent orphaned sessions\n\n## Review & Testing Checklist for Human\n\n- [ ] Verify widget/email public routes don't need any auth mechanism (API key, webhook signature, etc.) for production — currently fully open\n- [ ] Review IM session status transitions match business requirements (waiting→active→transferred→closed)\n- [ ] Verify agent concurrency limit (default 5 max chat slots) is appropriate for your use case\n- [ ] Check IMChannel `config` field (stored as JSON string) structure meets integration needs for each channel type\n- [ ] Test email inbound webhook with actual email provider payload format (SendGrid/Mailgun)\n\n**Recommended test plan:**\n1. Create an IM channel via `POST /api/v1/im-channels`\n2. Create a visitor session via `POST /api/v1/widget/sessions` (no auth needed)\n3. Send messages back and forth via widget and im-session endpoints\n4. Test transfer and close operations\n5. Test AI assist endpoints (correct/expand/optimize)\n6. Send a test email inbound webhook to `POST /api/v1/email/inbound`\n\n### Notes\n- 129 total tests (7 new IM domain tests + 122 existing), all passing with `-race`\n- WebSocket upgrade is a structural placeholder (`ServeWS` returns 426) — actual gorilla/websocket integration deferred to frontend phase\n- Merge conflict with main (from PR #9 Phase 7) resolved in this PR\n\nLink to Devin session: https://app.devin.ai/sessions/35e328fa681447e98fa82466c8f69b99\nRequested by: @divord97\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/divord97/ccc/pull/10\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779574415-phase8-im-omnichannel",
+    "repository": "divord97/ccc"
+  },
+  "diffRef": {
+    "repository": "divord97/ccc",
+    "headSha": "43bd762959debf63436e409afbd43485fb2c1a1b",
+    "baseSha": "042cddbd1bc8af7284e070f3ed66e2fbb70d0f31"
+  },
+  "vendoredDiffPath": "devin/devin-divord97-ccc-pr10.diff",
+  "vendoredAt": "2026-05-24T03:05:09.130Z",
+  "collectedAt": "2026-05-24T03:05:09.130Z"
+}

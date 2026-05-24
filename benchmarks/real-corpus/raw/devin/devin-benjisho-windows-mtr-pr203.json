@@ -1,0 +1,26 @@
+{
+  "id": "devin-benjisho-windows-mtr-pr203",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 203,
+    "headSha": "aa64ae96d0622de769679311911693e5eeec739f",
+    "baseSha": "5cc748d3edbc8b67eef94a351073949cf36ece7b",
+    "title": "feat: add bounded probe execution timeout for API-launched probes",
+    "body": "## Summary\n\nAdd a configurable execution timeout for API-launched probes (default: 60 seconds). Previously, `run_probe_job` had no timeout — a spawned probe could run indefinitely, holding its concurrency permit and preventing other probes from executing.\n\n## Why\n\nWithout an execution timeout, a hung or slow probe launched via the REST API can:\n- Hold a concurrency permit forever, starving other API probe requests\n- Consume server resources indefinitely\n- Leave jobs stuck in `running` state with no cleanup path\n\n## Changes\n\n- [x] Code changes\n- [x] Tests added/updated\n- [x] Documentation updated\n\n**Core change:** Wrap `execute_probe()` in `tokio::time::timeout` inside `run_probe_job()`. On timeout, the job transitions to `failed` with `\"probe timed out after <N>s\"` and the concurrency permit is released immediately.\n\n**Config:**\n- Add `probe_execution_timeout: Duration` to `RestApiConfig` (default 60s)\n- Add validation: `probe_execution_timeout` must be > 0\n- Add `--api-probe-timeout-seconds` CLI flag\n\n**Tests (4 new):**\n- `zero_probe_execution_timeout_is_rejected` — config validation rejects 0\n- `api_mode_applies_probe_timeout_override` — CLI flag maps to config\n- `probe_execution_timeout_marks_job_failed` — timed-out probe becomes `failed` with timeout error\n- `probe_execution_timeout_releases_concurrency_permit` — after timeout, a second probe (with `max_concurrent_probes=1`) can still be accepted\n\n**Docs:**\n- `docs/API.md`: new \"API Probe Execution Timeout\" section\n- `USAGE.md`: example and default listed\n- `docs/ROADMAP.md`: new delivery item\n\n## Testing\n\n```bash\ncargo check --workspace           # PASS\ncargo clippy --all-targets --all-features -- -D warnings  # PASS\n```\n\n## Compatibility / Risk Notes\n\n- CLI compatibility impact: **None** — new optional flag only; all existing behavior unchanged\n- Output/report format impact: **None**\n- Operational risk and rollback plan: Zero risk — timeout is additive. Existing probes that complete within 60s see no change. Only probes exceeding the timeout are now bounded.\n\n## Security Considerations\n\nThis is a security hardening change. Unbounded probe execution is a resource exhaustion vector for the REST API. The timeout ensures probes cannot hold concurrency permits indefinitely.\n\n## Checklist\n\n- [x] I followed the contribution guidelines in `CONTRIBUTING.md`\n- [x] I ran relevant checks locally\n- [x] I updated docs/changelog as needed\n- [x] I confirmed no sensitive data is included\n\nLink to Devin session: https://app.devin.ai/sessions/871fb66468ba497e98d69036cb2a90fc\nRequested by: @benjisho\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/benjisho/windows-mtr/pull/203\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779586513-api-probe-timeout",
+    "repository": "benjisho/windows-mtr"
+  },
+  "diffRef": {
+    "repository": "benjisho/windows-mtr",
+    "headSha": "aa64ae96d0622de769679311911693e5eeec739f",
+    "baseSha": "5cc748d3edbc8b67eef94a351073949cf36ece7b"
+  },
+  "vendoredDiffPath": "devin/devin-benjisho-windows-mtr-pr203.diff",
+  "vendoredAt": "2026-05-24T03:04:12.766Z",
+  "collectedAt": "2026-05-24T03:04:12.766Z"
+}

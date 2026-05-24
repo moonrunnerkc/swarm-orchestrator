@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1021",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1021,
+    "headSha": "9fd2aa10d97d13afb27431238a6c0bfee788d854",
+    "baseSha": "74ac150346ca92290b0fc57d9728e3841aa2dd54",
+    "title": "fix(bedrock): throw APIError for error events delivered in chunk frames",
+    "body": "When a Bedrock response stream delivers an Anthropic-format error payload (`{\"type\":\"error\",\"error\":{...}}`) inside a `chunk` event-stream frame, the iterator previously yielded it as a regular message event. Downstream, `MessageStream.#accumulateMessage` would then throw `Unexpected event order, got error before \"message_start\"` — discarding the underlying error type and message.\n\nThis change detects `type: \"error\"` in chunk payloads and throws `APIError` with the error type preserved (matching the base SDK SSE handling), so consumers see the actual error and retry logic can engage.\n\nAdds `tests/streaming.test.ts` exercising the full `de_ResponseStream` → iterator path with real event-stream encoding.\n\nCloses #387\nRefs anthropics/anthropic-sdk-python#1472 (same issue, Python SDK)",
+    "author": "manar-ant",
+    "headRef": "fix/bedrock-chunk-error-passthrough",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "9fd2aa10d97d13afb27431238a6c0bfee788d854",
+    "baseSha": "74ac150346ca92290b0fc57d9728e3841aa2dd54"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1021.diff",
+  "vendoredAt": "2026-05-24T03:16:42.260Z",
+  "collectedAt": "2026-05-24T03:16:42.260Z"
+}

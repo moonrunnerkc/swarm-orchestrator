@@ -1,0 +1,71 @@
+diff --git a/aider/repomap.py b/aider/repomap.py
+index 541bba6ef4a..cfa7d703c8d 100644
+--- a/aider/repomap.py
++++ b/aider/repomap.py
+@@ -16,7 +16,7 @@
+ from pygments.lexers import guess_lexer_for_filename
+ from pygments.token import Token
+ from tqdm import tqdm
+-from tree_sitter import Query
++from tree_sitter import Query, QueryError
+ 
+ from aider.dump import dump
+ from aider.special import filter_important_files
+@@ -298,8 +298,13 @@ def get_tags_raw(self, fname, rel_fname):
+             return
+         tree = parser.parse(bytes(code, "utf-8"))
+ 
+-        # Run the tags queries
+-        captures = self._run_captures(Query(language, query_scm), tree.root_node)
++        # Run the tags queries. Some bundled queries can drift out of sync with
++        # the installed tree-sitter grammars; skip tags rather than crashing.
++        try:
++            captures = self._run_captures(Query(language, query_scm), tree.root_node)
++        except QueryError as err:
++            print(f"Skipping file {fname}: {err}")
++            return
+ 
+         captures_by_tag = defaultdict(list)
+         matches = []
+diff --git a/tests/basic/test_repomap.py b/tests/basic/test_repomap.py
+index 9453f6c05a8..8c7e5b48b58 100644
+--- a/tests/basic/test_repomap.py
++++ b/tests/basic/test_repomap.py
+@@ -4,6 +4,7 @@
+ import time
+ import unittest
+ from pathlib import Path
++from unittest.mock import patch
+ 
+ import git
+ 
+@@ -46,6 +47,29 @@ def test_get_repo_map(self):
+             # close the open cache files, so Windows won't error
+             del repo_map
+ 
++    def test_get_repo_map_skips_invalid_tree_sitter_query(self):
++        with IgnorantTemporaryDirectory() as temp_dir:
++            test_file = os.path.join(temp_dir, "broken_query.py")
++            with open(test_file, "w", encoding="utf-8") as f:
++                f.write("def hello():\n    return 1\n")
++
++            invalid_query = Path(temp_dir) / "invalid-tags.scm"
++            invalid_query.write_text(
++                "(not_a_real_node) @name.definition.function\n", encoding="utf-8"
++            )
++
++            io = InputOutput()
++            repo_map = RepoMap(main_model=self.GPT35, root=temp_dir, io=io)
++
++            with patch("aider.repomap.get_scm_fname", return_value=invalid_query):
++                result = repo_map.get_repo_map([], [test_file])
++
++            self.assertIn("broken_query.py", result)
++            self.assertNotIn("hello", result)
++
++            # close the open cache files, so Windows won't error
++            del repo_map
++
+     def test_repo_map_refresh_files(self):
+         with GitTemporaryDirectory() as temp_dir:
+             repo = git.Repo(temp_dir)

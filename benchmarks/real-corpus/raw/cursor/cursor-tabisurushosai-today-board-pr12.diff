@@ -1,0 +1,182 @@
+diff --git a/docs/PORTING.md b/docs/PORTING.md
+index db8c981..89c31c9 100644
+--- a/docs/PORTING.md
++++ b/docs/PORTING.md
+@@ -11,11 +11,16 @@ Android シェルでも再利用できるように、アプリのロジックを
+     を import しないでください。
+   - 日付、Premium、予定、状態の helper は決定的にし、どの JavaScript
+     ランタイムからでも呼べる状態を維持します。
++  - `npm run build` は `tsconfig.core.json` で `src/core/**/*.ts` を
++    DOM / Chrome 型なしでも型検査します。移植性を保つため、この確認を
++    外さないでください。
+ - `src/storage/` は保存アダプタとシリアライズを担当します。
+   - UI コードは `src/storage/appStorage.ts` の `AppStorage` interface に
+     依存します。
+-  - プラットフォーム固有コードは、アプリ状態を直接読み書きせず、この
+-    interface を実装します。
++  - プラットフォーム固有コードはアプリ状態を直接読み書きせず、
++    `StorageAdapter` で raw key/value の読み書きだけを実装します。
++    `createAppStorage(adapter)` が既存の保存データ形式と `AppState` の
++    相互変換を担当します。
+   - `serialization.ts` は現在の保存キー
+     `plannedItemText`、`plannedItemUpdatedAt`、`firstOpenedAt`、
+     `premiumPurchasedAt`、`locale` を維持します。
+@@ -28,12 +33,17 @@ Android シェルでも再利用できるように、アプリのロジックを
+ 
+ ## 新しいプラットフォーム保存アダプタを追加する場合
+ 
+-iOS / Android wrapper では、次の interface を実装する adapter を追加します。
++iOS / Android wrapper では、次の raw 保存 adapter を実装して
++`createAppStorage(adapter)` に渡します。UI へ渡すのは作成済みの
++`AppStorage` です。
+ 
+ ```ts
+-interface AppStorage {
+-  load(): Promise<AppState>;
+-  save(patch: AppStatePatch): Promise<void>;
++type StorageRecord = Record<string, unknown>;
++type SerializedAppStatePatch = Record<string, string | null>;
++
++interface StorageAdapter {
++  readAll(): Promise<StorageRecord>;
++  write(patch: SerializedAppStatePatch): Promise<void>;
+ }
+ ```
+ 
+@@ -47,6 +57,7 @@ UI の変更なしで移行できるよう、論理キーと値の意味は変
+ `src/main.ts` は Chrome 拡張の composition root です。ここで次を配線します。
+ 
+ - `chrome.storage.local` 用の `ChromeLocalStorageAdapter`
++- `createAppStorage(new ChromeLocalStorageAdapter())`
+ - DOM root lookup
+ - `navigator.language`
+ - `window.setInterval`
+@@ -54,6 +65,16 @@ UI の変更なしで移行できるよう、論理キーと値の意味は変
+ 将来のアプリ entry point は、`src/core/` を変更せず、各 platform shell から
+ 同等のサービスを渡してください。
+ 
++## iOS / Android シェルでの移植メモ
++
++- ネイティブ側の保存 API（UserDefaults、SharedPreferences、SQLite など）は
++  `StorageAdapter` の内側に閉じ込め、`src/core/` や `src/ui/` へ直接渡しません。
++- 保存値は既存と同じ論理 key/value のまま扱います。日付文字列は現在と同じ
++  ISO 文字列を保存し、空文字は未保存として扱います。
++- UI を差し替える場合も、`AppStorage`、`preferredLanguage`、`now`、
++  `scheduleRender` のような小さなサービスを entry point で注入し、純ロジックを
++  platform shell へ寄せないでください。
++
+ ## 維持する制約
+ 
+ - 移植性対応のために permissions / host_permissions を追加しません。
+diff --git a/package.json b/package.json
+index ae646a0..05d0da7 100644
+--- a/package.json
++++ b/package.json
+@@ -5,7 +5,7 @@
+   "type": "module",
+   "description": "Large-text orientation board Chrome extension for today's date, day of week, and next planned item.",
+   "scripts": {
+-    "build": "tsc --noEmit && vite build",
++    "build": "tsc -p tsconfig.core.json --noEmit && tsc --noEmit && vite build",
+     "dev": "vite --host 0.0.0.0",
+     "generate:icons": "node scripts/generate-icons.mjs"
+   },
+diff --git a/src/main.ts b/src/main.ts
+index 3d4f62e..4c93cd8 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -1,10 +1,11 @@
+ import "./styles.css";
++import { createAppStorage } from "./storage/appStorage";
+ import { ChromeLocalStorageAdapter } from "./storage/chromeStorage";
+ import { mountTodayBoardApp } from "./ui/todayBoardApp";
+ 
+ mountTodayBoardApp({
+   root: document.querySelector<HTMLDivElement>("#app"),
+-  storage: new ChromeLocalStorageAdapter(),
++  storage: createAppStorage(new ChromeLocalStorageAdapter()),
+   preferredLanguage: navigator.language,
+   scheduleRender: (callback, milliseconds) => window.setInterval(callback, milliseconds),
+ });
+diff --git a/src/storage/appStorage.ts b/src/storage/appStorage.ts
+index 5eec176..7831e82 100644
+--- a/src/storage/appStorage.ts
++++ b/src/storage/appStorage.ts
+@@ -1,9 +1,31 @@
+ import type { AppState, AppStatePatch } from "../core/types";
++import { deserializeAppState, serializeAppStatePatch } from "./serialization";
+ 
+ export type StorageRecord = Record<string, unknown>;
+ export type SerializedAppStatePatch = Record<string, string | null>;
+ 
++export interface StorageAdapter {
++  readAll(): Promise<StorageRecord>;
++  write(patch: SerializedAppStatePatch): Promise<void>;
++}
++
+ export interface AppStorage {
+   load(): Promise<AppState>;
+   save(patch: AppStatePatch): Promise<void>;
+ }
++
++export function createAppStorage(adapter: StorageAdapter): AppStorage {
++  return new SerializedAppStorage(adapter);
++}
++
++class SerializedAppStorage implements AppStorage {
++  constructor(private readonly adapter: StorageAdapter) {}
++
++  async load(): Promise<AppState> {
++    return deserializeAppState(await this.adapter.readAll());
++  }
++
++  async save(patch: AppStatePatch): Promise<void> {
++    await this.adapter.write(serializeAppStatePatch(patch));
++  }
++}
+diff --git a/src/storage/chromeStorage.ts b/src/storage/chromeStorage.ts
+index a1aea62..1f50c62 100644
+--- a/src/storage/chromeStorage.ts
++++ b/src/storage/chromeStorage.ts
+@@ -1,17 +1,14 @@
+-import type { AppState, AppStatePatch } from "../core/types";
+-import type { AppStorage, SerializedAppStatePatch, StorageRecord } from "./appStorage";
+-import { deserializeAppState, serializeAppStatePatch } from "./serialization";
++import type { SerializedAppStatePatch, StorageAdapter, StorageRecord } from "./appStorage";
+ 
+-export class ChromeLocalStorageAdapter implements AppStorage {
++export class ChromeLocalStorageAdapter implements StorageAdapter {
+   constructor(private readonly storageArea: chrome.storage.StorageArea = chrome.storage.local) {}
+ 
+-  async load(): Promise<AppState> {
+-    const items = await chromeGetAll(this.storageArea);
+-    return deserializeAppState(items);
++  async readAll(): Promise<StorageRecord> {
++    return chromeGetAll(this.storageArea);
+   }
+ 
+-  async save(patch: AppStatePatch): Promise<void> {
+-    await chromeSet(this.storageArea, serializeAppStatePatch(patch));
++  async write(patch: SerializedAppStatePatch): Promise<void> {
++    await chromeSet(this.storageArea, patch);
+   }
+ }
+ 
+diff --git a/tsconfig.core.json b/tsconfig.core.json
+new file mode 100644
+index 0000000..f9e88c0
+--- /dev/null
++++ b/tsconfig.core.json
+@@ -0,0 +1,12 @@
++{
++  "extends": "./tsconfig.json",
++  "compilerOptions": {
++    "lib": [
++      "ES2022"
++    ],
++    "types": []
++  },
++  "include": [
++    "src/core/**/*.ts"
++  ]
++}

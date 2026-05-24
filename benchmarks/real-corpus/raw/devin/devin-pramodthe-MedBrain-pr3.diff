@@ -1,0 +1,72 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index ab30d46..a19dea0 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -86,7 +86,7 @@ The CopilotKit/LangGraph AG-UI endpoint (`/api/copilotkit`) for transcription is
+ 
+ ### Backends
+ 
+-- **Gemini** — primary LLM/VLM (`langchain-google-genai`). `GEMINI_API_KEY` (+ optional `GOOGLE_API_KEY`). Chat: `GEMINI_MODEL`; vision/VLM: `GEMINI_VLM_MODEL`.
++- **Gemini** — primary LLM/VLM (`langchain-google-genai`). `GEMINI_API_KEY` (+ optional `GOOGLE_API_KEY`). Chat: `GEMINI_MODEL` (default `gemini-2.5-flash`); vision/VLM: `GEMINI_VLM_MODEL`.
+ - **Zep Cloud** — long-term memory. Two namespaces: *thread* (conversational turns) and *graph* (structured episodes + temporal edges). Patient = Zep user (`zep_user_id`).
+ - **InsForge** — Postgres (chart data, document registry, patients) + Storage (PDF blobs). `INSFORGE_URL` + keys.
+ 
+diff --git a/CLAUDE.md b/CLAUDE.md
+index c178a30..c6742a8 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -86,7 +86,7 @@ The CopilotKit/LangGraph AG-UI endpoint (`/api/copilotkit`) for transcription is
+ 
+ ### Backends
+ 
+-- **Gemini** — primary LLM/VLM (`langchain-google-genai`). `GEMINI_API_KEY` (+ optional `GOOGLE_API_KEY`). Chat: `GEMINI_MODEL`; vision/VLM: `GEMINI_VLM_MODEL`.
++- **Gemini** — primary LLM/VLM (`langchain-google-genai`). `GEMINI_API_KEY` (+ optional `GOOGLE_API_KEY`). Chat: `GEMINI_MODEL` (default `gemini-2.5-flash`); vision/VLM: `GEMINI_VLM_MODEL`.
+ - **Zep Cloud** — long-term memory. Two namespaces: *thread* (conversational turns) and *graph* (structured episodes + temporal edges). Patient = Zep user (`zep_user_id`).
+ - **InsForge** — Postgres (chart data, document registry, patients) + Storage (PDF blobs). `INSFORGE_URL` + keys.
+ 
+diff --git a/apps/api/routers/clinical.py b/apps/api/routers/clinical.py
+index 6bf95fd..48836c5 100644
+--- a/apps/api/routers/clinical.py
++++ b/apps/api/routers/clinical.py
+@@ -278,11 +278,10 @@ def _labs(zep_user_id: str) -> list[LabTrendOut]:
+     for test_lower, vals in series.items():
+         if not vals:
+             continue
+-        # `vals` are gathered from episodes (newest-first) but matches inside
+-        # any single episode are in document order (chronological), so the last
+-        # appended entry is the most recent value the parser saw.
+-        latest_label, latest_val = vals[-1]
+-        previous_val = vals[-2][1] if len(vals) > 1 else None
++        # `vals` are gathered from episodes sorted newest-first, so the first
++        # appended entry comes from the most-recent episode and is the latest value.
++        latest_label, latest_val = vals[0]
++        previous_val = vals[1][1] if len(vals) > 1 else None
+         status_label = "High" if _looks_abnormal(test_lower, latest_val) else "Normal"
+         trend = _trend(latest_val, previous_val)
+         out.append(
+diff --git a/apps/api/routers/transcribe.py b/apps/api/routers/transcribe.py
+index 4a86ac3..3756d89 100644
+--- a/apps/api/routers/transcribe.py
++++ b/apps/api/routers/transcribe.py
+@@ -68,7 +68,7 @@ async def save_session_endpoint(request: SaveSessionRequest):
+         }
+     except Exception as e:
+         print(f"Error saving session: {e}")
+-        return {"error": str(e)}
++        raise HTTPException(status_code=500, detail=str(e)) from e
+ 
+ class GenerateReportRequest(BaseModel):
+     session_id: str
+diff --git a/src/medtrace_agent/gemini_config.py b/src/medtrace_agent/gemini_config.py
+index 44eba52..409546c 100644
+--- a/src/medtrace_agent/gemini_config.py
++++ b/src/medtrace_agent/gemini_config.py
+@@ -2,7 +2,7 @@
+ 
+ import os
+ 
+-DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
++DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+ 
+ def gemini_api_key() -> str:
+     key = (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()

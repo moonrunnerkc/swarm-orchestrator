@@ -1,0 +1,26 @@
+{
+  "id": "cursor-PorscheWen-Stock_AI_Holding-pr2",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "aa7d608de7b3ea342fd4359b5fe78210b2bb0f93",
+    "baseSha": "6eb188d451734a5300575ff9a912daed3695f16f",
+    "title": "fix: 持股匯入後損益率未計算",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## 問題描述\n\n持股匯入（JSON 檔案或截圖辨識）後，損益率欄位顯示空白，未進行計算。\n\n## 根本原因（多重）\n\n### 1. 休市時 yfinance 無法取得即時價 → price = 0 → 損益率無法計算\n`/api/portfolio/prices` 只嘗試 `currentPrice` / `regularMarketPrice`；當市場休市時這兩個欄位皆為 None，price 直接歸 0，導致計算條件 `if price and avg_price` 失敗。\n\n### 2. 匯出 JSON 未包含 `price_override`\n使用者若曾手動覆寫現價（`price_override`），匯出後此欄位被丟棄，重新匯入後無法再利用覆寫價計算損益率，須等 yfinance 回傳才能顯示。\n\n### 3. `batch_add_stocks` 未讀取 `price_override` / `market_price`\n- JSON 匯入時：即使 JSON 裡有 `price_override`，函式直接忽略，未存入 DB。\n- 截圖匯入時：AI 辨識出的 `market_price`（截圖當時市價）從未儲存為 `price_override`，導致離線或休市時損益率仍空白。\n\n### 4. `batch_add_stocks` null 安全問題\n`float(stock.get('avg_price', 0))` 在 JSON 有 `\"avg_price\": null` 時，`get()` 回傳 `None`，`float(None)` 拋出 `TypeError`，該股無法匯入。\n\n## 修正內容\n\n### `app.py` — `/api/portfolio/prices`\n- 追加 `previousClose` 作為退場選項：`currentPrice or regularMarketPrice or previousClose or 0`\n- 修正 `change` / `change_pct`：退場價等於昨收時正確顯示 0\n\n### `app.py` — `/api/portfolio/export`\n- 有 `price_override` 時將其納入匯出 JSON，確保匯入後覆寫價不遺失\n\n### `app.py` — `POST /api/portfolio`（單股新增）\n- 同步套用 `or 0` null 安全修正\n\n### `database/portfolio_db.py` — `add_stock`\n- 新增 `price_override: Optional[float] = None` 參數，有值時儲存至 DB\n\n### `database/portfolio_db.py` — `batch_add_stocks`\n- 依序讀取 `price_override`（JSON 匯入）與 `market_price`（截圖匯入），取第一個有效正數值存入 DB\n- `avg_price` / `shares` / `note` / `symbol` 改用 `or 0` / `or ''` 確保 JSON null 不拋出例外\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-022eb67c-71cf-4f87-a43d-b77c622c282c\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-022eb67c-71cf-4f87-a43d-b77c622c282c\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "PorscheWen",
+    "headRef": "cursor/fix-pnl-after-import-282c",
+    "repository": "PorscheWen/Stock_AI_Holding"
+  },
+  "diffRef": {
+    "repository": "PorscheWen/Stock_AI_Holding",
+    "headSha": "aa7d608de7b3ea342fd4359b5fe78210b2bb0f93",
+    "baseSha": "6eb188d451734a5300575ff9a912daed3695f16f"
+  },
+  "vendoredDiffPath": "cursor/cursor-PorscheWen-Stock_AI_Holding-pr2.diff",
+  "vendoredAt": "2026-05-24T03:11:47.489Z",
+  "collectedAt": "2026-05-24T03:11:47.489Z"
+}

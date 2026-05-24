@@ -1,0 +1,22 @@
+diff --git a/README.md b/README.md
+index fb66cad..88d858b 100644
+--- a/README.md
++++ b/README.md
+@@ -331,7 +331,7 @@ mtr -c 10 -r --json 8.8.8.8 > metrics.json
+ Schedule regular network tests with Windows Task Scheduler:
+ 
+ ```powershell
+-$action = New-ScheduledTaskAction -Execute "C:\Program Files\Windows-MTR\mtr.exe" -Argument "-c 10 -r 8.8.8.8 -o output.txt"
++$action = New-ScheduledTaskAction -Execute "C:\Tools\windows-mtr\mtr.exe" -Argument "-c 10 -r 8.8.8.8"
+ $trigger = New-ScheduledTaskTrigger -Daily -At 8am
+ Register-ScheduledTask -Action $action -Trigger $trigger -TaskName "Daily Network Test" -Description "Runs MTR test each morning"
+ ```
+@@ -341,7 +341,7 @@ Register-ScheduledTask -Action $action -Trigger $trigger -TaskName "Daily Networ
+ For enterprise environments, use our logging features to send results to central systems:
+ 
+ ```bash
+-mtr --reporter json --log-level info 8.8.8.8 | curl -X POST -d @- https://logging.example.com/api/v1/logs
++mtr --json -c 10 8.8.8.8 | curl -X POST -d @- https://logging.example.com/api/v1/logs
+ ```
+ 
+ </details>

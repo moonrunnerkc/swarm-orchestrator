@@ -1,0 +1,119 @@
+diff --git a/plugins/README.md b/plugins/README.md
+index cf4a21ecc5..47c6fb8329 100644
+--- a/plugins/README.md
++++ b/plugins/README.md
+@@ -21,6 +21,7 @@ Learn more in the [official plugins documentation](https://docs.claude.com/en/do
+ | [frontend-design](./frontend-design/) | Create distinctive, production-grade frontend interfaces that avoid generic AI aesthetics | **Skill:** `frontend-design` - Auto-invoked for frontend work, providing guidance on bold design choices, typography, animations, and visual details |
+ | [hookify](./hookify/) | Easily create custom hooks to prevent unwanted behaviors by analyzing conversation patterns or explicit instructions | **Commands:** `/hookify`, `/hookify:list`, `/hookify:configure`, `/hookify:help`<br>**Agent:** `conversation-analyzer` - Analyzes conversations for problematic behaviors<br>**Skill:** `writing-rules` - Guidance on hookify rule syntax |
+ | [learning-output-style](./learning-output-style/) | Interactive learning mode that requests meaningful code contributions at decision points (mimics the unshipped Learning output style) | **Hook:** SessionStart - Encourages users to write meaningful code (5-10 lines) at decision points while receiving educational insights |
++| [new-session](./new-session/) | Start a fresh session from within an existing one, preserving the old session for `/resume` | **Command:** `/new` - Clean slate session while keeping old session resumable |
+ | [plugin-dev](./plugin-dev/) | Comprehensive toolkit for developing Claude Code plugins with 7 expert skills and AI-assisted creation | **Command:** `/plugin-dev:create-plugin` - 8-phase guided workflow for building plugins<br>**Agents:** `agent-creator`, `plugin-validator`, `skill-reviewer`<br>**Skills:** Hook development, MCP integration, plugin structure, settings, commands, agents, and skill development |
+ | [pr-review-toolkit](./pr-review-toolkit/) | Comprehensive PR review agents specializing in comments, tests, error handling, type design, code quality, and code simplification | **Command:** `/pr-review-toolkit:review-pr` - Run with optional review aspects (comments, tests, errors, types, code, simplify, all)<br>**Agents:** `comment-analyzer`, `pr-test-analyzer`, `silent-failure-hunter`, `type-design-analyzer`, `code-reviewer`, `code-simplifier` |
+ | [ralph-wiggum](./ralph-wiggum/) | Interactive self-referential AI loops for iterative development. Claude works on the same task repeatedly until completion | **Commands:** `/ralph-loop`, `/cancel-ralph` - Start/stop autonomous iteration loops<br>**Hook:** Stop - Intercepts exit attempts to continue iteration |
+diff --git a/plugins/new-session/.claude-plugin/plugin.json b/plugins/new-session/.claude-plugin/plugin.json
+new file mode 100644
+index 0000000000..89ea5e069a
+--- /dev/null
++++ b/plugins/new-session/.claude-plugin/plugin.json
+@@ -0,0 +1,9 @@
++{
++  "name": "new-session",
++  "description": "Start a fresh session from within an existing one, preserving the old session for /resume",
++  "version": "1.0.0",
++  "author": {
++    "name": "Ajay Achinth",
++    "email": "cjajay93@gmail.com"
++  }
++}
+diff --git a/plugins/new-session/README.md b/plugins/new-session/README.md
+new file mode 100644
+index 0000000000..b1063d9b72
+--- /dev/null
++++ b/plugins/new-session/README.md
+@@ -0,0 +1,54 @@
++# New Session Plugin
++
++Start a fresh session from within an existing one, preserving the old session for `/resume`.
++
++## Overview
++
++The `/new` command bridges the gap between `/clear` and `/branch`. While `/clear` resets the conversation in the same session and `/branch` forks with full history, `/new` gives you a clean slate — a truly fresh session — while keeping the old one intact and resumable.
++
++## Commands
++
++### `/new`
++
++Creates a fresh session, preserving the old one for later access via `/resume`.
++
++**Usage:**
++```bash
++/new
++/new my-feature-work
++```
++
++**What it does:**
++1. Labels the current session (if a name is provided)
++2. Starts a fresh conversation with no prior context
++3. Preserves the old session data — accessible via `/resume`
++
++**When to use:**
++- Switching to a completely different task
++- Starting fresh after completing a piece of work
++- When you want a clean context without losing your previous conversation
++
++## How It Differs From Built-in Commands
++
++| Command | Creates New Session ID? | Preserves History? | Old Session Resumable? |
++|---------|------------------------|--------------------|------------------------|
++| `/clear` | No (same session) | No | Yes (via `/resume`) |
++| `/branch` | Yes | Yes (copies history) | Yes |
++| `/new` | Effectively yes | No (clean slate) | Yes (via `/resume`) |
++
++## Installation
++
++Install via the Claude Code plugin system:
++
++```bash
++claude
++# Then use /plugin to install, or add to .claude/settings.json
++```
++
++## Author
++
++Ajay Achinth (cjajay93@gmail.com)
++
++## Version
++
++1.0.0
+diff --git a/plugins/new-session/commands/new.md b/plugins/new-session/commands/new.md
+new file mode 100644
+index 0000000000..588616a85e
+--- /dev/null
++++ b/plugins/new-session/commands/new.md
+@@ -0,0 +1,26 @@
++---
++description: Start a fresh session (old session stays available via /resume)
++argument-hint: [session-name]
++---
++
++You are handling the `/new` command. The user wants to end the current session and start a completely fresh one. The old session's data must NOT be deleted — it should remain available via `/resume`.
++
++## How to do this
++
++Since `/new` is not a built-in command, you must use the built-in `/clear` command to achieve the same effect:
++
++1. If the user provided an argument (a session name like `$ARGUMENTS`), first tell them:
++   "Naming this session **$ARGUMENTS** and starting fresh. You can return to it later with `/resume`."
++   Then use `/clear $ARGUMENTS` to clear the conversation with that label.
++
++2. If no argument was provided, tell the user:
++   "Starting a fresh session. Your current session is preserved and available via `/resume`."
++   Then use `/clear` to reset the conversation.
++
++## Important
++
++- Do NOT delete any session data, files, or history.
++- Do NOT run any destructive commands.
++- Simply execute the `/clear` command (with optional label) to start fresh.
++- Keep your response minimal — just the confirmation message and the `/clear` action.
++- The old session remains accessible through `/resume`.

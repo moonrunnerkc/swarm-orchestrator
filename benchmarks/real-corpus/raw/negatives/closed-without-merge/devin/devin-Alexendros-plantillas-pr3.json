@@ -1,0 +1,26 @@
+{
+  "id": "devin-Alexendros-plantillas-pr3",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 3,
+    "headSha": "0f2f5c687b42f268c16ebbd28c2eb6f2c79be430",
+    "baseSha": "628810b1eccba35ec9803aadf799a27538f948c5",
+    "title": "ci(workflows): DRY con module-map, refactorización y fixes de seguridad",
+    "body": "## Summary\n\nRefactorización principal de los workflows CI/CD: elimina código duplicado con DRY y corrige bugs críticos.\n\n**DRY:**\n- **`module-map.sh`**: Script centralizado con funciones `module_validator`, `module_ejemplo`, `module_is_special` — elimina ~80 líneas de if/elif duplicadas en 3 workflows\n- **`setup-validadores/action.yml`**: Acción composite reutilizable para setup Python + dependencias\n\n**Refactorización:**\n- **`validar-todos.yml`**: Matrix dinámica basada en `module-map.sh` con `jq -sc` para JSON single-line\n- **`pr-guardian.yml`**: Título sanitizado (anti-inyección), CHANGELOG.md protegido con excepción inteligente, placeholders via module-map\n\n**Bugs corregidos:**\n- `ci-global.yml`: Subshell en pipe (`find | while`) perdía variable EXIT → process substitution\n- `ci-global.yml`: `.pre-commit-config.yaml` excluido de yamllint, `.github/` revertido de ruff scope\n- `security-scan.yml`: Eliminado `fetch-depth: 0` innecesario en detect-secrets\n- `test_smoke.py`: Paths corregidos para módulos especiales (modulo, proyecto)\n\n**382 líneas** — PR 2/3 de la segmentación del overhaul CI/CD.\n\n## Review & Testing Checklist for Human\n\n- [ ] Verificar `module-map.sh`: `source .github/scripts/module-map.sh && echo \"${MODULOS_CANONICOS[@]}\"`\n- [ ] Revisar excepción CHANGELOG.md en `pr-guardian.yml` (líneas 96-103)\n- [ ] Confirmar que los 10 módulos pasan validación en la matrix dinámica\n\n### Notes\n\n- Este PR es independiente del PR 1/3 (fix-lint) pero ambos mejoran el CI\n- `continue-on-error: true` en Lint Shell/Markdown hace que sean advisory sin bloquear CI\n- Lint Shell ahora detecta errores pre-existentes en `auditoria-canon-repo.sh` e `install.sh` gracias al fix del subshell\n\nLink to Devin session: https://app.devin.ai/sessions/6f804378338444c38ab4b76356fc9482\nRequested by: @Alexendros",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779562392-ci-dry-refactor",
+    "repository": "Alexendros/plantillas"
+  },
+  "diffRef": {
+    "repository": "Alexendros/plantillas",
+    "headSha": "0f2f5c687b42f268c16ebbd28c2eb6f2c79be430",
+    "baseSha": "628810b1eccba35ec9803aadf799a27538f948c5"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/devin/devin-Alexendros-plantillas-pr3.diff",
+  "vendoredAt": "2026-05-24T04:27:38.927Z",
+  "collectedAt": "2026-05-24T04:27:38.927Z"
+}

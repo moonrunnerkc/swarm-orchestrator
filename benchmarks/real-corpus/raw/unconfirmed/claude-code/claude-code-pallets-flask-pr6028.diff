@@ -1,0 +1,48 @@
+diff --git a/src/flask/cli.py b/src/flask/cli.py
+index 5b3116ed7c..14e1a17c0f 100644
+--- a/src/flask/cli.py
++++ b/src/flask/cli.py
+@@ -470,7 +470,7 @@ def _set_debug(ctx: click.Context, param: click.Option, value: bool) -> bool | N
+     # that, let debug be set by env in that case.
+     source = ctx.get_parameter_source(param.name)
+ 
+-    if source is not None and source in (
++    if source is None or source in (
+         ParameterSource.DEFAULT,
+         ParameterSource.DEFAULT_MAP,
+     ):
+diff --git a/tests/test_cli.py b/tests/test_cli.py
+index 2a34088bd5..d6e5d95aab 100644
+--- a/tests/test_cli.py
++++ b/tests/test_cli.py
+@@ -382,6 +382,30 @@ def test():
+     assert result.output == f"{not set_debug_flag}\n"
+ 
+ 
++def test_flaskgroup_debug_env(monkeypatch, runner):
++    """FLASK_DEBUG=1 env var should not be overwritten when --debug is not
++    explicitly passed. Regression test for click 8.4.0 where
++    get_parameter_source returns None during eager callbacks.
++    """
++    monkeypatch.setenv("FLASK_DEBUG", "1")
++
++    def create_app():
++        app = Flask("flaskgroup")
++        return app
++
++    @click.group(cls=FlaskGroup, create_app=create_app)
++    def cli(**params):
++        pass
++
++    @cli.command()
++    def test():
++        click.echo(os.environ.get("FLASK_DEBUG"))
++
++    result = runner.invoke(cli, ["test"])
++    assert result.exit_code == 0
++    assert result.output.strip() == "1"
++
++
+ def test_flaskgroup_nested(app, runner):
+     cli = click.Group("cli")
+     flask_group = FlaskGroup(name="flask", create_app=lambda: app)

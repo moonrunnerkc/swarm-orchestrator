@@ -1,0 +1,79 @@
+diff --git a/frontend/__tests__/components/features/conversation/conversation-name.test.tsx b/frontend/__tests__/components/features/conversation/conversation-name.test.tsx
+index 4676c9f59c61..1eaf8056e7fc 100644
+--- a/frontend/__tests__/components/features/conversation/conversation-name.test.tsx
++++ b/frontend/__tests__/components/features/conversation/conversation-name.test.tsx
+@@ -296,7 +296,7 @@ describe("ConversationName", () => {
+     ).not.toBeInTheDocument();
+   });
+ 
+-  it("should render the OpenHands brand when an llm_model is set", () => {
++  it("should render the raw llm_model when set", () => {
+     useActiveConversationMock.mockReturnValue({
+       data: {
+         conversation_id: "test-conversation-id",
+@@ -310,8 +310,7 @@ describe("ConversationName", () => {
+ 
+     const model = screen.getByTestId("conversation-name-llm-model");
+     expect(model).toBeInTheDocument();
+-    // Visible chip is the harness brand; raw model is preserved on hover.
+-    expect(model).toHaveTextContent("OpenHands");
++    expect(model).toHaveTextContent("openai/gpt-4o");
+     expect(model).toHaveAttribute("title", "openai/gpt-4o");
+     expect(model.querySelector("svg")).toBeInTheDocument();
+   });
+diff --git a/frontend/__tests__/components/features/home/recent-conversation.test.tsx b/frontend/__tests__/components/features/home/recent-conversation.test.tsx
+index 85ec08a68206..f79830a539b5 100644
+--- a/frontend/__tests__/components/features/home/recent-conversation.test.tsx
++++ b/frontend/__tests__/components/features/home/recent-conversation.test.tsx
+@@ -54,7 +54,7 @@ const renderRecentConversation = (conversation: V1AppConversation) =>
+   );
+ 
+ describe("RecentConversation - llm_model", () => {
+-  it("should render the OpenHands brand label when llm_model is provided", () => {
++  it("should render the raw llm_model when provided", () => {
+     renderRecentConversation({
+       ...baseConversation,
+       llm_model: "anthropic/claude-sonnet-4-20250514",
+@@ -62,8 +62,7 @@ describe("RecentConversation - llm_model", () => {
+ 
+     const model = screen.getByTestId("recent-conversation-llm-model");
+     expect(model).toBeInTheDocument();
+-    // Visible label is the harness brand; raw model is preserved on hover.
+-    expect(model).toHaveTextContent("OpenHands");
++    expect(model).toHaveTextContent("anthropic/claude-sonnet-4-20250514");
+     expect(model).toHaveAttribute(
+       "title",
+       "anthropic/claude-sonnet-4-20250514",
+@@ -72,7 +71,7 @@ describe("RecentConversation - llm_model", () => {
+ 
+     const textSpan = model.querySelector("span.truncate");
+     expect(textSpan).toBeInTheDocument();
+-    expect(textSpan).toHaveTextContent("OpenHands");
++    expect(textSpan).toHaveTextContent("anthropic/claude-sonnet-4-20250514");
+   });
+ 
+   it("should render plain 'ACP' for ACP-agent conversations", () => {
+diff --git a/frontend/src/utils/agent-display-label.ts b/frontend/src/utils/agent-display-label.ts
+index 0d334a81065f..bb96a25a58ad 100644
+--- a/frontend/src/utils/agent-display-label.ts
++++ b/frontend/src/utils/agent-display-label.ts
+@@ -17,8 +17,9 @@ export const ACP_SERVER_TAG = "acp_server";
+  *   "Gemini CLI", …) looked up via the SDK registry that the server exposes
+  *   at ``/api/v1/web-client/config``. Falls back to plain "ACP" when the
+  *   provider key is unknown (custom commands, or registry not yet loaded).
+- * - OpenHands conversations show the harness brand "OpenHands" — the raw
+- *   ``llm_model`` is preserved on hover via the ``title`` attribute.
++ * - OpenHands conversations show the raw ``llm_model`` string verbatim
++ *   (e.g. ``"anthropic/claude-sonnet-4-5-20250929"``), matching the
++ *   pre-ACP behavior of the model chip.
+  */
+ export function agentDisplayLabel(
+   agentKind: AgentKind | undefined,
+@@ -34,6 +35,5 @@ export function agentDisplayLabel(
+     }
+     return "ACP";
+   }
+-  if (llmModel) return "OpenHands";
+-  return null;
++  return llmModel ?? null;
+ }

@@ -1,0 +1,53 @@
+diff --git a/.copilot-review/result.md b/.copilot-review/result.md
+new file mode 100644
+index 00000000..7b1ce9c6
+--- /dev/null
++++ b/.copilot-review/result.md
+@@ -0,0 +1,47 @@
++pr: 207
++
++## Dependency Update Review
++
++**Verdict:** Yellow Caution
++**Recommendation:** Merge after checks
++**Confidence:** Medium
++
++### Executive summary
++
++This PR changes the Invoice Ninja database container from the floating `mariadb:12.1` line (`12.1.2` at the pinned digest) to the floating `mariadb:12.2` line (`12.2.2` at the pinned digest). Upstream 12.2.2 is the first GA build in the 12.2 series and includes engine behavior changes plus a security fix, but the bigger local risk is that this repository runs MariaDB as a single-replica stateful Deployment on a persistent Longhorn volume. I would not treat this like a routine stateless image bump: merge only after a restorable backup and a short post-upgrade smoke test of Invoice Ninja.
++
++### Update inventory
++
++| Dependency | Ecosystem | Change | Scope | Local role | Risk |
++|---|---|---|---|---|---|
++| `mariadb` | Docker/OCI container | `12.1.2@sha256:e487701b1f7e3f47319fe005b417c72becb67824a58b7bd35c6505f070f66dcd` → `12.2.2@sha256:350261292d0129fd4b24f537dcf05ecd3ebe34d39d5b592af551f38310e7a167` | minor | runtime / infra | Yellow |
++
++### Important upstream changes
++
++- [migration] The floating Docker tags in this PR resolve to `12.1.2` and `12.2.2`, so this is a real release-series jump rather than just a repin within the same series ([12.1 tag metadata](https://hub.docker.com/v2/repositories/library/mariadb/tags/12.1), [12.2 tag metadata](https://hub.docker.com/v2/repositories/library/mariadb/tags/12.2), [12.2.2 release notes](https://mariadb.com/docs/release-notes/community-server/12.2/12.2.2)).
++- [security] MariaDB 12.2.2 includes a fix for `CVE-2026-32710` ([12.2.2 release notes](https://mariadb.com/docs/release-notes/community-server/12.2/12.2.2), [CVE entry](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-32710)).
++- [behavior] Failed `CREATE TEMPORARY TABLE ... SELECT` now performs a consistent full rollback in 12.2.2; that is a server behavior change that can alter failure handling for migrations or application SQL running during startup or upgrades ([12.2.2 release notes](https://mariadb.com/docs/release-notes/community-server/12.2/12.2.2), [MDEV-36787](https://jira.mariadb.org/browse/MDEV-36787)).
++- [behavior] 12.2 adds optimizer changes and new optimizer hints, so query plans can shift even without schema changes ([12.2 changes & improvements](https://mariadb.com/docs/release-notes/community-server/12.2/mariadb-12.2-changes-and-improvements), [MDEV-36321](https://jira.mariadb.org/browse/MDEV-36321), [MDEV-36089](https://jira.mariadb.org/browse/MDEV-36089), [MDEV-36125](https://jira.mariadb.org/browse/MDEV-36125)).
++- [feature] 12.2 also adds SQL-function and JSON-behavior changes, including Oracle-compatible `TO_NUMBER` / `TRUNC` and removal of the JSON nesting depth limit of 32 ([12.2 changes & improvements](https://mariadb.com/docs/release-notes/community-server/12.2/mariadb-12.2-changes-and-improvements), [MDEV-20022](https://jira.mariadb.org/browse/MDEV-20022), [MDEV-20023](https://jira.mariadb.org/browse/MDEV-20023), [MDEV-32854](https://jira.mariadb.org/browse/MDEV-32854)).
++- [unknown] I did not find separate official release notes for the Docker image packaging itself beyond Docker Hub tag metadata, so this review is based on the official image tag resolution plus MariaDB Server 12.2 upstream release notes.
++
++### Local impact
++
++This repo uses MariaDB only for Invoice Ninja, in `kubernetes/apps/invoiceninja/invoiceninja/app/mariadb.yaml`, where a single `Deployment` runs `mariadb` with `strategy.type: Recreate` and mounts the `invoiceninja-mariadb` PVC at `/var/lib/mysql`. The application pods in `kubernetes/apps/invoiceninja/invoiceninja/app/invoiceninja-deployment.yaml` connect to that database through the internal service name from `kubernetes/apps/invoiceninja/invoiceninja/app/configmap.yaml` (`DB_HOST=invoiceninja-mariadb`), and the PVC is backed by `longhorn-general` in `kubernetes/apps/invoiceninja/invoiceninja/app/pvc.yaml`.
++
++That means the blast radius is narrow to one app, but the workload is stateful and rollback is not purely declarative: once the MariaDB 12.2 container touches the existing datadir, reverting may require restoring a backup instead of just rolling the image back. The service is only exposed internally on port 3306, and I did not find replication, Galera, or audit-log configuration in this repo, so the replication/audit-log specific upstream items are less relevant here than startup, schema-upgrade, and query-plan behavior.
++
++### Pre-merge checks
++
++- [ ] Take or verify a restorable backup/snapshot of the `invoiceninja-mariadb` volume before rollout.
++- [ ] Confirm the pod using `mariadb:12.2.2` starts cleanly against the existing datadir and does not loop on InnoDB, permission, or system-table upgrade errors.
++- [ ] Smoke-test Invoice Ninja after the upgrade: login, view invoices, create/edit one record, and verify the scheduler container still works.
++- [ ] Check MariaDB logs for upgrade warnings and verify readiness stays stable after a restart.
++- [ ] Have a rollback plan that restores from backup if the 12.2 datadir cannot be safely reopened by 12.1.
++
++### Evidence reviewed
++
++- PR: `feat(container): update image mariadb ( 12.1 ➔ 12.2 )`; labels `area/kubernetes`, `renovate/container`, `type/minor`, `dependencies`; diff is one-line image+digest change in `kubernetes/apps/invoiceninja/invoiceninja/app/mariadb.yaml`.
++- Files in repo: `kubernetes/apps/invoiceninja/invoiceninja/app/mariadb.yaml`, `kubernetes/apps/invoiceninja/invoiceninja/app/invoiceninja-deployment.yaml`, `kubernetes/apps/invoiceninja/invoiceninja/app/configmap.yaml`, `kubernetes/apps/invoiceninja/invoiceninja/app/pvc.yaml`, `kubernetes/apps/invoiceninja/invoiceninja/app/kustomization.yaml`, `kubernetes/apps/invoiceninja/invoiceninja/app/secret.sops.yaml`.
++- Upstream sources checked: https://github.com/webgrip/homelab-cluster/pull/207, https://hub.docker.com/v2/repositories/library/mariadb/tags/12.1, https://hub.docker.com/v2/repositories/library/mariadb/tags/12.2, https://hub.docker.com/v2/repositories/library/mariadb/tags?page_size=20&name=12.1., https://hub.docker.com/v2/repositories/library/mariadb/tags?page_size=20&name=12.2., https://mariadb.com/docs/release-notes/community-server/12.2/12.2.2, https://mariadb.com/docs/release-notes/community-server/12.2/mariadb-12.2-changes-and-improvements, https://jira.mariadb.org/browse/MDEV-36787, https://jira.mariadb.org/browse/MDEV-36321, https://jira.mariadb.org/browse/MDEV-36089, https://jira.mariadb.org/browse/MDEV-36125, https://jira.mariadb.org/browse/MDEV-20022, https://jira.mariadb.org/browse/MDEV-20023, https://jira.mariadb.org/browse/MDEV-32854, https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2026-32710.
++- Notable uncertainty: Docker Hub exposes tag metadata, but I did not find a separate official changelog for image packaging changes; I also cannot validate an actual in-cluster upgrade from this environment.

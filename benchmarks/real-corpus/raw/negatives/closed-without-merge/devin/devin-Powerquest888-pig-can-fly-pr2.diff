@@ -1,0 +1,2854 @@
+diff --git a/.~lock.DEVIN_PROMPT.md# b/.~lock.DEVIN_PROMPT.md#
+deleted file mode 100644
+index bf4badd..0000000
+--- a/.~lock.DEVIN_PROMPT.md#
++++ /dev/null
+@@ -1 +0,0 @@
+-,daniel,daniel-Precision-Tower-7910,22.05.2026 12:28,file:///home/daniel/.config/libreoffice/4;
+\ No newline at end of file
+diff --git a/DEVIN_PROMPT.md b/DEVIN_PROMPT.md
+deleted file mode 100644
+index 9c66f9e..0000000
+--- a/DEVIN_PROMPT.md
++++ /dev/null
+@@ -1,161 +0,0 @@
+-Build a high-quality, browser-based side-scrolling arcade game called **"Pig Can Fly"** using Phaser 3 (preferred) or HTML5 Canvas + JavaScript. The game should be polished, vibrant, and high quality — think Flappy Bird meets a modern mobile arcade game, with smooth animations and rich graphics.
+-
+----
+-
+-## SCREEN & ORIENTATION
+-
+-- Landscape only (16:9, ideally 1280×720, minimum 800×450)
+-- Parallax scrolling background: sky layer (slowest), clouds + distant hills (medium), ground (fastest)
+-- Ground runs along the bottom — the pig runs on it
+-
+----
+-
+-## PIG (PLAYER CHARACTER)
+-
+-Three custom pig sprite images are provided in the assets folder. Use them as follows:
+-
+-| File | When to use |
+-|---|---|
+-| `pigrun.PNG` | Default ground running state — pig galloping, wings spread, mouth open |
+-| `pigmouthopen.PNG` | Flying excited state — when super power activates or pig is boosting upward |
+-| `pigflymouthclose.PNG` | Calm flight / banana cruise mode — pig gliding serenely, mouth closed |
+-
+-- Crop or paint over the "Dola AI" watermark in the bottom-right corner of each sprite
+-- Scale all sprites consistently to match the pig's hitbox
+-- For states not covered by sprites (death, jump arc, power-up flash), use the nearest sprite with programmatic effects: rotation, colour tint, particle overlay
+-
+-**Movement:**
+-- Pig runs automatically left to right
+-- Player controls jumping only
+-- **Double jump**: first jump = standard arc; second jump (in mid-air) = extra boost; after 2 jumps gravity pulls pig back down; must land before jumping again
+-- Controls: Spacebar (desktop) / screen tap or on-screen button (mobile)
+-- Death: pig tumbles with stars, then fade to Game Over screen
+-
+----
+-
+-## OBSTACLES
+-
+-- All obstacles are **stationary on the ground** — they do NOT fall, float, or spawn mid-air
+-- The world scrolls left, bringing obstacles into view
+-- Obstacle types (each needs a distinct, detailed sprite):
+-  - Haystack (medium height)
+-  - Wooden Farm Gate (tall)
+-  - Bush / Bramble (low and wide)
+-  - Tractor or Truck (large and tall)
+-  - Boulder (medium, round)
+-- Spacing varies — sometimes single obstacles, sometimes grouped clusters
+-- Touching any obstacle = **instant death / Game Over**, unless pig has an active super power that protects it
+-
+----
+-
+-## FRUITS (COLLECTIBLES)
+-
+-Fruits float at varying heights along the path. The pig collects them by running or jumping through them (pop + sparkle animation on collect).
+-
+-Fruit types: 🍎 Apple · 🍊 Orange · 🍌 Banana · 🍍 Pineapple · 🍓 Strawberry · 🍇 Grapes
+-
+-**Super Power Charging:**
+-- Every 5 fruits collected → super power activates
+-- The **dominant fruit** (most collected of the 5) determines which power is granted
+-- Ties broken by most recently collected fruit
+-- Fruit counter resets to 0 after power activates
+-
+----
+-
+-## SUPER POWER SYSTEM
+-
+-Visual on activation: glowing aura around pig + HUD icon + countdown timer bar.
+-
+-| Fruit | Power Name | Effect | Duration |
+-|---|---|---|---|
+-| 🍎 Apple | **Lightfoot** | Pig jumps higher and farther, floats longer in air | 15 sec |
+-| 🍌 Banana | **Flight** | Pig flies freely, hovering in the middle vertical zone — immune to all ground obstacles | 20 sec |
+-| 🍊 Orange | **Stoneskin** | Pig smashes through obstacles — they explode into debris with particle animation | 12 sec |
+-| 🍓 Strawberry | **Speed Burst** | World scrolls faster, pig is invincible during burst | 10 sec |
+-| 🍍 Pineapple | **Spike Shield** | Pig grows visible spikes, destroys obstacles on contact | 12 sec |
+-| 🍇 Grapes | **Magnet** | All nearby fruits auto-attracted to pig without physical contact | 15 sec |
+-
+-**Banana Flight Mode — detailed:**
+-- On activation, pig rises smoothly to the middle vertical band of the screen
+-- Pig bobs gently and glides forward — cannot die from ground obstacles
+-- Player controls vertical position: spacebar/tap = nudge upward, gravity slowly pulls pig down (Flappy Bird style during flight)
+-- Use `pigmouthopen.PNG` when boosting upward, `pigflymouthclose.PNG` when gliding level
+-- At 20 seconds, pig descends gently back to ground
+-- After landing, double jump resets normally
+-
+-**Stoneskin / Pineapple obstacle break animation:**
+-- Obstacle explodes into chunky debris pieces that spin and arc off screen
+-- Dust cloud + star particle burst
+-- Sound: crash/shatter sfx
+-
+-**Super power auras on pig:**
+-- Lightfoot: golden glow
+-- Flight: blue/white feathered wings overlay
+-- Stoneskin: grey rocky texture overlay
+-- Speed Burst: red/orange motion blur trails
+-- Spike Shield: green spikes around body
+-- Magnet: purple magnetic field lines
+-
+----
+-
+-## GAME STATES
+-
+-**1. Start Screen**
+-- "Pig Can Fly 🐷" logo
+-- Animated pig running in place
+-- High score shown
+-- "Tap to Start" / spacebar prompt
+-
+-**2. Playing**
+-- HUD: Score (top left) · High Score (top right) · Active power icon + timer (top centre) · Fruit counter row with icons + counts · Super power charge bar
+-
+-**3. Game Over**
+-- Death animation plays fully
+-- Final score + high score
+-- List of super powers used this run
+-- "Play Again" button
+-
+----
+-
+-## VISUAL STYLE
+-
+-- Match the provided pig sprites: **Studio Ghibli-inspired**, soft cel-shading, clean outlines, warm pastel palette, hand-painted quality
+-- All game elements (obstacles, fruits, backgrounds, UI) must match this art style — no pixel art
+-- Background: sky gradient, fluffy clouds, rolling green hills in mid-layer, farm dirt path with grass edges on ground layer
+-- Fruits: large, bright, juicy — clearly recognisable at game speed
+-- Obstacles: chunky, characterful farm objects with depth and shadow
+-
+----
+-
+-## AUDIO
+-
+-- Background music: upbeat farm/countryside arcade loop
+-- Jump: light bounce sfx
+-- Fruit collect: cheerful pop/chime
+-- Super power activate: short fanfare
+-- Obstacle smash (Stoneskin): crash/shatter
+-- Death: tumble + thud
+-- Game over: short jingle
+-
+-Use royalty-free audio from freesound.org, OpenGameArt, or generate programmatically with Tone.js.
+-
+----
+-
+-## TECHNICAL REQUIREMENTS
+-
+-- Framework: **Phaser 3** preferred; fallback: pure HTML5 Canvas + JS
+-- Runs in browser, no install
+-- Mobile: touch controls (tap = jump; hold/tap during flight = nudge up)
+-- Desktop: Spacebar = jump / Up Arrow = flight nudge
+-- High score saved to localStorage
+-- Target: smooth 60fps
+-- Obstacle and fruit positions generated with seeded or procedural placement — not random mid-air falling
+-- All assets either provided (pig sprites) or sourced from free/open libraries (Kenney.nl, OpenGameArt)
+-
+----
+-
+-## DELIVERABLES
+-
+-- Single deployable folder: `index.html` + `/assets` subfolder
+-- Clean, commented code
+-- `README.md` with controls and how to run locally
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..fff2520
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,84 @@
++# 🐷 Pig Can Fly
++
++A polished, browser-based side-scrolling arcade game built with **Phaser 3**. Think Flappy Bird meets a modern mobile arcade game — with a flying pig, super powers, and Studio Ghibli-inspired visuals.
++
++![Pig Can Fly](assets/sprites/pigrun.png)
++
++## 🎮 How to Play
++
++### Controls
++| Action | Desktop | Mobile |
++|--------|---------|--------|
++| Jump | `Spacebar` or `Up Arrow` | Tap screen |
++| Double Jump | Press again in mid-air | Tap again in mid-air |
++| Flight nudge (during Banana power) | `Spacebar` / `Up Arrow` | Tap |
++
++### Gameplay
++- The pig runs automatically from left to right
++- **Jump** over obstacles — touching any obstacle means instant death!
++- **Collect fruits** floating along the path
++- Every **5 fruits** collected activates a **Super Power** based on the most-collected fruit type
++
++### Super Powers
++| Fruit | Power | Effect | Duration |
++|-------|-------|--------|----------|
++| 🍎 Apple | Lightfoot | Higher jumps, float longer | 15s |
++| 🍌 Banana | Flight | Fly freely, immune to ground obstacles | 20s |
++| 🍊 Orange | Stoneskin | Smash through obstacles | 12s |
++| 🍓 Strawberry | Speed Burst | Faster scrolling + invincibility | 10s |
++| 🍍 Pineapple | Spike Shield | Destroy obstacles on contact | 12s |
++| 🍇 Grapes | Magnet | Auto-attract nearby fruits | 15s |
++
++## 🚀 Running Locally
++
++### Option 1: Simple HTTP Server (Python)
++```bash
++cd pig-can-fly
++python3 -m http.server 8000
++# Open http://localhost:8000 in your browser
++```
++
++### Option 2: Node.js
++```bash
++npx serve .
++```
++
++### Option 3: VS Code
++Install the "Live Server" extension and click "Go Live".
++
++> **Note:** The game must be served over HTTP (not opened as a file://) due to image loading requirements.
++
++## 📁 Project Structure
++```
++pig-can-fly/
++├── index.html              # Entry point
++├── game.js                 # Complete game code (Phaser 3)
++├── README.md
++└── assets/
++    └── sprites/
++        ├── pigrun.png          # Running state
++        ├── pigmouthopen.png    # Excited/boosting state
++        └── pigflymouthclose.png # Calm flight state
++```
++
++## 🎨 Visual Style
++- Studio Ghibli-inspired soft cel-shading
++- Warm pastel palette with clean outlines
++- Parallax scrolling: sky → clouds → hills → ground
++- All game assets (obstacles, fruits, backgrounds, UI) generated programmatically to match the art style
++
++## 🔊 Audio
++All audio is generated programmatically using the Web Audio API — no external audio files required:
++- Background music: upbeat farm/countryside loop
++- Jump, double jump, fruit collect, power activate, smash, death, and game over sound effects
++
++## ⚙️ Technical Details
++- **Framework:** Phaser 3.60
++- **Resolution:** 1280×720 (16:9), scales to fit any screen
++- **Target:** 60fps
++- **High scores** saved to localStorage
++- **Mobile-friendly** with touch controls
++- **No dependencies** to install — just serve and play
++
++## 📜 License
++Pig sprite artwork created with Dola AI. All other assets generated programmatically.
+diff --git a/assets/icon-192.png b/assets/icon-192.png
+deleted file mode 100644
+index a849bc9..0000000
+Binary files a/assets/icon-192.png and /dev/null differ
+diff --git a/assets/icon-512.png b/assets/icon-512.png
+deleted file mode 100644
+index dffd5bd..0000000
+Binary files a/assets/icon-512.png and /dev/null differ
+diff --git a/assets/pig_fly_sheet.png b/assets/pig_fly_sheet.png
+deleted file mode 100644
+index dd96a53..0000000
+Binary files a/assets/pig_fly_sheet.png and /dev/null differ
+diff --git a/assets/pig_nowing_sheet.png b/assets/pig_nowing_sheet.png
+deleted file mode 100644
+index 9acdb83..0000000
+Binary files a/assets/pig_nowing_sheet.png and /dev/null differ
+diff --git a/assets/pig_run_sheet.png b/assets/pig_run_sheet.png
+deleted file mode 100644
+index 3d85b5b..0000000
+Binary files a/assets/pig_run_sheet.png and /dev/null differ
+diff --git a/assets/pigfly_anim.png b/assets/pigfly_anim.png
+deleted file mode 100644
+index 8cedbc5..0000000
+Binary files a/assets/pigfly_anim.png and /dev/null differ
+diff --git a/assets/pigfly_clean.png b/assets/pigfly_clean.png
+deleted file mode 100644
+index f27657e..0000000
+Binary files a/assets/pigfly_clean.png and /dev/null differ
+diff --git a/assets/pigflymo0bg.jpg b/assets/pigflymo0bg.jpg
+deleted file mode 100644
+index 67212c3..0000000
+Binary files a/assets/pigflymo0bg.jpg and /dev/null differ
+diff --git a/assets/pigflymo0bg.png b/assets/pigflymo0bg.png
+deleted file mode 100644
+index 1a5afa6..0000000
+Binary files a/assets/pigflymo0bg.png and /dev/null differ
+diff --git a/assets/pigjump0wing.jpg b/assets/pigjump0wing.jpg
+deleted file mode 100644
+index 84b4cfe..0000000
+Binary files a/assets/pigjump0wing.jpg and /dev/null differ
+diff --git a/assets/pignowing0bg.jpg b/assets/pignowing0bg.jpg
+deleted file mode 100644
+index 2e3bbfb..0000000
+Binary files a/assets/pignowing0bg.jpg and /dev/null differ
+diff --git a/assets/pignowing0bg.png b/assets/pignowing0bg.png
+deleted file mode 100644
+index 78f1793..0000000
+Binary files a/assets/pignowing0bg.png and /dev/null differ
+diff --git a/assets/pigrun.jpg b/assets/pigrun.jpg
+deleted file mode 100644
+index 2e3bbfb..0000000
+Binary files a/assets/pigrun.jpg and /dev/null differ
+diff --git a/assets/sprites/pigflymouthclose.png b/assets/sprites/pigflymouthclose.png
+new file mode 100644
+index 0000000..672c792
+Binary files /dev/null and b/assets/sprites/pigflymouthclose.png differ
+diff --git a/assets/sprites/pigmouthopen.png b/assets/sprites/pigmouthopen.png
+new file mode 100644
+index 0000000..20047b8
+Binary files /dev/null and b/assets/sprites/pigmouthopen.png differ
+diff --git a/assets/sprites/pigrun.gif b/assets/sprites/pigrun.gif
+new file mode 100644
+index 0000000..a670a72
+Binary files /dev/null and b/assets/sprites/pigrun.gif differ
+diff --git a/assets/sprites/pigrun.png b/assets/sprites/pigrun.png
+new file mode 100644
+index 0000000..5d4b6f5
+Binary files /dev/null and b/assets/sprites/pigrun.png differ
+diff --git a/assets/sprites/pigrun_clean.png b/assets/sprites/pigrun_clean.png
+new file mode 100644
+index 0000000..c2e4e64
+Binary files /dev/null and b/assets/sprites/pigrun_clean.png differ
+diff --git a/assets/sprites/pigrun_transparent.gif b/assets/sprites/pigrun_transparent.gif
+new file mode 100644
+index 0000000..3a53d23
+Binary files /dev/null and b/assets/sprites/pigrun_transparent.gif differ
+diff --git a/game.js b/game.js
+index a4ece7d..a2b9a71 100644
+--- a/game.js
++++ b/game.js
+@@ -1,151 +1,100 @@
+ // ============================================================
+-//  PIG CAN FLY  –  Phaser 3 browser game
++// PIG CAN FLY — Phaser 3 Side-Scrolling Arcade Game
+ // ============================================================
+ 
+-const W = 1280;
+-const H = 720;
+-const GROUND_Y = 620;          // top of ground strip
+-
+-// ---- world / physics constants ----
+-const PIG_RUN_H    = 77;   // target display height for run pig body
+-const PIG_FLY_SCALE = 0.7741; // scale so fly pig body matches run pig
+-const SCROLL_SPEED_BASE  = 280;  // px/s
+-const GRAVITY            = 1800;
+-const JUMP_VELOCITY      = -700;
+-const JUMP_VELOCITY_HIGH = -950; // Lightfoot power
+-
+-// ---- fruit types ----
+-const FRUITS = [
+-  { name:'Apple',      emoji:'🍎', color:0xe53935, power:'Lightfoot' },
+-  { name:'Orange',     emoji:'🍊', color:0xfb8c00, power:'Stoneskin' },
+-  { name:'Banana',     emoji:'🍌', color:0xfdd835, power:'Flight'    },
+-  { name:'Pineapple',  emoji:'🍍', color:0xc0ca33, power:'Spike'     },
+-  { name:'Strawberry', emoji:'🍓', color:0xe91e63, power:'Speed'     },
+-  { name:'Grapes',     emoji:'🍇', color:0x7b1fa2, power:'Magnet'    },
+-];
+-
+-// ---- obstacle types ----
+-const OBSTACLES = [
+-  { name:'Haystack',  color:0xd4a017, w:70, h:55  },
+-  { name:'Gate',      color:0x795548, w:90, h:80  },
+-  { name:'Bush',      color:0x388e3c, w:80, h:50  },
+-  { name:'Tractor',   color:0xb71c1c, w:120, h:75 },
+-  { name:'Boulder',   color:0x607d8b, w:75, h:65  },
+-];
+-
+-// ---- power durations ----
+-const POWER_DURATION = {
+-  Lightfoot: 15000,
+-  Flight:    20000,
+-  Stoneskin: 12000,
+-  Speed:     10000,
+-  Spike:     12000,
+-  Magnet:    15000,
++const GAME_W = 1280;
++const GAME_H = 720;
++const GROUND_Y = 620;
++const GROUND_H = 100;
++const PIG_X = 200;
++const BASE_SCROLL_SPEED = 300;
++const GRAVITY = 1200;
++const JUMP_VEL = -520;
++const DOUBLE_JUMP_VEL = -460;
++
++const FRUIT_TYPES = ['apple', 'orange', 'banana', 'pineapple', 'strawberry', 'grapes'];
++const FRUIT_COLORS = {
++    apple: 0xff4444,
++    orange: 0xff8833,
++    banana: 0xffee44,
++    pineapple: 0xffcc00,
++    strawberry: 0xff5577,
++    grapes: 0x9944cc
+ };
+-
+-const POWER_COLORS = {
+-  Lightfoot: 0xffd700,
+-  Flight:    0x42a5f5,
+-  Stoneskin: 0x9e9e9e,
+-  Speed:     0xf44336,
+-  Spike:     0x66bb6a,
+-  Magnet:    0xce93d8,
++const FRUIT_EMOJIS = {
++    apple: '🍎', orange: '🍊', banana: '🍌',
++    pineapple: '🍍', strawberry: '🍓', grapes: '🍇'
+ };
+ 
+-// ---- difficulty phase settings ----
+-const PHASE_SPEEDS      = [200, 280, 380];   // phase 1 / 2 / 3
+-const PHASE_FRUIT_DIST  = [250, 450, 650];   // distance between fruit spawns
+-const PHASE_OBS_SCALE   = [0.50, 1.0, 1.0]; // obstacle height scale — 50% smaller in phase 1
+-
+-// ---- power strength (higher wins) ----
+-const POWER_STRENGTH = {
+-  Flight:    5,
+-  Stoneskin: 4,
+-  Spike:     4,
+-  Speed:     3,
+-  Lightfoot: 2,
+-  Magnet:    1,
++const OBSTACLE_TYPES = ['haystack', 'gate', 'bush', 'tractor', 'boulder'];
++
++const POWER_INFO = {
++    apple:      { name: 'Lightfoot',    duration: 15000, color: 0xffd700 },
++    banana:     { name: 'Flight',       duration: 20000, color: 0x66bbff },
++    orange:     { name: 'Stoneskin',    duration: 12000, color: 0x888888 },
++    strawberry: { name: 'Speed Burst',  duration: 10000, color: 0xff4400 },
++    pineapple:  { name: 'Spike Shield', duration: 12000, color: 0x44bb44 },
++    grapes:     { name: 'Magnet',       duration: 15000, color: 0xaa44ff }
+ };
+ 
+ // ============================================================
+-//  BootScene – generate textures, load images
++// BOOT SCENE — generate all assets programmatically
+ // ============================================================
+ class BootScene extends Phaser.Scene {
+-  constructor() { super('Boot'); }
+-
+-  preload() {
+-    // Pig sprites
+-    this.load.spritesheet('pigrun_sheet', 'assets/pig_run_sheet.png', {
+-      frameWidth: 117, frameHeight: 96, endFrame: 11
+-    });
+-    this.load.image('pignowing', 'assets/pigrun.jpg');
+-    this.load.image('pigjump',  'assets/pigjump0wing.jpg');
+-    this.load.image('pigopen',  'pigmouthopen.PNG');
+-    this.load.image('pigcalm',  'pigflymouthclose.PNG');
+-    this.load.image('pigfly',   'assets/pigfly_clean.png');
+-    this.load.spritesheet('pigfly_sheet', 'assets/pigfly_anim.png', {
+-      frameWidth: 186, frameHeight: 155, endFrame: 11
+-    });
+-  }
+-
+-  create() {
+-    this._makeTextures();
+-    this.scene.start('Start');
+-  }
+-
+-  _makeTextures() {
+-    const g = this.make.graphics({ add: false });
+-    this._genSky(g);
+-    this._genClouds(g);
+-    this._genHills(g);
+-    this._genGround(g);
+-    // Fruits
+-    ['Apple','Orange','Banana','Pineapple','Strawberry','Grapes'].forEach(name => {
+-      this._genFruit(g, name.toLowerCase());
+-    });
+-    this._genObstacles(g);
+-    // Aura
+-    g.clear();
+-    g.lineStyle(4, 0xffffff, 0.6);
+-    g.strokeCircle(30, 30, 28);
+-    g.generateTexture('aura', 60, 60);
+-
+-    // Star (for death animation)
+-    g.clear();
+-    g.fillStyle(0xffee44);
+-    const pts = 5;
+-    const cx = 16, cy = 16, ro = 14, ri = 6;
+-    g.beginPath();
+-    for (let i = 0; i < pts * 2; i++) {
+-      const angle = (i * Math.PI / pts) - Math.PI / 2;
+-      const r = i % 2 === 0 ? ro : ri;
+-      const x = cx + Math.cos(angle) * r;
+-      const y = cy + Math.sin(angle) * r;
+-      i === 0 ? g.moveTo(x, y) : g.lineTo(x, y);
++    constructor() { super('Boot'); }
++
++    preload() {
++        // Load pig sprites
++        this.load.image('pig_run', 'assets/sprites/pigrun.png');
++        this.load.image('pig_mouth_open', 'assets/sprites/pigmouthopen.png');
++        this.load.image('pig_fly_closed', 'assets/sprites/pigflymouthclose.png');
+     }
+-    g.closePath();
+-    g.fillPath();
+-    g.lineStyle(1, 0xffaa00);
+-    g.strokePath();
+-    g.generateTexture('star', 32, 32);
+ 
+-    g.destroy();
+-  }
++    create() {
++        this.generateAssets();
++        this.scene.start('Menu');
++    }
++
++    generateAssets() {
++        const g = this.make.graphics({ add: false });
++
++        // --- Sky gradient ---
++        this.generateSky(g);
++
++        // --- Parallax layers ---
++        this.generateClouds(g);
++        this.generateHills(g);
++        this.generateGround(g);
++
++        // --- Fruits ---
++        FRUIT_TYPES.forEach(f => this.generateFruit(g, f));
++
++        // --- Obstacles ---
++        this.generateObstacles(g);
++
++        // --- Particles ---
++        this.generateParticle(g);
++
++        // --- UI elements ---
++        this.generatePowerIcons(g);
+ 
+-    _genSky(g) {
++        g.destroy();
++    }
++
++    generateSky(g) {
+         g.clear();
+-        for (let y = 0; y < H; y++) {
+-            const t = y / H;
++        for (let y = 0; y < GAME_H; y++) {
++            const t = y / GAME_H;
+             const r = Math.floor(135 + t * 50);
+             const gr = Math.floor(195 + t * 30);
+             const b = Math.floor(235 - t * 20);
+             g.fillStyle(Phaser.Display.Color.GetColor(r, gr, b));
+-            g.fillRect(0, y, W, 1);
++            g.fillRect(0, y, GAME_W, 1);
+         }
+-        g.generateTexture('sky', W, H);
++        g.generateTexture('sky', GAME_W, GAME_H);
+     }
+ 
+-    _genClouds(g) {
++    generateClouds(g) {
+         g.clear();
+         const cw = 2560;
+         for (let i = 0; i < 12; i++) {
+@@ -162,7 +111,7 @@ class BootScene extends Phaser.Scene {
+         g.generateTexture('clouds', cw, 250);
+     }
+ 
+-    _genHills(g) {
++    generateHills(g) {
+         g.clear();
+         const hw = 2560;
+         const hh = 300;
+@@ -193,13 +142,13 @@ class BootScene extends Phaser.Scene {
+         g.generateTexture('hills', hw, hh);
+     }
+ 
+-    _genGround(g) {
++    generateGround(g) {
+         g.clear();
+         const gw = 2560;
+ 
+         // Dirt path
+         g.fillStyle(0xc4955a);
+-        g.fillRect(0, 0, gw, 100);
++        g.fillRect(0, 0, gw, GROUND_H);
+ 
+         // Grass top edge
+         g.fillStyle(0x6abf4b);
+@@ -216,7 +165,7 @@ class BootScene extends Phaser.Scene {
+         for (let i = 0; i < 200; i++) {
+             g.fillStyle(0xb08545, 0.3);
+             const rx = Phaser.Math.Between(0, gw);
+-            const ry = Phaser.Math.Between(15, 100 - 5);
++            const ry = Phaser.Math.Between(15, GROUND_H - 5);
+             g.fillCircle(rx, ry, Phaser.Math.Between(1, 3));
+         }
+ 
+@@ -229,10 +178,10 @@ class BootScene extends Phaser.Scene {
+             g.fillCircle(x, 8, 1.5);
+         }
+ 
+-        g.generateTexture('ground', gw, 100);
++        g.generateTexture('ground', gw, GROUND_H);
+     }
+ 
+-    _genFruit(g, type) {
++    generateFruit(g, type) {
+         g.clear();
+         const s = 40;
+         const c = s / 2;
+@@ -330,7 +279,7 @@ class BootScene extends Phaser.Scene {
+         g.generateTexture('fruit_' + type, s, s);
+     }
+ 
+-    _genObstacles(g) {
++    generateObstacles(g) {
+         // Haystack
+         g.clear();
+         g.fillStyle(0xccaa44);
+@@ -432,7 +381,7 @@ class BootScene extends Phaser.Scene {
+         g.generateTexture('obs_boulder', 70, 70);
+     }
+ 
+-    _genParticle(g) {
++    generateParticle(g) {
+         g.clear();
+         g.fillStyle(0xffffff);
+         g.fillCircle(4, 4, 4);
+@@ -470,7 +419,7 @@ class BootScene extends Phaser.Scene {
+         g.generateTexture('dust', 16, 16);
+     }
+ 
+-    _genPowerIcons(g) {
++    generatePowerIcons(g) {
+         Object.entries(POWER_INFO).forEach(([fruit, info]) => {
+             g.clear();
+             g.fillStyle(info.color, 0.8);
+@@ -483,1072 +432,1088 @@ class BootScene extends Phaser.Scene {
+ }
+ 
+ // ============================================================
+-//  StartScene
++// AUDIO MANAGER — Procedural audio using Web Audio API
+ // ============================================================
+-class StartScene extends Phaser.Scene {
+-  constructor() { super('Start'); }
+-
+-  create() {
+-    const highScore = parseInt(localStorage.getItem('pigHighScore') || '0');
+-
+-    // Sky
+-    this.add.image(W/2, H/2, 'sky');
+-
+-    // Scrolling hills + clouds in background
+-    this._bg1 = this.add.tileSprite(W/2, H - 200, W, 160, 'hills').setOrigin(0.5, 1);
+-    this._bg2 = this.add.tileSprite(W/2, 120, W, 120, 'clouds').setOrigin(0.5, 0);
+-    this.add.tileSprite(W/2, H, W, 100, 'ground').setOrigin(0.5, 1);
+-
+-    // Title
+-    this.add.text(W/2, 140, 'PIG CAN FLY', {
+-      fontFamily: 'Impact, Arial Black, sans-serif',
+-      fontSize: '96px',
+-      color: '#fff',
+-      stroke: '#d32f2f',
+-      strokeThickness: 8,
+-      shadow: { offsetX: 4, offsetY: 4, color: '#000', blur: 0, fill: true }
+-    }).setOrigin(0.5);
+-
+-    // High score
+-    this.add.text(W/2, 250, `Best: ${highScore}`, {
+-      fontFamily: 'Arial', fontSize: '32px', color: '#ffe082', stroke:'#000', strokeThickness:4
+-    }).setOrigin(0.5);
+-
+-    // Animated pig on start screen
+-    const pig = this.add.sprite(W/2, GROUND_Y - 30, 'pigrun_sheet', 0).setOrigin(0.5, 1);
+-pig.play('pig_run');
+-    pig.setScale(Math.min(103 / pig.width, 77 / pig.height));
+-    this.tweens.add({
+-      targets: pig,
+-      y: GROUND_Y - 8,
+-      duration: 300,
+-      yoyo: true,
+-      repeat: -1,
+-      ease: 'Sine.easeInOut'
+-    });
+-
+-    // Tap to start
+-    const tapText = this.add.text(W/2, 480, 'TAP OR PRESS SPACE TO START', {
+-      fontFamily: 'Arial', fontSize: '36px', color: '#fff', stroke:'#000', strokeThickness:4
+-    }).setOrigin(0.5);
+-
+-    this.tweens.add({ targets: tapText, alpha: 0, duration: 500, yoyo: true, repeat: -1 });
+-
+-    // Controls hint
+-    this.add.text(W/2, 560, 'SPACE / TAP  =  Jump  |  Double Jump allowed', {
+-      fontFamily: 'Arial', fontSize: '22px', color: '#e0e0e0', stroke:'#000', strokeThickness:3
+-    }).setOrigin(0.5);
+-
+-    this._startGame = () => { PigMusicPlayer.start(); this.scene.start('Game'); };
+-
+-    this.input.keyboard.once('keydown-SPACE', this._startGame);
+-    this.input.once('pointerdown', this._startGame);
+-  }
+-
+-  update() {
+-    this._bg1.tilePositionX += 1;
+-    this._bg2.tilePositionX += 0.3;
+-  }
+-}
++class AudioManager {
++    constructor() {
++        this.ctx = null;
++        this.initialized = false;
++        this.musicPlaying = false;
++        this.musicGain = null;
++        this.musicNodes = [];
++    }
+ 
+-// ============================================================
+-//  GameScene  (the main game)
+-// ============================================================
+-class GameScene extends Phaser.Scene {
+-  constructor() { super('Game'); }
+-
+-  // ----------------------------------------------------------
+-  create() {
+-    this._score        = 0;
+-    this._distance     = 0;
+-    this._phase        = 1;
+-    this._maxJumps     = 1;
+-    this._scrollSpeed  = PHASE_SPEEDS[0];
+-    this._alive        = true;
+-    this._jumpCount    = 0;     // 0,1,2
+-    this._onGround     = true;
+-    this._velY         = 0;
+-    this._pigY         = GROUND_Y;   // pig bottom y
+-    this._fruitCounts  = {};
+-    FRUITS.forEach(f => { this._fruitCounts[f.name] = 0; });
+-    this._totalFruitsCollected = 0;
+-    this._activePower  = null;
+-    this._powerTimer   = 0;
+-    this._powersUsed   = new Set();
+-    this._nextObsDist  = 600;
+-    this._nextFruitDist = PHASE_FRUIT_DIST[0];
+-    this._distSinceLastObs  = 0;
+-    this._distSinceLastFruit= 0;
+-    this._flightVelY   = 0;
+-    this._magnetRadius = 220;
+-    this._deathTriggered = false;
+-
+-    // ---- Background layers ----
+-    this.add.image(W/2, H/2, 'sky');
+-    this._cloudLayer = this.add.tileSprite(W/2, 110, W, 120, 'clouds').setOrigin(0.5, 0);
+-    this._hillLayer  = this.add.tileSprite(W/2, H - 200, W, 160, 'hills').setOrigin(0.5, 1);
+-    this._groundLayer= this.add.tileSprite(W/2, H, W, 100, 'ground').setOrigin(0.5, 1);
+-
+-    // ---- Groups ----
+-    this._obstacles = this.add.group();
+-    this._fruits    = this.add.group();
+-
+-    // ---- Pig fly animation ----
+-    if (!this.anims.exists('pig_run')) {
+-      this.anims.create({
+-        key: 'pig_run',
+-        frames: this.anims.generateFrameNumbers('pigrun_sheet', { start: 0, end: 11 }),
+-        frameRate: 12,
+-        repeat: -1
+-      });
++    init() {
++        if (this.initialized) return;
++        try {
++            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
++            this.masterGain = this.ctx.createGain();
++            this.masterGain.gain.value = 0.4;
++            this.masterGain.connect(this.ctx.destination);
++            this.initialized = true;
++        } catch (e) {
++            console.warn('Web Audio not available');
++        }
++    }
++
++    playNote(freq, duration, type = 'sine', volume = 0.3, delay = 0) {
++        if (!this.initialized) return;
++        const t = this.ctx.currentTime + delay;
++        const osc = this.ctx.createOscillator();
++        const gain = this.ctx.createGain();
++        osc.type = type;
++        osc.frequency.setValueAtTime(freq, t);
++        gain.gain.setValueAtTime(volume, t);
++        gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
++        osc.connect(gain);
++        gain.connect(this.masterGain);
++        osc.start(t);
++        osc.stop(t + duration);
+     }
+-    if (!this.anims.exists('pig_fly')) {
+-      this.anims.create({
+-        key: 'pig_fly',
+-        frames: this.anims.generateFrameNumbers('pigfly_sheet', { start: 0, end: 11 }),
+-        frameRate: 12,
+-        repeat: -1
+-      });
++
++    playJump() {
++        this.playNote(400, 0.15, 'sine', 0.25);
++        this.playNote(600, 0.1, 'sine', 0.2, 0.05);
+     }
+-    // ---- Pig (wingless image) ----
+-    this._pig = this.add.sprite(200, GROUND_Y, 'pigrun_sheet', 0).setOrigin(0.5, 1).setDepth(4);
+-this._pig.play('pig_run');
+-    this._pigBounceTween = null;
+-    // ---- Wings overlay (sprite so it can animate; hidden by default) ----
+-    this._wings = null;
+-    this._scalePig();
+-
+-    // ---- Aura (power visual) ----
+-    this._aura = this.add.image(0, 0, 'aura').setAlpha(0).setDepth(5);
+-
+-    // ---- HUD ----
+-    this._buildHUD();
+-
+-    // ---- Input ----
+-    this.input.keyboard.on('keydown-SPACE', () => this._doJump());
+-    this.input.on('pointerdown', () => this._doJump());
+-
+-    // (debris particles are spawned imperatively in _explodeObstacle)
+-  }
+-
+-  _scalePig() {
+-    const pig = this._pig;
+-    const targetH = PIG_RUN_H;
+-    const s = targetH / pig.height;
+-    pig.setScale(s);
+-    
+-  }
+-
+-  _setPigTexture(key) {
+-    this._pig.stop();
+-    this._pig.setTexture(key);
+-    // Use natural texture height, not display height
+-    const naturalH = this._pig.texture.source[0].height;
+-    this._pig.setScale(72 / naturalH);
+-  }
+-
+-  _setPigAnim(key, ignoreIfPlaying) {
+-    this._pig.play(key, ignoreIfPlaying);
+-    this._pig.setScale(72 / (this._pig.height || 66));
+-  }
+-
+-  // ----------------------------------------------------------
+-  //  HUD
+-  // ----------------------------------------------------------
+-  _buildHUD() {
+-    const style = (size, color='#fff') => ({
+-      fontFamily: 'Arial Black, Arial', fontSize: `${size}px`,
+-      color, stroke: '#000', strokeThickness: 3
+-    });
+-
+-    // Score
+-    this._scoreTxt = this.add.text(20, 16, 'Score: 0', style(28)).setDepth(10);
+-
+-    // Top 5 leaderboard (top-left below score)
+-    this.add.text(20, 52, '🏆 TOP 5', {
+-      fontFamily: 'Arial Black', fontSize: '13px',
+-      color: '#ffe082', stroke: '#000', strokeThickness: 3
+-    }).setDepth(10);
+-    this._lbTexts = [];
+-    const medals = ['🥇','🥈','🥉','4.','5.'];
+-    const initScores = Leaderboard.top();
+-    for (let i = 0; i < 5; i++) {
+-      const s = initScores[i] || 0;
+-      const col = i===0?'#ffd700':i===1?'#c0c0c0':i===2?'#cd7f32':'#ffffff';
+-      const t = this.add.text(20, 68 + i * 18,
+-        medals[i] + ' ' + (s > 0 ? s.toLocaleString() : '---'), {
+-        fontFamily: 'Arial', fontSize: '13px',
+-        color: col, stroke: '#000', strokeThickness: 3
+-      }).setDepth(10);
+-      this._lbTexts.push(t);
++
++    playDoubleJump() {
++        this.playNote(500, 0.1, 'sine', 0.25);
++        this.playNote(700, 0.1, 'sine', 0.2, 0.05);
++        this.playNote(900, 0.08, 'sine', 0.15, 0.1);
+     }
+ 
+-    // Fruit counters (top-right)
+-    this._fruitHUD = [];
+-    FRUITS.forEach((f, i) => {
+-      const col = i % 3;
+-      const row = Math.floor(i / 3);
+-      const x = W - 280 + col * 90;
+-      const y = 12 + row * 36;
+-      const icon = this.add.text(x, y, f.emoji, { fontSize: '22px' }).setDepth(10);
+-      const cnt  = this.add.text(x + 28, y + 2, '0', style(20)).setDepth(10);
+-      this._fruitHUD.push({ icon, cnt });
+-    });
+-
+-    // Power bar (centre-top)
+-    const barX = W/2 - 150;
+-    const barY = 14;
+-    this._powerBg  = this.add.rectangle(W/2, barY + 10, 300, 20, 0x333333, 0.7).setOrigin(0.5, 0).setDepth(10);
+-    this._powerBar = this.add.rectangle(barX, barY + 10, 0, 20, 0xffd700).setOrigin(0, 0).setDepth(11);
+-    this._powerLbl = this.add.text(W/2, barY + 30, '', style(18, '#ffe082')).setOrigin(0.5, 0).setDepth(11);
+-    this._powerIcon= this.add.text(W/2, barY - 4, '', { fontSize: '28px' }).setOrigin(0.5, 0).setDepth(11);
+-  }
+-
+-  _updateHUD() {
+-    this._scoreTxt.setText('Score: ' + Math.floor(this._score));
+-    FRUITS.forEach((f, i) => {
+-      this._fruitHUD[i].cnt.setText(String(this._fruitCounts[f.name]));
+-    });
+-
+-    if (this._activePower) {
+-      const pct = this._powerTimer / POWER_DURATION[this._activePower];
+-      this._powerBar.width = 300 * pct;
+-      const col = POWER_COLORS[this._activePower];
+-      this._powerBar.fillColor = col;
+-      this._powerLbl.setText(this._activePower + '  ' + (this._powerTimer / 1000).toFixed(1) + 's');
+-      this._aura.setTint(col).setAlpha(0.55 + 0.2 * Math.sin(this.time.now / 120));
+-    } else {
+-      this._powerBar.width = 0;
+-      this._powerLbl.setText('');
+-      this._powerIcon.setText('');
+-      this._aura.setAlpha(0);
++    playFruitCollect() {
++        this.playNote(800, 0.08, 'sine', 0.2);
++        this.playNote(1000, 0.08, 'sine', 0.2, 0.06);
++        this.playNote(1200, 0.12, 'sine', 0.15, 0.12);
+     }
+-  }
+-
+-  // ----------------------------------------------------------
+-  //  Input
+-  // ----------------------------------------------------------
+-  _doJump() {
+-    if (!this._alive) return;
+-    if (this._activePower === 'Flight') {
+-      // Nudge upward in flight mode
+-      this._flightVelY = -350;
+-      return;
++
++    playPowerActivate() {
++        [523, 659, 784, 1047].forEach((f, i) => {
++            this.playNote(f, 0.2, 'sine', 0.2, i * 0.08);
++        });
+     }
+-    if (this._jumpCount < this._maxJumps) {
+-      PigSFX.jump();
+-      const vel = (this._activePower === 'Lightfoot') ? JUMP_VELOCITY_HIGH : JUMP_VELOCITY;
+-      this._velY = vel;
+-      this._jumpCount++;
+-      this._onGround = false;
++
++    playSmash() {
++        if (!this.initialized) return;
++        const t = this.ctx.currentTime;
++        // Noise burst for crash
++        const bufferSize = this.ctx.sampleRate * 0.3;
++        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
++        const data = buffer.getChannelData(0);
++        for (let i = 0; i < bufferSize; i++) {
++            data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 2);
++        }
++        const noise = this.ctx.createBufferSource();
++        noise.buffer = buffer;
++        const gain = this.ctx.createGain();
++        gain.gain.setValueAtTime(0.3, t);
++        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
++        noise.connect(gain);
++        gain.connect(this.masterGain);
++        noise.start(t);
++        this.playNote(150, 0.2, 'square', 0.15);
+     }
+-  }
+-
+-  // ----------------------------------------------------------
+-  //  Spawning
+-  // ----------------------------------------------------------
+-  _spawnObstacle() {
+-    // Phase-gated obstacles:
+-    // Phase 1: Haystack, Bush, Boulder only
+-    // Phase 2: + Gate
+-    // Phase 3: + Tractor
+-    const available = OBSTACLES.filter(o => {
+-      if (o.name === 'Tractor') return this._phase >= 3;
+-      if (o.name === 'Gate')    return this._phase >= 2;
+-      return true;
+-    });
+-    const def = Phaser.Utils.Array.GetRandom(available);
+-    const x = W + def.w;
+-    // origin(0,1): x=left edge, y=bottom edge
+-    const obs = this.add.image(x, GROUND_Y, 'obs_' + def.name.toLowerCase()).setOrigin(0, 1).setDepth(3);
+-    const hScale = PHASE_OBS_SCALE[this._phase - 1];
+-    obs.setScale(obs.scaleX, hScale);
+-    obs._def = def;
+-    obs._hitW = def.w * 0.72;
+-    obs._hitH = def.h * 0.80 * hScale;
+-    this._obstacles.add(obs);
+-  }
+-
+-  _spawnFruit() {
+-    const def = Phaser.Utils.Array.GetRandom(FRUITS);
+-    const x = W + 30;
+-    const minY = 160;
+-    const maxY = GROUND_Y - 40;
+-    const y = Phaser.Math.Between(minY, maxY);
+-    const fr = this.add.image(x, y, 'fruit_' + def.name.toLowerCase()).setDepth(3);
+-    fr._def = def;
+-    fr._baseY = y;
+-    fr._phase = Math.random() * Math.PI * 2;
+-    this._fruits.add(fr);
+-  }
+-
+-  // ----------------------------------------------------------
+-  //  Power activation
+-  // ----------------------------------------------------------
+-  _activatePower(powerName) {
+-    // Phase 1 blocks Flight — fall back to Lightfoot
+-    if (powerName === 'Flight' && this._phase < 2) {
+-      powerName = 'Lightfoot';
++
++    playDeath() {
++        [400, 350, 300, 200].forEach((f, i) => {
++            this.playNote(f, 0.2, 'sawtooth', 0.15, i * 0.12);
++        });
+     }
+ 
+-    // Power hierarchy: ignore if current power is stronger or equal
+-    if (this._activePower && this._activePower !== powerName) {
+-      const currentStr = POWER_STRENGTH[this._activePower] || 0;
+-      const newStr     = POWER_STRENGTH[powerName]         || 0;
+-      if (newStr > currentStr) {
+-        this._showFlash('POWER UPGRADED!', 0xffd700);
+-        this._deactivatePower();
+-      } else {
+-        return; // new power is weaker or equal — ignore
+-      }
++    playGameOver() {
++        const notes = [523, 493, 440, 392, 349, 330, 294, 262];
++        notes.forEach((f, i) => {
++            this.playNote(f, 0.3, 'sine', 0.15, i * 0.15);
++        });
+     }
+ 
+-    this._activePower = powerName;
+-    PigSFX.powerup();
+-    this._powerTimer  = POWER_DURATION[powerName];
+-    this._powersUsed.add(powerName);
++    startMusic() {
++        if (!this.initialized || this.musicPlaying) return;
++        this.musicPlaying = true;
++        this.musicGain = this.ctx.createGain();
++        this.musicGain.gain.value = 0.08;
++        this.musicGain.connect(this.masterGain);
++        this._playMusicLoop();
++    }
+ 
+-    // Set power icon emoji
+-    const emojiMap = {
+-      Lightfoot: '✨', Flight: '🪽', Stoneskin: '🪨',
+-      Speed: '💨', Spike: '🌵', Magnet: '🔮'
+-    };
+-    this._powerIcon.setText(emojiMap[powerName] || '');
++    _playMusicLoop() {
++        if (!this.musicPlaying) return;
++        const melody = [
++            523, 587, 659, 523, 659, 698, 784, 0,
++            784, 698, 659, 587, 523, 587, 659, 523,
++            440, 494, 523, 587, 659, 587, 523, 440,
++            349, 392, 440, 523, 494, 440, 392, 349
++        ];
++        const bass = [262, 262, 330, 330, 349, 349, 392, 392];
++        const beatLen = 0.2;
++
++        melody.forEach((f, i) => {
++            if (f > 0) this.playNote(f, beatLen * 0.8, 'sine', 0.06, i * beatLen);
++        });
++        bass.forEach((f, i) => {
++            this.playNote(f, beatLen * 3.5, 'triangle', 0.04, i * beatLen * 4);
++        });
+ 
+-    if (powerName === 'Speed') {
+-      this._scrollSpeed = PHASE_SPEEDS[this._phase - 1] * 1.8;
++        const loopLen = melody.length * beatLen * 1000;
++        this._musicTimer = setTimeout(() => this._playMusicLoop(), loopLen);
+     }
+ 
+-    if (powerName === 'Flight') {
+-      // Place pig in middle zone
+-      this._pigY = H / 2;
+-      this._flightVelY = 0;
+-      
++    stopMusic() {
++        this.musicPlaying = false;
++        if (this._musicTimer) clearTimeout(this._musicTimer);
++        if (this.musicGain) {
++            this.musicGain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.5);
++        }
+     }
++}
+ 
+-    // Show wings for any power
++const audioMgr = new AudioManager();
+ 
+-  }
++// ============================================================
++// MENU SCENE
++// ============================================================
++class MenuScene extends Phaser.Scene {
++    constructor() { super('Menu'); }
++
++    create() {
++        // Sky background
++        this.add.image(GAME_W / 2, GAME_H / 2, 'sky');
++
++        // Hills
++        this.add.image(GAME_W / 2, GAME_H - 150, 'hills').setScale(0.6).setAlpha(0.7);
++
++        // Ground
++        this.add.tileSprite(GAME_W / 2, GAME_H - GROUND_H / 2, GAME_W, GROUND_H, 'ground');
++
++        // Title
++        const titleStyle = {
++            fontSize: '72px', fontFamily: 'Georgia, serif',
++            color: '#ffffff', stroke: '#885522', strokeThickness: 8,
++            shadow: { offsetX: 3, offsetY: 3, color: '#00000055', blur: 8, fill: true }
++        };
++        this.add.text(GAME_W / 2, 140, '🐷 Pig Can Fly 🐷', titleStyle).setOrigin(0.5);
++
++        // Animated pig
++        this.pig = this.add.image(GAME_W / 2, 360, 'pig_run').setScale(2);
++        this.pigTimer = 0;
++
++        // High score
++        const hs = localStorage.getItem('pigcanfly_highscore') || 0;
++        this.add.text(GAME_W / 2, 460, `High Score: ${hs}`, {
++            fontSize: '28px', fontFamily: 'Georgia, serif',
++            color: '#ffe8cc', stroke: '#663300', strokeThickness: 4
++        }).setOrigin(0.5);
++
++        // Start prompt
++        this.prompt = this.add.text(GAME_W / 2, 540, '[ TAP or SPACEBAR to Start ]', {
++            fontSize: '30px', fontFamily: 'Georgia, serif',
++            color: '#ffffff', stroke: '#444444', strokeThickness: 3
++        }).setOrigin(0.5);
++
++        // Controls info
++        this.add.text(GAME_W / 2, 610, 'Spacebar / Tap = Jump  •  Double Jump in mid-air!', {
++            fontSize: '18px', fontFamily: 'Arial, sans-serif',
++            color: '#ddeedd'
++        }).setOrigin(0.5);
++
++        // Input
++        this.input.keyboard.on('keydown-SPACE', () => this.startGame());
++        this.input.on('pointerdown', () => this.startGame());
++    }
+ 
+-  _deactivatePower() {
+-    if (this._activePower === 'Speed') {
+-      this._scrollSpeed = PHASE_SPEEDS[this._phase - 1];
++    startGame() {
++        audioMgr.init();
++        this.scene.start('Game');
+     }
+-    if (this._activePower === 'Flight') {
+-      // Put pig back to near ground
+-      if (this._pigY > GROUND_Y - 10) this._pigY = GROUND_Y;
+-      this._velY = 0;
+-      this._jumpCount = 0;
+-      this._pig.y = this._pigY;
+-      
++
++    update(time) {
++        // Bob the pig
++        this.pig.y = 360 + Math.sin(time * 0.003) * 15;
++        this.pig.rotation = Math.sin(time * 0.004) * 0.08;
++        // Pulse the prompt
++        this.prompt.alpha = 0.5 + Math.sin(time * 0.005) * 0.5;
+     }
+-    
+-    this._activePower = null;
+-    this._powerTimer  = 0;
+-  }
+-
+-  // ----------------------------------------------------------
+-  //  Phase management
+-  // ----------------------------------------------------------
+-  _updatePhase() {
+-    const score = this._score;
+-    let newPhase;
+-    if (score >= 1500) {
+-      newPhase = 3;
+-    } else if (score >= 500) {
+-      newPhase = 2;
+-    } else {
+-      newPhase = 1;
++}
++
++// ============================================================
++// GAME SCENE — Main gameplay
++// ============================================================
++class GameScene extends Phaser.Scene {
++    constructor() { super('Game'); }
++
++    create() {
++        this.score = 0;
++        this.scrollSpeed = BASE_SCROLL_SPEED;
++        this.gameOver = false;
++        this.pigOnGround = true;
++        this.jumpCount = 0;
++        this.fruitCounts = {};
++        FRUIT_TYPES.forEach(f => this.fruitCounts[f] = 0);
++        this.totalFruits = 0;
++        this.activePower = null;
++        this.powerTimer = 0;
++        this.powerDuration = 0;
++        this.powersUsed = [];
++        this.isFlying = false;
++        this.pigVelY = 0;
++        this.distanceTravelled = 0;
++        this.nextObstacleDist = 400;
++        this.nextFruitDist = 200;
++        this.difficultyTimer = 0;
++
++        // Layers (back to front)
++        this.sky = this.add.image(GAME_W / 2, GAME_H / 2, 'sky').setScrollFactor(0);
++        this.cloudLayer = this.add.tileSprite(GAME_W / 2, 130, GAME_W, 250, 'clouds').setScrollFactor(0);
++        this.hillLayer = this.add.tileSprite(GAME_W / 2, GAME_H - 220, GAME_W, 300, 'hills').setScrollFactor(0);
++        this.groundLayer = this.add.tileSprite(GAME_W / 2, GAME_H - GROUND_H / 2, GAME_W, GROUND_H, 'ground').setScrollFactor(0);
++
++        // Obstacle & fruit groups
++        this.obstacles = this.add.group();
++        this.fruits = this.add.group();
++        this.particles = this.add.group();
++
++        // Pig
++        this.pig = this.add.image(PIG_X, GROUND_Y - 60, 'pig_run').setScale(1.0);
++        this.pig.setOrigin(0.5, 1);
++
++        // Aura graphics (drawn behind pig)
++        this.aura = this.add.graphics();
++        this.auraTime = 0;
++
++        // Power effect overlays
++        this.spikeOverlay = this.add.graphics();
++        this.trailParticles = [];
++
++        // HUD
++        this.createHUD();
++
++        // Input
++        this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
++        this.upKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
++        this.jumpPressed = false;
++
++        this.input.on('pointerdown', () => {
++            this.handleJump();
++        });
++
++        this.input.keyboard.on('keydown-SPACE', () => {
++            this.handleJump();
++        });
++        this.input.keyboard.on('keydown-UP', () => {
++            this.handleJump();
++        });
++
++        // Start music
++        audioMgr.startMusic();
++
++        // Pre-spawn some initial fruits
++        for (let d = 300; d < 1200; d += Phaser.Math.Between(150, 250)) {
++            this.spawnFruit(GAME_W + d);
++        }
+     }
+ 
+-    if (newPhase !== this._phase) {
+-      this._phase = newPhase;
+-      this._maxJumps = newPhase >= 2 ? 2 : 1;
+-      // Update fruit spawn distance for new phase
+-      this._nextFruitDist = PHASE_FRUIT_DIST[this._phase - 1];
+-      // Update scroll speed (only when no speed-overriding power is active)
+-      if (!this._activePower || this._activePower !== 'Speed') {
+-        const flightActive = this._activePower === 'Flight';
+-        const base = PHASE_SPEEDS[this._phase - 1];
+-        this._scrollSpeed = flightActive ? base * 0.85 : base;
+-      }
+-      this._showFlash('LEVEL UP!', 0x00e676);
++    createHUD() {
++        const hudStyle = {
++            fontSize: '24px', fontFamily: 'Georgia, serif',
++            color: '#ffffff', stroke: '#333333', strokeThickness: 3
++        };
++        const smallStyle = {
++            fontSize: '18px', fontFamily: 'Arial, sans-serif',
++            color: '#ffffff', stroke: '#333333', strokeThickness: 2
++        };
++
++        // Score
++        this.scoreText = this.add.text(20, 15, 'Score: 0', hudStyle).setScrollFactor(0).setDepth(100);
++
++        // High score
++        const hs = localStorage.getItem('pigcanfly_highscore') || 0;
++        this.highScoreText = this.add.text(GAME_W - 20, 15, `Best: ${hs}`, hudStyle)
++            .setOrigin(1, 0).setScrollFactor(0).setDepth(100);
++
++        // Power icon + timer bar (hidden initially)
++        this.powerIcon = this.add.image(GAME_W / 2, 20, 'power_icon_apple')
++            .setOrigin(0.5, 0).setScrollFactor(0).setDepth(100).setVisible(false);
++        this.powerNameText = this.add.text(GAME_W / 2, 60, '', smallStyle)
++            .setOrigin(0.5, 0).setScrollFactor(0).setDepth(100);
++
++        // Power timer bar background
++        this.powerBarBg = this.add.graphics().setScrollFactor(0).setDepth(99);
++        this.powerBarFg = this.add.graphics().setScrollFactor(0).setDepth(100);
++
++        // Fruit counter row
++        this.fruitCountTexts = {};
++        const fruitY = GAME_H - 35;
++        FRUIT_TYPES.forEach((f, i) => {
++            const x = 20 + i * 85;
++            this.add.image(x, fruitY, 'fruit_' + f).setOrigin(0, 0.5).setScale(0.7)
++                .setScrollFactor(0).setDepth(100);
++            this.fruitCountTexts[f] = this.add.text(x + 30, fruitY, '0', smallStyle)
++                .setOrigin(0, 0.5).setScrollFactor(0).setDepth(100);
++        });
++
++        // Charge bar
++        this.chargeBarBg = this.add.graphics().setScrollFactor(0).setDepth(99);
++        this.chargeBarFg = this.add.graphics().setScrollFactor(0).setDepth(100);
++        this.chargeText = this.add.text(GAME_W / 2, GAME_H - 12, 'Collect 5 fruits for Super Power!', {
++            fontSize: '14px', fontFamily: 'Arial', color: '#ffffcc', stroke: '#333', strokeThickness: 2
++        }).setOrigin(0.5).setScrollFactor(0).setDepth(100);
+     }
+-  }
+-
+-  // Show a brief centred flash message
+-  _showFlash(msg, color) {
+-    const txt = this.add.text(W / 2, H / 2 - 60, msg, {
+-      fontFamily: 'Impact, Arial Black',
+-      fontSize: '64px',
+-      color: '#' + color.toString(16).padStart(6, '0'),
+-      stroke: '#000',
+-      strokeThickness: 6,
+-    }).setOrigin(0.5).setDepth(20);
+-
+-    this.tweens.add({
+-      targets: txt,
+-      alpha: 0,
+-      scaleX: 1.5,
+-      scaleY: 1.5,
+-      duration: 900,
+-      ease: 'Sine.easeIn',
+-      onComplete: () => txt.destroy(),
+-    });
+-  }
+-
+-  // ----------------------------------------------------------
+-  //  Pig physics
+-  // ----------------------------------------------------------
+-  _updatePig(dt) {
+-    const dtSec = dt / 1000;
+-    const pig = this._pig;
+-
+-    if (this._activePower === 'Flight') {
+-      // Flappy-bird vertical in middle band
+-      const bandTop = H * 0.2;
+-      const bandBot = H * 0.75;
+-      this._flightVelY += GRAVITY * 0.45 * dtSec;
+-      this._pigY += this._flightVelY * dtSec;
+-      this._pigY = Phaser.Math.Clamp(this._pigY, bandTop, bandBot);
+-      if (this._pigY >= bandBot) this._flightVelY = 0;
+-      if (this._pigY <= bandTop) this._flightVelY = 0;
+-      pig.y = this._pigY;
+-      if (!pig.anims.isPlaying || pig.anims.currentAnim?.key !== 'pig_fly') { if (!pig.anims.isPlaying || pig.anims.currentAnim?.key !== 'pig_fly') { pig.play('pig_fly', true); pig.setScale(PIG_FLY_SCALE); } }
+-    } else {
+-      // Normal jump/fall
+-      if (!this._onGround) {
+-        
+-        this._velY += GRAVITY * dtSec;
+-        this._pigY += this._velY * dtSec;
+-      }
+-      if (this._pigY >= GROUND_Y) {
+-        const wasAirborne = !this._onGround;
+-        this._pigY = GROUND_Y;
+-        this._velY = 0;
+-        this._onGround = true;
+-        this._jumpCount = 0;
+-        if (wasAirborne) {
+-          pig.y = GROUND_Y;
+-          
++
++    handleJump() {
++        if (this.gameOver) return;
++
++        if (this.isFlying) {
++            // During flight mode: nudge upward
++            this.pigVelY = -280;
++            this.pig.setTexture('pig_mouth_open');
++            this.flyTextureTimer = 300;
++            audioMgr.playJump();
++            return;
++        }
++
++        if (this.pigOnGround) {
++            // First jump
++            this.pigVelY = JUMP_VEL;
++            if (this.activePower === 'apple') {
++                this.pigVelY = JUMP_VEL * 1.4;
++            }
++            this.pigOnGround = false;
++            this.jumpCount = 1;
++            this.pig.setTexture('pig_mouth_open');
++            audioMgr.playJump();
++        } else if (this.jumpCount < 2) {
++            // Double jump
++            this.pigVelY = DOUBLE_JUMP_VEL;
++            if (this.activePower === 'apple') {
++                this.pigVelY = DOUBLE_JUMP_VEL * 1.3;
++            }
++            this.jumpCount = 2;
++            this.pig.setTexture('pig_mouth_open');
++            audioMgr.playDoubleJump();
++            // Puff particles at pig position
++            this.spawnPuff(this.pig.x, this.pig.y - 40, 0xffffff, 5);
+         }
+-      }
+-      if (!this._onGround) {
+-        pig.y = this._pigY;
+-      }
+-      pig.play('pig_run', true); this._scalePig();
+     }
+ 
+-    // Wings follow pig every update
+-    
+-
+-    // Aura follows pig
+-    const pigW = pig.displayWidth;
+-    this._aura.setPosition(pig.x, pig.y - pig.displayHeight / 2);
+-    const auraSize = Math.max(pigW, pig.displayHeight) * 1.6;
+-    this._aura.setDisplaySize(auraSize, auraSize);
+-  }
+-
+-  // ----------------------------------------------------------
+-  //  Collision
+-  // ----------------------------------------------------------
+-  _checkCollisions() {
+-    const pig = this._pig;
+-    const px = pig.x;
+-    const py = pig.y;        // bottom of pig
+-    const pw = pig.displayWidth  * 0.6;
+-    const ph = pig.displayHeight * 0.8;
+-    const pigLeft   = px - pw / 2;
+-    const pigRight  = px + pw / 2;
+-    const pigTop    = py - ph;
+-    const pigBottom = py;
+-
+-    // --- Obstacles ---
+-    this._obstacles.getChildren().forEach(obs => {
+-      if (!obs.active) return;
+-      const ox = obs.x;
+-      const oy = obs.y;   // bottom
+-      const ow = obs._hitW;
+-      const oh = obs._hitH;
+-      const ol = ox;
+-      const or = ox + ow;
+-      const ot = oy - oh;
+-      const ob2 = oy;
+-
+-      const hit = pigRight > ol && pigLeft < or && pigBottom > ot && pigTop < ob2;
+-      if (!hit) return;
+-
+-      if (this._activePower === 'Stoneskin' || this._activePower === 'Spike' ||
+-          this._activePower === 'Speed') {
+-        // Smash obstacle
+-        this._explodeObstacle(obs);
+-      } else if (this._activePower === 'Flight') {
+-        // Immune during flight
+-      } else {
+-        // Death
+-        if (!this._deathTriggered) this._killPig();
+-      }
+-    });
+-
+-    // --- Fruits ---
+-    const isMagnet = this._activePower === 'Magnet';
+-    this._fruits.getChildren().forEach(fr => {
+-      if (!fr.active) return;
+-      const dist = Phaser.Math.Distance.Between(px, py - ph/2, fr.x, fr.y);
+-      const collect = isMagnet ? (dist < this._magnetRadius) : (dist < 55);
+-      if (collect) {
+-        this._collectFruit(fr);
+-      }
+-    });
+-  }
+-
+-  _explodeObstacle(obs) {
+-    this._obstacles.remove(obs, false, false);
+-    const cx = obs.x + obs._def.w / 2;
+-    const cy = obs.y - obs._def.h / 2;
+-    this._score += 50;
+-
+-    // Debris particles
+-    const cols = [obs._def.color, 0xffffff, 0xaaaaaa];
+-    for (let i = 0; i < 18; i++) {
+-      const p = this.add.rectangle(
+-        cx + Phaser.Math.Between(-20, 20),
+-        cy + Phaser.Math.Between(-15, 15),
+-        Phaser.Math.Between(5, 14),
+-        Phaser.Math.Between(5, 14),
+-        Phaser.Utils.Array.GetRandom(cols)
+-      ).setDepth(8);
+-      const vx = Phaser.Math.Between(-180, 180);
+-      const vy = Phaser.Math.Between(-250, -50);
+-      this.tweens.add({
+-        targets: p,
+-        x: p.x + vx * 0.6,
+-        y: p.y + vy * 0.6 + 120,
+-        alpha: 0,
+-        angle: Phaser.Math.Between(-180, 180),
+-        duration: 600,
+-        onComplete: () => p.destroy()
+-      });
++    update(time, delta) {
++        if (this.gameOver) return;
++
++        const dt = delta / 1000;
++        this.difficultyTimer += dt;
++        this.distanceTravelled += this.scrollSpeed * dt;
++
++        // Increase difficulty over time
++        if (this.difficultyTimer > 1) {
++            this.scrollSpeed = Math.min(BASE_SCROLL_SPEED + this.distanceTravelled * 0.01, 700);
++            this.difficultyTimer = 0;
++        }
++
++        let effectiveSpeed = this.scrollSpeed;
++        if (this.activePower === 'strawberry') {
++            effectiveSpeed *= 1.8;
++        }
++
++        // Score
++        this.score = Math.floor(this.distanceTravelled / 10);
++        this.scoreText.setText('Score: ' + this.score);
++
++        // Parallax scrolling
++        this.cloudLayer.tilePositionX += effectiveSpeed * 0.15 * dt;
++        this.hillLayer.tilePositionX += effectiveSpeed * 0.4 * dt;
++        this.groundLayer.tilePositionX += effectiveSpeed * dt;
++
++        // --- Pig physics ---
++        if (this.isFlying) {
++            // Banana flight mode
++            const gravity = 200;
++            this.pigVelY += gravity * dt;
++            this.pig.y += this.pigVelY * dt;
++
++            // Keep pig in middle zone
++            if (this.pig.y < 80) {
++                this.pig.y = 80;
++                this.pigVelY = 0;
++            }
++            if (this.pig.y > GROUND_Y - 60) {
++                this.pig.y = GROUND_Y - 60;
++                this.pigVelY = 0;
++            }
++
++            // Texture switching
++            if (this.flyTextureTimer > 0) {
++                this.flyTextureTimer -= delta;
++            } else {
++                this.pig.setTexture('pig_fly_closed');
++            }
++
++            // Bob gently
++            this.pig.rotation = Phaser.Math.Clamp(this.pigVelY * 0.0005, -0.3, 0.3);
++        } else {
++            // Normal ground physics
++            if (!this.pigOnGround) {
++                let grav = GRAVITY;
++                if (this.activePower === 'apple') grav *= 0.65;
++                this.pigVelY += grav * dt;
++                this.pig.y += this.pigVelY * dt;
++
++                // Rotation based on velocity
++                this.pig.rotation = Phaser.Math.Clamp(this.pigVelY * 0.0004, -0.3, 0.4);
++
++                if (this.pig.y >= GROUND_Y) {
++                    this.pig.y = GROUND_Y;
++                    this.pigVelY = 0;
++                    this.pigOnGround = true;
++                    this.jumpCount = 0;
++                    this.pig.rotation = 0;
++                    this.pig.setTexture('pig_run');
++                    // Landing dust
++                    this.spawnPuff(this.pig.x, GROUND_Y - 5, 0xddccaa, 3);
++                }
++            } else {
++                // Running bob
++                this.pig.y = GROUND_Y;
++                this.pig.rotation = Math.sin(time * 0.015) * 0.03;
++                this.pig.setTexture('pig_run');
++            }
++        }
++
++        // --- Move obstacles ---
++        this.obstacles.children.each(obs => {
++            obs.x -= effectiveSpeed * dt;
++            if (obs.x < -150) {
++                obs.destroy();
++            }
++        });
++
++        // --- Move fruits ---
++        this.fruits.children.each(fruit => {
++            fruit.x -= effectiveSpeed * dt;
++            // Bob animation
++            fruit.y = fruit.baseY + Math.sin(time * 0.005 + fruit.x * 0.01) * 8;
++
++            // Magnet effect
++            if (this.activePower === 'grapes') {
++                const dx = this.pig.x - fruit.x;
++                const dy = (this.pig.y - 40) - fruit.y;
++                const dist = Math.sqrt(dx * dx + dy * dy);
++                if (dist < 250 && dist > 5) {
++                    const force = 400 / dist;
++                    fruit.x += dx * force * dt;
++                    fruit.baseY += dy * force * dt;
++                }
++            }
++
++            if (fruit.x < -50) {
++                fruit.destroy();
++            }
++        });
++
++        // --- Move particles ---
++        this.particles.children.each(p => {
++            p.x += p.vx * dt;
++            p.y += p.vy * dt;
++            p.vy += 400 * dt;
++            p.alpha -= dt * 1.5;
++            if (p.rotation !== undefined) p.rotation += p.rotSpeed * dt;
++            if (p.alpha <= 0 || p.y > GAME_H + 50) p.destroy();
++        });
++
++        // --- Spawn obstacles ---
++        this.nextObstacleDist -= effectiveSpeed * dt;
++        if (this.nextObstacleDist <= 0) {
++            this.spawnObstacle();
++            const minGap = Math.max(250, 500 - this.distanceTravelled * 0.005);
++            this.nextObstacleDist = Phaser.Math.Between(minGap, minGap + 300);
++        }
++
++        // --- Spawn fruits ---
++        this.nextFruitDist -= effectiveSpeed * dt;
++        if (this.nextFruitDist <= 0) {
++            this.spawnFruit(GAME_W + 50);
++            this.nextFruitDist = Phaser.Math.Between(120, 280);
++        }
++
++        // --- Collision detection ---
++        this.checkCollisions();
++
++        // --- Power timer ---
++        if (this.activePower) {
++            this.powerTimer -= delta;
++            if (this.powerTimer <= 0) {
++                this.deactivatePower();
++            }
++            this.updatePowerBar();
++        }
++
++        // --- Aura effect ---
++        this.drawAura(time);
++
++        // --- Speed burst trail ---
++        if (this.activePower === 'strawberry' && Math.random() < 0.3) {
++            this.spawnPuff(this.pig.x - 30, this.pig.y - 40, 0xff4400, 1);
++        }
+     }
+-    obs.destroy();
+-  }
+-
+-  _collectFruit(fr) {
+-    // Remove from group immediately to prevent double-collection
+-    this._fruits.remove(fr, false, false);
+-
+-    const def = fr._def;
+-    this._fruitCounts[def.name]++;
+-    PigSFX.collect();
+-    this._totalFruitsCollected++;
+-    this._score += 20;
+-
+-    // Pop animation then destroy
+-    this.tweens.add({
+-      targets: fr,
+-      scaleX: 0, scaleY: 0, alpha: 0,
+-      duration: 180,
+-      onComplete: () => fr.destroy()
+-    });
+-
+-    // Check super power trigger (every 5 fruits)
+-    if (this._totalFruitsCollected % 5 === 0) {
+-      // If 2 or more of the collected fruits are bananas → Flight
+-      if (this._fruitCounts['Banana'] >= 2) {
+-        this._activatePower('Flight');
+-      } else {
+-        const dominant = this._getDominantFruit();
+-        if (dominant) this._activatePower(dominant.power);
+-      }
+-      // Reset counts after power triggers
+-      FRUITS.forEach(f => { this._fruitCounts[f.name] = 0; });
++
++    spawnObstacle() {
++        const type = Phaser.Math.RND.pick(OBSTACLE_TYPES);
++        const key = 'obs_' + type;
++        const obs = this.add.image(GAME_W + 60, GROUND_Y, key);
++        obs.setOrigin(0.5, 1);
++        obs.obstacleType = type;
++
++        // Scale based on type for better gameplay
++        switch (type) {
++            case 'haystack': obs.setScale(1.2); break;
++            case 'gate': obs.setScale(1.1); break;
++            case 'bush': obs.setScale(1.3); break;
++            case 'tractor': obs.setScale(1.2); break;
++            case 'boulder': obs.setScale(1.1); break;
++        }
++
++        // Sometimes spawn clusters
++        if (Math.random() < 0.2 && this.distanceTravelled > 2000) {
++            const type2 = Phaser.Math.RND.pick(OBSTACLE_TYPES);
++            const obs2 = this.add.image(GAME_W + 200, GROUND_Y, 'obs_' + type2);
++            obs2.setOrigin(0.5, 1);
++            obs2.obstacleType = type2;
++            obs2.setScale(1.1);
++            this.obstacles.add(obs2);
++        }
++
++        this.obstacles.add(obs);
+     }
+-  }
+-
+-  _getDominantFruit() {
+-    let best = null, bestCount = -1;
+-    // Only consider the last 5 collected — approximate by current max
+-    FRUITS.forEach(f => {
+-      if (this._fruitCounts[f.name] > bestCount) {
+-        bestCount = this._fruitCounts[f.name];
+-        best = f;
+-      }
+-    });
+-    return best;
+-  }
+-
+-  // ----------------------------------------------------------
+-  //  Death
+-  // ----------------------------------------------------------
+-  _killPig() {
+-    this._deathTriggered = true;
+-    this._alive = false;
+-    PigSFX.crash();
+-    PigMusicPlayer.stop();
+-
+-    // Hide wings immediately
+-    
+-
+-    // Death tumble
+-    this.tweens.add({
+-      targets: this._pig,
+-      angle: 720,
+-      y: this._pig.y - 80,
+-      duration: 700,
+-      ease: 'Sine.easeOut',
+-      onComplete: () => {
+-        this.tweens.add({
+-          targets: this._pig,
+-          y: this._pig.y + 150,
+-          alpha: 0,
+-          duration: 400
+-        });
+-      }
+-    });
+-
+-    // Stars
+-    for (let i = 0; i < 8; i++) {
+-      const star = this.add.image(this._pig.x, this._pig.y - 40, 'star').setDepth(10);
+-      const angle = (i / 8) * Math.PI * 2;
+-      this.tweens.add({
+-        targets: star,
+-        x: star.x + Math.cos(angle) * 80,
+-        y: star.y + Math.sin(angle) * 80,
+-        alpha: 0,
+-        duration: 800,
+-        onComplete: () => star.destroy()
+-      });
++
++    spawnFruit(x) {
++        const type = Phaser.Math.RND.pick(FRUIT_TYPES);
++        const heightRange = this.isFlying ? [150, GROUND_Y - 100] : [GROUND_Y - 200, GROUND_Y - 50];
++        const y = Phaser.Math.Between(heightRange[0], heightRange[1]);
++        const fruit = this.add.image(x, y, 'fruit_' + type);
++        fruit.setScale(1.0);
++        fruit.fruitType = type;
++        fruit.baseY = y;
++        this.fruits.add(fruit);
+     }
+ 
+-    // Save high score & transition
+-    const final = Math.floor(this._score);
+-    const top5 = Leaderboard.add(final);
+-    const prev = top5[0] || 0;
+-    // Refresh top-left leaderboard display
+-    if (this._lbTexts) {
+-      const medals = ["🥇","🥈","🥉","4.","5."];
+-      top5.forEach((s, i) => {
+-        if (this._lbTexts[i]) this._lbTexts[i].setText(medals[i] + " " + s.toLocaleString());
+-      });
++    checkCollisions() {
++        const pigBounds = {
++            x: this.pig.x - 35,
++            y: this.pig.y - 90,
++            w: 70,
++            h: 85
++        };
++
++        // Fruit collection
++        this.fruits.children.each(fruit => {
++            if (!fruit.active) return;
++            const dx = Math.abs(fruit.x - this.pig.x);
++            const dy = Math.abs(fruit.y - (this.pig.y - 45));
++            if (dx < 40 && dy < 45) {
++                this.collectFruit(fruit);
++            }
++        });
++
++        // Obstacle collision
++        if (this.isFlying) return; // Flying = immune to ground obstacles
++
++        this.obstacles.children.each(obs => {
++            if (!obs.active) return;
++            const obsBounds = obs.getBounds();
++            // Shrink hitbox slightly for fairness
++            const margin = 10;
++            if (this.pig.x + 25 > obsBounds.left + margin &&
++                this.pig.x - 25 < obsBounds.right - margin &&
++                this.pig.y > obsBounds.top + margin &&
++                this.pig.y - 80 < obsBounds.bottom) {
++
++                if (this.activePower === 'orange' || this.activePower === 'pineapple' || this.activePower === 'strawberry') {
++                    // Smash through!
++                    this.smashObstacle(obs);
++                } else {
++                    this.die();
++                }
++            }
++        });
+     }
+ 
+-    this.time.delayedCall(1400, () => {
+-      this.scene.start('GameOver', {
+-        score: final,
+-        highScore: Math.max(final, prev),
+-        powersUsed: [...this._powersUsed]
+-      });
+-    });
+-  }
+-
+-  // ----------------------------------------------------------
+-  //  update loop
+-  // ----------------------------------------------------------
+-  update(time, delta) {
+-    if (!this._alive) {
+-      // Scroll slows after death
+-      this._scrollSpeed = Math.max(0, this._scrollSpeed - 300 * (delta / 1000));
+-      this._scrollBg(delta);
+-      return;
++    collectFruit(fruit) {
++        const type = fruit.fruitType;
++        this.fruitCounts[type]++;
++        this.totalFruits++;
++
++        // Update HUD
++        this.fruitCountTexts[type].setText('' + this.fruitCounts[type]);
++
++        // Sparkle effect
++        for (let i = 0; i < 8; i++) {
++            const angle = (i / 8) * Math.PI * 2;
++            const p = this.add.image(fruit.x, fruit.y, 'star');
++            p.setScale(Phaser.Math.FloatBetween(0.3, 0.7));
++            p.setTint(FRUIT_COLORS[type]);
++            p.vx = Math.cos(angle) * 120;
++            p.vy = Math.sin(angle) * 120 - 50;
++            p.rotSpeed = Phaser.Math.FloatBetween(-5, 5);
++            p.setDepth(50);
++            this.particles.add(p);
++        }
++
++        audioMgr.playFruitCollect();
++        fruit.destroy();
++
++        // Check for super power activation
++        if (this.totalFruits >= 5 && !this.activePower) {
++            this.activateSuperPower();
++        }
++
++        // Update charge bar
++        this.updateChargeBar();
+     }
+ 
+-    const dt = delta;
+-    const dtSec = dt / 1000;
++    activateSuperPower() {
++        // Find dominant fruit
++        let maxCount = 0;
++        let dominant = null;
++        let lastCollected = null;
++
++        FRUIT_TYPES.forEach(f => {
++            if (this.fruitCounts[f] > maxCount) {
++                maxCount = this.fruitCounts[f];
++                dominant = f;
++            }
++        });
+ 
+-    // ---- Phase update ----
+-    this._updatePhase();
++        // Tie-breaking: use last fruit type from counts > 0
++        // (simplified: dominant is already set, ties naturally broken by iteration order
++        //  but we prefer the one with highest count)
++        this.activePower = dominant;
++        const info = POWER_INFO[dominant];
++        this.powerTimer = info.duration;
++        this.powerDuration = info.duration;
++        this.powersUsed.push(info.name);
++
++        // Reset fruit counts
++        FRUIT_TYPES.forEach(f => this.fruitCounts[f] = 0);
++        this.totalFruits = 0;
++        FRUIT_TYPES.forEach(f => this.fruitCountTexts[f].setText('0'));
++
++        // Show power HUD
++        this.powerIcon.setTexture('power_icon_' + dominant).setVisible(true);
++        this.powerNameText.setText(info.name);
++
++        // Special activation for banana flight
++        if (dominant === 'banana') {
++            this.isFlying = true;
++            this.pigOnGround = false;
++            this.pigVelY = -200;
++            this.pig.setTexture('pig_mouth_open');
++            this.flyTextureTimer = 500;
++        }
+ 
+-    // ---- Power timer ----
+-    if (this._activePower) {
+-      this._powerTimer -= dt;
+-      if (this._powerTimer <= 0) this._deactivatePower();
++        // Flash effect
++        this.cameras.main.flash(300, 255, 255, 200);
++        audioMgr.playPowerActivate();
++
++        this.updateChargeBar();
++    }
++
++    deactivatePower() {
++        if (this.activePower === 'banana' && this.isFlying) {
++            // Gentle descent back to ground
++            this.isFlying = false;
++            this.pigVelY = 100;
++            this.pigOnGround = false;
++        }
++
++        this.activePower = null;
++        this.powerTimer = 0;
++        this.powerIcon.setVisible(false);
++        this.powerNameText.setText('');
++        this.powerBarBg.clear();
++        this.powerBarFg.clear();
++        this.pig.clearTint();
+     }
+ 
+-    // ---- Scroll background ----
+-    this._scrollBg(dt);
++    smashObstacle(obs) {
++        // Explosion effect
++        for (let i = 0; i < 12; i++) {
++            const p = this.add.image(obs.x + Phaser.Math.Between(-20, 20),
++                obs.y - Phaser.Math.Between(10, 60), 'debris');
++            p.setScale(Phaser.Math.FloatBetween(0.5, 1.5));
++            p.vx = Phaser.Math.Between(-200, 200);
++            p.vy = Phaser.Math.Between(-400, -100);
++            p.rotSpeed = Phaser.Math.FloatBetween(-10, 10);
++            p.setDepth(50);
++            this.particles.add(p);
++        }
+ 
+-    // ---- Pig physics ----
+-    this._updatePig(dt);
++        // Dust cloud
++        for (let i = 0; i < 8; i++) {
++            const p = this.add.image(obs.x + Phaser.Math.Between(-30, 30),
++                obs.y - Phaser.Math.Between(0, 40), 'dust');
++            p.setScale(Phaser.Math.FloatBetween(1, 2.5));
++            p.vx = Phaser.Math.Between(-100, 100);
++            p.vy = Phaser.Math.Between(-150, -50);
++            p.rotSpeed = 0;
++            p.setAlpha(0.7);
++            p.setDepth(49);
++            this.particles.add(p);
++        }
+ 
+-    // ---- Distance & score ----
+-    this._distance += this._scrollSpeed * dtSec;
+-    this._score    += this._scrollSpeed * dtSec * 0.05;
++        // Star burst
++        for (let i = 0; i < 6; i++) {
++            const angle = (i / 6) * Math.PI * 2;
++            const p = this.add.image(obs.x, obs.y - 40, 'star');
++            p.setScale(0.8);
++            p.setTint(0xffdd44);
++            p.vx = Math.cos(angle) * 180;
++            p.vy = Math.sin(angle) * 180 - 100;
++            p.rotSpeed = Phaser.Math.FloatBetween(-8, 8);
++            p.setDepth(51);
++            this.particles.add(p);
++        }
+ 
+-    // ---- Spawn obstacles ----
+-    this._distSinceLastObs += this._scrollSpeed * dtSec;
+-    if (this._distSinceLastObs >= this._nextObsDist) {
+-      this._spawnObstacle();
+-      this._distSinceLastObs = 0;
+-      this._nextObsDist = Phaser.Math.Between(350, 700);
++        audioMgr.playSmash();
++        this.score += 50;
++        obs.destroy();
+     }
+ 
+-    // ---- Spawn fruits ----
+-    this._distSinceLastFruit += this._scrollSpeed * dtSec;
+-    if (this._distSinceLastFruit >= this._nextFruitDist) {
+-      // Phase 1: clusters of 2-3; Phase 2: 1-2; Phase 3: 1
+-      const count = this._phase === 1
+-        ? Phaser.Math.Between(2, 3)
+-        : this._phase === 2
+-          ? Phaser.Math.Between(1, 2)
+-          : 1;
+-      for (let i = 0; i < count; i++) this._spawnFruit();
+-      this._distSinceLastFruit = 0;
+-      this._nextFruitDist = PHASE_FRUIT_DIST[this._phase - 1];
++    spawnPuff(x, y, color, count) {
++        for (let i = 0; i < count; i++) {
++            const p = this.add.image(x + Phaser.Math.Between(-10, 10),
++                y + Phaser.Math.Between(-10, 10), 'dust');
++            p.setScale(Phaser.Math.FloatBetween(0.5, 1.2));
++            p.setTint(color);
++            p.vx = Phaser.Math.Between(-50, 50);
++            p.vy = Phaser.Math.Between(-80, -20);
++            p.rotSpeed = 0;
++            p.setAlpha(0.6);
++            p.setDepth(45);
++            this.particles.add(p);
++        }
+     }
+ 
+-    // ---- Move obstacles ----
+-    this._obstacles.getChildren().forEach(obs => {
+-      obs.x -= this._scrollSpeed * dtSec;
+-      if (obs.x < -200) obs.destroy();
+-    });
+-
+-    // ---- Move fruits (bob + scroll) ----
+-    const t = time / 1000;
+-    this._fruits.getChildren().forEach(fr => {
+-      fr.x -= this._scrollSpeed * dtSec;
+-      fr.y = fr._baseY + Math.sin(t * 2 + fr._phase) * 8;
+-      if (fr.x < -60) fr.destroy();
+-    });
+-
+-    // ---- Magnet pull ----
+-    if (this._activePower === 'Magnet') {
+-      const px = this._pig.x;
+-      const py = this._pig.y - this._pig.displayHeight / 2;
+-      this._fruits.getChildren().forEach(fr => {
+-        const dist = Phaser.Math.Distance.Between(px, py, fr.x, fr.y);
+-        if (dist < this._magnetRadius) {
+-          const angle = Math.atan2(py - fr.y, px - fr.x);
+-          fr.x += Math.cos(angle) * 5;
+-          fr.y += Math.sin(angle) * 5;
++    drawAura(time) {
++        this.aura.clear();
++        this.spikeOverlay.clear();
++        if (!this.activePower) return;
++
++        const px = this.pig.x;
++        const py = this.pig.y - 50;
++        const info = POWER_INFO[this.activePower];
++        this.auraTime += 0.05;
++
++        const pulse = 0.3 + Math.sin(this.auraTime * 3) * 0.15;
++
++        switch (this.activePower) {
++            case 'apple': // Golden glow
++                this.aura.fillStyle(0xffd700, pulse * 0.4);
++                this.aura.fillCircle(px, py, 55 + Math.sin(this.auraTime * 2) * 5);
++                this.aura.fillStyle(0xffee88, pulse * 0.2);
++                this.aura.fillCircle(px, py, 70 + Math.sin(this.auraTime * 3) * 8);
++                this.pig.setTint(0xffffcc);
++                break;
++
++            case 'banana': // Blue/white wing overlay
++                this.aura.fillStyle(0x66bbff, pulse * 0.3);
++                this.aura.fillCircle(px, py, 50);
++                // Wing-like arcs
++                this.aura.lineStyle(3, 0xffffff, pulse);
++                for (let i = 0; i < 3; i++) {
++                    const offset = Math.sin(this.auraTime * 4 + i) * 10;
++                    this.aura.strokeEllipse(px - 20 + offset, py - 10, 30 + i * 10, 20 + i * 8);
++                    this.aura.strokeEllipse(px + 20 - offset, py - 10, 30 + i * 10, 20 + i * 8);
++                }
++                this.pig.setTint(0xccddff);
++                break;
++
++            case 'orange': // Grey rocky texture
++                this.aura.fillStyle(0x888888, pulse * 0.4);
++                this.aura.fillCircle(px, py, 55);
++                // Rocky fragments around
++                for (let i = 0; i < 6; i++) {
++                    const a = (i / 6) * Math.PI * 2 + this.auraTime;
++                    const r = 45 + Math.sin(this.auraTime * 2 + i) * 8;
++                    this.aura.fillStyle(0x999999, 0.5);
++                    this.aura.fillCircle(px + Math.cos(a) * r, py + Math.sin(a) * r, 5);
++                }
++                this.pig.setTint(0xbbbbbb);
++                break;
++
++            case 'strawberry': // Red/orange motion blur
++                for (let i = 1; i <= 4; i++) {
++                    this.aura.fillStyle(0xff4400, (0.3 - i * 0.06));
++                    this.aura.fillEllipse(px - i * 18, py, 40, 60);
++                }
++                this.pig.setTint(0xffaa88);
++                break;
++
++            case 'pineapple': // Green spikes
++                this.aura.fillStyle(0x44bb44, pulse * 0.3);
++                this.aura.fillCircle(px, py, 50);
++                for (let i = 0; i < 8; i++) {
++                    const a = (i / 8) * Math.PI * 2 + this.auraTime * 0.5;
++                    const r1 = 40;
++                    const r2 = 60 + Math.sin(this.auraTime * 3 + i) * 5;
++                    this.spikeOverlay.fillStyle(0x33aa22, 0.7);
++                    this.spikeOverlay.fillTriangle(
++                        px + Math.cos(a - 0.15) * r1, py + Math.sin(a - 0.15) * r1,
++                        px + Math.cos(a) * r2, py + Math.sin(a) * r2,
++                        px + Math.cos(a + 0.15) * r1, py + Math.sin(a + 0.15) * r1
++                    );
++                }
++                this.pig.setTint(0xccffcc);
++                break;
++
++            case 'grapes': // Purple magnetic field
++                for (let i = 0; i < 5; i++) {
++                    const r = 50 + i * 25 + Math.sin(this.auraTime * 2) * 10;
++                    this.aura.lineStyle(1.5, 0xaa44ff, 0.3 - i * 0.05);
++                    this.aura.strokeCircle(px, py, r);
++                }
++                // Magnetic field lines
++                for (let i = 0; i < 4; i++) {
++                    const a = (i / 4) * Math.PI * 2 + this.auraTime;
++                    this.aura.lineStyle(2, 0xcc66ff, 0.4);
++                    this.aura.lineBetween(
++                        px + Math.cos(a) * 30, py + Math.sin(a) * 30,
++                        px + Math.cos(a) * (80 + Math.sin(this.auraTime * 3) * 20),
++                        py + Math.sin(a) * (80 + Math.sin(this.auraTime * 3) * 20)
++                    );
++                }
++                this.pig.setTint(0xddccff);
++                break;
+         }
+-      });
+     }
+ 
+-    // ---- Collisions ----
+-    this._checkCollisions();
++    updatePowerBar() {
++        this.powerBarBg.clear();
++        this.powerBarFg.clear();
++
++        if (!this.activePower) return;
+ 
+-    // ---- HUD ----
+-    this._updateHUD();
++        const bx = GAME_W / 2 - 75;
++        const by = 58;
++        const bw = 150;
++        const bh = 8;
+ 
+-    // ---- Set scroll speed from phase (when Speed Burst is not active) ----
+-    if (this._activePower !== 'Speed') {
+-      const base = PHASE_SPEEDS[this._phase - 1];
+-      this._scrollSpeed = this._activePower === 'Flight' ? base * 0.85 : base;
++        this.powerBarBg.fillStyle(0x333333, 0.7);
++        this.powerBarBg.fillRoundedRect(bx, by, bw, bh, 4);
++
++        const ratio = Math.max(0, this.powerTimer / this.powerDuration);
++        const color = POWER_INFO[this.activePower].color;
++        this.powerBarFg.fillStyle(color, 0.9);
++        this.powerBarFg.fillRoundedRect(bx, by, bw * ratio, bh, 4);
+     }
+-  }
+-
+-  _scrollBg(dt) {
+-    const dtSec = dt / 1000;
+-    this._cloudLayer.tilePositionX += this._scrollSpeed * 0.15 * dtSec;
+-    this._hillLayer.tilePositionX  += this._scrollSpeed * 0.45 * dtSec;
+-    this._groundLayer.tilePositionX+= this._scrollSpeed * dtSec;
+-  }
+-}
+ 
+-// ============================================================
+-//  GameOverScene
+-// ============================================================
+-class GameOverScene extends Phaser.Scene {
+-  constructor() { super('GameOver'); }
+-
+-  init(data) {
+-    this._score      = data.score      || 0;
+-    this._highScore  = data.highScore  || 0;
+-    this._powersUsed = data.powersUsed || [];
+-  }
+-
+-  create() {
+-    this.add.image(W/2, H/2, 'sky');
+-    this.add.tileSprite(W/2, H - 200, W, 160, 'hills').setOrigin(0.5, 1);
+-    this.add.tileSprite(W/2, H, W, 100, 'ground').setOrigin(0.5, 1);
+-
+-    const panel = this.add.rectangle(W/2, H/2, 700, 440, 0x000000, 0.75).setOrigin(0.5);
+-
+-    this.add.text(W/2, 160, 'GAME OVER', {
+-      fontFamily: 'Impact, Arial Black', fontSize: '80px',
+-      color: '#f44336', stroke: '#000', strokeThickness: 6
+-    }).setOrigin(0.5);
+-
+-    this.add.text(W/2, 270, `Score: ${this._score}`, {
+-      fontFamily: 'Arial Black', fontSize: '42px',
+-      color: '#fff', stroke: '#000', strokeThickness: 4
+-    }).setOrigin(0.5);
+-
+-    const isNew = this._score >= this._highScore;
+-    const hsColor = isNew ? '#ffd700' : '#ffe082';
+-
+-    // Top score
+-    this.add.text(W/2, 310, `🏆 Best: ${this._highScore.toLocaleString()}${isNew ? '  🆕 NEW!' : ''}`, {
+-      fontFamily: 'Arial Black', fontSize: '28px',
+-      color: hsColor, stroke: '#000', strokeThickness: 4
+-    }).setOrigin(0.5);
+-
+-    // Play again
+-    const btn = this.add.text(W/2, 470, 'PLAY AGAIN', {
+-      fontFamily: 'Impact, Arial Black', fontSize: '46px',
+-      color: '#fff', backgroundColor: '#e53935',
+-      padding: { x: 30, y: 12 }
+-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+-
+-    btn.on('pointerover', () => btn.setStyle({ backgroundColor: '#c62828' }));
+-    btn.on('pointerout',  () => btn.setStyle({ backgroundColor: '#e53935' }));
+-    btn.on('pointerdown', () => { PigMusicPlayer.start(); this.scene.start('Game'); });
+-
+-    this.input.keyboard.once('keydown-SPACE', () => { PigMusicPlayer.start(); this.scene.start('Game'); });
+-
+-    // Bounce in
+-    btn.setScale(0);
+-    this.tweens.add({ targets: btn, scaleX: 1, scaleY: 1, duration: 350, ease: 'Back.easeOut' });
+-  }
+-}
++    updateChargeBar() {
++        this.chargeBarBg.clear();
++        this.chargeBarFg.clear();
+ 
++        const bx = GAME_W / 2 - 100;
++        const by = GAME_H - 55;
++        const bw = 200;
++        const bh = 10;
+ 
++        this.chargeBarBg.fillStyle(0x333333, 0.5);
++        this.chargeBarBg.fillRoundedRect(bx, by, bw, bh, 5);
+ 
+-// ============================================================
+-//  MUSIC — Original: Mario bounce + Tetris drive
+-// ============================================================
+-const PigMusicPlayer = (() => {
+-  let ctx = null, playing = false, nextTime = 0, timeout = null;
+-
+-  const BPM = 150;
+-  const q  = 60 / BPM;
+-  const h  = q * 2;
+-  const e  = q / 2;
+-  const de = q * 0.75;
+-  const s  = q / 4;
+-
+-  // Original melody blending Mario bounce with Tetris stepwise motion
+-  const melody = [
+-    // Phrase 1 — Mario bounce feel, short notes
+-    [523.25,e],[659.25,e],[783.99,e],[1046.50,e],
+-    [783.99,e],[659.25,e],[523.25,q],[0,q],
+-    [587.33,e],[739.99,e],[880.00,e],[1108.73,e],
+-    [880.00,e],[739.99,e],[587.33,q],[0,q],
+-
+-    // Phrase 2 — Tetris stepwise descent
+-    [1046.50,de],[880.00,e],[783.99,q],[659.25,q],
+-    [783.99,de],[659.25,e],[523.25,q],[440.00,q],
+-    [523.25,de],[587.33,e],[659.25,q],[783.99,q],
+-    [880.00,h],[659.25,h],
+-
+-    // Phrase 3 — Mario bounce variation
+-    [659.25,e],[523.25,e],[440.00,e],[523.25,e],
+-    [659.25,e],[783.99,e],[880.00,q],[0,q],
+-    [783.99,e],[659.25,e],[587.33,e],[659.25,e],
+-    [783.99,e],[880.00,e],[1046.50,q],[0,q],
+-
+-    // Phrase 4 — Tetris resolution
+-    [1046.50,de],[880.00,e],[783.99,q],[659.25,q],
+-    [523.25,de],[587.33,e],[659.25,q],[523.25,q],
+-    [440.00,q],[523.25,q],[587.33,q],[659.25,q],
+-    [523.25,h],[523.25,h],
+-  ];
+-
+-  // Bass — bouncy Mario oom-pah style
+-  const bass = [
+-    [130.81,e],[261.63,e],[130.81,e],[261.63,e],
+-    [130.81,e],[261.63,e],[130.81,q],[0,q],
+-    [146.83,e],[293.66,e],[146.83,e],[293.66,e],
+-    [146.83,e],[293.66,e],[146.83,q],[0,q],
+-
+-    [261.63,q],[196.00,q],[164.81,q],[130.81,q],
+-    [196.00,q],[261.63,q],[130.81,q],[164.81,q],
+-    [130.81,q],[146.83,q],[164.81,q],[196.00,q],
+-    [220.00,h],[164.81,h],
+-
+-    [164.81,e],[130.81,e],[110.00,e],[130.81,e],
+-    [164.81,e],[196.00,e],[220.00,q],[0,q],
+-    [196.00,e],[164.81,e],[146.83,e],[164.81,e],
+-    [196.00,e],[220.00,e],[261.63,q],[0,q],
+-
+-    [261.63,q],[196.00,q],[164.81,q],[130.81,q],
+-    [130.81,q],[146.83,q],[164.81,q],[130.81,q],
+-    [110.00,q],[130.81,q],[146.83,q],[164.81,q],
+-    [130.81,h],[130.81,h],
+-  ];
+-
+-  // Harmony — adds Mario chord richness
+-  const harmony = [
+-    [329.63,h],[392.00,h],[349.23,h],[440.00,h],
+-    [523.25,h],[392.00,h],[349.23,h],[329.63,h],
+-    [329.63,h],[392.00,h],[349.23,h],[440.00,h],
+-    [523.25,h],[392.00,h],[329.63,h],[261.63,h],
+-  ];
+-
+-  function note(freq, start, dur, gain, type) {
+-    if (!freq || freq === 0) return;
+-    const osc = ctx.createOscillator();
+-    const g = ctx.createGain();
+-    osc.type = type;
+-    osc.frequency.value = freq;
+-    g.gain.setValueAtTime(0.001, start);
+-    g.gain.linearRampToValueAtTime(gain, start + 0.015);
+-    g.gain.setValueAtTime(gain, start + dur * 0.7);
+-    g.gain.linearRampToValueAtTime(0.001, start + dur * 0.95);
+-    osc.connect(g); g.connect(ctx.destination);
+-    osc.start(start); osc.stop(start + dur);
+-  }
+-
+-  function scheduleLoop() {
+-    if (!playing) return;
+-    const start = nextTime;
+-    let t = start, loopLen = 0;
+-
+-    // Melody — square wave like old Mario/Tetris
+-    t = start;
+-    for (const [f, d] of melody) { note(f, t, d*0.85, 0.07, "square"); t += d; }
+-    loopLen = t - start;
+-
+-    // Bass — triangle for warmth
+-    t = start;
+-    for (const [f, d] of bass) { note(f, t, d*0.6, 0.06, "triangle"); t += d; }
+-
+-    // Harmony — sine for smoothness
+-    t = start;
+-    for (const [f, d] of harmony) { note(f, t, d*0.8, 0.04, "sine"); t += d; }
+-
+-    nextTime = start + loopLen;
+-    timeout = setTimeout(scheduleLoop, (loopLen - 0.15) * 1000);
+-  }
+-
+-  return {
+-    start() {
+-      if (playing) return;
+-      try {
+-        ctx = new (window.AudioContext || window.webkitAudioContext)();
+-        if (ctx.state === "suspended") ctx.resume();
+-        playing = true;
+-        nextTime = ctx.currentTime + 0.1;
+-        scheduleLoop();
+-      } catch(e) { console.warn("Audio:", e); }
+-    },
+-    stop() {
+-      playing = false;
+-      if (timeout) clearTimeout(timeout);
+-      if (ctx) { try { ctx.close(); } catch(e){} ctx = null; }
++        const ratio = Math.min(this.totalFruits / 5, 1);
++        const color = ratio >= 1 ? 0xffdd44 : 0x66bb66;
++        this.chargeBarFg.fillStyle(color, 0.8);
++        this.chargeBarFg.fillRoundedRect(bx, by, bw * ratio, bh, 5);
++
++        this.chargeText.setText(this.activePower ?
++            POWER_INFO[this.activePower].name + ' Active!' :
++            `Fruits: ${this.totalFruits}/5 for Super Power`);
+     }
+-  };
+-})();
+ 
+-// ============================================================
+-//  SOUND EFFECTS
+-// ============================================================
+-const PigSFX = {
+-  _ctx() {
+-    if (!this._audioCtx) {
+-      try { this._audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){}
++    die() {
++        if (this.gameOver) return;
++        this.gameOver = true;
++        audioMgr.stopMusic();
++        audioMgr.playDeath();
++
++        // Death animation: tumble with stars
++        this.pig.setTint(0xff6666);
++        this.tweens.add({
++            targets: this.pig,
++            y: this.pig.y - 100,
++            rotation: Math.PI * 3,
++            duration: 600,
++            ease: 'Power2',
++            onComplete: () => {
++                this.tweens.add({
++                    targets: this.pig,
++                    y: GROUND_Y + 10,
++                    duration: 400,
++                    ease: 'Bounce.easeOut',
++                    onComplete: () => {
++                        // Stars around dead pig
++                        for (let i = 0; i < 5; i++) {
++                            const angle = (i / 5) * Math.PI * 2;
++                            const star = this.add.image(
++                                this.pig.x + Math.cos(angle) * 35,
++                                this.pig.y - 60 + Math.sin(angle) * 20,
++                                'star'
++                            );
++                            star.setScale(0.5);
++                            star.setTint(0xffdd44);
++                            this.tweens.add({
++                                targets: star,
++                                rotation: Math.PI * 2,
++                                duration: 1000,
++                                repeat: -1
++                            });
++                        }
++
++                        // Save high score
++                        const hs = parseInt(localStorage.getItem('pigcanfly_highscore') || '0');
++                        if (this.score > hs) {
++                            localStorage.setItem('pigcanfly_highscore', this.score);
++                        }
++
++                        audioMgr.playGameOver();
++
++                        // Transition to game over after brief pause
++                        this.time.delayedCall(1500, () => {
++                            this.scene.start('GameOver', {
++                                score: this.score,
++                                powersUsed: this.powersUsed
++                            });
++                        });
++                    }
++                });
++            }
++        });
+     }
+-    if (this._audioCtx && this._audioCtx.state === 'suspended') this._audioCtx.resume();
+-    return this._audioCtx;
+-  },
+-  _audioCtx: null,
+-
+-  jump() {
+-    const ctx = this._ctx(); if (!ctx) return;
+-    const osc = ctx.createOscillator();
+-    const g = ctx.createGain();
+-    osc.type = 'square';
+-    osc.frequency.setValueAtTime(300, ctx.currentTime);
+-    osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.12);
+-    g.gain.setValueAtTime(0.15, ctx.currentTime);
+-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+-    osc.connect(g); g.connect(ctx.destination);
+-    osc.start(); osc.stop(ctx.currentTime + 0.15);
+-  },
+-
+-  crash() {
+-    const ctx = this._ctx(); if (!ctx) return;
+-    // Noise burst
+-    const buf = ctx.createBuffer(1, ctx.sampleRate * 0.4, ctx.sampleRate);
+-    const data = buf.getChannelData(0);
+-    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1);
+-    const src = ctx.createBufferSource();
+-    src.buffer = buf;
+-    const g = ctx.createGain();
+-    g.gain.setValueAtTime(0.3, ctx.currentTime);
+-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+-    // Low pass for crunch
+-    const filter = ctx.createBiquadFilter();
+-    filter.type = 'lowpass';
+-    filter.frequency.value = 400;
+-    src.connect(filter); filter.connect(g); g.connect(ctx.destination);
+-    src.start(); src.stop(ctx.currentTime + 0.4);
+-
+-    // Low thud
+-    const osc = ctx.createOscillator();
+-    const g2 = ctx.createGain();
+-    osc.type = 'sine';
+-    osc.frequency.setValueAtTime(120, ctx.currentTime);
+-    osc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.3);
+-    g2.gain.setValueAtTime(0.4, ctx.currentTime);
+-    g2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+-    osc.connect(g2); g2.connect(ctx.destination);
+-    osc.start(); osc.stop(ctx.currentTime + 0.3);
+-  },
+-
+-  collect() {
+-    const ctx = this._ctx(); if (!ctx) return;
+-    const osc = ctx.createOscillator();
+-    const g = ctx.createGain();
+-    osc.type = 'sine';
+-    osc.frequency.setValueAtTime(880, ctx.currentTime);
+-    osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.1);
+-    g.gain.setValueAtTime(0.12, ctx.currentTime);
+-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+-    osc.connect(g); g.connect(ctx.destination);
+-    osc.start(); osc.stop(ctx.currentTime + 0.15);
+-  },
+-
+-  powerup() {
+-    const ctx = this._ctx(); if (!ctx) return;
+-    const freqs = [523, 659, 784, 1047];
+-    freqs.forEach((f, i) => {
+-      const osc = ctx.createOscillator();
+-      const g = ctx.createGain();
+-      osc.type = 'square';
+-      osc.frequency.value = f;
+-      const t = ctx.currentTime + i * 0.08;
+-      g.gain.setValueAtTime(0.1, t);
+-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+-      osc.connect(g); g.connect(ctx.destination);
+-      osc.start(t); osc.stop(t + 0.12);
+-    });
+-  }
+-};
++}
+ 
+ // ============================================================
+-//  LEADERBOARD — Top 5 scores
++// GAME OVER SCENE
+ // ============================================================
+-const Leaderboard = {
+-  KEY: 'pigScores',
+-  get() {
+-    try { return JSON.parse(localStorage.getItem(this.KEY) || '[]'); } catch(e) { return []; }
+-  },
+-  add(score) {
+-    const scores = this.get();
+-    scores.push(score);
+-    scores.sort((a,b) => b - a);
+-    const top5 = scores.slice(0, 5);
+-    localStorage.setItem(this.KEY, JSON.stringify(top5));
+-    return top5;
+-  },
+-  top() { return this.get().slice(0, 5); }
+-};
++class GameOverScene extends Phaser.Scene {
++    constructor() { super('GameOver'); }
++
++    init(data) {
++        this.finalScore = data.score || 0;
++        this.powersUsed = data.powersUsed || [];
++    }
++
++    create() {
++        // Background
++        this.add.image(GAME_W / 2, GAME_H / 2, 'sky');
++        this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.4);
++
++        // Panel
++        const panel = this.add.graphics();
++        panel.fillStyle(0x2a1a0a, 0.85);
++        panel.fillRoundedRect(GAME_W / 2 - 250, 80, 500, 520, 20);
++        panel.lineStyle(3, 0xcc8844);
++        panel.strokeRoundedRect(GAME_W / 2 - 250, 80, 500, 520, 20);
++
++        const titleStyle = {
++            fontSize: '52px', fontFamily: 'Georgia, serif',
++            color: '#ff8866', stroke: '#441111', strokeThickness: 5
++        };
++        this.add.text(GAME_W / 2, 130, 'Game Over', titleStyle).setOrigin(0.5);
++
++        const hs = parseInt(localStorage.getItem('pigcanfly_highscore') || '0');
++        const isNewHigh = this.finalScore >= hs && this.finalScore > 0;
++
++        // Score display
++        const scoreStyle = {
++            fontSize: '36px', fontFamily: 'Georgia, serif',
++            color: '#ffffcc', stroke: '#333', strokeThickness: 3
++        };
++        this.add.text(GAME_W / 2, 200, `Score: ${this.finalScore}`, scoreStyle).setOrigin(0.5);
++        this.add.text(GAME_W / 2, 245, `Best: ${hs}`, {
++            fontSize: '24px', fontFamily: 'Georgia', color: '#ffcc88',
++            stroke: '#333', strokeThickness: 2
++        }).setOrigin(0.5);
++
++        if (isNewHigh) {
++            const newHighText = this.add.text(GAME_W / 2, 285, '⭐ NEW HIGH SCORE! ⭐', {
++                fontSize: '28px', fontFamily: 'Georgia', color: '#ffdd44',
++                stroke: '#663300', strokeThickness: 3
++            }).setOrigin(0.5);
++            this.tweens.add({
++                targets: newHighText,
++                scaleX: 1.1, scaleY: 1.1,
++                duration: 500,
++                yoyo: true,
++                repeat: -1
++            });
++        }
++
++        // Powers used
++        if (this.powersUsed.length > 0) {
++            this.add.text(GAME_W / 2, 330, 'Super Powers Used:', {
++                fontSize: '20px', fontFamily: 'Georgia', color: '#aaddaa',
++                stroke: '#222', strokeThickness: 2
++            }).setOrigin(0.5);
++
++            const uniquePowers = [...new Set(this.powersUsed)];
++            const powersText = uniquePowers.map(p => {
++                const count = this.powersUsed.filter(x => x === p).length;
++                return `${p} x${count}`;
++            }).join('  •  ');
++
++            this.add.text(GAME_W / 2, 360, powersText, {
++                fontSize: '16px', fontFamily: 'Arial', color: '#ccddcc',
++                stroke: '#222', strokeThickness: 2
++            }).setOrigin(0.5);
++        }
++
++        // Dead pig
++        this.pig = this.add.image(GAME_W / 2, 440, 'pig_fly_closed').setScale(1.5);
++        this.pig.setTint(0xddbbbb);
++        this.pig.rotation = 0.2;
++
++        // Play again button
++        const btn = this.add.graphics();
++        btn.fillStyle(0x44aa44, 1);
++        btn.fillRoundedRect(GAME_W / 2 - 100, 510, 200, 55, 12);
++        btn.lineStyle(2, 0x66cc66);
++        btn.strokeRoundedRect(GAME_W / 2 - 100, 510, 200, 55, 12);
++
++        const btnText = this.add.text(GAME_W / 2, 537, 'Play Again', {
++            fontSize: '28px', fontFamily: 'Georgia', color: '#ffffff',
++            stroke: '#226622', strokeThickness: 3
++        }).setOrigin(0.5);
++
++        // Make button interactive
++        const hitArea = this.add.rectangle(GAME_W / 2, 537, 200, 55).setInteractive();
++        hitArea.setAlpha(0.001);
++        hitArea.on('pointerover', () => { btn.clear(); btn.fillStyle(0x55cc55); btn.fillRoundedRect(GAME_W / 2 - 100, 510, 200, 55, 12); });
++        hitArea.on('pointerout', () => { btn.clear(); btn.fillStyle(0x44aa44); btn.fillRoundedRect(GAME_W / 2 - 100, 510, 200, 55, 12); });
++        hitArea.on('pointerdown', () => this.scene.start('Game'));
++
++        this.input.keyboard.on('keydown-SPACE', () => this.scene.start('Game'));
++    }
++}
+ 
+ // ============================================================
+-//  Phaser config & launch
++// GAME CONFIG
+ // ============================================================
+ const config = {
+-  type: Phaser.AUTO,
+-  width: W,
+-  height: H,
+-  backgroundColor: '#87ceeb',
+-  scale: {
+-    mode: Phaser.Scale.FIT,
+-    autoCenter: Phaser.Scale.CENTER_BOTH
+-  },
+-  scene: [BootScene, StartScene, GameScene, GameOverScene],
+-  physics: { default: 'arcade' },
++    type: Phaser.AUTO,
++    width: GAME_W,
++    height: GAME_H,
++    parent: 'game-container',
++    backgroundColor: '#87ceeb',
++    scale: {
++        mode: Phaser.Scale.FIT,
++        autoCenter: Phaser.Scale.CENTER_BOTH
++    },
++    scene: [BootScene, MenuScene, GameScene, GameOverScene],
++    input: {
++        activePointers: 2
++    },
++    render: {
++        pixelArt: false,
++        antialias: true,
++        antialiasGL: true
++    }
+ };
+ 
+-new Phaser.Game(config);
++const game = new Phaser.Game(config);
+diff --git a/index.html b/index.html
+index 72b5480..a661e9b 100644
+--- a/index.html
++++ b/index.html
+@@ -1,44 +1,22 @@
+ <!DOCTYPE html>
+ <html lang="en">
+ <head>
+-  <meta charset="UTF-8">
+-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+-  <meta name="apple-mobile-web-app-capable" content="yes">
+-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+-  <meta name="apple-mobile-web-app-title" content="Pig Can Fly">
+-  <meta name="theme-color" content="#87ceeb">
+-  <link rel="manifest" href="manifest.json">
+-  <link rel="apple-touch-icon" href="assets/icon-192.png">
+-  <link rel="apple-touch-startup-image" href="assets/icon-512.png">
+-  <title>Pig Can Fly 🐷</title>
+-  <style>
+-    * { margin: 0; padding: 0; box-sizing: border-box; }
+-    body {
+-      background: #1a1a2e;
+-      display: flex;
+-      justify-content: center;
+-      align-items: center;
+-      width: 100vw;
+-      height: 100vh;
+-      overflow: hidden;
+-    }
+-    canvas {
+-      display: block;
+-      max-width: 100vw;
+-      max-height: 100vh;
+-      object-fit: contain;
+-    }
+-  </style>
++    <meta charset="UTF-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
++    <title>Pig Can Fly</title>
++    <style>
++        * { margin: 0; padding: 0; box-sizing: border-box; }
++        html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
++        #game-container {
++            width: 100%; height: 100%;
++            display: flex; justify-content: center; align-items: center;
++        }
++        canvas { display: block; image-rendering: auto; }
++    </style>
++    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+ </head>
+ <body>
+-  <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+-  <script src="game.js"></script>
+-  <script>
+-    if ('serviceWorker' in navigator) {
+-      navigator.serviceWorker.register('/sw.js')
+-        .then(() => console.log('SW registered'))
+-        .catch(e => console.log('SW error', e));
+-    }
+-  </script>
++    <div id="game-container"></div>
++    <script src="game.js"></script>
+ </body>
+ </html>
+diff --git a/manifest.json b/manifest.json
+deleted file mode 100644
+index b9f9c6f..0000000
+--- a/manifest.json
++++ /dev/null
+@@ -1,23 +0,0 @@
+-{
+-  "name": "Pig Can Fly",
+-  "short_name": "PigCanFly",
+-  "description": "Help the pig run, jump and fly over obstacles!",
+-  "start_url": "/pig-can-fly/",
+-  "scope": "/pig-can-fly/",
+-  "display": "fullscreen",
+-  "orientation": "landscape",
+-  "background_color": "#87ceeb",
+-  "theme_color": "#87ceeb",
+-  "icons": [
+-    {
+-      "src": "assets/icon-192.png",
+-      "sizes": "192x192",
+-      "type": "image/png"
+-    },
+-    {
+-      "src": "assets/icon-512.png",
+-      "sizes": "512x512",
+-      "type": "image/png"
+-    }
+-  ]
+-}
+diff --git a/pigflymouthclose.PNG b/pigflymouthclose.PNG
+deleted file mode 100644
+index 3b21732..0000000
+Binary files a/pigflymouthclose.PNG and /dev/null differ
+diff --git a/pigmouthopen.PNG b/pigmouthopen.PNG
+deleted file mode 100644
+index afee1e9..0000000
+Binary files a/pigmouthopen.PNG and /dev/null differ
+diff --git a/pigrun.PNG b/pigrun.PNG
+deleted file mode 100644
+index f79b9d0..0000000
+Binary files a/pigrun.PNG and /dev/null differ
+diff --git a/sw.js b/sw.js
+deleted file mode 100644
+index 4b5c607..0000000
+--- a/sw.js
++++ /dev/null
+@@ -1,9 +0,0 @@
+-// Unregister old broken service worker and clear caches
+-self.addEventListener('install', () => self.skipWaiting());
+-self.addEventListener('activate', e => {
+-  e.waitUntil(
+-    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))))
+-  );
+-  self.clients.claim();
+-});
+-self.addEventListener('fetch', e => e.respondWith(fetch(e.request)));

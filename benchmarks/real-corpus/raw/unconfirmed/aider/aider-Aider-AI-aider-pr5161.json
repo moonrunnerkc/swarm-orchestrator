@@ -1,0 +1,26 @@
+{
+  "id": "aider-Aider-AI-aider-pr5161",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=Aider-AI"
+  },
+  "pr": {
+    "number": 5161,
+    "headSha": "b377463d6a71e3d7522869ff3e2e56e4e996feb3",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "Add NEAR AI Cloud provider",
+    "body": "## Summary\n- Add a native `nearai/` model prefix for NEAR AI Cloud TEE inference.\n- Fetch and cache NEAR AI Cloud model metadata from the public catalog for model info and `--list-models nearai/`.\n- Document `NEARAI_API_KEY`, the `nearai` alias, and `nearai/...` model usage.\n\n## Implementation Notes\n- Routes `nearai/<model>` through LiteLLM's OpenAI-compatible transport using `https://cloud-api.near.ai/v1` and `NEARAI_API_KEY`.\n- Maps `max_completion_tokens` to `max_tokens` and strips unsupported OpenAI-only parameters for this provider.\n- Adds focused tests for metadata lookup, request rewriting, default selection, and settings compatibility.\n\n## Testing\n- `python -m flake8 aider/nearai.py tests/basic/test_nearai.py aider/models.py aider/onboarding.py`\n- `python -m pytest tests/basic/test_nearai.py tests/basic/test_openrouter.py tests/basic/test_models.py::TestModels::test_model_aliases tests/basic/test_models.py::TestModels::test_configure_model_settings tests/basic/test_onboarding.py::TestOnboarding::test_try_select_default_model_deepseek tests/basic/test_onboarding.py::TestOnboarding::test_try_select_default_model_openai tests/basic/test_main.py::TestMain::test_default_model_selection tests/basic/test_main.py::TestMain::test_api_key_multiple -q`\n- `aider --list-models nearai/ --no-gitignore --no-check-update`\n- `aider --model nearai --api-key nearai=fake-key --exit --yes --no-gitignore --no-check-update`\n\nA live completion was not run because it requires a real `NEARAI_API_KEY`.",
+    "author": "PierreLeGuen",
+    "headRef": "nearai-provider",
+    "repository": "Aider-AI/aider"
+  },
+  "diffRef": {
+    "repository": "Aider-AI/aider",
+    "headSha": "b377463d6a71e3d7522869ff3e2e56e4e996feb3",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-Aider-AI-aider-pr5161.diff",
+  "vendoredAt": "2026-05-24T03:20:04.130Z",
+  "collectedAt": "2026-05-24T03:20:04.130Z"
+}

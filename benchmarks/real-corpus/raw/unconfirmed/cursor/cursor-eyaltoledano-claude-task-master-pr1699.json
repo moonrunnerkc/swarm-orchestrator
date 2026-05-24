@@ -1,0 +1,26 @@
+{
+  "id": "cursor-eyaltoledano-claude-task-master-pr1699",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "body=cursor-session-url"
+  },
+  "pr": {
+    "number": 1699,
+    "headSha": "a0a0f367643ef31f5a3aa6b923d61fd1db59d1c0",
+    "baseSha": "c0c98d367c55296bfe69e65680625b6db437af02",
+    "title": "fix: support Codex CLI gpt-5.5 structured outputs",
+    "body": "## Summary\n- Add `gpt-5.5` to the Codex CLI model catalog and reasoning-effort support.\n- Normalize structured-output object schemas recursively for OpenAI strict JSON schema requirements.\n- Keep the AI SDK 5-compatible `ai-sdk-provider-codex-cli@^0.7.3` path and prefer the system `codex` binary (or explicit `codexCli.codexPath`) to avoid stale bundled Codex versions for ChatGPT OAuth users.\n\n## Validation\n- `npm test -- --runTestsByPath tests/unit/ai-providers/codex-cli.test.js tests/unit/ai-providers/base-provider-schema.test.js tests/unit/ai-providers/codex-cli-supported-models.test.js tests/unit/ai-services-unified.test.js` → 4 suites / 23 tests passed\n- `npm run turbo:typecheck` → 9 successful / 9 total\n- End-to-end smoke in test project: `task-master parse-prd ... --tag gpt55-final-smoke` with provider `codex-cli` and model `gpt-5.5` generated tasks successfully\n\n## Notes\n- This avoids upgrading to `ai-sdk-provider-codex-cli@1.1.0`, which currently targets a newer provider spec than Task Master's AI SDK 5 stack supports.\n\n\n<!-- This is an auto-generated comment: release notes by coderabbit.ai -->\n## Summary by CodeRabbit\n\n* **New Features**\n  * Added GPT-5.5 to the Codex CLI model catalog\n  * Codex CLI client now auto-detects system path with a configurable override\n\n* **Bug Fixes**\n  * Improved JSON Schema normalization for strict OpenAI structured outputs (enforces object strictness and removes integer-only constraints)\n\n* **Tests**\n  * Added tests for schema normalization, model catalog entry, and CLI path detection\n\n* **Chores**\n  * Bumped provider dependency version\n\n[![Review Change Stack](https://storage.googleapis.com/coderabbit_public_assets/review-stack-in-coderabbit-ui.svg)](https://app.coderabbit.ai/change-stack/eyaltoledano/claude-task-master/pull/1699)\n<!-- end of auto-generated comment: release notes by coderabbit.ai -->\n\n<!-- CURSOR_SUMMARY -->\n---\n\n> [!NOTE]\n> **Medium Risk**\n> Changes structured-output JSON schema generation and Codex CLI invocation defaults, which can affect object-generation success and which `codex` binary is executed at runtime. Covered by new unit tests but still touches core provider behavior.\n> \n> **Overview**\n> **Fixes Codex CLI structured object generation and adds `gpt-5.5` support.**\n> \n> Structured-output schemas are now recursively normalized for OpenAI *strict* mode (auto-populating `additionalProperties: false` and inferred `required` fields for object schemas, while preserving the existing removal of integer min/max constraints) before being passed into the AI SDK.\n> \n> The Codex CLI provider now prefers an explicitly configured `codexPath`, otherwise auto-detects the system `codex` binary (cached) to avoid using a potentially stale bundled CLI; `gpt-5.5` is added to the `codex-cli` model catalog and reasoning-effort support. Dependency `ai-sdk-provider-codex-cli` is bumped to `^0.7.3`, and new unit tests cover schema normalization, model catalog, and codex path resolution.\n> \n> <sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit a0a0f367643ef31f5a3aa6b923d61fd1db59d1c0. Bugbot is set up for automated code reviews on this repo. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>\n<!-- /CURSOR_SUMMARY -->",
+    "author": "seven017438",
+    "headRef": "fix/codex-cli-gpt55-structured-output",
+    "repository": "eyaltoledano/claude-task-master"
+  },
+  "diffRef": {
+    "repository": "eyaltoledano/claude-task-master",
+    "headSha": "a0a0f367643ef31f5a3aa6b923d61fd1db59d1c0",
+    "baseSha": "c0c98d367c55296bfe69e65680625b6db437af02"
+  },
+  "vendoredDiffPath": "unconfirmed/cursor/cursor-eyaltoledano-claude-task-master-pr1699.diff",
+  "vendoredAt": "2026-05-24T03:12:47.193Z",
+  "collectedAt": "2026-05-24T03:12:47.193Z"
+}

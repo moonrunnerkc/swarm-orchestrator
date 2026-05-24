@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1037",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1037,
+    "headSha": "4dd887671fa70f6b3ef8378dc9c6c658a38d4c2b",
+    "baseSha": "e3bcdd4b5dbc73ff2093e4f91dd230fc6b3957ca",
+    "title": "fix(vertex): strip anthropic-beta header from count_tokens requests",
+    "body": "## Summary\n\nWhen calling `countTokens` through the Vertex AI backend, the SDK forwards `anthropic-beta` headers to the underlying model-specific endpoint. Vertex model backends roll out new beta values on different schedules — the Haiku tier consistently lags — so any call that includes a newly-introduced beta value (e.g. `effort-2025-11-24`, `structured-outputs-2025-12-15`, `web-search-2025-03-05`) is rejected with HTTP 400 by the lagging model endpoint. This causes recurring breakage every time Anthropic introduces a new beta: downstream consumers (including Claude Code, see anthropics/claude-code#11154) have to wait for Vertex's per-model rollout to catch up.\n\nToken counting does not require any beta-gated capabilities. This PR strips the `anthropic-beta` header specifically from `count_tokens` requests in the Vertex SDK using the existing `buildHeaders` null-override mechanism, which is the same pattern already used in `prepareOptions`. Stripping only happens on the count-tokens path, so regular messages requests continue to forward the header as before.\n\n## Issue\n\nFixes #1016\n\n## Local verification\n\n```\ncd packages/vertex-sdk\nyarn install --ignore-scripts   # deps already installed in CI\nyarn test\n\nPASS tests/client.test.ts\n  AnthropicVertex\n    count_tokens strips anthropic-beta header\n      ✓ strips anthropic-beta from /v1/messages/count_tokens (17 ms)\n      ✓ strips anthropic-beta from /v1/messages/count_tokens?beta=true (3 ms)\n      ✓ does NOT strip anthropic-beta from regular /v1/messages requests (2 ms)\n    baseURL configuration\n      ✓ global region uses correct base URL (1 ms)\n      ✓ us region uses correct base URL (1 ms)\n      ✓ eu region eues correct base URL (1 ms)\n      ✓ regional endpoint us-central1 uses correct base URL format (1 ms)\n      ✓ regional endpoint europe-west1 uses correct base URL format (1 ms)\n      ✓ regional endpoint asia-southeast1 uses correct base URL format (2 ms)\n      ✓ explicit baseURL option takes precedence over region (1 ms)\n      ✓ throws error when region is not provided (6 ms)\n\nTest Suites: 1 passed, 1 total\nTests:       11 passed, 11 total\nTime:        0.347 s\n=== LOCAL_TEST_PASSED ===\n```\n\n## Risk\n\nThe change only affects the `count_tokens` path in the Vertex backend; no other paths are modified. The `anthropic-beta` header is orthogonal to token counting — stripping it cannot change the count result. Users who were deliberately setting `anthropic-beta` on `countTokens` calls (an uncommon pattern, since no beta feature currently affects token counting) will silently have the header dropped, which is the correct behaviour on Vertex where the header triggers errors rather than enabling features.\n",
+    "author": "xodn348",
+    "headRef": "fix/vertex-strip-beta-header-count-tokens",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "4dd887671fa70f6b3ef8378dc9c6c658a38d4c2b",
+    "baseSha": "e3bcdd4b5dbc73ff2093e4f91dd230fc6b3957ca"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1037.diff",
+  "vendoredAt": "2026-05-24T03:16:34.003Z",
+  "collectedAt": "2026-05-24T03:16:34.003Z"
+}

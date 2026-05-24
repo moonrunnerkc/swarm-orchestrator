@@ -1,0 +1,26 @@
+{
+  "id": "devin-ranganvaradan-Bookkeeping-pr7",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 7,
+    "headSha": "3c5228ef8b1e569f480fff3c9a525a213aca4279",
+    "baseSha": "7fd6cb129261e5f4e306d5eae0c1918e95c218d2",
+    "title": "T-04: QuickBooks Online OAuth 2.0 with AES-256 token encryption",
+    "body": "## Summary\n\nImplements QuickBooks Online OAuth 2.0 integration using the Intuit OAuth2 SDK, with AES-256-GCM encryption for stored tokens and scheduled token refresh.\n\n### What's included:\n\n| Component | Details |\n|-----------|---------|\n| **Dependencies** | `com.intuit.quickbooks-online:oauth2-platform-api:6.3.0` |\n| **QboConfig** | `@ConfigurationProperties(prefix = \"qbo\")` — reads client-id, client-secret, redirect-uri, environment, encryption-key from env vars |\n| **AesEncryptionUtil** | AES-256-GCM with random 12-byte IV, Base64 output. Self-contained format: `Base64(IV ∥ ciphertext ∥ authTag)` |\n| **QboOAuthService** | `generateAuthUrl(clientId)` — builds QBO auth URL via Intuit SDK with clientId in state param. `handleCallback(code, realmId, state)` — exchanges auth code, encrypts tokens, stores in clients table |\n| **QboTokenService** | `getAccessToken(clientId)` — decrypts and returns access token. `refreshTokenIfNeeded(clientId)` — refreshes if expiring within 60 min. `@Scheduled(fixedDelay = 1800000)` — loops all connected clients every 30 min |\n| **QboController** | `GET /api/clients/{clientId}/qbo/connect` — JWT required, tenant-scoped, returns `{authUrl: \"...\"}`. `GET /api/qbo/callback` — public, handles OAuth redirect, stores encrypted tokens, redirects to `/clients/{clientId}?connected=true` |\n| **SecurityConfig** | `/api/qbo/callback` added to public endpoints |\n| **@EnableScheduling** | Added to `BookkeepingApplication` for scheduled token refresh |\n| **Tests** | 5 AES-256 encryption tests: round-trip, ciphertext uniqueness (random IV), wrong key rejection, empty string, long token |\n\n### Files created/modified (6 new, 7 modified):\n\n**New:** `QboConfig.java`, `AesEncryptionUtil.java`, `QboOAuthService.java`, `QboTokenService.java`, `QboController.java`, `AesEncryptionUtilTest.java`\n\n**Modified:** `pom.xml`, `BookkeepingApplication.java`, `GlobalExceptionHandler.java`, `SecurityConfig.java`, `ClientRepository.java`, `application.yml`, `application-test.yml`\n\n## Review & Testing Checklist for Human\n\n- [ ] **QBO OAuth flow**: Set QBO env vars in `.env`, start the app, login, call `GET /api/clients/{clientId}/qbo/connect` with a valid JWT. Verify the returned `authUrl` is a valid Intuit authorization URL containing the correct client_id and redirect_uri.\n- [ ] **AES-256 encryption**: After connecting a client to QBO, verify that `qbo_access_token` and `qbo_refresh_token` in the DB are encrypted (not plaintext).\n- [ ] **Tenant isolation**: Verify that calling `/api/clients/{clientId}/qbo/connect` for a client belonging to a different tenant returns 403.\n- [ ] **Callback endpoint public**: Verify `GET /api/qbo/callback` does not require a JWT (it's called by Intuit's redirect).\n\n**Test plan:**\n1. Set QBO credentials in `.env` (QBO_CLIENT_ID, QBO_CLIENT_SECRET, QBO_REDIRECT_URI, QBO_ENCRYPTION_KEY)\n2. `docker compose down -v && docker compose up --build`\n3. Login: `curl -X POST http://localhost:8085/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@demo.com\",\"password\":\"Admin123!\"}'`\n4. Create a client first or use the demo data, then call: `curl http://localhost:8085/api/clients/{clientId}/qbo/connect -H 'Authorization: Bearer <token>'`\n5. Open the returned `authUrl` in a browser to start the QBO OAuth flow\n\n### Notes\n\n- The Intuit SDK's `OAuth2Config.prepareUrl()` is used for auth URL generation (not `OAuth2PlatformClient.getAuthorizationPageUrl()` which doesn't exist in v6.3.0).\n- `QBO_REDIRECT_URI` defaults to `http://localhost:8085/api/qbo/callback` but the user has configured it to point to Intuit's OAuth2 Playground for testing: `https://developer.intuit.com/v2/OAuth2Playground/RedirectUrl`.\n- The scheduled token refresh runs every 30 minutes and only refreshes tokens expiring within the next 60 minutes, minimizing unnecessary API calls.\n- All 11 tests pass (6 auth + 5 AES encryption).\n\nLink to Devin session: https://app.devin.ai/sessions/28f22dd6a7d44cc8b0cd820ac982a0cf\nRequested by: @ranganvaradan",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779590579-t04-qbo-oauth",
+    "repository": "ranganvaradan/Bookkeeping"
+  },
+  "diffRef": {
+    "repository": "ranganvaradan/Bookkeeping",
+    "headSha": "3c5228ef8b1e569f480fff3c9a525a213aca4279",
+    "baseSha": "7fd6cb129261e5f4e306d5eae0c1918e95c218d2"
+  },
+  "vendoredDiffPath": "devin/devin-ranganvaradan-Bookkeeping-pr7.diff",
+  "vendoredAt": "2026-05-24T03:04:04.574Z",
+  "collectedAt": "2026-05-24T03:04:04.574Z"
+}

@@ -1,0 +1,741 @@
+diff --git a/api/research.js b/api/research.js
+index 4587535..ea21f00 100644
+--- a/api/research.js
++++ b/api/research.js
+@@ -313,6 +313,7 @@ export default async function handler(req, res) {
+ 
+     let queryCandidates = buildQueryVariants(identity, mergedVisualKeywords, finalQuery, searchIntel);
+     const simpleTiers = buildSimpleQueryTiers(identity, finalQuery);
++    const tierByQuery = new Map(simpleTiers.map((t) => [t.query, t.tier]));
+     const tierFirst = simpleTiers.map((t) => t.query);
+     queryCandidates = [...tierFirst, ...queryCandidates.filter((q) => !tierFirst.includes(q))];
+     if (highBrandConfidence && identity.brand) {
+@@ -322,53 +323,53 @@ export default async function handler(req, res) {
+       queryCandidates = [finalQuery];
+     }
+ 
++    const tierPriority = [2, 1, 3];
++    const orderedCandidates = [];
++    for (const tierNum of tierPriority) {
++      for (const t of simpleTiers) {
++        if (t.tier === tierNum && t.query && !orderedCandidates.includes(t.query)) {
++          orderedCandidates.push(t.query);
++        }
++      }
++    }
++    for (const q of queryCandidates) {
++      if (q && !orderedCandidates.includes(q)) orderedCandidates.push(q);
++    }
++
+     let selectedQuery = finalQuery;
+     let queryTierUsed = resolveQueryTierUsed(finalQuery, identity, simpleTiers).tier ?? 1;
+     let activeFetch = null;
+     let soldFetch = null;
+-    let bestScore = -1;
++    let bestActiveScore = -1;
+     let lastLookupError = "";
++    const minActiveForQuery = 3;
+ 
+-    for (const candidateQuery of queryCandidates) {
++    // Phase 1: active comps first — pick best brand-anchored query without waiting on sold providers.
++    for (const candidateQuery of orderedCandidates) {
+       try {
+-        const [candidateActive, candidateSold] = await Promise.all([
+-          fetchActiveWithBestToken({
+-            userAccessToken,
+-            query: candidateQuery,
+-            categoryId: filterShape.category,
+-            targetSize: 220
+-          }),
+-          fetchSoldDataset({
+-            query: candidateQuery,
+-            categoryId: filterShape.category,
+-            buyingFormat,
+-            condition,
+-            acceptsOffers,
+-            advancedSoldMode,
+-            targetSize: 200,
+-            soldDays: soldDaysWindow
+-          })
+-        ]);
+-
++        const candidateActive = await fetchActiveWithBestToken({
++          userAccessToken,
++          query: candidateQuery,
++          categoryId: filterShape.category,
++          targetSize: 220
++        });
+         const activeScore = toNumber(candidateActive?.total, (candidateActive?.items || []).length);
+-        const soldScore = toNumber(candidateSold?.totalEntries, (candidateSold?.records || []).length);
+-        const combined = soldScore * 3 + activeScore;
+-        if (combined > bestScore) {
+-          bestScore = combined;
++        const tier = tierByQuery.get(candidateQuery) || 0;
++        const tierBonus = tier === 2 ? 40 : tier === 1 ? 22 : tier === 3 ? 8 : 0;
++        const combined = activeScore + tierBonus;
++        if (combined > bestActiveScore) {
++          bestActiveScore = combined;
+           selectedQuery = candidateQuery;
+           activeFetch = candidateActive;
+-          soldFetch = candidateSold;
+         }
+-
+-        if (soldScore > 0 && activeScore > 0) {
++        if (activeScore >= minActiveForQuery) {
+           selectedQuery = candidateQuery;
+           activeFetch = candidateActive;
+-          soldFetch = candidateSold;
+           break;
+         }
+       } catch (err) {
+         lastLookupError = serializeErrorValue(err);
+-        console.warn("[research] candidate lookup failed", { candidateQuery, error: lastLookupError });
++        console.warn("[research] active candidate lookup failed", { candidateQuery, error: lastLookupError });
+       }
+     }
+ 
+@@ -376,7 +377,30 @@ export default async function handler(req, res) {
+     queryTierUsed = tierResolved.tier ?? queryTierUsed;
+     const queryTierLabelText = tierResolved.label;
+ 
+-    if (!activeFetch || !soldFetch) {
++    // Phase 2: sold lookup once for selected query — bounded timeout, non-blocking for active results.
++    const soldLookupTimeoutMs = researchTimeoutMs("RESEARCH_SOLD_TOTAL_TIMEOUT_MS", 12000);
++    let soldLookupTimedOut = false;
++    if (activeFetch) {
++      soldFetch = await fetchSoldWithTimeout(
++        {
++          query: selectedQuery,
++          categoryId: filterShape.category,
++          buyingFormat,
++          condition,
++          acceptsOffers,
++          advancedSoldMode,
++          targetSize: 120,
++          soldDays: soldDaysWindow
++        },
++        soldLookupTimeoutMs
++      );
++      soldLookupTimedOut = Boolean(soldFetch?.providerDebug?.timedOut);
++      if (soldLookupTimedOut) {
++        lastLookupError = lastLookupError || `Sold lookup timed out after ${soldLookupTimeoutMs}ms`;
++      }
++    }
++
++    if (!activeFetch) {
+       const fallbackUrls = urlsForQuery(selectedQuery || finalQuery);
+       const lookupFailedPayload = {
+         ok: true,
+@@ -604,7 +628,7 @@ export default async function handler(req, res) {
+       soldFiltered
+     }) - confidencePenalty, 0, 100);
+ 
+-    const verdict = decisionEngine({
++    let verdict = decisionEngine({
+       sellThrough,
+       roi: rawRoi,
+       profit: rawEstimatedProfit,
+@@ -615,6 +639,9 @@ export default async function handler(req, res) {
+       activeRelevantCount,
+       allowActiveOnlyFallback: Boolean(allowActiveOnlyFallback)
+     });
++    if (soldMarketStatus === "unavailable" && (verdict === "PASS" || verdict === "BUY")) {
++      verdict = "HOLD";
++    }
+ 
+     const hasEnoughData = verdict !== "INSUFFICIENT_DATA";
+     const recommendedPrice = hasEnoughData ? rawRecommendedPrice : 0;
+@@ -693,6 +720,9 @@ export default async function handler(req, res) {
+     if (soldMarketStatus === "unavailable" && soldWarnings.length) {
+       trustWarnings.push(`Sold lookup: ${soldWarnings[0]}`);
+     }
++    if (soldLookupTimedOut) {
++      trustWarnings.push(`Sold comps timed out — active comps shown; sell-through unverified.`);
++    }
+ 
+     const responsePayload = withPublicResearchFields({
+       ok: true,
+@@ -710,6 +740,7 @@ export default async function handler(req, res) {
+       soldDataPending,
+       soldMarketStatus,
+       soldUnavailable: soldMarketStatus === "unavailable",
++      soldLookupTimedOut,
+       soldUnavailableMessage:
+         soldMarketStatus === "unavailable" ? SOLD_UNAVAILABLE_MESSAGE : "",
+       finalSoldSource,
+@@ -839,6 +870,7 @@ export default async function handler(req, res) {
+         apifyError,
+         soldWarnings,
+         soldMarketStatus,
++        soldLookupTimedOut,
+         finalSoldSource,
+         allowActiveOnlyFallback: Boolean(allowActiveOnlyFallback),
+         researchPayloadEcho: {
+@@ -989,7 +1021,7 @@ function decisionEngine({
+ 
+   if (soldMarketStatus === "unavailable") {
+     if (activeRelevantCount <= 0) {
+-      return confidence < confMin * 0.45 ? "INSUFFICIENT_DATA" : "PASS";
++      return confidence < confMin * 0.45 ? "INSUFFICIENT_DATA" : "HOLD";
+     }
+ 
+     if (
+@@ -1010,7 +1042,7 @@ function decisionEngine({
+       if (nearlyActive) return "HOLD";
+     }
+ 
+-    return activeRelevantCount >= 3 && confidence >= Math.min(confMin, 52) ? "HOLD" : "PASS";
++    return "HOLD";
+   }
+ 
+   return "PASS";
+@@ -1207,6 +1239,58 @@ function findingItemList(searchResultBlock) {
+   return Array.isArray(raw) ? raw : [raw];
+ }
+ 
++async function fetchSoldWithTimeout(params, timeoutMs = 12000) {
++  const ms = Math.max(1000, toNumber(timeoutMs, 12000));
++  let timer = null;
++  const timeoutPromise = new Promise((resolve) => {
++    timer = setTimeout(() => resolve({ timedOut: true }), ms);
++  });
++
++  try {
++    const winner = await Promise.race([
++      fetchSoldDataset(params).then((data) => ({ timedOut: false, data })),
++      timeoutPromise
++    ]);
++
++    if (winner?.timedOut) {
++      return {
++        items: [],
++        total: 0,
++        warnings: [`Sold lookup timed out after ${ms}ms`],
++        providerDebug: {
++          timedOut: true,
++          providersTried: [],
++          envReady: buildSoldEnvReadySnapshot()
++        }
++      };
++    }
++
++    const data = winner?.data || {};
++    return {
++      ...data,
++      providerDebug: {
++        ...(data.providerDebug || {}),
++        timedOut: false,
++        envReady: data.providerDebug?.envReady || buildSoldEnvReadySnapshot()
++      }
++    };
++  } catch (err) {
++    return {
++      items: [],
++      total: 0,
++      warnings: [serializeErrorValue(err)],
++      providerDebug: {
++        timedOut: false,
++        error: serializeErrorValue(err),
++        providersTried: [],
++        envReady: buildSoldEnvReadySnapshot()
++      }
++    };
++  } finally {
++    if (timer) clearTimeout(timer);
++  }
++}
++
+ async function fetchSoldDataset({ query, categoryId = "", buyingFormat = "", condition = "", acceptsOffers = "AUTO", advancedSoldMode = false, targetSize = 180, soldDays = 30 }) {
+   const cacheKey = buildSoldCacheKey({ query, categoryId, buyingFormat, condition, acceptsOffers, targetSize, soldDays });
+   const cached = getSoldCache(cacheKey);
+@@ -2683,6 +2767,22 @@ function categoryIsCompatible(itemCategory, expected) {
+   return true;
+ }
+ 
++function ebayConditionSearchParam(normalizedCondition) {
++  const map = {
++    NWT: "1000",
++    NEW: "1000",
++    NWOT: "1500",
++    NEW_WITH_DEFECTS: "1750",
++    EXCELLENT: "4000",
++    LIKE_NEW: "4000",
++    VERY_GOOD: "4000",
++    GOOD: "5000",
++    FAIR: "6000",
++    FOR_PARTS: "7000"
++  };
++  return map[normalizedCondition] || "";
++}
++
+ function buildEbaySearchUrl({ query, sold = false, buyingFormat = "", categoryId = "", condition = "", acceptsOffers = "AUTO" }) {
+   const url = new URL("https://www.ebay.com/sch/i.html");
+   url.searchParams.set("_nkw", clean(query) || "reseller item");
+@@ -2693,10 +2793,9 @@ function buildEbaySearchUrl({ query, sold = false, buyingFormat = "", categoryId
+   }
+ 
+   const normalizedCondition = normalizeCondition(condition);
+-  if (normalizedCondition === "PREOWNED") {
+-    url.searchParams.set("LH_ItemCondition", "3000");
+-  } else if (normalizedCondition === "NEW") {
+-    url.searchParams.set("LH_ItemCondition", "1000");
++  const conditionParam = ebayConditionSearchParam(normalizedCondition);
++  if (conditionParam) {
++    url.searchParams.set("LH_ItemCondition", conditionParam);
+   }
+ 
+   const format = normalizeBuyingFormat(buyingFormat);
+@@ -2777,9 +2876,14 @@ function mapEbayConditionId(value) {
+   const t = clean(String(value ?? ""));
+   if (!/^\d+$/.test(t)) return "";
+   const id = parseInt(t, 10);
+-  if (id === 1000 || id === 1500 || id === 1750) return "NEW";
++  if (id === 1000) return "NWT";
++  if (id === 1500) return "NWOT";
++  if (id === 1750) return "NEW_WITH_DEFECTS";
+   if (id === 2000 || id === 2500) return "PREOWNED";
+-  if (id >= 3000 && id <= 6000) return "PREOWNED";
++  if (id === 3000) return "PREOWNED";
++  if (id === 4000) return "EXCELLENT";
++  if (id === 5000) return "GOOD";
++  if (id === 6000) return "FAIR";
+   if (id === 7000) return "FOR_PARTS";
+   return "";
+ }
+@@ -2792,18 +2896,22 @@ function normalizeCondition(value) {
+   const raw = normalizeText(value);
+   if (!raw) return "";
+ 
+-  if (raw.includes("with tag") || raw.includes("nwt")) return "NEW";
+-  if (raw.includes("without tag") || raw.includes("nwot")) return "NEW";
++  if (raw.includes("defect") || raw.includes("issue") || raw.includes("imperfect")) return "NEW_WITH_DEFECTS";
++  if (raw.includes("without tag") || raw.includes("nwot") || raw.includes("new without")) return "NWOT";
++  if (raw.includes("with tag") || raw.includes("nwt") || raw.includes("new with")) return "NWT";
+ 
++  if (raw.includes("for parts") || raw.includes("repair") || raw.includes("not working")) return "FOR_PARTS";
++  if (raw.includes("fair")) return "FAIR";
++  if (raw.includes("excellent")) return "EXCELLENT";
+   if (raw.includes("like new") || raw.includes("like-new") || raw.includes("open box")) return "LIKE_NEW";
+-  if (raw.includes("preowned") || raw.includes("pre-owned") || raw.includes("used") || raw === "used") {
+-    return "PREOWNED";
+-  }
++  if (raw.includes("good used") || (raw.includes("good") && raw.includes("used"))) return "GOOD";
++  if (raw.includes("very good")) return "EXCELLENT";
++
++  if (raw.includes("preowned") || raw.includes("pre-owned") || raw.includes("pre owned")) return "PREOWNED";
++  if (raw === "used") return "USED";
+   if (raw.includes("refurb")) return "PREOWNED";
+-  if (raw.includes("new")) return "NEW";
+-  if (raw.includes("very")) return "VERY_GOOD";
++  if (raw.includes("new")) return "NWT";
+   if (raw.includes("good")) return "GOOD";
+-  if (raw.includes("parts")) return "FOR_PARTS";
+   return trimmed.toUpperCase();
+ }
+ 
+@@ -2833,8 +2941,22 @@ function conditionIsCompatible(itemCondition, requestedCondition) {
+   const requested = normalizeCondition(requestedCondition);
+   if (!item || !requested) return true;
+   if (item === requested) return true;
+-  if (requested === "PREOWNED") {
+-    return ["PREOWNED", "LIKE_NEW", "VERY_GOOD", "GOOD"].includes(item);
++
++  const usedBucket = ["PREOWNED", "USED", "LIKE_NEW", "EXCELLENT", "GOOD", "FAIR"];
++  if (requested === "PREOWNED" || requested === "USED") {
++    return usedBucket.includes(item);
++  }
++  if (requested === "EXCELLENT") {
++    return ["EXCELLENT", "LIKE_NEW", "GOOD"].includes(item);
++  }
++  if (requested === "GOOD") {
++    return ["GOOD", "EXCELLENT", "FAIR", "PREOWNED", "USED"].includes(item);
++  }
++  if (requested === "FAIR") {
++    return ["FAIR", "GOOD", "PREOWNED", "USED"].includes(item);
++  }
++  if (requested === "NWOT") {
++    return ["NWOT", "NWT"].includes(item);
+   }
+   return false;
+ }
+diff --git a/index.html b/index.html
+index 6c826ac..84a3632 100644
+--- a/index.html
++++ b/index.html
+@@ -819,6 +819,60 @@
+       font-size: 14px;
+       outline: none;
+     }
++    .intel-cell.condition-cell {
++      grid-column: 1 / -1;
++    }
++    .intel-cell select {
++      appearance: none;
++      -webkit-appearance: none;
++      padding: 6px 28px 6px 0;
++      background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%238b5cf6' d='M1 1l5 5 5-5'/%3E%3C/svg%3E") no-repeat right 2px center;
++      cursor: pointer;
++      min-height: 36px;
++    }
++    .research-progress {
++      display: flex;
++      flex-direction: column;
++      gap: 8px;
++      margin: 0 0 14px;
++      padding: 12px 14px;
++      border-radius: 14px;
++      background: rgba(3, 9, 24, 0.65);
++      border: 1px solid rgba(139, 92, 255, 0.22);
++    }
++    .research-progress[hidden] { display: none !important; }
++    .research-step {
++      display: flex;
++      align-items: center;
++      gap: 10px;
++      font-size: 13px;
++      color: var(--muted);
++      line-height: 1.35;
++    }
++    .research-step .step-dot {
++      width: 10px;
++      height: 10px;
++      border-radius: 50%;
++      flex-shrink: 0;
++      background: rgba(139, 92, 255, 0.25);
++      border: 1px solid rgba(139, 92, 255, 0.45);
++    }
++    .research-step.done { color: #dce6ff; }
++    .research-step.done .step-dot { background: var(--green); border-color: var(--green); }
++    .research-step.active { color: #fff; font-weight: 800; }
++    .research-step.active .step-dot {
++      background: var(--blue);
++      border-color: var(--blue);
++      box-shadow: 0 0 0 3px rgba(0, 200, 255, 0.18);
++    }
++    .research-step.pending { opacity: 0.55; }
++    .str-label.unverified::after {
++      content: " · STR unverified";
++      color: var(--amber);
++      font-size: 11px;
++      font-weight: 800;
++      letter-spacing: 0.02em;
++    }
+     .intel-insight {
+       grid-column: 1 / -1;
+       padding: 12px;
+@@ -1135,6 +1189,12 @@ <h2>Scan an item to get a sourcing verdict</h2>
+         <button type="button" class="cta-scan-inline scan-trigger">Scan item</button>
+         <div id="errorToast" class="error-toast" role="alert" aria-live="assertive" hidden></div>
+         <div id="scanPhotoStrip" class="scan-photo-strip" hidden aria-label="Captured scan photos"></div>
++        <div id="researchProgress" class="research-progress" hidden aria-live="polite">
++          <div class="research-step pending" data-step="1"><span class="step-dot"></span><span>Identity found</span></div>
++          <div class="research-step pending" data-step="2"><span class="step-dot"></span><span>Active comps loading</span></div>
++          <div class="research-step pending" data-step="3"><span class="step-dot"></span><span>Sold comps verifying</span></div>
++          <div class="research-step pending" data-step="4"><span class="step-dot"></span><span>Final verdict</span></div>
++        </div>
+         <div id="warnBanner" class="warn-banner" role="alert"></div>
+         <div class="decision-panel">
+           <div class="time-filters" id="timeFilters" role="group" aria-label="Sold comp time window"></div>
+@@ -1146,7 +1206,7 @@ <h2>Scan an item to get a sourcing verdict</h2>
+           <div class="decision-top-row">
+             <div>
+               <p class="str-xl" id="sellThroughHero">—</p>
+-              <p class="str-label">Sell-through rate</p>
++              <p class="str-label" id="strLabel">Sell-through rate</p>
+             </div>
+             <div class="conf-ring-wrap" id="confRing" style="--conf:0" aria-label="Confidence">
+               <div class="conf-ring-inner"><span id="confidenceRingText">—</span><span>conf.</span></div>
+@@ -1203,12 +1263,18 @@ <h3>Apparel intelligence</h3>
+               <div class="intel-cell"><label>Gender</label><input id="fieldGender" autocomplete="off" /></div>
+               <div class="intel-cell"><label>Size</label><input id="fieldSize" autocomplete="off" /></div>
+               <div class="intel-cell"><label>Color</label><input id="fieldColor" autocomplete="off" /></div>
+-              <div class="intel-cell">
++              <div class="intel-cell condition-cell">
+                 <label>Condition</label>
+                 <select id="fieldCondition">
+-                  <option value="New with tags">NWOT</option>
++                  <option value="NWT">New with tags (NWT)</option>
++                  <option value="NWOT">New without tags (NWOT)</option>
++                  <option value="New with defects">New with defects / issues</option>
+                   <option value="Pre-Owned" selected>Pre-Owned</option>
+                   <option value="Used">Used</option>
++                  <option value="Excellent">Excellent used condition</option>
++                  <option value="Good">Good used condition</option>
++                  <option value="Fair">Fair condition</option>
++                  <option value="For parts">For parts / repair</option>
+                 </select>
+               </div>
+               <div class="intel-cell"><label>Buy cost ($)</label><input id="fieldBuyCost" type="number" min="0" step="0.01" /></div>
+@@ -1217,9 +1283,13 @@ <h3>Apparel intelligence</h3>
+             </div>
+           </div>
+           <div class="glass-card comps-section">
+-            <h4>High confidence matches</h4>
++            <div id="soldCompsSection" hidden>
++              <h4>Sold comps</h4>
++              <div class="comp-scroll" id="soldComps"></div>
++            </div>
++            <h4 id="activeCompsHeading">Active market examples</h4>
+             <div class="comp-scroll" id="highConfComps"></div>
+-            <h4 style="margin-top:16px">Similar items</h4>
++            <h4 style="margin-top:16px">Similar active listings</h4>
+             <div class="comp-scroll" id="similarComps"></div>
+             <h4 style="margin-top:16px">Broader market examples</h4>
+             <div class="comp-scroll" id="broaderComps"></div>
+@@ -2290,10 +2360,16 @@ <h2 id="scanPromptTitle">Capture the full garment</h2>
+ 
+     function mapCondition(v) {
+       const s = String(v || "").toLowerCase();
+-      if (s.includes("new with")) return "New with tags";
+-      if (s.includes("new without")) return "New without tags";
+-      if (s.includes("new") && !s.includes("pre")) return "New";
+-      if (s.includes("used") || s.includes("pre")) return "Pre-Owned";
++      if (s.includes("defect") || s.includes("issue")) return "New with defects";
++      if (s.includes("without tag") || s.includes("nwot")) return "NWOT";
++      if (s.includes("with tag") || s.includes("nwt")) return "NWT";
++      if (s.includes("for parts") || s.includes("repair")) return "For parts";
++      if (s.includes("excellent")) return "Excellent";
++      if (s.includes("fair")) return "Fair";
++      if (s.includes("good")) return "Good";
++      if (s.includes("used") && !s.includes("pre")) return "Used";
++      if (s.includes("pre") || s.includes("owned")) return "Pre-Owned";
++      if (s.includes("new")) return "NWT";
+       return "";
+     }
+ 
+@@ -2395,24 +2471,36 @@ <h2 id="scanPromptTitle">Capture the full garment</h2>
+     }
+ 
+     function splitComps(soldComps, activeComps, id) {
+-      const sold = soldComps || [];
+-      const active = activeComps || [];
+-      const allRanked = [...sold, ...active]
+-        .map((it) => ({ it, conf: compConfidence(it, id), sold: Boolean(it.soldDate) }))
+-        .sort((a, b) => b.conf - a.conf);
+-      const seen = new Set();
+-      const unique = [];
+-      allRanked.forEach((x) => {
+-        const key = String(x.it.itemId || x.it.title || "").slice(0, 40);
+-        if (seen.has(key)) return;
+-        seen.add(key);
+-        unique.push(x);
+-      });
+-      const high = unique.filter((x) => x.conf >= 75).map((x) => x.it).slice(0, 8);
+-      const similar = unique.filter((x) => x.conf >= 52 && x.conf < 75).map((x) => x.it).slice(0, 8);
+-      const broader = unique.filter((x) => x.conf < 52).map((x) => x.it).slice(0, 8);
+-      if (!high.length && sold.length) return { high: sold.slice(0, 6), similar: sold.slice(6, 12), broader: active.slice(0, 6) };
+-      return { high, similar, broader: broader.length ? broader : active.slice(0, 6) };
++      const rankUnique = (entries) => {
++        const seen = new Set();
++        return entries
++          .sort((a, b) => b.conf - a.conf)
++          .filter((x) => {
++            const key = String(x.it.itemId || x.it.title || "").slice(0, 40);
++            if (seen.has(key)) return false;
++            seen.add(key);
++            return true;
++          });
++      };
++
++      const soldRanked = rankUnique(
++        (soldComps || []).map((it) => ({ it, conf: compConfidence(it, id) }))
++      ).map((x) => x.it).slice(0, 8);
++
++      const activeRanked = rankUnique(
++        (activeComps || []).map((it) => ({ it, conf: compConfidence(it, id) }))
++      );
++
++      const activeHigh = activeRanked.filter((x) => x.conf >= 75).map((x) => x.it).slice(0, 8);
++      const activeSimilar = activeRanked.filter((x) => x.conf >= 52 && x.conf < 75).map((x) => x.it).slice(0, 8);
++      const activeBroader = activeRanked.filter((x) => x.conf < 52).map((x) => x.it).slice(0, 8);
++
++      return {
++        sold: soldRanked,
++        activeHigh,
++        activeSimilar,
++        activeBroader: activeBroader.length ? activeBroader : (activeComps || []).slice(0, 6)
++      };
+     }
+ 
+     function compShipping(it) {
+@@ -2684,27 +2772,70 @@ <h2 id="scanPromptTitle">Capture the full garment</h2>
+       txt("homeStatStr", strs.length ? pct(strs.reduce((a, b) => a + b, 0) / strs.length) : "—");
+     }
+ 
+-    function renderLoadingResearch() {
++    function resetResearchProgress() {
++      state.researchProgressStep = 0;
++      const box = el("researchProgress");
++      if (!box) return;
++      box.hidden = false;
++      box.querySelectorAll(".research-step").forEach((step) => {
++        step.classList.remove("done", "active");
++        step.classList.add("pending");
++      });
++    }
++
++    function setResearchProgressStep(step) {
++      state.researchProgressStep = step;
++      const box = el("researchProgress");
++      if (!box) return;
++      box.hidden = false;
++      box.querySelectorAll(".research-step").forEach((elStep) => {
++        const n = num(elStep.dataset.step, 0);
++        elStep.classList.remove("done", "active", "pending");
++        if (n < step) elStep.classList.add("done");
++        else if (n === step) elStep.classList.add("active");
++        else elStep.classList.add("pending");
++      });
++    }
++
++    function hideResearchProgress() {
++      const box = el("researchProgress");
++      if (box) box.hidden = true;
++    }
++
++    function renderIdentityPreview() {
++      const id = getIdentity();
++      const parts = [id.brand, id.type, id.size].filter(Boolean);
++      if (parts.length) {
++        txt("decisionReasonText", `Identity: ${parts.join(" · ")} — loading market comps…`);
++      }
++    }
++
++    function renderLoadingResearch(step = 2) {
+       showResultsPanel(true);
++      resetResearchProgress();
++      setResearchProgressStep(step);
+       const verdictEl = el("verdictText");
+       if (verdictEl) {
+         verdictEl.textContent = "…";
+         verdictEl.className = "verdict-xl";
+       }
+-      txt("sellThroughHero", "Loading…");
++      txt("sellThroughHero", step >= 3 ? "Verifying…" : "Loading…");
+       el("sellThroughHero")?.classList.remove("unverified");
++      el("strLabel")?.classList.remove("unverified");
+       txt("confidenceRingText", "—");
+       txt("confidenceText", "—");
+       if (el("confRing")) el("confRing").style.setProperty("--conf", "0");
+       if (el("soldActiveViz")) el("soldActiveViz").hidden = true;
+       if (el("indicatorRow")) el("indicatorRow").innerHTML = "";
+-      ["soldCountText", "activeCountText", "avgSoldText", "medianSoldText", "estimatedProfitText", "maxBuyText", "competitionText", "timeToSellText", "roiText", "recommendedPriceText"].forEach((id) => txt(id, "Loading…"));
++      ["soldCountText", "activeCountText", "avgSoldText", "medianSoldText", "estimatedProfitText", "maxBuyText", "competitionText", "timeToSellText", "roiText", "recommendedPriceText"].forEach((id) => txt(id, step >= 2 ? "Loading…" : "—"));
+       if (el("strHistogram")) el("strHistogram").hidden = true;
+       if (el("warnBanner")) el("warnBanner").classList.remove("show");
+-      txt("decisionReasonText", "Pulling live eBay comps…");
++      txt("decisionReasonText", step === 1 ? "Identity found — pulling active comps…" : step >= 3 ? "Verifying sold comps…" : "Pulling live eBay comps…");
+       txt("moverTag", "");
+       const dq = el("decisionSearchQuery");
+       if (dq) dq.hidden = true;
++      const soldSection = el("soldCompsSection");
++      if (soldSection) soldSection.hidden = true;
+     }
+ 
+     function renderResearchErrorState(e) {
+@@ -2738,8 +2869,9 @@ <h2 id="scanPromptTitle">Capture the full garment</h2>
+         warn.textContent = msg;
+         warn.classList.add("show");
+       }
+-      renderCompRow("highConfComps", [], getIdentity(), true, true);
+-      renderCompRow("similarComps", [], getIdentity(), true, false);
++      renderCompRow("soldComps", [], getIdentity(), true, true);
++      renderCompRow("highConfComps", [], getIdentity(), false, true);
++      renderCompRow("similarComps", [], getIdentity(), false, false);
+       renderCompRow("broaderComps", [], getIdentity(), false, false);
+       if (el("strHistogram")) el("strHistogram").hidden = true;
+       const dq = el("decisionSearchQuery");
+@@ -2772,11 +2904,12 @@ <h2 id="scanPromptTitle">Capture the full garment</h2>
+ 
+       const { title: displayTitle, query: displayQuery } = resolveDisplayQuery(normalized);
+ 
++      const soldUnavailable = normalized.soldUnavailable === true;
++      const soldMsg = normalized.soldUnavailableMessage || SOLD_UNAVAILABLE_MSG;
+       let v = String(normalized.verdict || "HOLD").toUpperCase();
+       if (v === "INSUFFICIENT_DATA") v = "INSUFFICIENT";
++      if (soldUnavailable && (v === "PASS" || v === "BUY" || v === "INSUFFICIENT")) v = "HOLD";
+       const cls = v === "BUY" ? "buy" : v === "PASS" ? "pass" : v === "HOLD" ? "hold" : "";
+-      const soldUnavailable = normalized.soldUnavailable === true;
+-      const soldMsg = normalized.soldUnavailableMessage || SOLD_UNAVAILABLE_MSG;
+       const active = Number.isFinite(Number(normalized.activeCount)) ? Number(normalized.activeCount) : null;
+       const sold = Number.isFinite(Number(normalized.soldCount)) ? Number(normalized.soldCount) : null;
+       const id = getIdentity();
+@@ -2792,7 +2925,10 @@ <h2 id="scanPromptTitle">Capture the full garment</h2>
+       else if (active != null && sold != null && active > 0 && sold > 0) txt("sellThroughHero", pct(normalized.sellThrough));
+       else if (active != null && active > 0) txt("sellThroughHero", "0%");
+       else txt("sellThroughHero", "No comps");
+-      if (strEl) strEl.classList.toggle("unverified", soldUnavailable);
++      if (strEl) {
++        strEl.classList.toggle("unverified", soldUnavailable);
++      }
++      el("strLabel")?.classList.toggle("unverified", soldUnavailable);
+       const conf = num(normalized.confidence);
+       txt("confidenceText", conf ? `${conf}%` : "—");
+       txt("confidenceRingText", conf ? `${conf}%` : "—");
+@@ -2870,14 +3006,19 @@ <h2 id="scanPromptTitle">Capture the full garment</h2>
+       const activeComps = normalized.activeComps || normalized?.comps?.active || [];
+       const soldComps = soldUnavailable ? [] : normalized.soldComps || normalized?.comps?.sold || [];
+       const split = splitComps(soldComps, activeComps, id);
+-      state.comps = { active: activeComps, sold: soldComps, high: split.high, similar: split.similar, broader: split.broader };
+-      renderCompRow("highConfComps", split.high, id, true, true);
+-      renderCompRow("similarComps", split.similar, id, true, false);
+-      renderCompRow("broaderComps", split.broader, id, false, false);
++      state.comps = { active: activeComps, sold: soldComps, ...split };
++      const soldSection = el("soldCompsSection");
++      if (soldSection) soldSection.hidden = soldUnavailable || !split.sold.length;
++      renderCompRow("soldComps", split.sold, id, true, true);
++      renderCompRow("highConfComps", split.activeHigh, id, false, true);
++      renderCompRow("similarComps", split.activeSimilar, id, false, false);
++      renderCompRow("broaderComps", split.activeBroader, id, false, false);
+       renderStrHistogram(soldComps, soldUnavailable);
++      hideResearchProgress();
+       if (save) {
+-        saveRecent(normalized);
+-        saveHistory(normalized);
++        const toSave = { ...normalized, verdict: v };
++        saveRecent(toSave);
++        saveHistory(toSave);
+       }
+       state.debug.lastFlowError = null;
+       updateDebugPanel(normalized);
+@@ -3254,22 +3395,35 @@ <h2 id="scanPromptTitle">Capture the full garment</h2>
+       setLoading(true);
+       switchView("results");
+       showResultsPanel(true);
+-      renderLoadingResearch();
++      renderLoadingResearch(2);
+       renderScanPhotoStrip();
++      let soldStepTimer = null;
+       try {
+-        if (runScan) await scanPhoto();
+-        renderScanPhotoStrip();
+-        ensureQueryState();
+-        renderResearch(await runResearch());
++        if (runScan) {
++          await scanPhoto();
++          renderScanPhotoStrip();
++          ensureQueryState();
++          renderIdentityPreview();
++          setResearchProgressStep(1);
++          renderLoadingResearch(2);
++        }
++        soldStepTimer = setTimeout(() => setResearchProgressStep(3), 9000);
++        const research = await runResearch();
++        if (soldStepTimer) clearTimeout(soldStepTimer);
++        setResearchProgressStep(4);
++        renderResearch(research);
+       } catch (e) {
+         console.error(e);
+         state.debug.lastFlowError = e?.message || "Research failed.";
++        if (soldStepTimer) clearTimeout(soldStepTimer);
++        hideResearchProgress();
+         renderResearchErrorState(e);
+         renderScanPhotoStrip();
+         if (!isSearchableIdentity()) {
+           openManualEditState(`Research failed (${state.debug.lastFlowError}). Edit item fields below.`);
+         }
+       } finally {
++        if (soldStepTimer) clearTimeout(soldStepTimer);
+         setLoading(false);
+         updateDebugPanel(state.lastResearch);
+       }

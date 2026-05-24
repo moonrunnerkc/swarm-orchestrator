@@ -1,0 +1,297 @@
+diff --git a/src/AiModelBuilder.cs b/src/AiModelBuilder.cs
+index 6dbdfb27f0..a694a0f7f5 100644
+--- a/src/AiModelBuilder.cs
++++ b/src/AiModelBuilder.cs
+@@ -160,6 +160,11 @@ private readonly AiDotNet.Configuration.IAiModelTrainingCore<T, TInput, TOutput>
+     private readonly AiDotNet.Configuration.IAiModelCrossValidation<T, TInput, TOutput> _crossValidation
+         = new AiDotNet.Configuration.AiModelCrossValidation<T, TInput, TOutput>();
+ 
++    // audit-2026-05 phase 2a slice 4 — compliance concern (bias, fairness, interpretability,
++    // adversarial robustness, safety filtering).
++    private readonly AiDotNet.Configuration.IAiModelCompliance<T, TInput, TOutput> _compliance
++        = new AiDotNet.Configuration.AiModelCompliance<T, TInput, TOutput>();
++
+     private PreprocessingPipeline<T, TInput, TInput>? _preprocessingPipeline;
+     private PostprocessingPipeline<T, TOutput, TOutput>? _postprocessingPipeline;
+ 
+@@ -5141,7 +5146,8 @@ public AiModelResult<T, TInput, TOutput> DeserializeModel(byte[] modelData)
+     /// </remarks>
+     public IAiModelBuilder<T, TInput, TOutput> ConfigureBiasDetector(IBiasDetector<T> detector)
+     {
+-        _biasDetector = detector;
++        _compliance.ConfigureBiasDetector(detector);
++        _biasDetector = _compliance.BiasDetector;
+         return this;
+     }
+ 
+@@ -5158,7 +5164,8 @@ public IAiModelBuilder<T, TInput, TOutput> ConfigureBiasDetector(IBiasDetector<T
+     /// </remarks>
+     public IAiModelBuilder<T, TInput, TOutput> ConfigureFairnessEvaluator(IFairnessEvaluator<T> evaluator)
+     {
+-        _fairnessEvaluator = evaluator;
++        _compliance.ConfigureFairnessEvaluator(evaluator);
++        _fairnessEvaluator = _compliance.FairnessEvaluator;
+         return this;
+     }
+ 
+@@ -5202,7 +5209,8 @@ public IAiModelBuilder<T, TInput, TOutput> ConfigureFairnessEvaluator(IFairnessE
+     /// </remarks>
+     public IAiModelBuilder<T, TInput, TOutput> ConfigureInterpretability(InterpretabilityOptions? options = null)
+     {
+-        _interpretabilityOptions = options ?? new InterpretabilityOptions();
++        _compliance.ConfigureInterpretability(options);
++        _interpretabilityOptions = _compliance.InterpretabilityOptions;
+         return this;
+     }
+ 
+@@ -5259,7 +5267,8 @@ public IAiModelBuilder<T, TInput, TOutput> ConfigureInterpretability(Interpretab
+     public IAiModelBuilder<T, TInput, TOutput> ConfigureAdversarialRobustness(
+         AdversarialRobustnessConfiguration<T, TInput, TOutput>? configuration = null)
+     {
+-        _adversarialRobustnessConfiguration = configuration ?? new AdversarialRobustnessConfiguration<T, TInput, TOutput>();
++        _compliance.ConfigureAdversarialRobustness(configuration);
++        _adversarialRobustnessConfiguration = _compliance.AdversarialRobustnessConfiguration;
+         return this;
+     }
+ 
+@@ -6582,8 +6591,8 @@ public IAiModelBuilder<T, TInput, TOutput> ConfigureProfiling(ProfilingConfig? c
+     /// </remarks>
+     public IAiModelBuilder<T, TInput, TOutput> ConfigureSafety(Action<AiDotNet.Safety.SafetyConfig>? configure = null)
+     {
+-        _safetyPipelineConfig = new AiDotNet.Safety.SafetyConfig();
+-        configure?.Invoke(_safetyPipelineConfig);
++        _compliance.ConfigureSafety(configure);
++        _safetyPipelineConfig = _compliance.SafetyPipelineConfig;
+         return this;
+     }
+ 
+diff --git a/src/Configuration/AiModelCompliance.cs b/src/Configuration/AiModelCompliance.cs
+new file mode 100644
+index 0000000000..ab1fb74c12
+--- /dev/null
++++ b/src/Configuration/AiModelCompliance.cs
+@@ -0,0 +1,50 @@
++using System;
++using AiDotNet.Models.Options;
++using AiDotNet.Safety;
++
++namespace AiDotNet.Configuration;
++
++/// <summary>
++/// Default implementation of <see cref="IAiModelCompliance{T,TInput,TOutput}"/>. Audit-2026-05
++/// phase-2a slice 4. Mirrors pre-refactor inline logic verbatim, including the
++/// <c>?? new SomethingConfig()</c> fallback patterns for the null-arg overloads.
++/// </summary>
++public class AiModelCompliance<T, TInput, TOutput> : IAiModelCompliance<T, TInput, TOutput>
++{
++    /// <inheritdoc/>
++    public IBiasDetector<T>? BiasDetector { get; private set; }
++
++    /// <inheritdoc/>
++    public IFairnessEvaluator<T>? FairnessEvaluator { get; private set; }
++
++    /// <inheritdoc/>
++    public InterpretabilityOptions? InterpretabilityOptions { get; private set; }
++
++    /// <inheritdoc/>
++    public AdversarialRobustnessConfiguration<T, TInput, TOutput>? AdversarialRobustnessConfiguration { get; private set; }
++
++    /// <inheritdoc/>
++    public SafetyConfig? SafetyPipelineConfig { get; private set; }
++
++    /// <inheritdoc/>
++    public void ConfigureBiasDetector(IBiasDetector<T> detector) => BiasDetector = detector;
++
++    /// <inheritdoc/>
++    public void ConfigureFairnessEvaluator(IFairnessEvaluator<T> evaluator) => FairnessEvaluator = evaluator;
++
++    /// <inheritdoc/>
++    public void ConfigureInterpretability(InterpretabilityOptions? options)
++        => InterpretabilityOptions = options ?? new InterpretabilityOptions();
++
++    /// <inheritdoc/>
++    public void ConfigureAdversarialRobustness(AdversarialRobustnessConfiguration<T, TInput, TOutput>? configuration)
++        => AdversarialRobustnessConfiguration = configuration ?? new AdversarialRobustnessConfiguration<T, TInput, TOutput>();
++
++    /// <inheritdoc/>
++    public void ConfigureSafety(Action<SafetyConfig>? configure)
++    {
++        var config = new SafetyConfig();
++        configure?.Invoke(config);
++        SafetyPipelineConfig = config;
++    }
++}
+diff --git a/src/Configuration/IAiModelCompliance.cs b/src/Configuration/IAiModelCompliance.cs
+new file mode 100644
+index 0000000000..ea79bce363
+--- /dev/null
++++ b/src/Configuration/IAiModelCompliance.cs
+@@ -0,0 +1,47 @@
++using System;
++using AiDotNet.Models.Options;
++using AiDotNet.Safety;
++
++namespace AiDotNet.Configuration;
++
++/// <summary>
++/// Component that owns the compliance / ethical-AI configuration for an AI model build:
++/// bias detection, fairness evaluation, interpretability / explainability, adversarial-robustness
++/// hardening, and safety filtering. Extracted from <c>AiModelBuilder</c> as slice 4 of the
++/// audit-2026-05 phase-2a DI refactor.
++/// </summary>
++/// <typeparam name="T">Element numeric type.</typeparam>
++/// <typeparam name="TInput">Model input tensor type.</typeparam>
++/// <typeparam name="TOutput">Model output tensor type.</typeparam>
++public interface IAiModelCompliance<T, TInput, TOutput>
++{
++    /// <summary>The configured bias detector, or <c>null</c> if not configured.</summary>
++    IBiasDetector<T>? BiasDetector { get; }
++
++    /// <summary>The configured fairness evaluator, or <c>null</c> if not configured.</summary>
++    IFairnessEvaluator<T>? FairnessEvaluator { get; }
++
++    /// <summary>The configured interpretability options, or <c>null</c> if not configured.</summary>
++    InterpretabilityOptions? InterpretabilityOptions { get; }
++
++    /// <summary>The configured adversarial-robustness configuration, or <c>null</c> if not configured.</summary>
++    AdversarialRobustnessConfiguration<T, TInput, TOutput>? AdversarialRobustnessConfiguration { get; }
++
++    /// <summary>The configured safety-filter pipeline, or <c>null</c> if not configured.</summary>
++    SafetyConfig? SafetyPipelineConfig { get; }
++
++    /// <summary>Sets the bias detector.</summary>
++    void ConfigureBiasDetector(IBiasDetector<T> detector);
++
++    /// <summary>Sets the fairness evaluator.</summary>
++    void ConfigureFairnessEvaluator(IFairnessEvaluator<T> evaluator);
++
++    /// <summary>Sets the interpretability options. <c>null</c> applies defaults.</summary>
++    void ConfigureInterpretability(InterpretabilityOptions? options);
++
++    /// <summary>Sets the adversarial-robustness configuration. <c>null</c> applies defaults.</summary>
++    void ConfigureAdversarialRobustness(AdversarialRobustnessConfiguration<T, TInput, TOutput>? configuration);
++
++    /// <summary>Sets the safety pipeline. <c>null</c> action applies an empty config.</summary>
++    void ConfigureSafety(Action<SafetyConfig>? configure);
++}
+diff --git a/tests/AiDotNet.Tests/UnitTests/Configuration/AiModelComplianceTests.cs b/tests/AiDotNet.Tests/UnitTests/Configuration/AiModelComplianceTests.cs
+new file mode 100644
+index 0000000000..47cc10b71c
+--- /dev/null
++++ b/tests/AiDotNet.Tests/UnitTests/Configuration/AiModelComplianceTests.cs
+@@ -0,0 +1,115 @@
++using System.Threading.Tasks;
++using AiDotNet.Configuration;
++using AiDotNet.Interfaces;
++using AiDotNet.Models.Options;
++using AiDotNet.Safety;
++using AiDotNet.Tensors.LinearAlgebra;
++using Moq;
++using Xunit;
++
++namespace AiDotNet.Tests.UnitTests.Configuration;
++
++/// <summary>Audit-2026-05 phase-2a slice 4 — compliance component isolation tests.</summary>
++public class AiModelComplianceTests
++{
++    [Fact(Timeout = 30000)]
++    public async Task InitialState_AllSlotsAreNull()
++    {
++        await Task.Yield();
++        var c = new AiModelCompliance<double, Matrix<double>, Vector<double>>();
++        Assert.Null(c.BiasDetector);
++        Assert.Null(c.FairnessEvaluator);
++        Assert.Null(c.InterpretabilityOptions);
++        Assert.Null(c.AdversarialRobustnessConfiguration);
++        Assert.Null(c.SafetyPipelineConfig);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task ConfigureBiasDetector_Stores()
++    {
++        await Task.Yield();
++        var c = new AiModelCompliance<double, Matrix<double>, Vector<double>>();
++        var detector = Mock.Of<IBiasDetector<double>>();
++        c.ConfigureBiasDetector(detector);
++        Assert.Same(detector, c.BiasDetector);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task ConfigureFairnessEvaluator_Stores()
++    {
++        await Task.Yield();
++        var c = new AiModelCompliance<double, Matrix<double>, Vector<double>>();
++        var evaluator = Mock.Of<IFairnessEvaluator<double>>();
++        c.ConfigureFairnessEvaluator(evaluator);
++        Assert.Same(evaluator, c.FairnessEvaluator);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task ConfigureInterpretability_NullAppliesDefault()
++    {
++        await Task.Yield();
++        var c = new AiModelCompliance<double, Matrix<double>, Vector<double>>();
++        c.ConfigureInterpretability(null);
++        Assert.NotNull(c.InterpretabilityOptions);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task ConfigureInterpretability_ExplicitOptions_Stored()
++    {
++        await Task.Yield();
++        var c = new AiModelCompliance<double, Matrix<double>, Vector<double>>();
++        var opts = new InterpretabilityOptions();
++        c.ConfigureInterpretability(opts);
++        Assert.Same(opts, c.InterpretabilityOptions);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task ConfigureAdversarialRobustness_NullAppliesDefault()
++    {
++        await Task.Yield();
++        var c = new AiModelCompliance<double, Matrix<double>, Vector<double>>();
++        c.ConfigureAdversarialRobustness(null);
++        Assert.NotNull(c.AdversarialRobustnessConfiguration);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task ConfigureAdversarialRobustness_Explicit_Stored()
++    {
++        await Task.Yield();
++        var c = new AiModelCompliance<double, Matrix<double>, Vector<double>>();
++        var cfg = new AdversarialRobustnessConfiguration<double, Matrix<double>, Vector<double>>();
++        c.ConfigureAdversarialRobustness(cfg);
++        Assert.Same(cfg, c.AdversarialRobustnessConfiguration);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task ConfigureSafety_NullActionLeavesEmptyConfig()
++    {
++        await Task.Yield();
++        var c = new AiModelCompliance<double, Matrix<double>, Vector<double>>();
++        c.ConfigureSafety(null);
++        Assert.NotNull(c.SafetyPipelineConfig);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task ConfigureSafety_ActionInvokedOnNewConfig()
++    {
++        await Task.Yield();
++        var c = new AiModelCompliance<double, Matrix<double>, Vector<double>>();
++        SafetyConfig? captured = null;
++        c.ConfigureSafety(sc => captured = sc);
++        Assert.NotNull(captured);
++        Assert.Same(c.SafetyPipelineConfig, captured);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task Interface_IsImplemented()
++    {
++        await Task.Yield();
++        IAiModelCompliance<double, Matrix<double>, Vector<double>> c
++            = new AiModelCompliance<double, Matrix<double>, Vector<double>>();
++        var detector = Mock.Of<IBiasDetector<double>>();
++        c.ConfigureBiasDetector(detector);
++        Assert.Same(detector, c.BiasDetector);
++    }
++}

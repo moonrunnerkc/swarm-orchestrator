@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "PR delivers all stated changes accurately. The rename src/native_ui.rs → src/dashboard_ui.rs is shown as 97% similarity rename with NativeUiApp → DashboardApp, run_native_ui() → run_dashboard_ui() consistently propagated through draw_ui, build_help_text, render_hop_table/latency_chart/loss_chart and both tests; main.rs updates the `mod` declaration and the call site. Dead MtrError variants TrippyNotFound, TrippyInstallFailed, TrippyExecutionFailed are removed from src/error.rs along with the now-unnecessary `#[allow(dead_code)]` on the enum; corresponding From<MtrError> match arms and problem_type URL mappings (probe_backend_unavailable, probe_backend_install_failed, probe_execution_failed) are deleted from src/api_error.rs. The previously TrippyExecutionFailed test is replaced with io_error_maps_to_internal_server_error (status 500, code internal_io_error, internal-io-error URL) which is a real assertion on an actual extant variant — this is test-update-following-implementation, not assertion strip. Two new tests added (default_ui_is_the_default_preset, ui_mode_from_cli_maps_all_presets). CI fuzz job correctly pinned to nightly-2025-06-23 across install/build/list/run steps.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T14:00:00.000Z"
+}

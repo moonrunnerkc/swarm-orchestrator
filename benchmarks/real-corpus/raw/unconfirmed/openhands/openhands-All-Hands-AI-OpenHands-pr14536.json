@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14536",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI"
+  },
+  "pr": {
+    "number": 14536,
+    "headSha": "819dd8801ce4e655e4e107d01234fddebcb30020",
+    "baseSha": "5e311f7f995008ffe4c74f8cf6f3085d4030c670",
+    "title": "[codex] Enforce single active Jira DC link",
+    "body": "HUMAN:\nThis PR fixes the Jira DC invariant that a user should only have one active workspace link. I tested the migration behavior locally and with a rolled-back Postgres dry run against replicated-02.\n\n- [x] A human has tested these changes.\n\n## Summary\n\nThis hardens the Jira Data Center integration so a user can only have one active Jira DC workspace link at a time.\n\n## Changes\n\n- Add migration `115` to mark duplicate active Jira DC user links inactive, keeping the newest active link per user.\n- Add a partial unique index on `jira_dc_users.keycloak_user_id` where `status = 'active'`.\n- Mirror that partial index in the SQLAlchemy model metadata.\n- Scope Jira DC link status updates by both user and workspace, so reactivation/unlinking does not rely on user-only uniqueness.\n- Add focused tests for the migration behavior and route/store updates.\n\n## Why\n\nThe route/store logic already assumed one active Jira DC link per user, but the database did not enforce it. Dirty data or a race can create multiple active rows, which causes `scalar_one_or_none()` to raise `MultipleResultsFound` and turns the Jira DC settings panel/save flow into a 500.\n\n## Validation\n\n- `PYTHONPATH=enterprise:. uv run --with python-keycloak --with limits --with coredis pytest enterprise/tests/unit/storage/test_jira_dc_active_link_constraint.py enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py`\n- `uv run ruff check enterprise/migrations/versions/115_enforce_single_active_jira_dc_user_link.py enterprise/storage/jira_dc_user.py enterprise/storage/jira_dc_integration_store.py enterprise/server/routes/integration/jira_dc.py enterprise/tests/unit/storage/test_jira_dc_active_link_constraint.py enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py`\n- `uv run pre-commit run --files migrations/versions/115_enforce_single_active_jira_dc_user_link.py storage/jira_dc_user.py storage/jira_dc_integration_store.py server/routes/integration/jira_dc.py tests/unit/storage/test_jira_dc_active_link_constraint.py tests/unit/server/routes/test_jira_dc_integration_routes.py --show-diff-on-failure --config ./dev_config/python/.pre-commit-config.yaml`\n- Postgres dry run on replicated-02 using a temporary `jira_dc_users` table inside a transaction; duplicate active link insert was blocked and the transaction was rolled back.\n",
+    "author": "ak684",
+    "headRef": "codex/jira-dc-active-link-constraint",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "819dd8801ce4e655e4e107d01234fddebcb30020",
+    "baseSha": "5e311f7f995008ffe4c74f8cf6f3085d4030c670"
+  },
+  "vendoredDiffPath": "unconfirmed/openhands/openhands-All-Hands-AI-OpenHands-pr14536.diff",
+  "vendoredAt": "2026-05-24T03:17:46.397Z",
+  "collectedAt": "2026-05-24T03:17:46.397Z"
+}

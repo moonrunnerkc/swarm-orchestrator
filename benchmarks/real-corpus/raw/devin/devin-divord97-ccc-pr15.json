@@ -1,0 +1,26 @@
+{
+  "id": "devin-divord97-ccc-pr15",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 15,
+    "headSha": "3a99f28d752ae4bd31ee3aebfe103f3fa1cceeb9",
+    "baseSha": "6911db8fea32544173ca34899e780d3c1b92e0f2",
+    "title": "feat: Infrastructure & Operations — Docker, Prometheus, Grafana, FreeSWITCH, k6, MySQL partitions",
+    "body": "## Summary\n\nComplete infrastructure and operations setup for production deployment of the CCC platform. Adds Docker containerization, monitoring stack, FreeSWITCH configuration templates, load testing scripts, and deployment documentation.\n\n**26 files changed, +1797 lines**\n\n### Docker (5 files)\n- Multi-stage `Dockerfile` for Go API: `golang:1.25-alpine` → `alpine:3.21` (healthcheck + non-root user)\n- Multi-stage `web/Dockerfile` for React frontend: `node:20-alpine` → `nginx:1.27-alpine`\n- `docker-compose.yml`: Full stack — API, Web/Nginx, MySQL 8, Redis 7, MinIO, FreeSWITCH, NATS, Prometheus, Grafana (with healthchecks + dependency ordering)\n- `.dockerignore` for API and frontend\n\n### Monitoring (4 files)\n- Prometheus metrics middleware: `ccc_http_requests_total`, `ccc_http_request_duration_seconds`, `ccc_http_requests_in_flight`, `ccc_active_calls`, `ccc_active_agents`, `ccc_esl_connections_active`, `ccc_esl_command_duration_seconds`, `ccc_queue_depth`, `ccc_campaign_progress_ratio`\n- Path normalization (numeric IDs → `:id`) to reduce metric cardinality\n- Prometheus scrape config targeting API + FreeSWITCH + MySQL/Redis exporters\n- Grafana auto-provisioned datasource + CCC Overview dashboard (10 panels)\n\n### FreeSWITCH (5 files)\n- Global variables: ESL password, TLS paths, RTP ports, codec preferences\n- Internal SIP profile: agent phones, TLS/SRTP, NAT traversal, recording\n- External SIP profile: PSTN trunks with TLS\n- mod_verto: WebRTC WS (8081) + WSS (8082) profiles\n- ESL: event socket on 8021\n\n### Database (1 file)\n- MySQL monthly partition SQL for 8 high-volume tables (calls, call_events, agent_presence_log, im_messages, audit_logs, qa_results, webrtc_quality_logs, annotation_results)\n- Maintenance examples: add/drop partition commands\n\n### Load Testing (5 files)\n- k6 scripts matching Phase 10 plan:\n  1. **Inbound**: ramp to 1000 concurrent calls (p95 < 500ms)\n  2. **Outbound**: 500 concurrent campaign calls\n  3. **Mixed**: 500 inbound + 500 outbound simultaneously\n  4. **WebSocket**: 500 agents + 10 admin dashboards\n  5. **Reports**: concurrent aggregation queries (p95 < 5s)\n\n### Operations (4 files)\n- `Makefile` with 20 targets: `dev`, `build`, `test`, `docker-up/down/logs`, `migrate-up/down/partitions`, `web-dev/build`, `k6-*`\n- Nginx reverse proxy: `/api/` → backend, `/ws/` → WebSocket, SPA fallback, static asset caching\n- `.env.example` with all configurable variables\n- `docs/deployment.md`: architecture diagram, quick start, security checklist, TLS/SRTP setup, scaling guide, monitoring metrics reference, troubleshooting\n\n## Review & Testing Checklist for Human\n\n- [ ] Review `docker-compose.yml` service dependencies and volume mounts — verify MySQL healthcheck parameters match your environment\n- [ ] Verify `.env.example` default passwords are NOT used in production — especially `JWT_SECRET`, `MYSQL_ROOT_PASSWORD`, `ESL_PASSWORD`\n- [ ] Review FreeSWITCH configs (`deploy/freeswitch/conf/`) — TLS cert paths and codec preferences may need adjustment for your trunk provider\n- [ ] Run `docker compose up -d` and verify all services start healthy: `docker compose ps`\n- [ ] Verify Prometheus scrapes API metrics: `curl http://localhost:9090/api/v1/targets`\n\n**Recommended test plan:**\n1. `cp .env.example .env && docker compose build && docker compose up -d`\n2. Wait for MySQL healthcheck, then `curl http://localhost:8080/health`\n3. Check `curl http://localhost:8080/metrics` returns Prometheus metrics\n4. Open Grafana at `http://localhost:3000` (admin/admin) and verify CCC Overview dashboard loads\n5. Run `make k6-inbound` with a small duration override to validate test scripts\n\n### Notes\n- FreeSWITCH config is template-based — production deployment needs real TLS certificates in `deploy/freeswitch/conf/certs/`\n- k6 load tests require a running backend with seed data for meaningful results\n- MySQL partition SQL should be run after initial migration (`make migrate-partitions`)\n- All 168 existing Go tests pass with race detection\n\nLink to Devin session: https://app.devin.ai/sessions/35e328fa681447e98fa82466c8f69b99\nRequested by: @divord97",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779578013-infrastructure",
+    "repository": "divord97/ccc"
+  },
+  "diffRef": {
+    "repository": "divord97/ccc",
+    "headSha": "3a99f28d752ae4bd31ee3aebfe103f3fa1cceeb9",
+    "baseSha": "6911db8fea32544173ca34899e780d3c1b92e0f2"
+  },
+  "vendoredDiffPath": "devin/devin-divord97-ccc-pr15.diff",
+  "vendoredAt": "2026-05-24T03:04:46.275Z",
+  "collectedAt": "2026-05-24T03:04:46.275Z"
+}

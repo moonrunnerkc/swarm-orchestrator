@@ -1,0 +1,350 @@
+diff --git a/index.html b/index.html
+index c4fd912..df2015a 100644
+--- a/index.html
++++ b/index.html
+@@ -6,7 +6,7 @@
+     <title>おおきなメモ</title>
+   </head>
+   <body>
+-    <main id="app" aria-live="polite"></main>
++    <main id="app"></main>
+     <script type="module" src="/src/main.ts"></script>
+   </body>
+ </html>
+diff --git a/src/i18n.ts b/src/i18n.ts
+index 4d6ba7e..3e3df7c 100644
+--- a/src/i18n.ts
++++ b/src/i18n.ts
+@@ -38,6 +38,16 @@ const jaMessages = {
+   markDone: "完了にする",
+   markUndone: "未完了に戻す",
+   clearDone: "完了した項目を削除",
++  noteAdded: "メモを追加しました。",
++  todoAdded: "やることを追加しました。",
++  noteSaved: "メモを保存しました。",
++  todoSaved: "やることを保存しました。",
++  noteDeleted: "メモを削除しました。",
++  todoDeleted: "やることを削除しました。",
++  todoMarkedDone: "やることを完了にしました。",
++  todoMarkedUndone: "やることを未完了に戻しました。",
++  editCancelled: "編集をキャンセルしました。",
++  completedTodosCleared: "完了した項目を削除しました。",
+   premiumTitle: "プレミアム",
+   premiumActive: "プレミアムが有効です。",
+   trialActive: "7日トライアル中です。残り {days} 日。",
+@@ -92,6 +102,16 @@ const messages: Record<LocaleCode, Record<MessageKey, string>> = {
+     markDone: "Mark done",
+     markUndone: "Mark not done",
+     clearDone: "Clear completed",
++    noteAdded: "Note added.",
++    todoAdded: "To-do added.",
++    noteSaved: "Note saved.",
++    todoSaved: "To-do saved.",
++    noteDeleted: "Note deleted.",
++    todoDeleted: "To-do deleted.",
++    todoMarkedDone: "To-do marked done.",
++    todoMarkedUndone: "To-do marked not done.",
++    editCancelled: "Edit canceled.",
++    completedTodosCleared: "Completed items cleared.",
+     premiumTitle: "Premium",
+     premiumActive: "Premium is active.",
+     trialActive: "Your 7-day trial is active. {days} days remaining.",
+diff --git a/src/main.ts b/src/main.ts
+index b6dfe93..074be49 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -35,7 +35,8 @@ const t = createTranslator(locale);
+ let data: AppData;
+ let editingNoteId: string | null = null;
+ let editingTodoId: string | null = null;
+-let pendingFocusSelector: string | null = null;
++let pendingFocusSelectors: string[] = [];
++let statusMessage = "";
+ 
+ async function initialize() {
+   renderLoading();
+@@ -85,8 +86,11 @@ function render() {
+   const remainingTodoCountText = formatInteger(locale, remainingTodoCount);
+   const completedTodoCountText = formatInteger(locale, completedTodoCount);
+   const isFirstExperience = data.notes.length === 0 && data.todos.length === 0;
++  const announcement = statusMessage;
++  statusMessage = "";
+ 
+   app.innerHTML = `
++    <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">${escapeHtml(announcement)}</p>
+     <section class="hero">
+       <div>
+         <p class="eyebrow">${t("today")} ${formatTodayDate(locale, now)}</p>
+@@ -105,7 +109,7 @@ function render() {
+     <section class="panel" aria-labelledby="notes-heading">
+       <div class="section-title">
+         <p class="eyebrow panel-eyebrow">${t("notesCountLabel")} ${noteCountText}</p>
+-        <h2 id="notes-heading">${t("notesTitle")}</h2>
++        <h2 id="notes-heading" class="focus-target" tabindex="-1">${t("notesTitle")}</h2>
+       </div>
+       <div class="stack" data-notes></div>
+     </section>
+@@ -114,7 +118,7 @@ function render() {
+       <div class="section-header">
+         <div class="section-title">
+           <p class="eyebrow panel-eyebrow">${t("todoProgress", { done: completedTodoCount, total: todayTodos.length, remaining: remainingTodoCount })}</p>
+-          <h2 id="todos-heading">${t("todosTitle")}</h2>
++          <h2 id="todos-heading" class="focus-target" tabindex="-1">${t("todosTitle")}</h2>
+         </div>
+         <button class="secondary small" data-action="clear-done" ${completedTodoCount === 0 ? "disabled" : ""}>${t("clearDone")}</button>
+       </div>
+@@ -123,7 +127,7 @@ function render() {
+     </section>
+ 
+     <section class="panel editor" aria-labelledby="editor-heading">
+-      <h2 id="editor-heading">${t("familyEditor")}</h2>
++      <h2 id="editor-heading" class="focus-target" tabindex="-1">${t("familyEditor")}</h2>
+       <label>
+         <span>${t("noteLabel")}</span>
+         <textarea id="note-input" rows="3" maxlength="500"></textarea>
+@@ -138,7 +142,7 @@ function render() {
+     </section>
+ 
+     <section class="panel premium" aria-labelledby="premium-heading">
+-      <h2 id="premium-heading">${t("premiumTitle")}</h2>
++      <h2 id="premium-heading" class="focus-target" tabindex="-1">${t("premiumTitle")}</h2>
+       <p class="price">${t("price", { price: formatUsd(locale, PREMIUM_PRICE_USD) })}</p>
+       <p>${getPremiumMessage(trialStatus)}</p>
+       <p>${t("basicStillWorks")}</p>
+@@ -150,6 +154,7 @@ function render() {
+   renderNotes();
+   renderTodos(todayTodos);
+   bindActions();
++  bindFocusLinks();
+   focusPendingElement();
+ }
+ 
+@@ -261,57 +266,114 @@ function bindActions() {
+       const id = element.dataset["id"];
+ 
+       if (action === "add-note") {
+-        await mutate((current) => addNote(current, getInputValue("note-input")));
++        const value = getInputValue("note-input");
++        if (hasMeaningfulInput(value)) {
++          statusMessage = t("noteAdded");
++        }
++        queueFocusAfterRender("#note-input");
++        await mutate((current) => addNote(current, value));
+         clearInput("note-input");
+       }
+       if (action === "add-todo") {
+-        await mutate((current) => addTodo(current, getInputValue("todo-input")));
++        const value = getInputValue("todo-input");
++        if (hasMeaningfulInput(value)) {
++          statusMessage = t("todoAdded");
++        }
++        queueFocusAfterRender("#todo-input");
++        await mutate((current) => addTodo(current, value));
+         clearInput("todo-input");
+       }
+       if (action === "toggle-todo" && id) {
++        const todo = data.todos.find((item) => item.id === id);
++        statusMessage = todo?.done ? t("todoMarkedUndone") : t("todoMarkedDone");
++        queueFocusAfterRender(
++          `[data-action="toggle-todo"][data-id="${cssEscape(id)}"]`,
++          "#todos-heading",
++        );
+         await mutate((current) => toggleTodo(current, id));
+       }
+       if (action === "delete-note" && id) {
++        statusMessage = t("noteDeleted");
++        queueFocusAfterRender("#notes-heading");
+         await mutate((current) => deleteNote(current, id));
+       }
+       if (action === "delete-todo" && id) {
++        statusMessage = t("todoDeleted");
++        queueFocusAfterRender("#todos-heading");
+         await mutate((current) => deleteTodo(current, id));
+       }
+       if (action === "edit-note" && id) {
+         editingNoteId = id;
+         editingTodoId = null;
+-        pendingFocusSelector = `[data-note-edit="${cssEscape(id)}"]`;
++        queueFocusAfterRender(`[data-note-edit="${cssEscape(id)}"]`);
+         render();
+       }
+       if (action === "edit-todo" && id) {
+         editingTodoId = id;
+         editingNoteId = null;
+-        pendingFocusSelector = `[data-todo-edit="${cssEscape(id)}"]`;
++        queueFocusAfterRender(`[data-todo-edit="${cssEscape(id)}"]`);
+         render();
+       }
+       if (action === "save-note" && id) {
+         const value = getEditableValue(`[data-note-edit="${cssEscape(id)}"]`);
+         editingNoteId = null;
++        statusMessage = hasMeaningfulInput(value) ? t("noteSaved") : t("noteDeleted");
++        queueFocusAfterRender(
++          `[data-action="edit-note"][data-id="${cssEscape(id)}"]`,
++          "#notes-heading",
++        );
+         await mutate((current) => updateNote(current, id, value));
+       }
+       if (action === "save-todo" && id) {
+         const value = getEditableValue(`[data-todo-edit="${cssEscape(id)}"]`);
+         editingTodoId = null;
++        statusMessage = hasMeaningfulInput(value) ? t("todoSaved") : t("todoDeleted");
++        queueFocusAfterRender(
++          `[data-action="edit-todo"][data-id="${cssEscape(id)}"]`,
++          "#todos-heading",
++        );
+         await mutate((current) => updateTodo(current, id, value));
+       }
+       if (action === "cancel-edit") {
++        queueFocusAfterRender(
++          ...(editingNoteId
++            ? [`[data-action="edit-note"][data-id="${cssEscape(editingNoteId)}"]`, "#notes-heading"]
++            : []),
++          ...(editingTodoId
++            ? [`[data-action="edit-todo"][data-id="${cssEscape(editingTodoId)}"]`, "#todos-heading"]
++            : []),
++        );
++        statusMessage = t("editCancelled");
+         editingNoteId = null;
+         editingTodoId = null;
+-        pendingFocusSelector = null;
+         render();
+       }
+       if (action === "clear-done") {
++        statusMessage = t("completedTodosCleared");
++        queueFocusAfterRender("#todos-heading");
+         await mutate((current) => clearCompletedTodaysTodos(current));
+       }
+     });
+   });
+ }
+ 
++function bindFocusLinks() {
++  document.querySelectorAll<HTMLAnchorElement>('a[href^="#"]').forEach((anchor) => {
++    anchor.addEventListener("click", (event) => {
++      const targetId = anchor.getAttribute("href")?.slice(1);
++      const target = targetId ? document.getElementById(targetId) : null;
++
++      if (!target) {
++        return;
++      }
++
++      event.preventDefault();
++      target.scrollIntoView({ block: "nearest" });
++      target.focus();
++    });
++  });
++}
++
+ async function mutate(updater: (current: AppData) => AppData) {
+   data = updater(data);
+   await repository.save(data);
+@@ -330,14 +392,25 @@ function clearInput(id: string) {
+   }
+ }
+ 
++function queueFocusAfterRender(...selectors: string[]) {
++  pendingFocusSelectors = selectors;
++}
++
+ function focusPendingElement() {
+-  if (!pendingFocusSelector) {
++  if (pendingFocusSelectors.length === 0) {
+     return;
+   }
+ 
+-  const target = document.querySelector<HTMLElement>(pendingFocusSelector);
+-  pendingFocusSelector = null;
+-  target?.focus();
++  const selectors = pendingFocusSelectors;
++  pendingFocusSelectors = [];
++
++  for (const selector of selectors) {
++    const target = document.querySelector<HTMLElement>(selector);
++    if (target) {
++      target.focus();
++      return;
++    }
++  }
+ }
+ 
+ function getEditableValue(selector: string): string {
+@@ -397,6 +470,10 @@ function createActionLabel(action: string, text: string): string {
+   return `${action}: ${text}`;
+ }
+ 
++function hasMeaningfulInput(value: string): boolean {
++  return value.trim().length > 0;
++}
++
+ function escapeHtml(value: string): string {
+   return value
+     .replaceAll("&", "&amp;")
+diff --git a/src/styles.css b/src/styles.css
+index 9b216ef..e0b40d2 100644
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -66,12 +66,17 @@ button:disabled {
+ button:focus-visible,
+ a:focus-visible,
+ input:focus-visible,
+-textarea:focus-visible {
++textarea:focus-visible,
++.focus-target:focus {
+   outline: 3px solid #ffffff;
+   outline-offset: 2px;
+   box-shadow: 0 0 0 6px #0a5bd7;
+ }
+ 
++.focus-target {
++  scroll-margin-block: 1rem;
++}
++
+ button.secondary {
+   color: #0f304d;
+   background: #e4f1ff;
+@@ -91,7 +96,7 @@ button.danger:hover:not(:disabled) {
+ }
+ 
+ button.small {
+-  min-height: 48px;
++  min-height: 52px;
+   padding: 0.65rem 0.85rem;
+   font-size: 0.95rem;
+ }
+@@ -333,6 +338,7 @@ textarea,
+   background: #ffffff;
+   font-size: 1.1rem;
+   line-height: 1.45;
++  scroll-margin-block: 1rem;
+ }
+ 
+ input::placeholder,
+@@ -391,7 +397,7 @@ textarea {
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
+-  min-height: 48px;
++  min-height: 52px;
+   border: 2px solid #9fc9ef;
+   border-radius: 16px;
+   padding: 0.7rem 0.9rem;
+@@ -403,6 +409,18 @@ textarea {
+   text-decoration: none;
+ }
+ 
++.sr-only {
++  position: absolute;
++  width: 1px;
++  height: 1px;
++  margin: -1px;
++  overflow: hidden;
++  clip: rect(0, 0, 0, 0);
++  white-space: nowrap;
++  border: 0;
++  padding: 0;
++}
++
+ .guide-link-primary {
+   color: #ffffff;
+   background: #075ea8;

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1586",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1586,
+    "headSha": "5f728d53b107781696ac91c66b2503b698e084a1",
+    "baseSha": "aaaacb5d50f284c0badd6ad4f3cbe7c8e0935ab3",
+    "title": "fix(streaming): align non-beta accumulator with beta implementation",
+    "body": "## What\n\nFixes three inconsistencies between `_messages.py` (non-beta) and `_beta_messages.py` (beta) in the streaming accumulator:\n\n1. **`model_dump()` → `to_dict()`** in the `content_block_start` handler — `to_dict()` defaults to `use_api_names=True` and `exclude_unset=True`, which is correct for `construct_type()` and consistent with both the `message_start` handler in the same file (line 452) and the beta version.\n\n2. **`type(event)` → `builtins.type(event)`** in the error path — prevents potential shadowing of the `type` builtin, matching the beta implementation.\n\n3. **`rye` → `uv`** shebang in `examples/messages_stream.py` — the only example still referencing `rye` after the project migrated to `uv` (per CONTRIBUTING.md line 52).\n\n## Why\n\nThe beta streaming accumulator appears to have received these fixes independently, but the non-beta version was not updated to match. The `model_dump()` vs `to_dict()` difference is the most significant: if a content block type ever introduces field aliasing, `model_dump()` would pass Python-style keys while `construct_type()` expects API-style keys, causing silent field drops.\n\n## Verification\n\n- Build: pass\n- Tests: pass (31 passed — 13 non-beta + 18 beta streaming tests)\n- Lint: pass (ruff)\n- Type check: pass (pyright 0 errors, mypy 0 errors)",
+    "author": "xodn348",
+    "headRef": "fix/streaming-accumulator-consistency",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "5f728d53b107781696ac91c66b2503b698e084a1",
+    "baseSha": "aaaacb5d50f284c0badd6ad4f3cbe7c8e0935ab3"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1586.diff",
+  "vendoredAt": "2026-05-24T03:16:57.450Z",
+  "collectedAt": "2026-05-24T03:16:57.451Z"
+}

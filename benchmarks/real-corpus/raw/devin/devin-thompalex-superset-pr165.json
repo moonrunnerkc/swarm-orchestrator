@@ -1,0 +1,26 @@
+{
+  "id": "devin-thompalex-superset-pr165",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 165,
+    "headSha": "7db50e1555d2595f592664969c3ee591700f2db0",
+    "baseSha": "cd9c2d1aa2815c50e1cc61f642fc51b1b7820659",
+    "title": "fix(deps): bump mako from 1.3.11 to 1.3.12 (closes #150)",
+    "body": "### SUMMARY\n\nBumps [Mako](https://pypi.org/project/Mako/) from 1.3.11 to 1.3.12 to fix **CVE-2026-44307** ([GHSA-2h4p-vjrc-8xpq](https://github.com/advisories/GHSA-2h4p-vjrc-8xpq)).\n\n**Vulnerability:** Mako vulnerable to path traversal via backslash URI on Windows in TemplateLookup (severity: HIGH).\n\n**Files changed:**\n- `requirements/base.txt` — pinned `mako==1.3.12`\n- `requirements/development.txt` — pinned `mako==1.3.12`\n- `pyproject.toml` — updated minimum to `Mako>=1.3.12`\n\n### BEFORE/AFTER SCREENSHOTS OR ANIMATED GIF\nNot applicable (dependency-only change).\n\n### TESTING INSTRUCTIONS\n\n1. `pip install -e \".[development]\"` completes without errors\n2. `pytest tests/unit_tests/ -x -q` passes\n3. All 49 CI checks pass (including test-postgres, test-mysql, test-sqlite integration suites)\n\n**Unit test output (local):**\n```\n6909 passed, 4 skipped in 543.81s\n```\n1 pre-existing failure (`test_per_tile_spinner_timeout_logs_warning_and_continues`) confirmed on master — unrelated to mako. It's a Playwright `Error.__init__()` signature issue.\n\n**Integration test output (local):**\nDocker services (Postgres 17, Redis 7) were started and DB migrations applied successfully. Local integration tests showed widespread failures (1022 failed, 892 passed, 428 errors) due to incomplete test fixture setup (missing example data, user ID mismatches in fresh DB) — all pre-existing environment issues unrelated to mako. CI's own integration test suites (`test-postgres`, `test-mysql`, `test-sqlite`) all pass green in properly configured environments.\n\n**CI status:** 49/49 checks passed ✓\n\n### ADDITIONAL INFORMATION\n- [x] Has associated issue: Fixes #150\n- [ ] Required feature flags:\n- [ ] Changes UI\n- [ ] Includes DB Migration\n- [ ] Introduces new feature or API\n- [ ] Removes existing feature or API\n\nLink to Devin session: https://app.devin.ai/sessions/1fe014b0bd6449f8b98d2781c088d93a",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779572321-bump-mako",
+    "repository": "thompalex/superset"
+  },
+  "diffRef": {
+    "repository": "thompalex/superset",
+    "headSha": "7db50e1555d2595f592664969c3ee591700f2db0",
+    "baseSha": "cd9c2d1aa2815c50e1cc61f642fc51b1b7820659"
+  },
+  "vendoredDiffPath": "devin/devin-thompalex-superset-pr165.diff",
+  "vendoredAt": "2026-05-24T03:05:13.356Z",
+  "collectedAt": "2026-05-24T03:05:13.356Z"
+}

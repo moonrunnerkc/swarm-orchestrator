@@ -1,0 +1,105 @@
+diff --git a/docs/pending-tasks.md b/docs/pending-tasks.md
+index af9fbf5..7ffc8c6 100644
+--- a/docs/pending-tasks.md
++++ b/docs/pending-tasks.md
+@@ -82,6 +82,15 @@ https://nomaderia.com/
+ 
+ ## Changelog (completados)
+ 
++### ✅ Cache tuning de React Query para contenido estático (Mayo 2026)
++- [x] `src/App.tsx` mantiene el `staleTime` global por defecto en **5 min** (`5 * 60 * 1000`)
++- [x] `src/hooks/use-destinations.ts` ahora define `staleTime: 30 * 60 * 1000` en `useDestinations`, `useDestinationBySlug` y `useRelatedDestinations`
++- [x] `src/hooks/use-gear-articles.ts` ahora define `staleTime: 30 * 60 * 1000` en `useGearArticles` y `useFeaturedGearArticles`
++- [x] `src/hooks/use-blog-posts.ts` ahora define `staleTime: 30 * 60 * 1000` en `useBlogPosts`
++- [x] `src/hooks/use-media.ts` (`useMediaSlider`) ahora define `staleTime: 10 * 60 * 1000`
++- [x] Sin cambios en hooks admin, quiz ni stats para mantener frescura de datos donde aplica
++- [x] Verificaciones ejecutadas: `node node_modules/typescript/bin/tsc --noEmit` ✅ y `npm run build` ✅
++
+ ### ✅ Dashboard admin — stat card de Sentinel Leads (Mayo 2026)
+ - [x] `src/pages/admin/AdminDashboard.tsx` ahora incluye la stat card **"Leads de Alerta"** con ícono `Bell` y conteo exacto desde `sentinel_leads`
+ - [x] Se agregó el query usando `(supabase as unknown as SupabaseClient).from("sentinel_leads").select("*", { count: "exact", head: true })`
+diff --git a/src/App.tsx b/src/App.tsx
+index 54f294f..c3ade55 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -50,7 +50,7 @@ const SystemAudit = lazyWithRetry(() => import("./pages/admin/SystemAudit"));
+ const queryClient = new QueryClient({
+   defaultOptions: {
+     queries: {
+-      staleTime: 1000 * 60 * 5, // 5 minutos — datos frescos sin refetch innecesario
++      staleTime: 5 * 60 * 1000, // 5 minutos — datos frescos sin refetch innecesario
+       retry: 1,                  // 1 reintento en caso de error de red
+       refetchOnWindowFocus: false,
+     },
+diff --git a/src/hooks/use-blog-posts.ts b/src/hooks/use-blog-posts.ts
+index ea5dc1e..15e5c35 100644
+--- a/src/hooks/use-blog-posts.ts
++++ b/src/hooks/use-blog-posts.ts
+@@ -20,6 +20,7 @@ export type { BlogPost };
+ export function useBlogPosts() {
+   return useQuery<BlogPost[]>({
+     queryKey: ["blog_posts"],
++    staleTime: 30 * 60 * 1000,
+     queryFn: async () => {
+       const { data, error } = await supabase
+         .from("blog_posts")
+diff --git a/src/hooks/use-destinations.ts b/src/hooks/use-destinations.ts
+index 6cc6f09..15663ed 100644
+--- a/src/hooks/use-destinations.ts
++++ b/src/hooks/use-destinations.ts
+@@ -21,6 +21,7 @@ export interface DestinationCard {
+ export function useDestinations() {
+   return useQuery<DestinationCard[]>({
+     queryKey: ["destinations"],
++    staleTime: 30 * 60 * 1000,
+     queryFn: async () => {
+       const { data, error } = await supabase
+         .from("destinations")
+@@ -37,6 +38,7 @@ export function useDestinations() {
+ export function useDestinationBySlug(slug: string | undefined) {
+   return useQuery<Destination | null>({
+     queryKey: ["destination", slug],
++    staleTime: 30 * 60 * 1000,
+     queryFn: async () => {
+       if (!slug) return null;
+       const { data, error } = await supabase
+@@ -58,6 +60,7 @@ export function useRelatedDestinations(
+ ) {
+   return useQuery<Destination[]>({
+     queryKey: ["destinations", "related", difficultyLevel, excludeId],
++    staleTime: 30 * 60 * 1000,
+     queryFn: async () => {
+       if (!difficultyLevel || !excludeId) return [];
+       const { data, error } = await supabase
+diff --git a/src/hooks/use-gear-articles.ts b/src/hooks/use-gear-articles.ts
+index 020a754..f65f44a 100644
+--- a/src/hooks/use-gear-articles.ts
++++ b/src/hooks/use-gear-articles.ts
+@@ -15,6 +15,7 @@ interface GearArticleCard {
+ export function useGearArticles() {
+   return useQuery<GearArticle[]>({
+     queryKey: ["gear_articles"],
++    staleTime: 30 * 60 * 1000,
+     queryFn: async () => {
+       const { data, error } = await supabase
+         .from("gear_articles")
+@@ -30,6 +31,7 @@ export function useGearArticles() {
+ export function useFeaturedGearArticles() {
+   return useQuery<GearArticleCard[]>({
+     queryKey: ["gear_articles", "featured"],
++    staleTime: 30 * 60 * 1000,
+     queryFn: async () => {
+       const { data, error } = await supabase
+         .from("gear_articles")
+diff --git a/src/hooks/use-media.ts b/src/hooks/use-media.ts
+index c83ee10..56d0903 100644
+--- a/src/hooks/use-media.ts
++++ b/src/hooks/use-media.ts
+@@ -25,6 +25,7 @@ const db = supabase as unknown as ReturnType<typeof createClient>;
+ export function useMediaSlider() {
+   return useQuery<MediaItem[]>({
+     queryKey: ["media_slider"],
++    staleTime: 10 * 60 * 1000,
+     queryFn: async () => {
+       const { data, error } = await db
+         .from("media_slider")

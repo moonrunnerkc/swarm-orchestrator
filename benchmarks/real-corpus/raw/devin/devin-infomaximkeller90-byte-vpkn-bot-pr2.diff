@@ -1,0 +1,78 @@
+diff --git a/bot.py b/bot.py
+index b21d084..630d8b2 100644
+--- a/bot.py
++++ b/bot.py
+@@ -5,12 +5,13 @@
+ * **Polling** (default for local dev): just runs `bot.py`. No public URL needed.
+ * **Webhook** (production on free PaaS): set `WEBHOOK_BASE_URL` and `PORT` in
+   the environment and the bot will register a Telegram webhook against
+-  `${WEBHOOK_BASE_URL}/telegram/${WEBHOOK_SECRET}` and listen on `0.0.0.0:$PORT`.
++  ``${WEBHOOK_BASE_URL}/telegram/${url_token}`` and listen on ``0.0.0.0:$PORT``.
+ """
+ from __future__ import annotations
+ 
+ import logging
+ import os
++import re
+ import secrets
+ 
+ from telegram.ext import Application
+@@ -21,6 +22,21 @@
+ from app.storage import Storage
+ 
+ 
++# Telegram's X-Telegram-Bot-Api-Secret-Token header (and the URL path component
++# we use to receive webhooks) must only contain these characters.
++_URL_SAFE_RE = re.compile(r"[^A-Za-z0-9_-]")
++
++
++def _sanitize_secret(value: str) -> str:
++    """Coerce an arbitrary secret into URL-safe base64url-compatible chars."""
++    # Standard base64 (the format Render's `generateValue: true` produces)
++    # contains `+`, `/`, and `=` which break both URL paths and Telegram's
++    # secret_token validation. Map them to the base64url equivalents and drop
++    # everything else just to be safe.
++    converted = value.replace("+", "-").replace("/", "_").rstrip("=")
++    return _URL_SAFE_RE.sub("", converted)
++
++
+ def _setup_logging() -> None:
+     level = os.environ.get("LOG_LEVEL", "INFO").upper()
+     logging.basicConfig(
+@@ -51,27 +67,23 @@ def main() -> None:
+     application = build_app(config)
+ 
+     if config.webhook_base_url:
+-        webhook_secret = config.webhook_secret or secrets.token_urlsafe(24)
+-        url_path = f"telegram/{webhook_secret}"
++        raw_secret = config.webhook_secret or secrets.token_urlsafe(24)
++        url_token = _sanitize_secret(raw_secret)
++        if len(url_token) < 16:
++            # Fall back to a freshly generated, guaranteed-safe token if the
++            # provided secret was empty or stripped down to almost nothing.
++            url_token = _sanitize_secret(secrets.token_urlsafe(32))
++        url_path = f"telegram/{url_token}"
+         webhook_url = f"{config.webhook_base_url}/{url_path}"
+         logging.info("Starting webhook at %s (port %s)", webhook_url, config.port)
+-        # The Telegram Bot API allows A-Z, a-z, 0-9, '_', and '-' in the
+-        # X-Telegram-Bot-Api-Secret-Token header value.
+-        token_chars = set(
+-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+-        )
+-        secret_token = (
+-            webhook_secret
+-            if webhook_secret and all(c in token_chars for c in webhook_secret)
+-            else None
+-        )
+         application.run_webhook(
+             listen="0.0.0.0",
+             port=config.port,
+             url_path=url_path,
+             webhook_url=webhook_url,
+-            secret_token=secret_token,
++            secret_token=url_token,
+             allowed_updates=None,
++            drop_pending_updates=True,
+         )
+     else:
+         logging.info("Starting long-polling mode")

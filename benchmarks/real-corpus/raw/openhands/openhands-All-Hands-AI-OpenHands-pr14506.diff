@@ -1,0 +1,886 @@
+diff --git a/enterprise/migrations/versions/114_add_acp_session_resume_columns.py b/enterprise/migrations/versions/114_add_acp_session_resume_columns.py
+new file mode 100644
+index 000000000000..b394481e1a78
+--- /dev/null
++++ b/enterprise/migrations/versions/114_add_acp_session_resume_columns.py
+@@ -0,0 +1,39 @@
++"""Add acp_session_id / acp_session_cwd to conversation_metadata.
++
++Mirrors the SDK ``state.agent_state['acp_session_id'|'acp_session_cwd']``
++into durable storage so ACP conversations can be resumed after a sandbox
++recycle wipes the per-conversation ``base_state.json``.  The app-server
++passes the id back to the SDK on the next launch via
++``ACPAgent.acp_resume_session_id`` to drive ``session/load`` instead of
++starting a fresh session.
++
++Revision ID: 114
++Revises: 113
++Create Date: 2026-05-20
++"""
++
++from typing import Sequence, Union
++
++import sqlalchemy as sa
++from alembic import op
++
++revision: str = "114"
++down_revision: Union[str, None] = "113"
++branch_labels: Union[str, Sequence[str], None] = None
++depends_on: Union[str, Sequence[str], None] = None
++
++
++def upgrade() -> None:
++    op.add_column(
++        "conversation_metadata",
++        sa.Column("acp_session_id", sa.String(), nullable=True),
++    )
++    op.add_column(
++        "conversation_metadata",
++        sa.Column("acp_session_cwd", sa.String(), nullable=True),
++    )
++
++
++def downgrade() -> None:
++    op.drop_column("conversation_metadata", "acp_session_cwd")
++    op.drop_column("conversation_metadata", "acp_session_id")
+diff --git a/openhands/app_server/app_conversation/app_conversation_info_service.py b/openhands/app_server/app_conversation/app_conversation_info_service.py
+index e14f1dbf6e2b..68856347a7a2 100644
+--- a/openhands/app_server/app_conversation/app_conversation_info_service.py
++++ b/openhands/app_server/app_conversation/app_conversation_info_service.py
+@@ -116,6 +116,25 @@ async def process_stats_event(
+             conversation_id: The ID of the conversation to update
+         """
+ 
++    @abstractmethod
++    async def update_acp_session(
++        self,
++        conversation_id: UUID,
++        acp_session_id: str | None,
++        acp_session_cwd: str | None,
++    ) -> None:
++        """Mirror ``state.agent_state['acp_session_id'|'acp_session_cwd']``.
++
++        Called from the webhook ``on_event`` handler when an agent_state
++        ``ConversationStateUpdateEvent`` arrives.  Persists the id and cwd
++        so the next sandbox launch (post-recycle) can pass them back to the
++        SDK via ``ACPAgent.acp_resume_session_id``.
++
++        ``None`` values are written as-is so a server-initiated reset
++        (e.g. ``load_session`` failure → ``new_session``) clears the column
++        and overwrites it with the replacement id on the next event.
++        """
++
+ 
+ class AppConversationInfoServiceInjector(
+     DiscriminatedUnionMixin, Injector[AppConversationInfoService], ABC
+diff --git a/openhands/app_server/app_conversation/app_conversation_models.py b/openhands/app_server/app_conversation/app_conversation_models.py
+index 406c52b0e353..8bf47f8dbdd4 100644
+--- a/openhands/app_server/app_conversation/app_conversation_models.py
++++ b/openhands/app_server/app_conversation/app_conversation_models.py
+@@ -114,6 +114,15 @@ class AppConversationInfo(BaseModel):
+     # Tags for conversation metadata (e.g., automation context, skills used)
+     tags: dict[str, str] = Field(default_factory=dict)
+ 
++    # ACP resume state — mirrored from the SDK's ``agent_state`` so the
++    # session id and the cwd it was created under survive sandbox recycles.
++    # On the next launch, the app-server passes ``acp_session_id`` back to
++    # the SDK via :attr:`~openhands.sdk.agent.ACPAgent.acp_resume_session_id`,
++    # which drives ``session/load`` instead of starting a fresh session.
++    # Only set when ``agent_kind == 'acp'``.
++    acp_session_id: str | None = None
++    acp_session_cwd: str | None = None
++
+     created_at: datetime = Field(default_factory=utc_now)
+     updated_at: datetime = Field(default_factory=utc_now)
+ 
+diff --git a/openhands/app_server/app_conversation/live_status_app_conversation_service.py b/openhands/app_server/app_conversation/live_status_app_conversation_service.py
+index 3ab7909a1ef5..f1bd8ccacd0c 100644
+--- a/openhands/app_server/app_conversation/live_status_app_conversation_service.py
++++ b/openhands/app_server/app_conversation/live_status_app_conversation_service.py
+@@ -135,6 +135,39 @@
+ </IMPORTANT_PLANNING_BOUNDARIES>"""
+ 
+ 
++# --- ACP session-resume persistence (issue #14260, Solution B) -------------
++#
++# Root directory inside the runtime sandbox for ACP server session storage.
++# ``/workspace`` is the PVC mount that survives sandbox recycles (its
++# ownerReference points to the Deployment, not the Pod), so pointing each
++# ACP server's data directory into a subdirectory here lets the server load
++# its own past sessions on a fresh sandbox.
++_ACP_PERSIST_ROOT: str = '/workspace'
++
++# Per-provider env var that redirects the ACP server's data directory.
++# Gemini CLI has no equivalent env var and is intentionally omitted —
++# for Gemini, native ``session/load`` resume is not viable; the bootstrap-
++# prompt resume (Solution A) remains the fallback there.
++_ACP_PERSIST_ENV_BY_SERVER: dict[str, tuple[str, str]] = {
++    'claude-code': ('CLAUDE_CONFIG_DIR', '.claude'),
++    'codex': ('CODEX_HOME', '.codex'),
++}
++
++
++def _acp_persist_env(acp_server: str) -> dict[str, str]:
++    """Return env vars that relocate an ACP server's data dir onto /workspace.
++
++    Returns an empty dict for providers without a relocation env var
++    (e.g. ``gemini-cli``) or for ``acp_server='custom'`` where the user
++    already manages their own environment via :attr:`acp_env`.
++    """
++    spec = _ACP_PERSIST_ENV_BY_SERVER.get(acp_server)
++    if spec is None:
++        return {}
++    env_var, subdir = spec
++    return {env_var: f'{_ACP_PERSIST_ROOT}/{subdir}'}
++
++
+ @dataclass
+ class LiveStatusAppConversationService(AppConversationServiceBase):
+     """AppConversationService which combines live status info from the sandbox with stored data."""
+@@ -1520,6 +1553,18 @@ async def _build_acp_start_conversation_request(
+         acp_settings = user.agent_settings  # already verified to be ACPAgentSettings
+         assert isinstance(acp_settings, ACPAgentSettings)
+ 
++        # Relocate the ACP server's own session storage onto the persistent
++        # /workspace volume.  Without this, Claude Code / Codex store
++        # sessions in ``$HOME``, which is wiped on sandbox recycle — and
++        # ``session/load`` then has nothing to load even when we hand it a
++        # valid session id.  Explicit user-set entries in ``acp_env`` win
++        # over our defaults so power users can override the path.
++        persist_env = _acp_persist_env(acp_settings.acp_server)
++        merged_acp_env: dict[str, str] = {
++            **persist_env,
++            **dict(acp_settings.acp_env or {}),
++        }
++
+         # Pass user secrets via AgentContext. The SDK renders them as a
+         # <CUSTOM_SECRETS> block in the ACP prompt (so the agent knows the
+         # names) and ``ACPAgent._start_acp_server`` gap-fills any that
+@@ -1530,11 +1575,35 @@ async def _build_acp_start_conversation_request(
+         # eagerly hit the auth service for every ``LookupSecret`` on every
+         # conversation start, from the wrong process.
+         agent_context = AgentContext(secrets=secrets) if secrets else None
+-        settings_update = (
+-            {'agent_context': agent_context} if agent_context is not None else {}
+-        )
++        settings_update: dict[str, Any] = {'acp_env': merged_acp_env}
++        if agent_context is not None:
++            settings_update['agent_context'] = agent_context
+         acp_agent = acp_settings.model_copy(update=settings_update).create_agent()
+ 
++        # Hand the agent the durable session id (if any) so a fresh sandbox
++        # can resume the prior ACP session even though ``base_state.json``
++        # was wiped along with the previous sandbox FS.  The id was mirrored
++        # by the webhook ``on_event`` handler each time the SDK autosaved
++        # ``state.agent_state``.  ``ACPAgent`` falls back to ``new_session``
++        # if the ACP server can no longer load the id.
++        #
++        # TODO: drop the ``_sdk_supports_acp_resume_session_id`` guard once
++        # OpenHands pins to an SDK release that includes
++        # ``ACPAgent.acp_resume_session_id``.
++        _sdk_supports_acp_resume_session_id = (
++            'acp_resume_session_id' in type(acp_agent).model_fields
++        )
++        if _sdk_supports_acp_resume_session_id:
++            existing_info = (
++                await self.app_conversation_info_service.get_app_conversation_info(
++                    conversation_id
++                )
++            )
++            if existing_info and existing_info.acp_session_id:
++                acp_agent = acp_agent.model_copy(
++                    update={'acp_resume_session_id': existing_info.acp_session_id}
++                )
++
+         sdk_plugins: list[PluginSource] | None = None
+         if plugins:
+             sdk_plugins = [
+diff --git a/openhands/app_server/app_conversation/sql_app_conversation_info_service.py b/openhands/app_server/app_conversation/sql_app_conversation_info_service.py
+index 3a730b1e7624..07697ef5ae8c 100644
+--- a/openhands/app_server/app_conversation/sql_app_conversation_info_service.py
++++ b/openhands/app_server/app_conversation/sql_app_conversation_info_service.py
+@@ -116,6 +116,13 @@ class StoredConversationMetadata(Base):
+         create_json_type_decorator(dict[str, str]), nullable=True
+     )
+ 
++    # ACP resume state — durably mirrors ACPAgent.agent_state's session id
++    # and the cwd it was created under, so the SDK can call session/load on
++    # the next sandbox launch even after a sandbox recycle has wiped the
++    # per-conversation base_state.json inside the previous sandbox.
++    acp_session_id: Mapped[str | None] = mapped_column(String, nullable=True)
++    acp_session_cwd: Mapped[str | None] = mapped_column(String, nullable=True)
++
+ 
+ @dataclass
+ class SQLAppConversationInfoService(AppConversationInfoService):
+@@ -381,6 +388,8 @@ async def save_app_conversation_info(
+             ),
+             public=info.public,
+             tags=info.tags if info.tags else None,
++            acp_session_id=info.acp_session_id,
++            acp_session_cwd=info.acp_session_cwd,
+         )
+ 
+         await self.db_session.merge(stored)
+@@ -469,6 +478,38 @@ async def update_conversation_statistics(
+ 
+         await self.db_session.commit()
+ 
++    async def update_acp_session(
++        self,
++        conversation_id: UUID,
++        acp_session_id: str | None,
++        acp_session_cwd: str | None,
++    ) -> None:
++        """Persist the ACP session id and cwd for resume after sandbox recycle.
++
++        Writes both columns even when one is ``None`` so the row reflects the
++        SDK's authoritative agent_state.  Skips the write silently when the
++        conversation row isn't visible to the current user context.
++        """
++        query = await self._secure_select()
++        query = query.where(
++            StoredConversationMetadata.conversation_id == str(conversation_id)
++        )
++        result = await self.db_session.execute(query)
++        stored = result.scalar_one_or_none()
++
++        if not stored:
++            logger.debug(
++                'Conversation %s not found or not accessible, '
++                'skipping ACP session id update',
++                conversation_id,
++            )
++            return
++
++        stored.acp_session_id = acp_session_id
++        stored.acp_session_cwd = acp_session_cwd
++        stored.last_updated_at = utc_now()
++        await self.db_session.commit()
++
+     async def process_stats_event(
+         self,
+         event: ConversationStateUpdateEvent,
+@@ -570,6 +611,8 @@ def _to_info(
+             sub_conversation_ids=sub_conversation_ids or [],
+             public=stored.public,
+             tags=stored.tags or {},
++            acp_session_id=stored.acp_session_id,
++            acp_session_cwd=stored.acp_session_cwd,
+             created_at=created_at,
+             updated_at=updated_at,
+         )
+diff --git a/openhands/app_server/app_lifespan/alembic/versions/010.py b/openhands/app_server/app_lifespan/alembic/versions/010.py
+new file mode 100644
+index 000000000000..2ba7d2397056
+--- /dev/null
++++ b/openhands/app_server/app_lifespan/alembic/versions/010.py
+@@ -0,0 +1,38 @@
++"""Add acp_session_id / acp_session_cwd to conversation_metadata.
++
++Mirrors the SDK ``state.agent_state['acp_session_id'|'acp_session_cwd']`` into
++durable storage so ACP conversations can be resumed after a sandbox recycle
++wipes the per-conversation ``base_state.json``.  The app-server passes the id
++back to the SDK on the next launch via ``ACPAgent.acp_resume_session_id`` to
++drive ``session/load`` instead of starting a fresh session.
++
++Revision ID: 010
++Revises: 009
++Create Date: 2026-05-20 00:00:00.000000
++"""
++
++from typing import Sequence, Union
++
++import sqlalchemy as sa
++from alembic import op
++
++revision: str = '010'
++down_revision: Union[str, None] = '009'
++branch_labels: Union[str, Sequence[str], None] = None
++depends_on: Union[str, Sequence[str], None] = None
++
++
++def upgrade() -> None:
++    op.add_column(
++        'conversation_metadata',
++        sa.Column('acp_session_id', sa.String, nullable=True),
++    )
++    op.add_column(
++        'conversation_metadata',
++        sa.Column('acp_session_cwd', sa.String, nullable=True),
++    )
++
++
++def downgrade() -> None:
++    op.drop_column('conversation_metadata', 'acp_session_cwd')
++    op.drop_column('conversation_metadata', 'acp_session_id')
+diff --git a/openhands/app_server/event_callback/webhook_router.py b/openhands/app_server/event_callback/webhook_router.py
+index fff90f2e1c39..bea1b4fe8715 100644
+--- a/openhands/app_server/event_callback/webhook_router.py
++++ b/openhands/app_server/event_callback/webhook_router.py
+@@ -425,6 +425,35 @@ async def on_event(
+                     event, conversation_id
+                 )
+ 
++        # Mirror ACP session id / cwd into durable storage so we can resume
++        # after a sandbox recycle wipes the SDK's per-conversation
++        # base_state.json.  The SDK autosaves agent_state on assignment;
++        # ACPAgent.init_state assigns acp_session_id and acp_session_cwd into
++        # it, which fires a ConversationStateUpdateEvent(key='agent_state').
++        for event in events:
++            if not isinstance(event, ConversationStateUpdateEvent):
++                continue
++            if event.key != 'agent_state':
++                continue
++            agent_state = event.value if isinstance(event.value, dict) else None
++            if agent_state is None:
++                continue
++            acp_session_id = agent_state.get('acp_session_id')
++            acp_session_cwd = agent_state.get('acp_session_cwd')
++            # Only persist when the ACP-specific keys are present; other
++            # agent_state writes (from non-ACP agents) are ignored.
++            if acp_session_id is None and acp_session_cwd is None:
++                continue
++            try:
++                await app_conversation_info_service.update_acp_session(
++                    conversation_id, acp_session_id, acp_session_cwd
++                )
++            except Exception:
++                _logger.exception(
++                    'Error mirroring ACP session id for conversation %s',
++                    conversation_id,
++                )
++
+         # Analytics: conversation terminal state detection
+         for event in events:
+             if not isinstance(event, ConversationStateUpdateEvent):
+diff --git a/tests/unit/app_server/test_live_status_app_conversation_service.py b/tests/unit/app_server/test_live_status_app_conversation_service.py
+index f2f0e6dd75fc..dc74f48d176f 100644
+--- a/tests/unit/app_server/test_live_status_app_conversation_service.py
++++ b/tests/unit/app_server/test_live_status_app_conversation_service.py
+@@ -3158,10 +3158,16 @@ class TestBuildAcpStartConversationRequestSecrets:
+     @pytest.fixture
+     def service(self):
+         mock_user_context = Mock(spec=UserContext)
++        # Default the resume-id lookup to "no prior conversation" so existing
++        # tests that don't care about resume can stay focused on secrets only.
++        # Individual resume tests override this with a record that has an
++        # ``acp_session_id`` set.
++        mock_info_service = Mock()
++        mock_info_service.get_app_conversation_info = AsyncMock(return_value=None)
+         return LiveStatusAppConversationService(
+             init_git_in_empty_workspace=True,
+             user_context=mock_user_context,
+-            app_conversation_info_service=Mock(),
++            app_conversation_info_service=mock_info_service,
+             app_conversation_start_task_service=Mock(),
+             event_callback_service=Mock(),
+             event_service=Mock(),
+@@ -3379,3 +3385,199 @@ async def test_explicit_acp_env_wins_over_panel_secret(self, service, tmp_path):
+         request = await self._call_build(service, user, tmp_path)
+ 
+         assert request.agent.acp_env.get('GH_TOKEN') == 'explicit-token'
++
++
++class TestBuildAcpStartConversationRequestPersistence:
++    """Tests for ACP session-resume persistence (issue #14260, Solution B).
++
++    Two complementary pieces:
++
++    1. ``CLAUDE_CONFIG_DIR`` / ``CODEX_HOME`` are injected into ``acp_env`` so
++       each ACP server's own session storage lands on the persistent
++       ``/workspace`` PVC, surviving sandbox recycles.
++    2. ``acp_resume_session_id`` is set on the ``ACPAgent`` from the
++       durably-mirrored ``AppConversationInfo.acp_session_id`` so the SDK
++       calls ``session/load`` on the next launch even after a sandbox
++       recycle wiped the per-conversation ``base_state.json``.
++    """
++
++    @pytest.fixture
++    def info_service(self):
++        mock = Mock()
++        mock.get_app_conversation_info = AsyncMock(return_value=None)
++        return mock
++
++    @pytest.fixture
++    def service(self, info_service):
++        mock_user_context = Mock(spec=UserContext)
++        return LiveStatusAppConversationService(
++            init_git_in_empty_workspace=True,
++            user_context=mock_user_context,
++            app_conversation_info_service=info_service,
++            app_conversation_start_task_service=Mock(),
++            event_callback_service=Mock(),
++            event_service=Mock(),
++            sandbox_service=Mock(),
++            sandbox_spec_service=Mock(),
++            jwt_service=Mock(),
++            pending_message_service=Mock(),
++            sandbox_startup_timeout=30,
++            sandbox_startup_poll_frequency=1,
++            max_num_conversations_per_sandbox=20,
++            httpx_client=Mock(),
++            web_url=None,
++            openhands_provider_base_url=None,
++            access_token_hard_timeout=None,
++            app_mode='test',
++        )
++
++    def _make_acp_user(self, acp_server='claude-code', acp_env=None, api_key=None):
++        try:
++            from openhands.sdk.settings import (
++                ACPAgentSettings,  # type: ignore[attr-defined]
++            )
++        except ImportError:
++            pytest.skip('ACPAgentSettings not available in this SDK build')
++
++        user = _TestUserInfo(
++            id='user1',
++            llm_model='',
++            llm_base_url=None,
++            llm_api_key=None,
++            sandbox_grouping_strategy=SandboxGroupingStrategy.ADD_TO_ANY,
++            confirmation_mode=False,
++            security_analyzer=None,
++            search_api_key=None,
++            mcp_config=None,
++            disabled_skills=[],
++        )
++        user.agent_settings = ACPAgentSettings(
++            acp_server=acp_server,  # type: ignore[arg-type]
++            llm=LLM(
++                model='claude-sonnet-4-5',
++                api_key=SecretStr(api_key) if api_key else None,
++            ),
++            acp_env=acp_env or {},
++        )
++        return user
++
++    async def _call_build(self, service, user, tmp_path, conversation_id=None):
++        service.user_context.get_user_info = AsyncMock(return_value=user)
++        service._setup_secrets_for_git_providers = AsyncMock(return_value={})
++        sandbox = Mock(spec=SandboxInfo)
++        return await service._build_acp_start_conversation_request(
++            sandbox=sandbox,
++            conversation_id=conversation_id or uuid4(),
++            initial_message=None,
++            working_dir=str(tmp_path),
++            plugins=None,
++        )
++
++    @pytest.mark.asyncio
++    async def test_claude_code_injects_claude_config_dir(self, service, tmp_path):
++        """``claude-code`` gets ``CLAUDE_CONFIG_DIR=/workspace/.claude``."""
++        user = self._make_acp_user(acp_server='claude-code')
++
++        request = await self._call_build(service, user, tmp_path)
++
++        assert request.agent.acp_env.get('CLAUDE_CONFIG_DIR') == '/workspace/.claude'
++        # CODEX_HOME must not leak across providers.
++        assert 'CODEX_HOME' not in request.agent.acp_env
++
++    @pytest.mark.asyncio
++    async def test_codex_injects_codex_home(self, service, tmp_path):
++        """``codex`` gets ``CODEX_HOME=/workspace/.codex``."""
++        user = self._make_acp_user(acp_server='codex')
++
++        request = await self._call_build(service, user, tmp_path)
++
++        assert request.agent.acp_env.get('CODEX_HOME') == '/workspace/.codex'
++        assert 'CLAUDE_CONFIG_DIR' not in request.agent.acp_env
++
++    @pytest.mark.asyncio
++    async def test_gemini_cli_does_not_inject_persistence_env(self, service, tmp_path):
++        """Gemini CLI has no relocation env var; no var must be injected.
++
++        For Gemini, native session/load resume is not viable; Solution A
++        (bootstrap-prompt resume) remains the fallback.
++        """
++        user = self._make_acp_user(acp_server='gemini-cli')
++
++        request = await self._call_build(service, user, tmp_path)
++
++        assert 'CLAUDE_CONFIG_DIR' not in request.agent.acp_env
++        assert 'CODEX_HOME' not in request.agent.acp_env
++
++    @pytest.mark.asyncio
++    async def test_user_set_claude_config_dir_overrides_default(
++        self, service, tmp_path
++    ):
++        """A user-set ``CLAUDE_CONFIG_DIR`` in ``acp_env`` wins over the default.
++
++        Lets power users opt out of the default persist location.
++        """
++        user = self._make_acp_user(
++            acp_server='claude-code',
++            acp_env={'CLAUDE_CONFIG_DIR': '/custom/claude/path'},
++        )
++
++        request = await self._call_build(service, user, tmp_path)
++
++        assert request.agent.acp_env.get('CLAUDE_CONFIG_DIR') == '/custom/claude/path'
++
++    @pytest.mark.asyncio
++    async def test_acp_resume_session_id_passed_when_stored(
++        self, service, info_service, tmp_path
++    ):
++        """Stored ``acp_session_id`` flows to ``ACPAgent.acp_resume_session_id``.
++
++        Skipped if the pinned SDK doesn't yet expose the field.
++        """
++        from openhands.app_server.app_conversation.app_conversation_models import (
++            AppConversationInfo,
++        )
++
++        user = self._make_acp_user(acp_server='claude-code')
++        try:
++            from openhands.sdk.agent import ACPAgent  # type: ignore[attr-defined]
++        except ImportError:
++            pytest.skip('ACPAgent not importable in this SDK build')
++        if 'acp_resume_session_id' not in ACPAgent.model_fields:
++            pytest.skip('SDK does not expose acp_resume_session_id yet')
++
++        conv_id = uuid4()
++        info_service.get_app_conversation_info = AsyncMock(
++            return_value=AppConversationInfo(
++                id=conv_id,
++                created_by_user_id='user1',
++                sandbox_id='sb-1',
++                agent_kind='acp',
++                acp_session_id='durable-sess-from-db',
++                acp_session_cwd=str(tmp_path),
++            )
++        )
++
++        request = await self._call_build(
++            service, user, tmp_path, conversation_id=conv_id
++        )
++
++        assert request.agent.acp_resume_session_id == 'durable-sess-from-db'
++
++    @pytest.mark.asyncio
++    async def test_no_resume_id_when_no_stored_session(
++        self, service, info_service, tmp_path
++    ):
++        """Fresh conversation: no record yet, no ``acp_resume_session_id``."""
++        try:
++            from openhands.sdk.agent import ACPAgent  # type: ignore[attr-defined]
++        except ImportError:
++            pytest.skip('ACPAgent not importable in this SDK build')
++        if 'acp_resume_session_id' not in ACPAgent.model_fields:
++            pytest.skip('SDK does not expose acp_resume_session_id yet')
++
++        info_service.get_app_conversation_info = AsyncMock(return_value=None)
++        user = self._make_acp_user(acp_server='claude-code')
++
++        request = await self._call_build(service, user, tmp_path)
++
++        assert request.agent.acp_resume_session_id is None
+diff --git a/tests/unit/app_server/test_sql_acp_session_persistence.py b/tests/unit/app_server/test_sql_acp_session_persistence.py
+new file mode 100644
+index 000000000000..1c84231160cd
+--- /dev/null
++++ b/tests/unit/app_server/test_sql_acp_session_persistence.py
+@@ -0,0 +1,150 @@
++"""SQL persistence for ACP resume state (#14260 Solution B).
++
++Round-trips ``acp_session_id`` / ``acp_session_cwd`` through the
++``conversation_metadata`` table via ``update_acp_session`` and confirms
++they are visible to subsequent reads.
++"""
++
++from __future__ import annotations
++
++from datetime import datetime, timezone
++from typing import AsyncGenerator
++from uuid import uuid4
++
++import pytest
++from sqlalchemy.ext.asyncio import (
++    AsyncSession,
++    async_sessionmaker,
++    create_async_engine,
++)
++from sqlalchemy.pool import StaticPool
++
++from openhands.app_server.app_conversation.app_conversation_models import (
++    AppConversationInfo,
++)
++from openhands.app_server.app_conversation.sql_app_conversation_info_service import (
++    SQLAppConversationInfoService,
++    StoredConversationMetadata,
++)
++from openhands.app_server.user.specifiy_user_context import SpecifyUserContext
++from openhands.app_server.utils.sql_utils import Base
++
++
++@pytest.fixture
++async def async_engine():
++    engine = create_async_engine(
++        'sqlite+aiosqlite:///:memory:',
++        poolclass=StaticPool,
++        connect_args={'check_same_thread': False},
++        echo=False,
++    )
++    async with engine.begin() as conn:
++        await conn.run_sync(Base.metadata.create_all)
++    yield engine
++    await engine.dispose()
++
++
++@pytest.fixture
++async def async_session(async_engine) -> AsyncGenerator[AsyncSession, None]:
++    session_maker = async_sessionmaker(
++        async_engine, class_=AsyncSession, expire_on_commit=False
++    )
++    async with session_maker() as db_session:
++        yield db_session
++
++
++@pytest.fixture
++def service(async_session) -> SQLAppConversationInfoService:
++    return SQLAppConversationInfoService(
++        db_session=async_session, user_context=SpecifyUserContext(user_id=None)
++    )
++
++
++@pytest.fixture
++async def v1_conv(async_session):
++    """A V1 conversation row with no ACP session state yet."""
++    conv_id = uuid4()
++    stored = StoredConversationMetadata(
++        conversation_id=str(conv_id),
++        sandbox_id='sb-1',
++        conversation_version='V1',
++        title='t',
++        accumulated_cost=0.0,
++        prompt_tokens=0,
++        completion_tokens=0,
++        cache_read_tokens=0,
++        cache_write_tokens=0,
++        reasoning_tokens=0,
++        context_window=0,
++        per_turn_token=0,
++        created_at=datetime.now(timezone.utc),
++        last_updated_at=datetime.now(timezone.utc),
++    )
++    async_session.add(stored)
++    await async_session.commit()
++    return conv_id, stored
++
++
++@pytest.mark.asyncio
++async def test_update_acp_session_persists_id_and_cwd(service, async_session, v1_conv):
++    conv_id, stored = v1_conv
++
++    await service.update_acp_session(conv_id, 'sess-123', '/workspace/project')
++
++    await async_session.refresh(stored)
++    assert stored.acp_session_id == 'sess-123'
++    assert stored.acp_session_cwd == '/workspace/project'
++
++
++@pytest.mark.asyncio
++async def test_update_acp_session_overwrites_prior_value(
++    service, async_session, v1_conv
++):
++    """A second write replaces the prior id (e.g. after load_session failure)."""
++    conv_id, stored = v1_conv
++
++    await service.update_acp_session(conv_id, 'sess-first', '/workspace/project')
++    await service.update_acp_session(conv_id, 'sess-second', '/workspace/project')
++
++    await async_session.refresh(stored)
++    assert stored.acp_session_id == 'sess-second'
++
++
++@pytest.mark.asyncio
++async def test_update_acp_session_unknown_conversation_is_silent(service):
++    """Update on an unknown conversation does not raise (silent skip)."""
++    await service.update_acp_session(uuid4(), 'sess-x', '/workspace')
++
++
++@pytest.mark.asyncio
++async def test_acp_session_round_trips_through_save_and_get(service, async_session):
++    """``save_app_conversation_info`` writes columns; ``_to_info`` reads back."""
++    conv_id = uuid4()
++    info = AppConversationInfo(
++        id=conv_id,
++        sandbox_id='sb-1',
++        created_by_user_id='user-1',
++        agent_kind='acp',
++        acp_session_id='persisted-sess',
++        acp_session_cwd='/workspace/project',
++    )
++
++    await service.save_app_conversation_info(info)
++
++    fetched = await service.get_app_conversation_info(conv_id)
++    assert fetched is not None
++    assert fetched.acp_session_id == 'persisted-sess'
++    assert fetched.acp_session_cwd == '/workspace/project'
++
++
++@pytest.mark.asyncio
++async def test_get_returns_none_for_acp_session_when_not_set(
++    service, async_session, v1_conv
++):
++    """A fresh row has no ACP session state — ``_to_info`` returns ``None``."""
++    conv_id, _stored = v1_conv
++
++    fetched = await service.get_app_conversation_info(conv_id)
++    assert fetched is not None
++    assert fetched.acp_session_id is None
++    assert fetched.acp_session_cwd is None
+diff --git a/tests/unit/app_server/test_webhook_router_acp_session.py b/tests/unit/app_server/test_webhook_router_acp_session.py
+new file mode 100644
+index 000000000000..c1ce96060d8f
+--- /dev/null
++++ b/tests/unit/app_server/test_webhook_router_acp_session.py
+@@ -0,0 +1,146 @@
++"""Webhook handling for ACP session-resume mirroring (#14260 Solution B).
++
++When the SDK reassigns ``state.agent_state`` after starting (or resuming) an
++ACP session it autosaves and fires a
++``ConversationStateUpdateEvent(key='agent_state', value=<dict>)``.  The
++webhook ``on_event`` handler must extract ``acp_session_id`` /
++``acp_session_cwd`` and mirror them into ``AppConversationInfo`` via
++``update_acp_session`` so the next sandbox can resume the session.
++"""
++
++from __future__ import annotations
++
++from unittest.mock import AsyncMock, patch
++from uuid import uuid4
++
++import pytest
++
++from openhands.app_server.app_conversation.app_conversation_models import (
++    AppConversationInfo,
++)
++from openhands.app_server.event_callback.webhook_router import on_event
++from openhands.sdk.event import ConversationStateUpdateEvent
++
++
++def _info(conversation_id):
++    return AppConversationInfo(
++        id=conversation_id,
++        sandbox_id='sb-1',
++        created_by_user_id='user-1',
++    )
++
++
++async def _call_on_event(events, conversation_id):
++    app_info = _info(conversation_id)
++    info_service = AsyncMock()
++    event_service = AsyncMock()
++    with patch(
++        'openhands.app_server.event_callback.webhook_router'
++        '._run_callbacks_in_bg_and_close'
++    ):
++        await on_event(
++            events=events,
++            conversation_id=conversation_id,
++            app_conversation_info=app_info,
++            app_conversation_info_service=info_service,
++            event_service=event_service,
++        )
++    return info_service
++
++
++@pytest.mark.asyncio
++async def test_agent_state_with_acp_id_is_mirrored():
++    """agent_state update carrying acp_session_id triggers update_acp_session."""
++    conversation_id = uuid4()
++    event = ConversationStateUpdateEvent(
++        key='agent_state',
++        value={
++            'acp_session_id': 'sess-abc',
++            'acp_session_cwd': '/workspace/project',
++            'acp_agent_name': 'claude-agent-acp',
++        },
++    )
++
++    info_service = await _call_on_event([event], conversation_id)
++
++    info_service.update_acp_session.assert_awaited_once_with(
++        conversation_id, 'sess-abc', '/workspace/project'
++    )
++
++
++@pytest.mark.asyncio
++async def test_agent_state_without_acp_keys_is_ignored():
++    """agent_state writes from non-ACP agents must not call update_acp_session."""
++    conversation_id = uuid4()
++    event = ConversationStateUpdateEvent(
++        key='agent_state',
++        value={'some_other_key': 'value'},
++    )
++
++    info_service = await _call_on_event([event], conversation_id)
++
++    info_service.update_acp_session.assert_not_called()
++
++
++@pytest.mark.asyncio
++async def test_non_agent_state_events_are_ignored():
++    """Events with unrelated keys must not trigger update_acp_session."""
++    conversation_id = uuid4()
++    events = [
++        ConversationStateUpdateEvent(key='execution_status', value='running'),
++        ConversationStateUpdateEvent(key='stats', value={'usage_to_metrics': {}}),
++    ]
++
++    info_service = await _call_on_event(events, conversation_id)
++
++    info_service.update_acp_session.assert_not_called()
++
++
++@pytest.mark.asyncio
++async def test_only_cwd_with_no_id_still_mirrors():
++    """agent_state carrying only ``acp_session_cwd`` still flows through.
++
++    The webhook should reflect whatever the SDK autosaved verbatim — clearing
++    the id (e.g. after a load_session failure followed by a successful
++    new_session that hasn't landed yet) is the SDK's call, not ours.
++    """
++    conversation_id = uuid4()
++    event = ConversationStateUpdateEvent(
++        key='agent_state',
++        value={'acp_session_cwd': '/workspace/project'},
++    )
++
++    info_service = await _call_on_event([event], conversation_id)
++
++    info_service.update_acp_session.assert_awaited_once_with(
++        conversation_id, None, '/workspace/project'
++    )
++
++
++@pytest.mark.asyncio
++async def test_update_acp_session_failure_does_not_break_pipeline():
++    """A DB write failure must not bubble up and lose subsequent events."""
++    conversation_id = uuid4()
++    event = ConversationStateUpdateEvent(
++        key='agent_state',
++        value={'acp_session_id': 'sess-x', 'acp_session_cwd': '/workspace'},
++    )
++
++    app_info = _info(conversation_id)
++    info_service = AsyncMock()
++    info_service.update_acp_session.side_effect = RuntimeError('db down')
++    event_service = AsyncMock()
++    with patch(
++        'openhands.app_server.event_callback.webhook_router'
++        '._run_callbacks_in_bg_and_close'
++    ):
++        result = await on_event(
++            events=[event],
++            conversation_id=conversation_id,
++            app_conversation_info=app_info,
++            app_conversation_info_service=info_service,
++            event_service=event_service,
++        )
++
++    assert result is not None  # Success returned even though the mirror failed.
++    info_service.update_acp_session.assert_awaited_once()

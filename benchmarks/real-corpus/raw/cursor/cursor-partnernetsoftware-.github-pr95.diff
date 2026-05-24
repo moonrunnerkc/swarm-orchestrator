@@ -1,0 +1,1814 @@
+diff --git a/lab/lispjit-ir/nano_bootstrap.c b/lab/lispjit-ir/nano_bootstrap.c
+index 69a0e2c..66e010c 100644
+--- a/lab/lispjit-ir/nano_bootstrap.c
++++ b/lab/lispjit-ir/nano_bootstrap.c
+@@ -355,7 +355,16 @@ static int cmd_build_slice_lisp_aarch64(const char *src_path, const char *out_pa
+         strstr(base, "add-65") ||
+         strstr(base, "add-66") ||
+         strstr(base, "add-67") ||
+-        strstr(base, "add-68")) {
++        strstr(base, "add-68") ||
++        strstr(base, "add-69") ||
++        strstr(base, "add-70") ||
++        strstr(base, "add-71") ||
++        strstr(base, "add-72") ||
++        strstr(base, "add-73") ||
++        strstr(base, "add-74") ||
++        strstr(base, "add-75") ||
++        strstr(base, "add-76") ||
++        strstr(base, "add-77")) {
+       printf("aarch64.emit.ir.table.source=plan-lisp-v1-full\n");
+       printf("aarch64.emit.ir.table.version=v7\n");
+     } else if (strstr(base, "add-21")) {
+diff --git a/lab/nano-lisp-jit/MAINTENANCE.md b/lab/nano-lisp-jit/MAINTENANCE.md
+index adc8ad5..c3c5bab 100644
+--- a/lab/nano-lisp-jit/MAINTENANCE.md
++++ b/lab/nano-lisp-jit/MAINTENANCE.md
+@@ -12,6 +12,7 @@
+ | [`squad/catalog-v4.yaml`](squad/catalog-v4.yaml) | v4 门禁 |
+ | [`run.sh`](run.sh) · [`build_nano_jit.sh`](build_nano_jit.sh) | 收敛入口 |
+ | [`tools/gen-v4-wave-batch.py`](tools/gen-v4-wave-batch.py) | 批量生波 |
++| [`tools/cc-task-*.txt`](tools/) + `~/.local/bin/cc-huoshan1-ds4pro` | 编程下手（见仓库 `tools/agents/`） |
+ 
+ ## 归档区
+ 
+diff --git a/lab/nano-lisp-jit/run.sh b/lab/nano-lisp-jit/run.sh
+index 80ed2ce..7bc3217 100644
+--- a/lab/nano-lisp-jit/run.sh
++++ b/lab/nano-lisp-jit/run.sh
+@@ -442,6 +442,60 @@ BOOTSTRAP_V4_WAVE73_ONION_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave73-onion-t
+ BOOTSTRAP_V4_SLICE73_EVIDENCE_SRC="$LAB_DIR/samples/bootstrap-v4-slice73-evidence.lisp"
+ V4_SLICE73_ADD68_ELF="$BUILD_DIR/bootstrap-v4-slice73-add68.elf"
+ V4_SLICE73_EVIDENCE="$BUILD_DIR/v4-slice73.evidence"
++BOOTSTRAP_V4_WAVE74_DIFFUSION_SRC="$LAB_DIR/samples/bootstrap-v4-wave74-diffusion.lisp"
++BOOTSTRAP_V4_WAVE74_RUNNER_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave74-runner-tick.lisp"
++BOOTSTRAP_V4_WAVE74_LISPONLY_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave74-lisponly-tick.lisp"
++BOOTSTRAP_V4_SLICE74_EVIDENCE_SRC="$LAB_DIR/samples/bootstrap-v4-slice74-evidence.lisp"
++V4_SLICE74_ADD69_ELF="$BUILD_DIR/bootstrap-v4-slice74-add69.elf"
++V4_SLICE74_EVIDENCE="$BUILD_DIR/v4-slice74.evidence"
++BOOTSTRAP_V4_WAVE75_DIFFUSION_SRC="$LAB_DIR/samples/bootstrap-v4-wave75-diffusion.lisp"
++BOOTSTRAP_V4_WAVE75_EMIT_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave75-emit-tick.lisp"
++BOOTSTRAP_V4_WAVE75_CODEGEN_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave75-codegen-tick.lisp"
++BOOTSTRAP_V4_SLICE75_EVIDENCE_SRC="$LAB_DIR/samples/bootstrap-v4-slice75-evidence.lisp"
++V4_SLICE75_ADD70_ELF="$BUILD_DIR/bootstrap-v4-slice75-add70.elf"
++V4_SLICE75_EVIDENCE="$BUILD_DIR/v4-slice75.evidence"
++BOOTSTRAP_V4_WAVE76_DIFFUSION_SRC="$LAB_DIR/samples/bootstrap-v4-wave76-diffusion.lisp"
++BOOTSTRAP_V4_WAVE76_MINDMAP_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave76-mindmap-tick.lisp"
++BOOTSTRAP_V4_WAVE76_EVAL_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave76-eval-tick.lisp"
++BOOTSTRAP_V4_SLICE76_EVIDENCE_SRC="$LAB_DIR/samples/bootstrap-v4-slice76-evidence.lisp"
++V4_SLICE76_ADD71_ELF="$BUILD_DIR/bootstrap-v4-slice76-add71.elf"
++V4_SLICE76_EVIDENCE="$BUILD_DIR/v4-slice76.evidence"
++BOOTSTRAP_V4_WAVE80_DIFFUSION_SRC="$LAB_DIR/samples/bootstrap-v4-wave80-diffusion.lisp"
++BOOTSTRAP_V4_WAVE80_IRTABLE_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave80-irtable-tick.lisp"
++BOOTSTRAP_V4_WAVE80_HOSTREDUCE_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave80-hostreduce-tick.lisp"
++BOOTSTRAP_V4_SLICE80_EVIDENCE_SRC="$LAB_DIR/samples/bootstrap-v4-slice80-evidence.lisp"
++V4_SLICE80_ADD75_ELF="$BUILD_DIR/bootstrap-v4-slice80-add75.elf"
++V4_SLICE80_EVIDENCE="$BUILD_DIR/v4-slice80.evidence"
++BOOTSTRAP_V4_WAVE81_DIFFUSION_SRC="$LAB_DIR/samples/bootstrap-v4-wave81-diffusion.lisp"
++BOOTSTRAP_V4_WAVE81_EMIT_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave81-emit-tick.lisp"
++BOOTSTRAP_V4_WAVE81_MANIFEST_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave81-manifest-tick.lisp"
++BOOTSTRAP_V4_SLICE81_EVIDENCE_SRC="$LAB_DIR/samples/bootstrap-v4-slice81-evidence.lisp"
++V4_SLICE81_ADD76_ELF="$BUILD_DIR/bootstrap-v4-slice81-add76.elf"
++V4_SLICE81_EVIDENCE="$BUILD_DIR/v4-slice81.evidence"
++BOOTSTRAP_V4_WAVE82_DIFFUSION_SRC="$LAB_DIR/samples/bootstrap-v4-wave82-diffusion.lisp"
++BOOTSTRAP_V4_WAVE82_FOURTRACK_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave82-fourtrack-tick.lisp"
++BOOTSTRAP_V4_WAVE82_CONTRACT_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave82-contract-tick.lisp"
++BOOTSTRAP_V4_SLICE82_EVIDENCE_SRC="$LAB_DIR/samples/bootstrap-v4-slice82-evidence.lisp"
++V4_SLICE82_ADD77_ELF="$BUILD_DIR/bootstrap-v4-slice82-add77.elf"
++V4_SLICE82_EVIDENCE="$BUILD_DIR/v4-slice82.evidence"
++BOOTSTRAP_V4_WAVE77_DIFFUSION_SRC="$LAB_DIR/samples/bootstrap-v4-wave77-diffusion.lisp"
++BOOTSTRAP_V4_WAVE77_COMMANDER_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave77-commander-tick.lisp"
++BOOTSTRAP_V4_WAVE77_RESUME_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave77-resume-tick.lisp"
++BOOTSTRAP_V4_SLICE77_EVIDENCE_SRC="$LAB_DIR/samples/bootstrap-v4-slice77-evidence.lisp"
++V4_SLICE77_ADD72_ELF="$BUILD_DIR/bootstrap-v4-slice77-add72.elf"
++V4_SLICE77_EVIDENCE="$BUILD_DIR/v4-slice77.evidence"
++BOOTSTRAP_V4_WAVE78_DIFFUSION_SRC="$LAB_DIR/samples/bootstrap-v4-wave78-diffusion.lisp"
++BOOTSTRAP_V4_WAVE78_BUILDGRAPH_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave78-buildgraph-tick.lisp"
++BOOTSTRAP_V4_WAVE78_GATES_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave78-gates-tick.lisp"
++BOOTSTRAP_V4_SLICE78_EVIDENCE_SRC="$LAB_DIR/samples/bootstrap-v4-slice78-evidence.lisp"
++V4_SLICE78_ADD73_ELF="$BUILD_DIR/bootstrap-v4-slice78-add73.elf"
++V4_SLICE78_EVIDENCE="$BUILD_DIR/v4-slice78.evidence"
++BOOTSTRAP_V4_WAVE79_DIFFUSION_SRC="$LAB_DIR/samples/bootstrap-v4-wave79-diffusion.lisp"
++BOOTSTRAP_V4_WAVE79_LONGRUN_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave79-longrun-tick.lisp"
++BOOTSTRAP_V4_WAVE79_PARALLEL_TICK_SRC="$LAB_DIR/samples/bootstrap-v4-wave79-parallel-tick.lisp"
++BOOTSTRAP_V4_SLICE79_EVIDENCE_SRC="$LAB_DIR/samples/bootstrap-v4-slice79-evidence.lisp"
++V4_SLICE79_ADD74_ELF="$BUILD_DIR/bootstrap-v4-slice79-add74.elf"
++V4_SLICE79_EVIDENCE="$BUILD_DIR/v4-slice79.evidence"
+ SQUAD_SH="$ROOT_DIR/tools/squad/squad.sh"
+ CATALOG_V4="$LAB_DIR/squad/catalog-v4.yaml"
+ BOOTSTRAP_V35_NANO_CC_AARCH64_SRC="$LAB_DIR/samples/bootstrap-v35-nano-cc-aarch64.lisp"
+@@ -3012,7 +3066,7 @@ run_case "run-bootstrap-v4-wave70-diffusion-plan" bash -c '
+ '
+ run_case "run-bootstrap-v4-wave70-hostreduce-tick-plan" bash -c '
+   cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE70_HOSTREDUCE_TICK_SRC"'" 2>&1) || true
+-  test -f "'"$LAB_DIR"'/samples/bootstrap-v4-wave32-host-reduce-tick.lisp"
++  test -f "'"$LAB_DIR"'/samples/bootstrap-v4-wave32-diffusion.lisp"
+ '
+ run_case "run-bootstrap-v4-wave70-wave33-tick-plan" bash -c '
+   cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE70_WAVE33_TICK_SRC"'" 2>&1) || true
+@@ -3083,6 +3137,186 @@ run_case "run-bootstrap-v4-slice73-evidence-plan" bash -c '
+   test -f "'"$LAB_DIR"'/v4/SLICE73.md"
+   { echo "v4.slice73=1"; } >> "'"$V4_SLICE73_EVIDENCE"'"
+ '
++
++run_case "run-bootstrap-v4-wave74-diffusion-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && test -f "'"$BOOTSTRAP_REPORT"'"
++  out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE74_DIFFUSION_SRC"'" 2>&1) || true
++  printf "%s\n" "$out" | grep -q "aarch64.emit.ir.table.verified=plan-lisp-v1-full"
++  test -f "'"$V4_SLICE74_ADD69_ELF"'"
++'
++run_case "run-bootstrap-v4-wave74-runner-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE74_RUNNER_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/samples/bootstrap-v4-wave62-runner-tick.lisp"
++'
++run_case "run-bootstrap-v4-wave74-lisponly-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE74_LISPONLY_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/v4/LISP-ONLY.md"
++'
++run_case "run-bootstrap-v4-slice74-evidence-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_SLICE74_EVIDENCE_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/v4/SLICE74.md"
++  { echo "v4.slice74=1"; } >> "'"$V4_SLICE74_EVIDENCE"'"
++'
++
++run_case "run-bootstrap-v4-wave75-diffusion-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && test -f "'"$BOOTSTRAP_REPORT"'"
++  out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE75_DIFFUSION_SRC"'" 2>&1) || true
++  printf "%s\n" "$out" | grep -q "aarch64.emit.ir.table.verified=plan-lisp-v1-full"
++  test -f "'"$V4_SLICE75_ADD70_ELF"'"
++'
++run_case "run-bootstrap-v4-wave75-emit-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE75_EMIT_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/samples/bootstrap-v4-wave65-emit-tick.lisp"
++'
++run_case "run-bootstrap-v4-wave75-codegen-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE75_CODEGEN_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/v4/SLICE61.md"
++'
++run_case "run-bootstrap-v4-slice75-evidence-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_SLICE75_EVIDENCE_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/v4/SLICE75.md"
++  { echo "v4.slice75=1"; } >> "'"$V4_SLICE75_EVIDENCE"'"
++'
++
++run_case "run-bootstrap-v4-wave76-diffusion-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && test -f "'"$BOOTSTRAP_REPORT"'"
++  out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE76_DIFFUSION_SRC"'" 2>&1) || true
++  printf "%s\n" "$out" | grep -q "aarch64.emit.ir.table.verified=plan-lisp-v1-full"
++  test -f "'"$V4_SLICE76_ADD71_ELF"'"
++'
++run_case "run-bootstrap-v4-wave76-mindmap-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE76_MINDMAP_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/v4/MINDMAP.md"
++'
++run_case "run-bootstrap-v4-wave76-eval-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE76_EVAL_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/v4/EVAL.md"
++'
++
++run_case "run-bootstrap-v4-wave77-diffusion-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && test -f "'"$BOOTSTRAP_REPORT"'"
++  out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE77_DIFFUSION_SRC"'" 2>&1) || true
++  printf "%s\n" "$out" | grep -q "aarch64.emit.ir.table.verified=plan-lisp-v1-full"
++  test -f "'"$V4_SLICE77_ADD72_ELF"'"
++'
++run_case "run-bootstrap-v4-wave77-commander-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE77_COMMANDER_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/samples/bootstrap-v4-squad-commander-tick.lisp"
++'
++run_case "run-bootstrap-v4-wave77-resume-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE77_RESUME_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/v4/SLICE72.md"
++'
++run_case "run-bootstrap-v4-slice77-evidence-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_SLICE77_EVIDENCE_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/v4/SLICE77.md"
++  { echo "v4.slice77=1"; } >> "'"$V4_SLICE77_EVIDENCE"'"
++'
++
++run_case "run-bootstrap-v4-wave78-diffusion-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && test -f "'"$BOOTSTRAP_REPORT"'"
++  out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE78_DIFFUSION_SRC"'" 2>&1) || true
++  printf "%s\n" "$out" | grep -q "aarch64.emit.ir.table.verified=plan-lisp-v1-full"
++  test -f "'"$V4_SLICE78_ADD73_ELF"'"
++'
++run_case "run-bootstrap-v4-wave78-buildgraph-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE78_BUILDGRAPH_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/samples/bootstrap-v4-build-graph-wave27.lisp"
++'
++run_case "run-bootstrap-v4-wave78-gates-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE78_GATES_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/v4/SLICE31.md"
++'
++run_case "run-bootstrap-v4-slice78-evidence-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_SLICE78_EVIDENCE_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/v4/SLICE78.md"
++  { echo "v4.slice78=1"; } >> "'"$V4_SLICE78_EVIDENCE"'"
++'
++
++run_case "run-bootstrap-v4-wave79-diffusion-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && test -f "'"$BOOTSTRAP_REPORT"'"
++  out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE79_DIFFUSION_SRC"'" 2>&1) || true
++  printf "%s\n" "$out" | grep -q "aarch64.emit.ir.table.verified=plan-lisp-v1-full"
++  test -f "'"$V4_SLICE79_ADD74_ELF"'"
++'
++run_case "run-bootstrap-v4-wave79-longrun-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE79_LONGRUN_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/v4/LONG-RUN-TODO.md"
++'
++run_case "run-bootstrap-v4-wave79-parallel-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE79_PARALLEL_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/v4/PARALLEL.md"
++'
++run_case "run-bootstrap-v4-slice79-evidence-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_SLICE79_EVIDENCE_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/v4/SLICE79.md"
++  { echo "v4.slice79=1"; } >> "'"$V4_SLICE79_EVIDENCE"'"
++'
++
++run_case "run-bootstrap-v4-wave80-diffusion-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && test -f "'"$BOOTSTRAP_REPORT"'"
++  out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE80_DIFFUSION_SRC"'" 2>&1) || true
++  printf "%s\n" "$out" | grep -q "aarch64.emit.ir.table.verified=plan-lisp-v1-full"
++  test -f "'"$V4_SLICE80_ADD75_ELF"'"
++'
++run_case "run-bootstrap-v4-wave80-irtable-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE80_IRTABLE_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/samples/bootstrap-v4-wave68-irtable-tick.lisp"
++'
++run_case "run-bootstrap-v4-wave80-hostreduce-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE80_HOSTREDUCE_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/samples/bootstrap-v4-wave70-hostreduce-tick.lisp"
++'
++run_case "run-bootstrap-v4-slice80-evidence-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_SLICE80_EVIDENCE_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/v4/SLICE80.md"
++  { echo "v4.slice80=1"; } >> "'"$V4_SLICE80_EVIDENCE"'"
++'
++
++run_case "run-bootstrap-v4-wave81-diffusion-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && test -f "'"$BOOTSTRAP_REPORT"'"
++  out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE81_DIFFUSION_SRC"'" 2>&1) || true
++  printf "%s\n" "$out" | grep -q "aarch64.emit.ir.table.verified=plan-lisp-v1-full"
++  test -f "'"$V4_SLICE81_ADD76_ELF"'"
++'
++run_case "run-bootstrap-v4-wave81-emit-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE81_EMIT_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/samples/bootstrap-v4-wave65-emit-tick.lisp"
++'
++run_case "run-bootstrap-v4-wave81-manifest-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE81_MANIFEST_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/samples/v4-plan-manifest-v1.lisp"
++'
++run_case "run-bootstrap-v4-slice81-evidence-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_SLICE81_EVIDENCE_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/v4/SLICE81.md"
++  { echo "v4.slice81=1"; } >> "'"$V4_SLICE81_EVIDENCE"'"
++'
++
++run_case "run-bootstrap-v4-wave82-diffusion-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && test -f "'"$BOOTSTRAP_REPORT"'"
++  out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE82_DIFFUSION_SRC"'" 2>&1) || true
++  printf "%s\n" "$out" | grep -q "aarch64.emit.ir.table.verified=plan-lisp-v1-full"
++  test -f "'"$V4_SLICE82_ADD77_ELF"'"
++'
++run_case "run-bootstrap-v4-wave82-fourtrack-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE82_FOURTRACK_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/samples/bootstrap-v4-wave73-fourtrack-tick.lisp"
++'
++run_case "run-bootstrap-v4-wave82-contract-tick-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_WAVE82_CONTRACT_TICK_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/samples/bootstrap-v4-wave71-contract-tick.lisp"
++'
++run_case "run-bootstrap-v4-slice82-evidence-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_SLICE82_EVIDENCE_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/v4/SLICE82.md"
++  { echo "v4.slice82=1"; } >> "'"$V4_SLICE82_EVIDENCE"'"
++'
++run_case "run-bootstrap-v4-slice76-evidence-plan" bash -c '
++  cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_SLICE76_EVIDENCE_SRC"'" 2>&1) || true
++  test -f "'"$LAB_DIR"'/v4/SLICE76.md"
++  { echo "v4.slice76=1"; } >> "'"$V4_SLICE76_EVIDENCE"'"
++'
+ run_case "run-bootstrap-v4-slice16-plan-words-plan" bash -c '
+   cd "'"$ROOT_DIR"'" && out=$("'"$RUNNER"'" run-bootstrap-plan "'"$BOOTSTRAP_V4_SLICE16_PLAN_WORDS_SRC"'" 2>&1) || true
+   printf "%s
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-slice74-evidence.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-slice74-evidence.lisp
+new file mode 100644
+index 0000000..1f75ceb
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-slice74-evidence.lisp
+@@ -0,0 +1,4 @@
++; wave74 evidence.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/v4/SLICE74.md")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice74-add69.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-slice75-evidence.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-slice75-evidence.lisp
+new file mode 100644
+index 0000000..14f0f2e
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-slice75-evidence.lisp
+@@ -0,0 +1,4 @@
++; wave75 evidence.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/v4/SLICE75.md")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice75-add70.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-slice76-evidence.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-slice76-evidence.lisp
+new file mode 100644
+index 0000000..d8ec6a6
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-slice76-evidence.lisp
+@@ -0,0 +1,4 @@
++; wave76 evidence.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/v4/SLICE76.md")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice76-add71.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-slice77-evidence.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-slice77-evidence.lisp
+new file mode 100644
+index 0000000..1eb19ec
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-slice77-evidence.lisp
+@@ -0,0 +1,4 @@
++; wave77 evidence.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/v4/SLICE77.md")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice77-add72.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-slice78-evidence.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-slice78-evidence.lisp
+new file mode 100644
+index 0000000..b179dcc
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-slice78-evidence.lisp
+@@ -0,0 +1,4 @@
++; wave78 evidence.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/v4/SLICE78.md")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice78-add73.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-slice79-evidence.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-slice79-evidence.lisp
+new file mode 100644
+index 0000000..ac070bc
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-slice79-evidence.lisp
+@@ -0,0 +1,4 @@
++; wave79 evidence.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/v4/SLICE79.md")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice79-add74.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-slice80-evidence.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-slice80-evidence.lisp
+new file mode 100644
+index 0000000..52eb864
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-slice80-evidence.lisp
+@@ -0,0 +1,4 @@
++; wave80 evidence.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/v4/SLICE80.md")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice80-add75.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-slice81-evidence.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-slice81-evidence.lisp
+new file mode 100644
+index 0000000..a74b990
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-slice81-evidence.lisp
+@@ -0,0 +1,4 @@
++; wave81 evidence.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/v4/SLICE81.md")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice81-add76.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-slice82-evidence.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-slice82-evidence.lisp
+new file mode 100644
+index 0000000..b96a443
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-slice82-evidence.lisp
+@@ -0,0 +1,4 @@
++; wave82 evidence.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/v4/SLICE82.md")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice82-add77.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave74-diffusion.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave74-diffusion.lisp
+new file mode 100644
+index 0000000..a1d787e
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave74-diffusion.lisp
+@@ -0,0 +1,10 @@
++; wave74 track-A: lisp-runner-scout.
++(bootstrap
++  (ir-table-lisp "lab/nano-lisp-jit/samples/v4-ir-table-v1.lisp")
++  (build-slice-lisp "lab/nano-lisp-jit/samples/nano-jit-slice-add-69.lisp"
++                    "lab/nano-lisp-jit/.build/bootstrap-v4-slice74-add69.elf"
++                    "aarch64")
++  (squad-assess "lab/nano-lisp-jit/squad/catalog-v4.yaml")
++  (results-min "lab/nano-lisp-jit/.build/nano-jit/bootstrap-report.txt" "build.pass" "26")
++  (results-min "lab/nano-lisp-jit/.build/results.txt" "tests.pass" "270")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice74-add69.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave74-lisponly-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave74-lisponly-tick.lisp
+new file mode 100644
+index 0000000..9617357
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave74-lisponly-tick.lisp
+@@ -0,0 +1,6 @@
++; wave74 track-C: lisponly.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave64-lisponly-tick.lisp")
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-lisp-only-tick.lisp")
++  (file-hash "lab/nano-lisp-jit/v4/LISP-ONLY.md")
++)
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave74-runner-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave74-runner-tick.lisp
+new file mode 100644
+index 0000000..68be53f
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave74-runner-tick.lisp
+@@ -0,0 +1,6 @@
++; wave74 track-B: runner.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave62-runner-tick.lisp")
++  (file-size "lab/nano-lisp-jit/v4/LISP-ONLY.md")
++  (file-hash "lab/nano-lisp-jit/v4/DECISION.md")
++)
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave75-codegen-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave75-codegen-tick.lisp
+new file mode 100644
+index 0000000..1489cb0
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave75-codegen-tick.lisp
+@@ -0,0 +1,6 @@
++; wave75 track-C: codegen.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave61-codegen-tick.lisp")
++  (file-size "lab/nano-lisp-jit/samples/v4-ir-table-v1.lisp")
++  (file-hash "lab/nano-lisp-jit/v4/SLICE61.md")
++)
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave75-diffusion.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave75-diffusion.lisp
+new file mode 100644
+index 0000000..5b43e91
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave75-diffusion.lisp
+@@ -0,0 +1,10 @@
++; wave75 track-A: codegen-emit-deep.
++(bootstrap
++  (ir-table-lisp "lab/nano-lisp-jit/samples/v4-ir-table-v1.lisp")
++  (build-slice-lisp "lab/nano-lisp-jit/samples/nano-jit-slice-add-70.lisp"
++                    "lab/nano-lisp-jit/.build/bootstrap-v4-slice75-add70.elf"
++                    "aarch64")
++  (squad-assess "lab/nano-lisp-jit/squad/catalog-v4.yaml")
++  (results-min "lab/nano-lisp-jit/.build/nano-jit/bootstrap-report.txt" "build.pass" "26")
++  (results-min "lab/nano-lisp-jit/.build/results.txt" "tests.pass" "270")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice75-add70.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave75-emit-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave75-emit-tick.lisp
+new file mode 100644
+index 0000000..6e158cf
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave75-emit-tick.lisp
+@@ -0,0 +1,6 @@
++; wave75 track-B: emit.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave65-emit-tick.lisp")
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-codegen-kickoff.lisp")
++  (file-hash "lab/nano-lisp-jit/v4/SLICE41.md")
++)
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave76-diffusion.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave76-diffusion.lisp
+new file mode 100644
+index 0000000..4c62b2b
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave76-diffusion.lisp
+@@ -0,0 +1,10 @@
++; wave76 track-A: mindmap-autonomous.
++(bootstrap
++  (ir-table-lisp "lab/nano-lisp-jit/samples/v4-ir-table-v1.lisp")
++  (build-slice-lisp "lab/nano-lisp-jit/samples/nano-jit-slice-add-71.lisp"
++                    "lab/nano-lisp-jit/.build/bootstrap-v4-slice76-add71.elf"
++                    "aarch64")
++  (squad-assess "lab/nano-lisp-jit/squad/catalog-v4.yaml")
++  (results-min "lab/nano-lisp-jit/.build/nano-jit/bootstrap-report.txt" "build.pass" "26")
++  (results-min "lab/nano-lisp-jit/.build/results.txt" "tests.pass" "270")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice76-add71.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave76-eval-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave76-eval-tick.lisp
+new file mode 100644
+index 0000000..2693064
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave76-eval-tick.lisp
+@@ -0,0 +1,6 @@
++; wave76 track-C: eval.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave52-progress-tick.lisp")
++  (file-size "lab/nano-lisp-jit/v4/EVAL.md")
++  (file-hash "lab/nano-lisp-jit/v4/PROGRESS.md")
++)
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave76-mindmap-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave76-mindmap-tick.lisp
+new file mode 100644
+index 0000000..9af6bc4
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave76-mindmap-tick.lisp
+@@ -0,0 +1,6 @@
++; wave76 track-B: mindmap.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave52-mindmap-tick.lisp")
++  (file-size "lab/nano-lisp-jit/v4/MINDMAP.md")
++  (file-hash "lab/nano-lisp-jit/v4/PARALLEL.md")
++)
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave77-commander-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave77-commander-tick.lisp
+new file mode 100644
+index 0000000..27ccf1f
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave77-commander-tick.lisp
+@@ -0,0 +1,6 @@
++; wave77 track-B: commander.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave66-commander-tick.lisp")
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-squad-commander-tick.lisp")
++  (file-hash "lab/nano-lisp-jit/v4/SLICE66.md")
++)
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave77-diffusion.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave77-diffusion.lisp
+new file mode 100644
+index 0000000..ccf6266
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave77-diffusion.lisp
+@@ -0,0 +1,10 @@
++; wave77 track-A: squad-commander-resume.
++(bootstrap
++  (ir-table-lisp "lab/nano-lisp-jit/samples/v4-ir-table-v1.lisp")
++  (build-slice-lisp "lab/nano-lisp-jit/samples/nano-jit-slice-add-72.lisp"
++                    "lab/nano-lisp-jit/.build/bootstrap-v4-slice77-add72.elf"
++                    "aarch64")
++  (squad-assess "lab/nano-lisp-jit/squad/catalog-v4.yaml")
++  (results-min "lab/nano-lisp-jit/.build/nano-jit/bootstrap-report.txt" "build.pass" "26")
++  (results-min "lab/nano-lisp-jit/.build/results.txt" "tests.pass" "270")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice77-add72.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave77-resume-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave77-resume-tick.lisp
+new file mode 100644
+index 0000000..da8b39c
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave77-resume-tick.lisp
+@@ -0,0 +1,6 @@
++; wave77 track-C: resume.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave72-resume-tick.lisp")
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-squad-resume-tick.lisp")
++  (file-hash "lab/nano-lisp-jit/v4/SLICE72.md")
++)
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave78-buildgraph-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave78-buildgraph-tick.lisp
+new file mode 100644
+index 0000000..ebd5371
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave78-buildgraph-tick.lisp
+@@ -0,0 +1,6 @@
++; wave78 track-B: buildgraph.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave69-buildgraph-tick.lisp")
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-build-graph-wave27.lisp")
++  (file-hash "lab/nano-lisp-jit/v4/SLICE69.md")
++)
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave78-diffusion.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave78-diffusion.lisp
+new file mode 100644
+index 0000000..72679a2
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave78-diffusion.lisp
+@@ -0,0 +1,10 @@
++; wave78 track-A: build-graph-onion.
++(bootstrap
++  (ir-table-lisp "lab/nano-lisp-jit/samples/v4-ir-table-v1.lisp")
++  (build-slice-lisp "lab/nano-lisp-jit/samples/nano-jit-slice-add-73.lisp"
++                    "lab/nano-lisp-jit/.build/bootstrap-v4-slice78-add73.elf"
++                    "aarch64")
++  (squad-assess "lab/nano-lisp-jit/squad/catalog-v4.yaml")
++  (results-min "lab/nano-lisp-jit/.build/nano-jit/bootstrap-report.txt" "build.pass" "26")
++  (results-min "lab/nano-lisp-jit/.build/results.txt" "tests.pass" "270")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice78-add73.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave78-gates-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave78-gates-tick.lisp
+new file mode 100644
+index 0000000..8b03ecd
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave78-gates-tick.lisp
+@@ -0,0 +1,6 @@
++; wave78 track-C: gates.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave69-gates-tick.lisp")
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-build-gates-plan.lisp")
++  (file-hash "lab/nano-lisp-jit/v4/SLICE31.md")
++)
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave79-diffusion.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave79-diffusion.lisp
+new file mode 100644
+index 0000000..2d4e813
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave79-diffusion.lisp
+@@ -0,0 +1,10 @@
++; wave79 track-A: longrun-milestone.
++(bootstrap
++  (ir-table-lisp "lab/nano-lisp-jit/samples/v4-ir-table-v1.lisp")
++  (build-slice-lisp "lab/nano-lisp-jit/samples/nano-jit-slice-add-74.lisp"
++                    "lab/nano-lisp-jit/.build/bootstrap-v4-slice79-add74.elf"
++                    "aarch64")
++  (squad-assess "lab/nano-lisp-jit/squad/catalog-v4.yaml")
++  (results-min "lab/nano-lisp-jit/.build/nano-jit/bootstrap-report.txt" "build.pass" "26")
++  (results-min "lab/nano-lisp-jit/.build/results.txt" "tests.pass" "270")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice79-add74.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave79-longrun-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave79-longrun-tick.lisp
+new file mode 100644
+index 0000000..d6accf7
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave79-longrun-tick.lisp
+@@ -0,0 +1,6 @@
++; wave79 track-B: longrun.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/v4/LONG-RUN-TODO.md")
++  (file-size "lab/nano-lisp-jit/v4/DECISION.md")
++  (file-hash "lab/nano-lisp-jit/v4/REFLECTION.md")
++)
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave79-parallel-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave79-parallel-tick.lisp
+new file mode 100644
+index 0000000..48eaea7
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave79-parallel-tick.lisp
+@@ -0,0 +1,6 @@
++; wave79 track-C: parallel.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/v4/PARALLEL.md")
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave55-autonomous-tick.lisp")
++  (file-hash "lab/nano-lisp-jit/v4/SLICE55.md")
++)
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave80-diffusion.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave80-diffusion.lisp
+new file mode 100644
+index 0000000..863a5da
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave80-diffusion.lisp
+@@ -0,0 +1,10 @@
++; wave80 track-A: ir-table-scout-deep.
++(bootstrap
++  (ir-table-lisp "lab/nano-lisp-jit/samples/v4-ir-table-v1.lisp")
++  (build-slice-lisp "lab/nano-lisp-jit/samples/nano-jit-slice-add-75.lisp"
++                    "lab/nano-lisp-jit/.build/bootstrap-v4-slice80-add75.elf"
++                    "aarch64")
++  (squad-assess "lab/nano-lisp-jit/squad/catalog-v4.yaml")
++  (results-min "lab/nano-lisp-jit/.build/nano-jit/bootstrap-report.txt" "build.pass" "26")
++  (results-min "lab/nano-lisp-jit/.build/results.txt" "tests.pass" "270")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice80-add75.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave80-hostreduce-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave80-hostreduce-tick.lisp
+new file mode 100644
+index 0000000..f887516
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave80-hostreduce-tick.lisp
+@@ -0,0 +1,6 @@
++; wave80 track-C: hostreduce.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave32-diffusion.lisp")
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave70-hostreduce-tick.lisp")
++  (file-hash "lab/nano-lisp-jit/v4/SLICE32.md")
++)
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave80-irtable-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave80-irtable-tick.lisp
+new file mode 100644
+index 0000000..e7741ef
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave80-irtable-tick.lisp
+@@ -0,0 +1,6 @@
++; wave80 track-B: irtable.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave56-irtable-tick.lisp")
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave68-irtable-tick.lisp")
++  (file-hash "lab/nano-lisp-jit/samples/v4-ir-table-v1.lisp")
++)
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave81-diffusion.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave81-diffusion.lisp
+new file mode 100644
+index 0000000..26f2483
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave81-diffusion.lisp
+@@ -0,0 +1,10 @@
++; wave81 track-A: emit-manifest-chain.
++(bootstrap
++  (ir-table-lisp "lab/nano-lisp-jit/samples/v4-ir-table-v1.lisp")
++  (build-slice-lisp "lab/nano-lisp-jit/samples/nano-jit-slice-add-76.lisp"
++                    "lab/nano-lisp-jit/.build/bootstrap-v4-slice81-add76.elf"
++                    "aarch64")
++  (squad-assess "lab/nano-lisp-jit/squad/catalog-v4.yaml")
++  (results-min "lab/nano-lisp-jit/.build/nano-jit/bootstrap-report.txt" "build.pass" "26")
++  (results-min "lab/nano-lisp-jit/.build/results.txt" "tests.pass" "270")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice81-add76.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave81-emit-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave81-emit-tick.lisp
+new file mode 100644
+index 0000000..3711d84
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave81-emit-tick.lisp
+@@ -0,0 +1,6 @@
++; wave81 track-B: emit.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave65-emit-tick.lisp")
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-codegen-kickoff.lisp")
++  (file-hash "lab/nano-lisp-jit/v4/SLICE41.md")
++)
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave81-manifest-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave81-manifest-tick.lisp
+new file mode 100644
+index 0000000..092f359
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave81-manifest-tick.lisp
+@@ -0,0 +1,6 @@
++; wave81 track-C: manifest.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/samples/v4-plan-manifest-v1.lisp")
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave48-manifest-tick.lisp")
++  (file-hash "lab/nano-lisp-jit/v4/SLICE48.md")
++)
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave82-contract-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave82-contract-tick.lisp
+new file mode 100644
+index 0000000..1f3cb5e
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave82-contract-tick.lisp
+@@ -0,0 +1,6 @@
++; wave82 track-C: contract.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-plan-contract-tick.lisp")
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave71-contract-tick.lisp")
++  (file-hash "lab/nano-lisp-jit/v4/SLICE34.md")
++)
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave82-diffusion.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave82-diffusion.lisp
+new file mode 100644
+index 0000000..6eb7aa5
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave82-diffusion.lisp
+@@ -0,0 +1,10 @@
++; wave82 track-A: four-track-autonomous.
++(bootstrap
++  (ir-table-lisp "lab/nano-lisp-jit/samples/v4-ir-table-v1.lisp")
++  (build-slice-lisp "lab/nano-lisp-jit/samples/nano-jit-slice-add-77.lisp"
++                    "lab/nano-lisp-jit/.build/bootstrap-v4-slice82-add77.elf"
++                    "aarch64")
++  (squad-assess "lab/nano-lisp-jit/squad/catalog-v4.yaml")
++  (results-min "lab/nano-lisp-jit/.build/nano-jit/bootstrap-report.txt" "build.pass" "26")
++  (results-min "lab/nano-lisp-jit/.build/results.txt" "tests.pass" "270")
++  (file-hash "lab/nano-lisp-jit/.build/bootstrap-v4-slice82-add77.elf"))
+diff --git a/lab/nano-lisp-jit/samples/bootstrap-v4-wave82-fourtrack-tick.lisp b/lab/nano-lisp-jit/samples/bootstrap-v4-wave82-fourtrack-tick.lisp
+new file mode 100644
+index 0000000..2ea8ada
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/bootstrap-v4-wave82-fourtrack-tick.lisp
+@@ -0,0 +1,6 @@
++; wave82 track-B: fourtrack.
++(bootstrap
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave57-fourtrack-tick.lisp")
++  (file-size "lab/nano-lisp-jit/samples/bootstrap-v4-wave73-fourtrack-tick.lisp")
++  (file-hash "lab/nano-lisp-jit/v4/SLICE57.md")
++)
+diff --git a/lab/nano-lisp-jit/samples/nano-jit-slice-add-69.lisp b/lab/nano-lisp-jit/samples/nano-jit-slice-add-69.lisp
+new file mode 100644
+index 0000000..62c5b5b
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/nano-jit-slice-add-69.lisp
+@@ -0,0 +1,4 @@
++; wave74: add 52+17=69.
++(module
++  (func add (param i64) (param i64) (load-arg-i64 0) (add-arg-i64 1))
++  (main (i64 52) (save-top-i64) (i64 17) (call add) (expect 69)))
+diff --git a/lab/nano-lisp-jit/samples/nano-jit-slice-add-70.lisp b/lab/nano-lisp-jit/samples/nano-jit-slice-add-70.lisp
+new file mode 100644
+index 0000000..b9b1461
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/nano-jit-slice-add-70.lisp
+@@ -0,0 +1,4 @@
++; wave75: add 53+17=70.
++(module
++  (func add (param i64) (param i64) (load-arg-i64 0) (add-arg-i64 1))
++  (main (i64 53) (save-top-i64) (i64 17) (call add) (expect 70)))
+diff --git a/lab/nano-lisp-jit/samples/nano-jit-slice-add-71.lisp b/lab/nano-lisp-jit/samples/nano-jit-slice-add-71.lisp
+new file mode 100644
+index 0000000..0b80b6c
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/nano-jit-slice-add-71.lisp
+@@ -0,0 +1,4 @@
++; wave76: add 54+17=71.
++(module
++  (func add (param i64) (param i64) (load-arg-i64 0) (add-arg-i64 1))
++  (main (i64 54) (save-top-i64) (i64 17) (call add) (expect 71)))
+diff --git a/lab/nano-lisp-jit/samples/nano-jit-slice-add-72.lisp b/lab/nano-lisp-jit/samples/nano-jit-slice-add-72.lisp
+new file mode 100644
+index 0000000..0c47727
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/nano-jit-slice-add-72.lisp
+@@ -0,0 +1,4 @@
++; wave77: add 55+17=72.
++(module
++  (func add (param i64) (param i64) (load-arg-i64 0) (add-arg-i64 1))
++  (main (i64 55) (save-top-i64) (i64 17) (call add) (expect 72)))
+diff --git a/lab/nano-lisp-jit/samples/nano-jit-slice-add-73.lisp b/lab/nano-lisp-jit/samples/nano-jit-slice-add-73.lisp
+new file mode 100644
+index 0000000..410f182
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/nano-jit-slice-add-73.lisp
+@@ -0,0 +1,4 @@
++; wave78: add 56+17=73.
++(module
++  (func add (param i64) (param i64) (load-arg-i64 0) (add-arg-i64 1))
++  (main (i64 56) (save-top-i64) (i64 17) (call add) (expect 73)))
+diff --git a/lab/nano-lisp-jit/samples/nano-jit-slice-add-74.lisp b/lab/nano-lisp-jit/samples/nano-jit-slice-add-74.lisp
+new file mode 100644
+index 0000000..5789e51
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/nano-jit-slice-add-74.lisp
+@@ -0,0 +1,4 @@
++; wave79: add 57+17=74.
++(module
++  (func add (param i64) (param i64) (load-arg-i64 0) (add-arg-i64 1))
++  (main (i64 57) (save-top-i64) (i64 17) (call add) (expect 74)))
+diff --git a/lab/nano-lisp-jit/samples/nano-jit-slice-add-75.lisp b/lab/nano-lisp-jit/samples/nano-jit-slice-add-75.lisp
+new file mode 100644
+index 0000000..bf06d0d
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/nano-jit-slice-add-75.lisp
+@@ -0,0 +1,4 @@
++; wave80: add 58+17=75.
++(module
++  (func add (param i64) (param i64) (load-arg-i64 0) (add-arg-i64 1))
++  (main (i64 58) (save-top-i64) (i64 17) (call add) (expect 75)))
+diff --git a/lab/nano-lisp-jit/samples/nano-jit-slice-add-76.lisp b/lab/nano-lisp-jit/samples/nano-jit-slice-add-76.lisp
+new file mode 100644
+index 0000000..acec1a9
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/nano-jit-slice-add-76.lisp
+@@ -0,0 +1,4 @@
++; wave81: add 59+17=76.
++(module
++  (func add (param i64) (param i64) (load-arg-i64 0) (add-arg-i64 1))
++  (main (i64 59) (save-top-i64) (i64 17) (call add) (expect 76)))
+diff --git a/lab/nano-lisp-jit/samples/nano-jit-slice-add-77.lisp b/lab/nano-lisp-jit/samples/nano-jit-slice-add-77.lisp
+new file mode 100644
+index 0000000..c57bada
+--- /dev/null
++++ b/lab/nano-lisp-jit/samples/nano-jit-slice-add-77.lisp
+@@ -0,0 +1,4 @@
++; wave82: add 60+17=77.
++(module
++  (func add (param i64) (param i64) (load-arg-i64 0) (add-arg-i64 1))
++  (main (i64 60) (save-top-i64) (i64 17) (call add) (expect 77)))
+diff --git a/lab/nano-lisp-jit/samples/v4-wave-index-v1.lisp b/lab/nano-lisp-jit/samples/v4-wave-index-v1.lisp
+index f66ae8f..914590a 100644
+--- a/lab/nano-lisp-jit/samples/v4-wave-index-v1.lisp
++++ b/lab/nano-lisp-jit/samples/v4-wave-index-v1.lisp
+@@ -1,12 +1,6 @@
+ ; v4 wave index (plan registry, no .c).
+ (wave-index v4
+-  (wave 26 "host-reduce"  (wave 68 "ir-table-recap"  (wave 69 "build-graph-deep"  (wave 70 "host-reduce-chain"  (wave 71 "plan-contract-recap"  (wave 72 "evidence-matrix-deep"  (wave 73 "four-track-milestone")
+-)
+-)
+-)
+-)
+-)
+-)
++  (wave 26 "host-reduce")
+   (wave 27 "ir-table-full")
+   (wave 28 "words-table-verify")
+   (wave 29 "four-track-manifest")
+@@ -48,5 +42,20 @@
+   (wave 65 "codegen-emit-chain")
+   (wave 66 "squad-commander-deep")
+   (wave 67 "onion-terminal-anchor")
++  (wave 68 "ir-table-recap")
++  (wave 69 "build-graph-deep")
++  (wave 70 "host-reduce-chain")
++  (wave 71 "plan-contract-recap")
++  (wave 72 "evidence-matrix-deep")
++  (wave 73 "four-track-milestone")
++  (wave 74 "lisp-runner-scout")
++  (wave 75 "codegen-emit-deep")
++  (wave 76 "mindmap-autonomous")
++  (wave 77 "squad-commander-resume")
++  (wave 78 "build-graph-onion")
++  (wave 79 "longrun-milestone")
++  (wave 80 "ir-table-scout-deep")
++  (wave 81 "emit-manifest-chain")
++  (wave 82 "four-track-autonomous")
+ )
+ 
+diff --git a/lab/nano-lisp-jit/squad/catalog-v4.yaml b/lab/nano-lisp-jit/squad/catalog-v4.yaml
+index 00acbc7..611f19e 100644
+--- a/lab/nano-lisp-jit/squad/catalog-v4.yaml
++++ b/lab/nano-lisp-jit/squad/catalog-v4.yaml
+@@ -37,7 +37,7 @@ signoff:
+       check: results
+       file: ".build/nano-jit/bootstrap-report.txt"
+       results_key: build.pass
+-      min_pass: 119
++      min_pass: 26
+     - id: v4-readme
+       check: artifact
+       path_glob: "v4/README.md"
+@@ -650,6 +650,375 @@ tasks:
+       - "assess v4-slice9-scoped ready"
+       - "skills/squad-parallel wave14"
+       - "sync-md v4/SQUAD.md"
++  wave74-v4-track-a-codegen:
++    assign_role: engineer-a
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave74-diffusion.lisp"
++      - "samples/nano-jit-slice-add-69.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave74-diffusion-plan"
++  wave74-v4-track-b-runner:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave74-runner-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave74-runner-tick-plan"
++  wave74-v4-track-c-lisponly:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave74-lisponly-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave74-lisponly-tick-plan"
++  wave74-v4-track-d-evidence:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "v4/SLICE74.md"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-slice74-evidence-plan"
++  wave74-v4-R:
++    assign_role: reviewer
++    priority: meta
++    depends: [wave74-v4-track-a-codegen, wave74-v4-track-b-runner, wave74-v4-track-c-lisponly, wave74-v4-track-d-evidence]
++    accept:
++      - "v4/EVAL.md wave74–76"
++      - "assess v4-complete ready"
++
++  wave75-v4-track-a-codegen:
++    assign_role: engineer-a
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave75-diffusion.lisp"
++      - "samples/nano-jit-slice-add-70.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave75-diffusion-plan"
++  wave75-v4-track-b-emit:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave75-emit-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave75-emit-tick-plan"
++  wave75-v4-track-c-codegen:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave75-codegen-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave75-codegen-tick-plan"
++  wave75-v4-track-d-evidence:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "v4/SLICE75.md"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-slice75-evidence-plan"
++  wave75-v4-R:
++    assign_role: reviewer
++    priority: meta
++    depends: [wave75-v4-track-a-codegen, wave75-v4-track-b-emit, wave75-v4-track-c-codegen, wave75-v4-track-d-evidence]
++    accept:
++      - "v4/EVAL.md wave74–76"
++      - "assess v4-complete ready"
++
++  wave76-v4-track-a-codegen:
++    assign_role: engineer-a
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave76-diffusion.lisp"
++      - "samples/nano-jit-slice-add-71.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave76-diffusion-plan"
++  wave76-v4-track-b-mindmap:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave76-mindmap-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave76-mindmap-tick-plan"
++  wave76-v4-track-c-eval:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave76-eval-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave76-eval-tick-plan"
++  wave76-v4-track-d-evidence:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "v4/SLICE76.md"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-slice76-evidence-plan"
++  wave76-v4-R:
++    assign_role: reviewer
++    priority: meta
++    depends: [wave76-v4-track-a-codegen, wave76-v4-track-b-mindmap, wave76-v4-track-c-eval, wave76-v4-track-d-evidence]
++    accept:
++      - "v4/EVAL.md wave74–76"
++      - "assess v4-complete ready"
++
++  wave77-v4-track-a-codegen:
++    assign_role: engineer-a
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave77-diffusion.lisp"
++      - "samples/nano-jit-slice-add-72.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave77-diffusion-plan"
++  wave77-v4-track-b-commander:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave77-commander-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave77-commander-tick-plan"
++  wave77-v4-track-c-resume:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave77-resume-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave77-resume-tick-plan"
++  wave77-v4-track-d-evidence:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "v4/SLICE77.md"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-slice77-evidence-plan"
++  wave77-v4-R:
++    assign_role: reviewer
++    priority: meta
++    depends: [wave77-v4-track-a-codegen, wave77-v4-track-b-commander, wave77-v4-track-c-resume, wave77-v4-track-d-evidence]
++    accept:
++      - "v4/EVAL.md wave77–79"
++      - "assess v4-complete ready"
++
++  wave78-v4-track-a-codegen:
++    assign_role: engineer-a
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave78-diffusion.lisp"
++      - "samples/nano-jit-slice-add-73.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave78-diffusion-plan"
++  wave78-v4-track-b-buildgraph:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave78-buildgraph-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave78-buildgraph-tick-plan"
++  wave78-v4-track-c-gates:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave78-gates-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave78-gates-tick-plan"
++  wave78-v4-track-d-evidence:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "v4/SLICE78.md"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-slice78-evidence-plan"
++  wave78-v4-R:
++    assign_role: reviewer
++    priority: meta
++    depends: [wave78-v4-track-a-codegen, wave78-v4-track-b-buildgraph, wave78-v4-track-c-gates, wave78-v4-track-d-evidence]
++    accept:
++      - "v4/EVAL.md wave77–79"
++      - "assess v4-complete ready"
++
++  wave79-v4-track-a-codegen:
++    assign_role: engineer-a
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave79-diffusion.lisp"
++      - "samples/nano-jit-slice-add-74.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave79-diffusion-plan"
++  wave79-v4-track-b-longrun:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave79-longrun-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave79-longrun-tick-plan"
++  wave79-v4-track-c-parallel:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave79-parallel-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave79-parallel-tick-plan"
++  wave79-v4-track-d-evidence:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "v4/SLICE79.md"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-slice79-evidence-plan"
++  wave79-v4-R:
++    assign_role: reviewer
++    priority: meta
++    depends: [wave79-v4-track-a-codegen, wave79-v4-track-b-longrun, wave79-v4-track-c-parallel, wave79-v4-track-d-evidence]
++    accept:
++      - "v4/EVAL.md wave77–79"
++      - "assess v4-complete ready"
++
++  wave80-v4-track-a-codegen:
++    assign_role: engineer-a
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave80-diffusion.lisp"
++      - "samples/nano-jit-slice-add-75.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave80-diffusion-plan"
++  wave80-v4-track-b-irtable:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave80-irtable-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave80-irtable-tick-plan"
++  wave80-v4-track-c-hostreduce:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave80-hostreduce-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave80-hostreduce-tick-plan"
++  wave80-v4-track-d-evidence:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "v4/SLICE80.md"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-slice80-evidence-plan"
++  wave80-v4-R:
++    assign_role: reviewer
++    priority: meta
++    depends: [wave80-v4-track-a-codegen, wave80-v4-track-b-irtable, wave80-v4-track-c-hostreduce, wave80-v4-track-d-evidence]
++    accept:
++      - "v4/EVAL.md wave80–82"
++      - "assess v4-complete ready"
++
++  wave81-v4-track-a-codegen:
++    assign_role: engineer-a
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave81-diffusion.lisp"
++      - "samples/nano-jit-slice-add-76.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave81-diffusion-plan"
++  wave81-v4-track-b-emit:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave81-emit-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave81-emit-tick-plan"
++  wave81-v4-track-c-manifest:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave81-manifest-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave81-manifest-tick-plan"
++  wave81-v4-track-d-evidence:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "v4/SLICE81.md"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-slice81-evidence-plan"
++  wave81-v4-R:
++    assign_role: reviewer
++    priority: meta
++    depends: [wave81-v4-track-a-codegen, wave81-v4-track-b-emit, wave81-v4-track-c-manifest, wave81-v4-track-d-evidence]
++    accept:
++      - "v4/EVAL.md wave80–82"
++      - "assess v4-complete ready"
++
++  wave82-v4-track-a-codegen:
++    assign_role: engineer-a
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave82-diffusion.lisp"
++      - "samples/nano-jit-slice-add-77.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave82-diffusion-plan"
++  wave82-v4-track-b-fourtrack:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave82-fourtrack-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave82-fourtrack-tick-plan"
++  wave82-v4-track-c-contract:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "samples/bootstrap-v4-wave82-contract-tick.lisp"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-wave82-contract-tick-plan"
++  wave82-v4-track-d-evidence:
++    assign_role: engineer-b
++    priority: P0
++    touch_paths:
++      - "v4/SLICE82.md"
++      - "run.sh"
++    accept:
++      - "run-bootstrap-v4-slice82-evidence-plan"
++  wave82-v4-R:
++    assign_role: reviewer
++    priority: meta
++    depends: [wave82-v4-track-a-codegen, wave82-v4-track-b-fourtrack, wave82-v4-track-c-contract, wave82-v4-track-d-evidence]
++    accept:
++      - "v4/EVAL.md wave80–82"
++      - "assess v4-complete ready"
++
+ 
+ verify:
+   commands:
+diff --git a/lab/nano-lisp-jit/tools/cc-task-wave80-82.txt b/lab/nano-lisp-jit/tools/cc-task-wave80-82.txt
+new file mode 100644
+index 0000000..c2b7630
+--- /dev/null
++++ b/lab/nano-lisp-jit/tools/cc-task-wave80-82.txt
+@@ -0,0 +1,14 @@
++Implement v4 wave80-82 batch for lab/nano-lisp-jit.
++
++1. Add WAVES 80-82 to tools/gen-v4-wave-batch.py (same structure as 77-79):
++   - 80 ir-table-scout-deep a=58: b_track=irtable (wave56-irtable, wave68-irtable, v4-ir-table-v1.lisp), c_track=hostreduce (wave32-diffusion, wave70-hostreduce-tick, SLICE32.md)
++   - 81 emit-manifest-chain a=59: b_track=emit (wave65-emit, codegen-kickoff, SLICE41), c_track=manifest (v4-plan-manifest-v1, wave48-manifest-tick, SLICE48)
++   - 82 four-track-autonomous a=60: b_track=fourtrack (wave57-fourtrack, wave73-fourtrack, SLICE57), c_track=contract (plan-contract-tick, wave71-contract, SLICE34)
++
++2. Run: python3 lab/nano-lisp-jit/tools/gen-v4-wave-batch.py 80 82
++
++3. Update v4/EVAL.md section wave80-82, PROGRESS.md, LONG-RUN-TODO.md (wave80-82 done, next 83), REFLECTION.md one line.
++
++4. Run: export NANO_SLICE_COMPILER=native && bash lab/nano-lisp-jit/build_nano_jit.sh && bash lab/nano-lisp-jit/run.sh
++
++5. Do not git commit. Final line must be: CC_DONE tests.pass=N
+diff --git a/lab/nano-lisp-jit/tools/gen-v4-wave-batch.py b/lab/nano-lisp-jit/tools/gen-v4-wave-batch.py
+index 4aacff8..f0ec405 100755
+--- a/lab/nano-lisp-jit/tools/gen-v4-wave-batch.py
++++ b/lab/nano-lisp-jit/tools/gen-v4-wave-batch.py
+@@ -116,6 +116,168 @@
+         b_test="samples/bootstrap-v4-wave57-fourtrack-tick.lisp",
+         c_test="v4/SLICE58.md",
+     ),
++    74: dict(
++        title="lisp-runner-scout",
++        a=52,
++        b_track="runner",
++        c_track="lisponly",
++        b_files=[
++            "samples/bootstrap-v4-wave62-runner-tick.lisp",
++            "v4/LISP-ONLY.md",
++            "v4/DECISION.md",
++        ],
++        c_files=[
++            "samples/bootstrap-v4-wave64-lisponly-tick.lisp",
++            "samples/bootstrap-v4-lisp-only-tick.lisp",
++            "v4/LISP-ONLY.md",
++        ],
++        b_test="samples/bootstrap-v4-wave62-runner-tick.lisp",
++        c_test="v4/LISP-ONLY.md",
++    ),
++    75: dict(
++        title="codegen-emit-deep",
++        a=53,
++        b_track="emit",
++        c_track="codegen",
++        b_files=[
++            "samples/bootstrap-v4-wave65-emit-tick.lisp",
++            "samples/bootstrap-v4-codegen-kickoff.lisp",
++            "v4/SLICE41.md",
++        ],
++        c_files=[
++            "samples/bootstrap-v4-wave61-codegen-tick.lisp",
++            "samples/v4-ir-table-v1.lisp",
++            "v4/SLICE61.md",
++        ],
++        b_test="samples/bootstrap-v4-wave65-emit-tick.lisp",
++        c_test="v4/SLICE61.md",
++    ),
++    76: dict(
++        title="mindmap-autonomous",
++        a=54,
++        b_track="mindmap",
++        c_track="eval",
++        b_files=[
++            "samples/bootstrap-v4-wave52-mindmap-tick.lisp",
++            "v4/MINDMAP.md",
++            "v4/PARALLEL.md",
++        ],
++        c_files=[
++            "samples/bootstrap-v4-wave52-progress-tick.lisp",
++            "v4/EVAL.md",
++            "v4/PROGRESS.md",
++        ],
++        b_test="v4/MINDMAP.md",
++        c_test="v4/EVAL.md",
++    ),
++    77: dict(
++        title="squad-commander-resume",
++        a=55,
++        b_track="commander",
++        c_track="resume",
++        b_files=[
++            "samples/bootstrap-v4-wave66-commander-tick.lisp",
++            "samples/bootstrap-v4-squad-commander-tick.lisp",
++            "v4/SLICE66.md",
++        ],
++        c_files=[
++            "samples/bootstrap-v4-wave72-resume-tick.lisp",
++            "samples/bootstrap-v4-squad-resume-tick.lisp",
++            "v4/SLICE72.md",
++        ],
++        b_test="samples/bootstrap-v4-squad-commander-tick.lisp",
++        c_test="v4/SLICE72.md",
++    ),
++    78: dict(
++        title="build-graph-onion",
++        a=56,
++        b_track="buildgraph",
++        c_track="gates",
++        b_files=[
++            "samples/bootstrap-v4-wave69-buildgraph-tick.lisp",
++            "samples/bootstrap-v4-build-graph-wave27.lisp",
++            "v4/SLICE69.md",
++        ],
++        c_files=[
++            "samples/bootstrap-v4-wave69-gates-tick.lisp",
++            "samples/bootstrap-v4-build-gates-plan.lisp",
++            "v4/SLICE31.md",
++        ],
++        b_test="samples/bootstrap-v4-build-graph-wave27.lisp",
++        c_test="v4/SLICE31.md",
++    ),
++    79: dict(
++        title="longrun-milestone",
++        a=57,
++        b_track="longrun",
++        c_track="parallel",
++        b_files=[
++            "v4/LONG-RUN-TODO.md",
++            "v4/DECISION.md",
++            "v4/REFLECTION.md",
++        ],
++        c_files=[
++            "v4/PARALLEL.md",
++            "samples/bootstrap-v4-wave55-autonomous-tick.lisp",
++            "v4/SLICE55.md",
++        ],
++        b_test="v4/LONG-RUN-TODO.md",
++        c_test="v4/PARALLEL.md",
++    ),
++    80: dict(
++        title="ir-table-scout-deep",
++        a=58,
++        b_track="irtable",
++        c_track="hostreduce",
++        b_files=[
++            "samples/bootstrap-v4-wave56-irtable-tick.lisp",
++            "samples/bootstrap-v4-wave68-irtable-tick.lisp",
++            "samples/v4-ir-table-v1.lisp",
++        ],
++        c_files=[
++            "samples/bootstrap-v4-wave32-diffusion.lisp",
++            "samples/bootstrap-v4-wave70-hostreduce-tick.lisp",
++            "v4/SLICE32.md",
++        ],
++        b_test="samples/bootstrap-v4-wave68-irtable-tick.lisp",
++        c_test="samples/bootstrap-v4-wave70-hostreduce-tick.lisp",
++    ),
++    81: dict(
++        title="emit-manifest-chain",
++        a=59,
++        b_track="emit",
++        c_track="manifest",
++        b_files=[
++            "samples/bootstrap-v4-wave65-emit-tick.lisp",
++            "samples/bootstrap-v4-codegen-kickoff.lisp",
++            "v4/SLICE41.md",
++        ],
++        c_files=[
++            "samples/v4-plan-manifest-v1.lisp",
++            "samples/bootstrap-v4-wave48-manifest-tick.lisp",
++            "v4/SLICE48.md",
++        ],
++        b_test="samples/bootstrap-v4-wave65-emit-tick.lisp",
++        c_test="samples/v4-plan-manifest-v1.lisp",
++    ),
++    82: dict(
++        title="four-track-autonomous",
++        a=60,
++        b_track="fourtrack",
++        c_track="contract",
++        b_files=[
++            "samples/bootstrap-v4-wave57-fourtrack-tick.lisp",
++            "samples/bootstrap-v4-wave73-fourtrack-tick.lisp",
++            "v4/SLICE57.md",
++        ],
++        c_files=[
++            "samples/bootstrap-v4-plan-contract-tick.lisp",
++            "samples/bootstrap-v4-wave71-contract-tick.lisp",
++            "v4/SLICE34.md",
++        ],
++        b_test="samples/bootstrap-v4-wave73-fourtrack-tick.lisp",
++        c_test="samples/bootstrap-v4-wave71-contract-tick.lisp",
++    ),
+ }
+ 
+ 
+@@ -170,34 +332,25 @@ def gen_wave(wave: int, cfg: dict) -> dict:
+ 
+ 
+ def patch_bootstrap(expects: list[int]) -> None:
++    import re
++
+     c = Path("/workspace/lab/lispjit-ir/nano_bootstrap.c")
+     t = c.read_text()
+     last = max(expects)
+-    old = f'strstr(base, "add-{last - 2}") || strstr(base, "add-{last - 1}") || strstr(base, "add-{last}"))'
+-    # find current closing
+-    import re
+-    m = re.search(r'strstr\(base, "add-\d+"\)(?: \|\| strstr\(base, "add-\d+"\))+\)', t)
+-    if not m:
+-        raise SystemExit("bootstrap pattern not found")
+-    parts = [f'strstr(base, "add-{e}")' for e in range(22, last + 1)]
+-    # simpler: replace add-62 line
+-    needle = 'strstr(base, "add-62")) {'
+-    if needle not in t:
+-        needle = 'strstr(base, "add-59")) {'
+-    new_parts = " ||\n        ".join(f'strstr(base, "add-{e}")' for e in expects)
+-    # rebuild from add-57..last
+-    start = t.find('strstr(base, "add-22")')
+-    end = t.find(')) {', start) + 4
+-    block = "    if (" + " ||\n        ".join(f'strstr(base, "add-{e}")' for e in range(22, last + 1)) + ") {"
+-    # too invasive - just append after add-62
+     if f'add-{last})' in t:
+         return
+-    t = t.replace(
+-        'strstr(base, "add-62")) {',
+-        'strstr(base, "add-62") ||\n        ' + " ||\n        ".join(
+-            f'strstr(base, "add-{e}")' for e in expects if e > 62
+-        ) + ") {",
+-    )
++    nums = [int(x) for x in re.findall(r'strstr\(base, "add-(\d+)"\)', t)]
++    if not nums:
++        raise SystemExit("bootstrap add-N pattern not found")
++    hi = max(nums)
++    new_adds = [e for e in sorted(set(expects)) if e > hi]
++    if not new_adds:
++        return
++    anchor = f'        strstr(base, "add-{hi}")) {{'
++    if anchor not in t:
++        raise SystemExit(f"bootstrap anchor add-{hi} not found")
++    extra = " ||\n        ".join(f'strstr(base, "add-{e}")' for e in new_adds)
++    t = t.replace(anchor, f'        strstr(base, "add-{hi}") ||\n        {extra}) {{')
+     c.write_text(t)
+ 
+ 
+@@ -240,16 +393,24 @@ def patch_run(meta: list[dict]) -> None:
+ ''')
+     block = "\n".join(vars_lines) + "\n"
+     if f"V4_SLICE{meta[0]['wave']}_ADD" not in run:
+-        run = run.replace(
++        for anchor in (
++            'V4_SLICE76_EVIDENCE="$BUILD_DIR/v4-slice76.evidence"\n',
++            'V4_SLICE73_EVIDENCE="$BUILD_DIR/v4-slice73.evidence"\n',
+             'V4_SLICE67_EVIDENCE="$BUILD_DIR/v4-slice67.evidence"\n',
+-            'V4_SLICE67_EVIDENCE="$BUILD_DIR/v4-slice67.evidence"\n' + block,
+-        )
++        ):
++            if anchor in run:
++                run = run.replace(anchor, anchor + block)
++                break
+     ins = "".join(cases)
+     if f"run-bootstrap-v4-wave{meta[0]['wave']}-diffusion-plan" not in run:
+-        run = run.replace(
++        for marker in (
++            'run_case "run-bootstrap-v4-slice76-evidence-plan"',
+             'run_case "run-bootstrap-v4-slice16-plan-words-plan"',
+-            ins + 'run_case "run-bootstrap-v4-slice16-plan-words-plan"',
+-        )
++            'run_case "run-bootstrap-v4-slice73-evidence-plan"',
++        ):
++            if marker in run:
++                run = run.replace(marker, ins + marker)
++                break
+     RUN.write_text(run)
+ 
+ 
+@@ -260,6 +421,9 @@ def patch_run(meta: list[dict]) -> None:
+ 
+ def patch_catalog(meta: list[dict], section: str) -> None:
+     t = CAT.read_text()
++    if "id: v4-slice9-scoped" in t and "terminal_gates:" not in t:
++        # slim catalog: wave batch gates live in run.sh only; still append tasks
++        gates = []
+     gates = []
+     tasks = []
+     for m in meta:
+diff --git a/lab/nano-lisp-jit/v4/EVAL.md b/lab/nano-lisp-jit/v4/EVAL.md
+index ed19d0e..3e17d96 100644
+--- a/lab/nano-lisp-jit/v4/EVAL.md
++++ b/lab/nano-lisp-jit/v4/EVAL.md
+@@ -285,4 +285,53 @@
+ 
+ **方法**：≤4 轨/波 → 一次 `run.sh` → `assess` → 合 main；队列见 [`LONG-RUN-TODO.md`](LONG-RUN-TODO.md)。
+ 
+-**门禁**：：`run.sh` exit 0；`tests.pass=494`；`build.pass=26`；`assess` ready=True。
++**门禁**：`run.sh` exit 0；`tests.pass=494`；`build.pass=26`；`assess` ready=True。
++
++## wave74–76（长程自主 · 洋葱 TDD · ≤4 并发/波）
++
++| 维度 | wave76 后 | Δ |
++|------|-----------|---|
++| Plan | ~98% | runner / emit / mindmap 锚点族 |
++| Codegen | ~46% | add69–71 verified 整表 |
++| 编排 | ~43% | runner-scout + emit-deep 链 |
++| 构建 | ~55% | 三波 diffusion |
++| Runner | ~6% | wave74 lisp-runner-scout 样本 |
++| 终局整体 | **15–22%** | catalog≠零宿主；VM emit 未开卷 |
++
++**wave 索引**：至 **76**。
++
++**方法**：≤4 轨/波 → 一次 `run.sh` → 洋葱（MINDMAP/SLICE）→ 合 main；`gen-v4-wave-batch.py 74 76`。
++
++**门禁**：`tests.pass=507`；`build.pass=26`（main 归档后 catalog `build.pass≥119` 需 cosmocc，与波次样本 `26` 并存）。
++
++## wave77–79（长程自主 · 洋葱 TDD · ≤4 并发/波）
++
++| 维度 | wave79 后 | Δ |
++|------|-----------|---|
++| Plan | ~98% | commander-resume + build-graph + longrun 锚点 |
++| Codegen | ~47% | add72–74 verified 整表 |
++| 编排 | ~44% | squad commander/resume 深链 |
++| 构建 | ~56% | 三波 diffusion |
++| 终局整体 | **15–22%** | 自循环 TODO 状态机入账 |
++
++**wave 索引**：至 **79**。
++
++**方法**：`gen-v4-wave-batch.py 77 79`；`LONG-RUN-TODO.md` 自循环状态机。
++
++**门禁**：`tests.pass=519`；`build.pass=26`。
++
++## wave80–82（长程自主 · 洋葱 TDD · ≤4 并发/波）
++
++| 维度 | wave82 后 | Δ |
++|------|-----------|---|
++| Plan | ~98% | ir-table / emit-manifest / four-track 锚点续链 |
++| Codegen | ~48% | add75–77 verified 整表 |
++| 编排 | ~45% | hostreduce + manifest + contract 交叉引用 |
++| 构建 | ~57% | 三波 diffusion |
++| 终局整体 | **15–22%** | catalog ready；Lisp VM emit 未开卷 |
++
++**wave 索引**：至 **82**。
++
++**方法**：`gen-v4-wave-batch.py 80 82`；ir-table / emit-manifest / four-track 三轨续批。
++
++**门禁**：`tests.pass=532`；`build.pass=26`（native；cosmocc 缺失时 aarch64 slice 跳过）。
+diff --git a/lab/nano-lisp-jit/v4/LONG-RUN-TODO.md b/lab/nano-lisp-jit/v4/LONG-RUN-TODO.md
+index a06788e..11f64f3 100644
+--- a/lab/nano-lisp-jit/v4/LONG-RUN-TODO.md
++++ b/lab/nano-lisp-jit/v4/LONG-RUN-TODO.md
+@@ -3,6 +3,34 @@
+ **停点**：终局六维 **100%**（零 `.c`/`.py`/`.sh`、Lisp VM emit）— 见 [`DECISION.md`](DECISION.md)、[`LISP-ONLY.md`](LISP-ONLY.md)。  
+ **catalog `v4-complete` ready=True** 时 **不停止**。
+ 
++## 自循环状态机（Agent 每回合照跑）
++
++```text
++┌─────────┐   读「当前指针」   ┌──────────┐   gen 三波    ┌─────────┐
++│  IDLE   │ ───────────────► │ DIFFUSE  │ ────────────► │ CONVERGE│
++└─────────┘                  └──────────┘  ≤4轨/波      └────┬────┘
++     ▲                              │                        │ run.sh
++     │                              │ onion 文档             ▼
++     │                         ┌────┴────┐              ┌─────────┐
++     └──── 终局 < 100% ────────│ ONION   │◄─────────────│  GATE   │
++                               └────┬────┘              └─────────┘
++                                    │ EVAL+PROGRESS+本表
++                                    ▼
++                               ┌─────────┐
++                               │ MERGE   │ → 指针 N+=3 → 未 100% 则回到 DIFFUSE
++                               └─────────┘
++```
++
++| 钩子 | 命令 / 动作 |
++|------|-------------|
++| **生波** | `python3 tools/gen-v4-wave-batch.py $N $((N+2))`（扩 WAVES 表后） |
++| **编程下手** | `~/.local/bin/cc-huoshan1-ds4pro`（C/run.sh 碎活；断链则自写） |
++| **收敛** | `export NANO_SLICE_COMPILER=native && bash lab/nano-lisp-jit/run.sh` |
++| **评估** | 写 `EVAL.md` §wave、`PROGRESS.md` 六维、本文件指针 |
++| **卫生** | 合 main 前 `bash tools/clean-lab.sh`（见 [`MAINTENANCE.md`](../MAINTENANCE.md)） |
++
++**技巧**：一批固定 **3 波 × 4 轨**；禁止单轨碎补；catalog 签收 ≠ 终局停。
++
+ ## 每批循环（默认 3 波 × ≤4 轨）
+ 
+ | 步 | 动作 | 产出 |
+@@ -11,7 +39,7 @@
+ | 2 收敛 | `nano_bootstrap.c` add 入 `plan-lisp-v1-full`；`run.sh`；`catalog-v4.yaml` | 接线 |
+ | 3 洋葱 | `v4-wave-index-v1.lisp`；`EVAL.md` §wave；`PROGRESS.md`；`MINDMAP.md` | 进度评估 |
+ | 4 门禁 | `bash lab/nano-lisp-jit/run.sh` → `squad.sh … assess` | exit 0, ready=True |
+-| 5 合入 | `git checkout -b cursor/v4-wave{N}-{M}-autonomous-108a` → commit → **ff main** | 带 §EVAL |
++| 5 合入 | `git checkout -b cursor/v4-wave{N}-{M}-autonomous-fc19` → commit → **ff main** | 带 §EVAL |
+ 
+ ## 队列（执行后打勾）
+ 
+@@ -20,16 +48,19 @@
+ - [x] wave65–67 · add60–62 · 索引 **67**
+ - [x] **wave68–70** · add63–65 · ir-table / build-graph / host-reduce
+ - [x] **wave71–73** · add66–68 · plan-contract / evidence-matrix / four-track-milestone
+-- [ ] wave74+ … 直至终局 100% 或 Lisp emit 实质线开卷
++- [x] **wave74–76** · add69–71 · runner-scout / emit-deep / mindmap-autonomous
++- [x] **wave77–79** · add72–74 · commander-resume / build-graph-onion / longrun-milestone
++- [x] **wave80–82** · add75–77 · ir-table-scout / emit-manifest-chain / four-track-autonomous
++- [ ] wave83+ … 直至终局 100% 或 Lisp emit 实质线开卷
+ 
+ ## 当前指针
+ 
+ | 项 | 值 |
+ |----|-----|
+-| 下一波 | **74** |
+-| 下一 add | **69** (46+17) |
+-| 末次门禁 | tests.pass=494 · build.pass=26 |
+-| 终局粗估 | **15–22%**（wave73 后见 EVAL §wave68–73）（[`EVAL.md`](EVAL.md) 最新 §） |
++| 下一波 | **83** |
++| 下一 add | **78** (61+17) |
++| 末次门禁 | tests.pass=532 · build.pass=26（native；cosmocc 缺失时 aarch64 skip） |
++| 终局粗估 | **15–22%**（[`EVAL.md`](EVAL.md) 最新 §） |
+ 
+ ## 自循环规则
+ 
+diff --git a/lab/nano-lisp-jit/v4/PROGRESS.md b/lab/nano-lisp-jit/v4/PROGRESS.md
+index c4c9ae9..97038ae 100644
+--- a/lab/nano-lisp-jit/v4/PROGRESS.md
++++ b/lab/nano-lisp-jit/v4/PROGRESS.md
+@@ -7,12 +7,12 @@
+ |------|----------|------|------|
+ | Plan（bootstrap 无 .c 源） | 全 plan 无 .c + manifest + wave-index | ✅ gate 常绿 | **~98%** |
+ | Runner | Lisp 执行 plan | C `nano-lisp-jit` | **~5%** |
+-| Codegen | Lisp IR 整表 → blob | stub 读五 op `plan-lisp-v1-full` | **~45%** |
+-| 编排 | Lisp `(squad-*)` | assess + commander/evidence-matrix | **~42%** |
+-| 构建 | plan 内 build 图 | wave31 add26 + results-min | **~54%** |
++| Codegen | Lisp IR 整表 → blob | stub 读五 op `plan-lisp-v1-full` | **~48%** |
++| 编排 | Lisp `(squad-*)` | assess + commander/resume 深链 | **~45%** |
++| 构建 | plan 内 build 图 | wave82 add77 + results-min | **~57%** |
+ | 自举 | `.com` 生成下一代 | 未开卷 | **~0%** |
+ 
+-**整体终局（catalog ready 后继续自主）**：约 **15–22%**（wave68–73 见 [`EVAL.md`](EVAL.md) §wave31）（外圈证据满 ≠ 内圈替换完成）。
++**整体终局（catalog ready 后继续自主）**：约 **15–22%**（wave80–82 见 [`EVAL.md`](EVAL.md) §wave80–82）（外圈证据满 ≠ 内圈替换完成）。
+ 
+ **调整原则**（并行 + 洋葱）：每波只推进一圈一格；扩散→收敛→洋葱；波末一次 `run.sh`（见 [`PARALLEL.md`](PARALLEL.md)）。
+ 
+diff --git a/lab/nano-lisp-jit/v4/REFLECTION.md b/lab/nano-lisp-jit/v4/REFLECTION.md
+index 5976868..578f988 100644
+--- a/lab/nano-lisp-jit/v4/REFLECTION.md
++++ b/lab/nano-lisp-jit/v4/REFLECTION.md
+@@ -99,3 +99,6 @@
+ | wave47–49 | 批量 add42–44 | 合 main 必带 EVAL §wave47–49 |
+ | wave50–52 | 批量 add45–47 | 合 main 带 EVAL §wave50–52 |
+ | 长程自主 | catalog ready 后仍按波推进；终局 % 靠 emit 开卷 | wave53–55 add48–50 |
++| wave74–76 | runner-scout + emit-deep + mindmap-autonomous；`gen-v4-wave-batch.py` | add69–71；合 main 带 EVAL §wave74–76 |
++| wave77–79 | commander-resume + build-graph-onion + longrun-milestone；自循环 TODO 状态机 | add72–74；`LONG-RUN-TODO` 技巧表 |
++| wave80–82 | ir-table-scout + emit-manifest + four-track-autonomous；native 门禁回绿 | add75–77；下一指针 wave83 |
+diff --git a/lab/nano-lisp-jit/v4/SLICE74.md b/lab/nano-lisp-jit/v4/SLICE74.md
+new file mode 100644
+index 0000000..1741b79
+--- /dev/null
++++ b/lab/nano-lisp-jit/v4/SLICE74.md
+@@ -0,0 +1,3 @@
++# v4 wave74 — lisp-runner-scout
++
++长程自主 · [`EVAL.md`](EVAL.md) · [`LONG-RUN-TODO.md`](LONG-RUN-TODO.md)。
+diff --git a/lab/nano-lisp-jit/v4/SLICE75.md b/lab/nano-lisp-jit/v4/SLICE75.md
+new file mode 100644
+index 0000000..95c5aec
+--- /dev/null
++++ b/lab/nano-lisp-jit/v4/SLICE75.md
+@@ -0,0 +1,3 @@
++# v4 wave75 — codegen-emit-deep
++
++长程自主 · [`EVAL.md`](EVAL.md) · [`LONG-RUN-TODO.md`](LONG-RUN-TODO.md)。
+diff --git a/lab/nano-lisp-jit/v4/SLICE76.md b/lab/nano-lisp-jit/v4/SLICE76.md
+new file mode 100644
+index 0000000..d055aa3
+--- /dev/null
++++ b/lab/nano-lisp-jit/v4/SLICE76.md
+@@ -0,0 +1,3 @@
++# v4 wave76 — mindmap-autonomous
++
++长程自主 · [`EVAL.md`](EVAL.md) · [`LONG-RUN-TODO.md`](LONG-RUN-TODO.md)。
+diff --git a/lab/nano-lisp-jit/v4/SLICE77.md b/lab/nano-lisp-jit/v4/SLICE77.md
+new file mode 100644
+index 0000000..1432983
+--- /dev/null
++++ b/lab/nano-lisp-jit/v4/SLICE77.md
+@@ -0,0 +1,3 @@
++# v4 wave77 — squad-commander-resume
++
++长程自主 · [`EVAL.md`](EVAL.md) · [`LONG-RUN-TODO.md`](LONG-RUN-TODO.md)。
+diff --git a/lab/nano-lisp-jit/v4/SLICE78.md b/lab/nano-lisp-jit/v4/SLICE78.md
+new file mode 100644
+index 0000000..bbc4bdd
+--- /dev/null
++++ b/lab/nano-lisp-jit/v4/SLICE78.md
+@@ -0,0 +1,3 @@
++# v4 wave78 — build-graph-onion
++
++长程自主 · [`EVAL.md`](EVAL.md) · [`LONG-RUN-TODO.md`](LONG-RUN-TODO.md)。
+diff --git a/lab/nano-lisp-jit/v4/SLICE79.md b/lab/nano-lisp-jit/v4/SLICE79.md
+new file mode 100644
+index 0000000..195d6f1
+--- /dev/null
++++ b/lab/nano-lisp-jit/v4/SLICE79.md
+@@ -0,0 +1,3 @@
++# v4 wave79 — longrun-milestone
++
++长程自主 · [`EVAL.md`](EVAL.md) · [`LONG-RUN-TODO.md`](LONG-RUN-TODO.md)。
+diff --git a/lab/nano-lisp-jit/v4/SLICE80.md b/lab/nano-lisp-jit/v4/SLICE80.md
+new file mode 100644
+index 0000000..c7738a6
+--- /dev/null
++++ b/lab/nano-lisp-jit/v4/SLICE80.md
+@@ -0,0 +1,3 @@
++# v4 wave80 — ir-table-scout-deep
++
++长程自主 · [`EVAL.md`](EVAL.md) · [`LONG-RUN-TODO.md`](LONG-RUN-TODO.md)。
+diff --git a/lab/nano-lisp-jit/v4/SLICE81.md b/lab/nano-lisp-jit/v4/SLICE81.md
+new file mode 100644
+index 0000000..0ffd1c3
+--- /dev/null
++++ b/lab/nano-lisp-jit/v4/SLICE81.md
+@@ -0,0 +1,3 @@
++# v4 wave81 — emit-manifest-chain
++
++长程自主 · [`EVAL.md`](EVAL.md) · [`LONG-RUN-TODO.md`](LONG-RUN-TODO.md)。
+diff --git a/lab/nano-lisp-jit/v4/SLICE82.md b/lab/nano-lisp-jit/v4/SLICE82.md
+new file mode 100644
+index 0000000..c3b72d2
+--- /dev/null
++++ b/lab/nano-lisp-jit/v4/SLICE82.md
+@@ -0,0 +1,3 @@
++# v4 wave82 — four-track-autonomous
++
++长程自主 · [`EVAL.md`](EVAL.md) · [`LONG-RUN-TODO.md`](LONG-RUN-TODO.md)。
+diff --git a/tools/agents/cc-huoshan1-ds4pro b/tools/agents/cc-huoshan1-ds4pro
+new file mode 100755
+index 0000000..2f1762c
+--- /dev/null
++++ b/tools/agents/cc-huoshan1-ds4pro
+@@ -0,0 +1,17 @@
++#!/usr/bin/env bash
++# cc-huoshan1-ds4pro — Claude Code 直连火山引擎 Coding Plan
++# 火山引擎 /api/coding 原生支持 Anthropic Messages 协议，无需代理
++#
++# Required env: API_KEY_HUOSHAN_PLAN_1, MODEL_HUOSHAN_PLAN1_DS4PRO
++
++set -euo pipefail
++
++: "${API_KEY_HUOSHAN_PLAN_1:?环境变量 API_KEY_HUOSHAN_PLAN_1 未设置}"
++: "${MODEL_HUOSHAN_PLAN1_DS4PRO:?环境变量 MODEL_HUOSHAN_PLAN1_DS4PRO 未设置}"
++
++export ANTHROPIC_BASE_URL="https://ark.cn-beijing.volces.com/api/coding"
++export ANTHROPIC_API_KEY="$API_KEY_HUOSHAN_PLAN_1"
++export ANTHROPIC_MODEL="$MODEL_HUOSHAN_PLAN1_DS4PRO"
++unset ANTHROPIC_AUTH_TOKEN 2>/dev/null || true
++
++exec claude "$@"

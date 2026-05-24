@@ -1,0 +1,415 @@
+diff --git a/src/components/AdventureMap.tsx b/src/components/AdventureMap.tsx
+index 230161c..d7c8756 100644
+--- a/src/components/AdventureMap.tsx
++++ b/src/components/AdventureMap.tsx
+@@ -2,10 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
+ import { useGame, ITEMS } from '../contexts/GameContext';
+ import { useCombat } from '../contexts/CombatContext';
+ import { useAdventure } from '../hooks/useAdventure';
+-import { Swords, Heart, LogOut, Backpack, AlertCircle } from 'lucide-react';
++import { Swords, Heart, LogOut, Backpack, AlertCircle, ShoppingCart, Coins, ArrowLeft } from 'lucide-react';
+ 
+ export const AdventureMap: React.FC = () => {
+-  const { state, resolveCombatVictory, resolveCombatDefeat, eatRiceCake, consumeItem, resolveCombatReunion, equipMember } = useGame();
++  const { state, resolveCombatVictory, resolveCombatDefeat, eatRiceCake, consumeItem, resolveCombatReunion, equipMember, buyItem, leaveAdventureShop } = useGame();
+   const { combatState, startCombat, executePlayerAction, resolveEnemyTurn, endCombat, failFleeAttempt } = useCombat();
+   const { daughter, inventory } = state;
+   
+@@ -31,6 +31,7 @@ export const AdventureMap: React.FC = () => {
+     dx: number;
+     dy: number;
+   }>>([]);
++  const [shopMessage, setShopMessage] = useState<{ text: string; isError: boolean } | null>(null);
+ 
+   // Auto-scroll combat log to bottom
+   useEffect(() => {
+@@ -1003,6 +1004,148 @@ export const AdventureMap: React.FC = () => {
+         </div>
+       )}
+ 
++      {/* Adventure Shop UI (When shopping at a 驛站 or 黑市) */}
++      {adventure.status === 'shopping' && (() => {
++        const currentNode = adventure.nodes.find(n => n.id === adventure.currentNodeId);
++        const shopName = currentNode?.name || '修行驛站';
++        const isBlackMarket = shopName.includes('黑市');
++
++        // Adventure shop items: consumables relevant to adventure combat
++        const adventureShopItems = ITEMS.filter(item => {
++          // Show consumable combat items
++          if (['binlang_ice', 'binlang_twin', 'binlang_normal', 'barrel_rice_cake', 'holy_water'].includes(item.id)) return true;
++          // Black market shop also sells black market items
++          if (isBlackMarket && item.id.startsWith('bm_')) return true;
++          return false;
++        });
++
++        const handleAdventureBuy = (itemId: string) => {
++          const res = buyItem(itemId);
++          setShopMessage({ text: res.message, isError: !res.success });
++          setTimeout(() => setShopMessage(null), 3000);
++        };
++
++        return (
++          <div className="glass-panel p-4 sm:p-6 flex flex-col gap-4 animate-slide-up">
++            {/* Shop Header */}
++            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-b border-[rgba(212,175,55,0.2)] pb-4">
++              <div className="flex items-center gap-2">
++                <ShoppingCart size={22} className={isBlackMarket ? 'text-purple-400' : 'text-emerald-400'} />
++                <div>
++                  <h2 className={`text-xl font-bold ${isBlackMarket ? 'text-purple-300' : 'text-emerald-300'}`}>
++                    {shopName}
++                  </h2>
++                  <p className="text-xs text-slate-400">
++                    {isBlackMarket
++                      ? '在荒野黑市中，可以找到一些特殊的裝備與消耗品。'
++                      : '途中的補給驛站，可購買戰鬥消耗品與回復道具。'}
++                  </p>
++                </div>
++              </div>
++
++              <div className="flex items-center gap-3">
++                <div className="flex items-center gap-2 px-3 py-1.5 bg-[rgba(212,175,55,0.08)] border border-[rgba(212,175,55,0.25)] rounded-lg text-sm">
++                  <Coins className="text-[#d4af37]" size={16} />
++                  <span className="font-bold text-[#ffd700]">{daughter.gold} G</span>
++                </div>
++                <button
++                  onClick={() => leaveAdventureShop()}
++                  className="btn-fantasy-sec text-xs flex items-center gap-1"
++                >
++                  <ArrowLeft size={14} />
++                  返回修行路徑
++                </button>
++              </div>
++            </div>
++
++            {/* Shop Message */}
++            {shopMessage && (
++              <div className={`p-3 rounded-lg text-sm font-semibold border text-center ${
++                shopMessage.isError
++                  ? 'bg-red-950/80 border-red-500/50 text-red-200'
++                  : 'bg-emerald-950/80 border-emerald-500/50 text-emerald-200'
++              } animate-bounce shadow-lg`}>
++                {shopMessage.text}
++              </div>
++            )}
++
++            {/* Items Grid */}
++            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
++              {adventureShopItems.map((item) => {
++                let finalPrice = item.price;
++                let discountLabel = '';
++                if (item.id.startsWith('binlang_') && inventory.includes('black_market_unlocked')) {
++                  finalPrice = Math.round(item.price * 0.5);
++                  discountLabel = '5折批發';
++                } else if (daughter.fatherBackground === 'merchant') {
++                  finalPrice = Math.round(item.price * 0.8);
++                  discountLabel = '8折商惠';
++                }
++
++                return (
++                  <div key={item.id} className={`p-4 rounded-xl border flex flex-col justify-between gap-3 transition-all ${
++                    isBlackMarket
++                      ? 'bg-purple-950/20 border-purple-800/40 hover:border-purple-500/50'
++                      : 'bg-slate-950/40 border-slate-800/60 hover:border-emerald-500/40'
++                  }`}>
++                    <div>
++                      <div className="flex justify-between items-start gap-2 mb-2">
++                        <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
++                          {item.name}
++                          {discountLabel && (
++                            <span className="text-[9px] px-1.5 py-0.5 bg-cyan-950 border border-cyan-800 text-cyan-400 font-bold rounded">
++                              {discountLabel}
++                            </span>
++                          )}
++                        </h3>
++                        <span className="shrink-0 text-xs px-2 py-1 bg-slate-900 border border-slate-800 text-[#ffd700] font-bold rounded-lg flex items-center gap-1">
++                          <Coins size={11} />
++                          {finalPrice < item.price ? (
++                            <span className="flex items-center gap-1">
++                              <span className="line-through text-slate-500 mr-0.5">{item.price}</span>
++                              <span>{finalPrice} G</span>
++                            </span>
++                          ) : (
++                            <span>{item.price} G</span>
++                          )}
++                        </span>
++                      </div>
++                      <p className="text-[11px] text-slate-400 leading-relaxed">{item.description}</p>
++                    </div>
++                    <button
++                      onClick={() => handleAdventureBuy(item.id)}
++                      disabled={daughter.gold < finalPrice}
++                      className={`w-full py-2 text-xs font-bold rounded-lg border transition-all ${
++                        daughter.gold < finalPrice
++                          ? 'bg-slate-900/60 border-slate-800 text-slate-500 cursor-not-allowed'
++                          : isBlackMarket
++                          ? 'bg-purple-900/30 border-purple-600/40 text-purple-300 hover:bg-purple-800/40 hover:border-purple-500'
++                          : 'bg-emerald-900/30 border-emerald-600/40 text-emerald-300 hover:bg-emerald-800/40 hover:border-emerald-500'
++                      }`}
++                    >
++                      {daughter.gold < finalPrice ? '金幣不足' : '購入商品'}
++                    </button>
++                  </div>
++                );
++              })}
++            </div>
++
++            {/* Adventure status summary */}
++            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400 border-t border-slate-800/50 pt-3">
++              <span className="flex items-center gap-1">
++                <Heart size={12} className="text-red-400" /> HP: {adventure.daughterHp}/{adventure.daughterMaxHp}
++              </span>
++              <span className="flex items-center gap-1">
++                ⚡ 專注度: {daughter.focus}/{daughter.maxFocus}
++              </span>
++              <span className="flex items-center gap-1">
++                🎒 背包: {inventory.filter(i => ['binlang_ice', 'binlang_twin', 'binlang_normal', 'barrel_rice_cake', 'holy_water'].includes(i)).length} 件消耗品
++              </span>
++            </div>
++          </div>
++        );
++      })()}
++
+       {/* Shared Logs Panel (When exploring) */}
+       {adventure.status === 'exploring' && (
+         <div className="glass-panel p-5 flex flex-col gap-3">
+diff --git a/src/components/MainPanel.tsx b/src/components/MainPanel.tsx
+index 5f61e6a..0b0f21c 100644
+--- a/src/components/MainPanel.tsx
++++ b/src/components/MainPanel.tsx
+@@ -434,9 +434,12 @@ export const MainPanel: React.FC = () => {
+       <div className="glass-panel p-5 flex flex-col gap-3">
+         <h3 className="text-sm font-bold flex items-center gap-2 text-slate-300">
+           <History size={16} /> 養育事件日誌
++          {logs.length > 0 && (
++            <span className="text-[10px] text-slate-500 font-normal ml-auto">共 {logs.length} 筆紀錄</span>
++          )}
+         </h3>
+         
+-        <div className="h-40 overflow-y-auto bg-slate-950/80 border border-slate-900/60 rounded-lg p-3 space-y-2 text-xs font-mono">
++        <div className="h-48 overflow-y-scroll bg-slate-950/80 border border-slate-900/60 rounded-lg p-3 space-y-2 text-xs font-mono scrollbar-visible">
+           {logs.length === 0 ? (
+             <p className="text-slate-500 text-center italic mt-12">尚無養育日誌，請開始制定日程運作遊戲。</p>
+           ) : (
+diff --git a/src/components/SaveLoadPanel.tsx b/src/components/SaveLoadPanel.tsx
+index 5d496ef..267af9a 100644
+--- a/src/components/SaveLoadPanel.tsx
++++ b/src/components/SaveLoadPanel.tsx
+@@ -57,7 +57,12 @@ export const SaveLoadPanel: React.FC<{ onClose: () => void; loadOnly?: boolean }
+       logs: state.logs,
+       currentEvent: state.currentEvent,
+       currentEventStep: state.currentEventStep,
+-      adventure: state.adventure
++      adventure: state.adventure,
++      cheatMode: state.cheatMode,
++      unlockedCharacters: state.unlockedCharacters,
++      completedEndings: state.completedEndings,
++      unlockedAchievements: state.unlockedAchievements,
++      lastFatherInteractionMonth: state.lastFatherInteractionMonth
+     };
+ 
+     localStorage.setItem(getSaveSlotKey(index), JSON.stringify(saveData));
+diff --git a/src/components/Scheduler.tsx b/src/components/Scheduler.tsx
+index 8084147..07f7b2a 100644
+--- a/src/components/Scheduler.tsx
++++ b/src/components/Scheduler.tsx
+@@ -360,12 +360,48 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ act, index, onSelect, activ
+     reward = Math.round(reward * 1.2);
+   }
+ 
++  // Type-specific color scheme for clear differentiation
++  const typeColors = {
++    work: {
++      activeBg: 'bg-[rgba(16,185,129,0.08)]',
++      activeBorder: 'border-emerald-500',
++      activeShadow: 'shadow-[0_0_12px_rgba(16,185,129,0.18)]',
++      badgeActive: 'text-emerald-300 border-emerald-500/50 bg-emerald-500/15',
++      badgeInactive: 'text-emerald-400 border-emerald-600/50 bg-emerald-900/30',
++      nameActive: 'text-emerald-300',
++      stripe: 'border-l-emerald-500',
++      label: '💰 打工',
++    },
++    study: {
++      activeBg: 'bg-[rgba(99,102,241,0.08)]',
++      activeBorder: 'border-indigo-500',
++      activeShadow: 'shadow-[0_0_12px_rgba(99,102,241,0.18)]',
++      badgeActive: 'text-indigo-300 border-indigo-500/50 bg-indigo-500/15',
++      badgeInactive: 'text-indigo-400 border-indigo-600/50 bg-indigo-900/30',
++      nameActive: 'text-indigo-300',
++      stripe: 'border-l-indigo-500',
++      label: '📖 學習',
++    },
++    rest: {
++      activeBg: 'bg-[rgba(212,175,55,0.08)]',
++      activeBorder: 'border-[#d4af37]',
++      activeShadow: 'shadow-[0_0_12px_rgba(212,175,55,0.18)]',
++      badgeActive: 'text-[#ffe58a] border-[#d4af37]/50 bg-[#d4af37]/15',
++      badgeInactive: 'text-amber-400 border-amber-600/50 bg-amber-900/30',
++      nameActive: 'text-[#ffd700]',
++      stripe: 'border-l-[#d4af37]',
++      label: '😴 休息',
++    },
++  };
++
++  const colors = typeColors[act.type];
++
+   return (
+     <div
+       onClick={() => onSelect(act.id)}
+-      className={`p-3.5 rounded-lg border-2 cursor-pointer transition-all flex flex-col justify-between min-h-[150px] ${
++      className={`p-3.5 rounded-lg border-2 border-l-4 cursor-pointer transition-all flex flex-col justify-between min-h-[150px] ${colors.stripe} ${
+         active
+-          ? 'bg-[rgba(212,175,55,0.08)] border-[#d4af37] shadow-[0_0_12px_rgba(212,175,55,0.18)]'
++          ? `${colors.activeBg} ${colors.activeBorder} ${colors.activeShadow}`
+           : 'bg-[rgba(255,255,255,0.02)] border-slate-700/90 hover:border-slate-500 hover:bg-[rgba(255,255,255,0.04)]'
+       }`}
+     >
+@@ -373,17 +409,15 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ act, index, onSelect, activ
+         <div>
+           <div className="mb-1.5">
+             <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
+-              active
+-                ? 'text-[#ffe58a] border-[#d4af37]/50 bg-[#d4af37]/15'
+-                : 'text-slate-300 border-slate-600/70 bg-slate-900/50'
++              active ? colors.badgeActive : colors.badgeInactive
+             }`}>
+-              {act.type === 'work' ? '打工' : act.type === 'study' ? '學習' : '休息'} #{index}
++              {colors.label} #{index}
+             </span>
+           </div>
+-          <h4 className={`text-sm font-bold ${active ? 'text-[#ffd700]' : 'text-slate-200'}`}>
++          <h4 className={`text-sm font-bold ${active ? colors.nameActive : 'text-slate-200'}`}>
+             {act.name}
+           </h4>
+-          <p className="text-[11px] text-slate-400 mt-1 line-clamp-1 leading-normal">
++          <p className="text-[11px] text-slate-400 mt-1 line-clamp-2 leading-normal">
+             {act.description}
+           </p>
+         </div>
+diff --git a/src/components/StartScreen.tsx b/src/components/StartScreen.tsx
+index 2503018..1bb9e3a 100644
+--- a/src/components/StartScreen.tsx
++++ b/src/components/StartScreen.tsx
+@@ -204,9 +204,9 @@ export const StartScreen: React.FC = () => {
+               <button
+                 type="button"
+                 onClick={() => setShowLoadPanel(true)}
+-                className="text-[10px] text-sky-300 hover:text-sky-200 border border-sky-500/30 hover:border-sky-400/50 bg-sky-500/5 hover:bg-sky-500/10 px-2.5 py-1.5 rounded transition-all flex items-center gap-1.5 uppercase font-semibold"
++                className="text-xs text-sky-200 hover:text-white border-2 border-sky-500/50 hover:border-sky-400 bg-sky-500/10 hover:bg-sky-500/20 px-4 py-2 rounded-lg transition-all flex items-center gap-2 uppercase font-bold shadow-[0_0_10px_rgba(56,189,248,0.15)] hover:shadow-[0_0_15px_rgba(56,189,248,0.3)]"
+               >
+-                <FolderOpen size={12} /> 讀取存檔
++                <FolderOpen size={16} /> 讀取存檔
+               </button>
+             </div>
+ 
+diff --git a/src/contexts/GameContext.tsx b/src/contexts/GameContext.tsx
+index 0c3b002..7bf0c79 100644
+--- a/src/contexts/GameContext.tsx
++++ b/src/contexts/GameContext.tsx
+@@ -556,6 +556,7 @@ interface GameContextProps {
+   resolveFestival: (victory: boolean, goldPrize: number, repPrize: number, logText: string, consumedItems?: string[]) => void;
+   consumeItem: (itemId: string) => void;
+   resolveCombatReunion: (sisterId: string) => void;
++  leaveAdventureShop: () => void;
+ }
+ 
+ const GameContext = createContext<GameContextProps | undefined>(undefined);
+@@ -1696,12 +1697,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
+         }));
+         return;
+       }
+-      // 驛站，直接跳轉 store 面板
++      // 驛站，顯示修行專屬商店介面（不跳轉主商店）
++      nextAdv.status = 'shopping';
+       setState(prev => ({
+         ...prev,
+         daughter: newDaughter,
+-        adventure: nextAdv,
+-        activeScreen: 'store'
++        adventure: nextAdv
+       }));
+       return;
+     } 
+@@ -2121,6 +2122,19 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
+     });
+   };
+ 
++  const leaveAdventureShop = () => {
++    setState((prev) => {
++      if (!prev.adventure) return prev;
++      return {
++        ...prev,
++        adventure: {
++          ...prev.adventure,
++          status: 'exploring' as const
++        }
++      };
++    });
++  };
++
+   // 重玩 / 重啟週目 (NG+)
+   const restartGame = () => {
+     setState(prev => ({
+@@ -2436,7 +2450,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
+         eatRiceCake,
+         resolveFestival,
+         consumeItem,
+-        resolveCombatReunion
++        resolveCombatReunion,
++        leaveAdventureShop
+       }}
+     >
+       {children}
+diff --git a/src/index.css b/src/index.css
+index 9a5576e..1f85bc4 100644
+--- a/src/index.css
++++ b/src/index.css
+@@ -215,6 +215,36 @@ h1, h2, h3, .fantasy-font {
+   background: var(--gold-accent);
+ }
+ 
++/* Scrollbar always visible for log panels */
++.scrollbar-visible {
++  scrollbar-gutter: stable;
++}
++
++.scrollbar-visible::-webkit-scrollbar {
++  width: 10px;
++}
++
++.scrollbar-visible::-webkit-scrollbar-track {
++  background: rgba(15, 10, 30, 0.8);
++  border-radius: 5px;
++}
++
++.scrollbar-visible::-webkit-scrollbar-thumb {
++  background: rgba(212, 175, 55, 0.35);
++  border-radius: 5px;
++  border: 2px solid rgba(15, 10, 30, 0.8);
++}
++
++.scrollbar-visible::-webkit-scrollbar-thumb:hover {
++  background: rgba(212, 175, 55, 0.6);
++}
++
++/* Firefox scrollbar for .scrollbar-visible */
++.scrollbar-visible {
++  scrollbar-width: thin;
++  scrollbar-color: rgba(212, 175, 55, 0.35) rgba(15, 10, 30, 0.8);
++}
++
+ /* Mobile Responsive Utilities */
+ @media (max-width: 640px) {
+   html {
+diff --git a/src/types.ts b/src/types.ts
+index 1b26150..3ec100e 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -155,7 +155,7 @@ export interface AdventureState {
+     jumbo: PartyMember;
+   };
+   combatLog: string[];
+-  status: 'exploring' | 'fighting' | 'chest' | 'defeat' | 'victory';
++  status: 'exploring' | 'fighting' | 'chest' | 'defeat' | 'victory' | 'shopping';
+   // 記錄是否已打破巨石障礙等冒險暫存狀態
+   boulderBroken?: boolean;
+   satiated?: boolean;

@@ -1,0 +1,916 @@
+diff --git a/.experience-log/dogfood-notes.md b/.experience-log/dogfood-notes.md
+new file mode 100644
+index 0000000..1c7fe9d
+--- /dev/null
++++ b/.experience-log/dogfood-notes.md
+@@ -0,0 +1,71 @@
++# Worktree Dogfood Notes — Live Capture
++
++> Captured while writing the worktree doctrine FROM a worktree.
++> Each entry = real friction or insight that should fold into the canonical doc.
++
++## Datum 1 — Orphan refs with spaces block `git fetch`
++- Trigger: `git fetch origin` failed with `fatal: bad object refs/heads/2026-04-24-001-orama-salvage 2`
++- Root cause: a `refs/heads/*` entry with a literal space in the name (likely from macOS Finder duplication or `cp -r` of `.git`)
++- Doctrine implication: §Pre-flight checklist must include "no orphan refs with spaces" + a one-liner to detect/cleanup:
++  ```bash
++  find .git/refs -name "* *" -print
++  git update-ref -d "refs/heads/<bad ref>"  # quote literally
++  ```
++- Severity: blocks new worktree creation if `--no-checkout` not used; we got lucky and `worktree add` proceeded anyway
++
++## Datum 2 — Fresh worktrees do NOT inherit `.gbrain-source`
++- Trigger: new worktree at `~/Documents/oramasys/worktrees/worktree-doctrine` had no `.gbrain-source` file
++- Root cause: `.gbrain-source` is a tracked file in the parent, but a fresh worktree from `origin/main` only checks out files at that commit. If parent's pin was added locally without committing, it doesn't propagate.
++- Doctrine implication: §Worktree bootstrap must include:
++  ```bash
++  echo "<gbrain-source-id>" > .gbrain-source  # OR copy from parent
++  ```
++- Best practice: commit the `.gbrain-source` to the canonical branch so worktrees inherit it. We did this earlier for periscope.
++- For doc-only work: pointing at the parent's source is fine (we did `orama-src`). For code work in a worktree where the branch diverges substantially, create a per-worktree source.
++
++## Datum 3 — `docs/v2/` had duplicate `18-` prefix
++- Trigger: `ls docs/v2/` showed BOTH `18-master-alignment-v2-migration-plan.md` AND `18-periscope-l4-glass.md`
++- Doctrine implication: numbering convention for `docs/v2/` is "first one wins; conflicts allowed but ugly." Note for future: a `docs/v2/INDEX.md` would surface this.
++- Action: our new doc uses `19-` to avoid further collision.
++
++## Datum 4 — Working directory matters for `/autoplan`
++- Trigger: we initially invoked `/autoplan` from `OpenClaw/` which is NOT a git repo
++- Impact: autoplan's Step 0 (base branch detection) would have failed or fallen back to `main` with no actual git context. Review-log writes would have been orphaned.
++- Doctrine implication: §Pipeline entry must require `git rev-parse --show-toplevel` to succeed BEFORE invoking any review skill. Worktrees give you this for free since each worktree IS a git toplevel.
++
++## Datum 5 — Stale `.git/*.lock` files accumulate
++- Trigger (earlier in this session, in Perpetua-Tools): dozens of stale `.git/HEAD 2.lock`, `.git/index 9.lock` files from interrupted git operations dating back to April
++- Root cause: macOS Finder copying `.git`, or git crashes, or duplicate-file deduplication
++- Doctrine implication: §Pre-flight check must include:
++  ```bash
++  find .git -name "*.lock" -delete
++  ```
++- Severity: blocks `git checkout`, `git stash`, `git worktree add`. Common gotcha on macOS with shared NAS/Time Machine folders.
++
++## Datum 6 — Untracked `* 2/`, `* 3/` directories from macOS dedup
++- Trigger: `git status` showed dozens of `.claude/skills 2/`, `orchestrator/agent_launcher 2.py`, etc.
++- Root cause: macOS Finder "Keep Both Files" dedup, often from iCloud sync or duplicated workspaces
++- Doctrine implication: per-worktree `.gitignore` should include `*\ 2/`, `*\ 2.*`, `*\ 3/`, `*\ 3.*` patterns. Or run a `scripts/cleanup-macos-dupes.sh` as part of worktree bootstrap.
++- This is the most common source of "why is git status so dirty?" on this stack.
++
++## Datum 7 — `.cursor/environment.json` carries port/daemon config
++- Trigger: when planning parallel agent dispatch, we noticed `.cursor/environment.json` declares ULTRATHINK_PORT=8001, PORTAL_PORT=8002, ALPHACLAW_PORT=3000 + terminal autostart commands
++- Doctrine implication: if 2+ agents share `.cursor/environment.json` (i.e., both running in the same Cursor workspace pointed at sibling worktrees), they'll fight over the same ports.
++- Solution sketch: per-worktree port offset (worktree-doctrine = 8101/8102/3100, worktree-feature-X = 8201/8202/3200). Need an `ENV_OFFSET` convention.
++
++---
++
++## Open questions for the brainstorm
++1. Naming convention: `~/Documents/oramasys/worktrees/<slug>` (our current pattern) vs `<repo>/.worktrees/<slug>` (in-repo) vs centralized `~/.worktrees/<repo>-<slug>/`?
++2. Port allocation: static offsets per worktree (collision risk) or dynamic port discovery on bootstrap?
++3. LM Studio GPU contention: serialize via filesystem lock at `~/.openclaw/state/win-gpu.lock` or via PT's existing dispatch queue?
++4. CRG graph.db is per-repo, not per-worktree. Two worktrees + parallel `build_or_update_graph_tool` calls = corruption risk. Lock the build?
++5. Conductor handles worktree lifecycle when invoked from inside it — what about direct `git worktree add` users? Need a shared cleanup convention.
++6. When does an agent get a NEW worktree vs a NEW BRANCH on existing worktree? Decision tree needed.
++
++## Datum 8 — Multi-Windows device pool support is an open TODO
++- Surfaced by D4 brainstorm answer
++- Current state: PT's backend_resolver reads `WIN_CODER_ENDPOINTS` (comma-separated) from env
++- Gap: dispatcher needs to (a) re-read endpoints periodically OR support LAN-discovery push, (b) round-robin across N online devices, (c) only queue when ALL devices busy
++- Doctrine implication: §LM Studio coordination must reference this as a future enhancement; current behavior degrades to "single Win device, others ignored" if endpoints aren't all reachable at startup
++- Action: spawn separate task in PT to harden dispatcher (out of scope for the doctrine itself)
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 98803ce..879a323 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -191,3 +191,21 @@ Grep is still right for known exact strings, regex, multiline patterns, and
+ file globs. Run `/sync-gbrain` after meaningful code changes.
+ 
+ <!-- gstack-gbrain-search-guidance:end -->
++
++---
++
++## § 9 — Parallel Agents & Git Worktrees
++
++**When to create a worktree:** task requires parallel file writes by multiple agents.
++**When to stay on canonical:** read-only, sequential, or single-agent work.
++
++| Need | Action |
++|------|--------|
++| 2+ agents writing simultaneously | `scripts/worktree-bootstrap.sh <repo> <branch> <slug> [gbrain-source]` |
++| Done with worktree | invoke `finishing-a-development-branch` skill |
++| Query CRG from worktree | pass `repo_root=<canonical-path>` — never rebuild from worktree |
++
++**Location:** `~/Documents/oramasys/worktrees/<slug>/`
++**Full doctrine:** `docs/v2/19-worktree-parallel-agents.md`
++**Real-time skill:** `~/.claude/skills/using-git-worktrees/SKILL.md`
++**Hardware (2026-05-24):** 1 Win RTX3080 + Mac Ollama. All inference via PT dispatch.
+diff --git a/docs/LESSONS.md b/docs/LESSONS.md
+index 10a59d6..14e5732 100644
+--- a/docs/LESSONS.md
++++ b/docs/LESSONS.md
+@@ -2099,3 +2099,19 @@ plan only via `/docs/v2/`. Override requires AskUserQuestion.
+ - v2.1 EmbeddingCircuitBreaker deferred — see `docs/v2/18-rag-and-memory-design.md`
+ 
+ **Evidence doc:** `docs/2026-05-22-rag-v1-backport-shipped.md`
++
++---
++
++## 2026-05-24 — Claude — CI hygiene blocks machine-specific OpenClaw paths
++
++### What was learned
++
++- `scripts/review/repo_hygiene.py` scans tracked Markdown, including plan docs, for
++  workstation-specific OpenClaw paths such as `~/Documents/.../OpenClaw/...`.
++- CI may report this only through `tests/test_repo_hygiene.py::test_repo_hygiene_script_runs_clean`,
++  so inspect the hygiene script output for the exact tracked file and line.
++
++### Decision made
++
++- Use `$OPENCLAW_ROOT/...` in docs and command snippets whenever a path needs to reference
++  the parent OpenClaw checkout or an orama-system path beneath it.
+diff --git a/docs/plans/2026-05-24-periscope-l4-integration-plan.md b/docs/plans/2026-05-24-periscope-l4-integration-plan.md
+index db83ebc..15efe0b 100644
+--- a/docs/plans/2026-05-24-periscope-l4-integration-plan.md
++++ b/docs/plans/2026-05-24-periscope-l4-integration-plan.md
+@@ -7,7 +7,7 @@
+ **Repos & paths:**
+ - Periscope (local): `~/Documents/oramasys/tools/periscope` — all 3 branches local (`main`, `merged`, `agentsview`)
+ - Periscope (remote): `github.com/diazMelgarejo/periscope` (fork of `latentsignal-org/periscope`)
+-- orama-system (this repo): `~/Documents/Terminal xCode/claude/OpenClaw/orama-system`
++- orama-system (this repo): `$OPENCLAW_ROOT/orama-system`
+ 
+ **Design:** See `docs/v2/18-periscope-l4-glass.md` (mission, architecture, OQ register, risks).
+ 
+@@ -641,12 +641,12 @@ git commit -m "feat(server): /api/v1/openclaw/* read-only routes
+ orama-system repo. One-line addition to the repo registry table.
+ 
+ **Files:**
+-- Modify: `~/Documents/Terminal xCode/claude/OpenClaw/CLAUDE-instru.md`
++- Modify: `$OPENCLAW_ROOT/CLAUDE-instru.md`
+ 
+ - [ ] **Step 1: Find the repo registry section**
+ 
+ ```bash
+-grep -n "## .*Repo.*Registry\|repository topology\|L1.*AlphaClaw" "~/Documents/Terminal xCode/claude/OpenClaw/CLAUDE-instru.md"
++grep -n "## .*Repo.*Registry\|repository topology\|L1.*AlphaClaw" "$OPENCLAW_ROOT/CLAUDE-instru.md"
+ ```
+ 
+ - [ ] **Step 2: Add periscope row**
+@@ -663,11 +663,11 @@ If there's a `gbrain code-def` / `gbrain search` cheat sheet, add `periscope-src
+ 
+ - [ ] **Step 4: Commit**
+ 
+-In `~/Documents/Terminal xCode/claude/OpenClaw/`:
++In `$OPENCLAW_ROOT/`:
+ 
+ ```bash
+ # This dir is NOT a git repo, so commit through the orama-system worktree:
+-cd ~/Documents/Terminal\ xCode/claude/OpenClaw/orama-system
++cd "$OPENCLAW_ROOT/orama-system"
+ # (CLAUDE-instru.md lives in the parent OpenClaw/ dir, not in orama-system —
+ # do NOT git add it from this worktree. Instead, document the change inside
+ # orama-system's CLAUDE.md § 4, which IS in-repo.)
+@@ -706,7 +706,7 @@ Full design: [`docs/v2/18-periscope-l4-glass.md`](docs/v2/18-periscope-l4-glass.
+ - [ ] **Step 5: Commit + push**
+ 
+ ```bash
+-cd ~/Documents/Terminal\ xCode/claude/OpenClaw/orama-system
++cd "$OPENCLAW_ROOT/orama-system"
+ git add CLAUDE.md docs/v2/18-periscope-l4-glass.md docs/plans/2026-05-24-periscope-l4-integration-plan.md
+ git commit -m "docs(v2): add Periscope as L4 glass layer
+ 
+@@ -762,9 +762,9 @@ curl -H "X-Periscope-Token: $(grep cursor_secret ~/.periscope/config.toml | cut
+      http://127.0.0.1:8080/api/v1/openclaw/jobs | jq .
+ 
+ # 3. orama-system docs updated
+-grep "Four-Repo\|L4" ~/Documents/Terminal\ xCode/claude/OpenClaw/orama-system/CLAUDE.md
+-ls ~/Documents/Terminal\ xCode/claude/OpenClaw/orama-system/docs/v2/18-periscope-l4-glass.md
+-ls ~/Documents/Terminal\ xCode/claude/OpenClaw/orama-system/docs/plans/2026-05-24-periscope-l4-integration-plan.md
++grep "Four-Repo\|L4" "$OPENCLAW_ROOT/orama-system/CLAUDE.md"
++ls "$OPENCLAW_ROOT/orama-system/docs/v2/18-periscope-l4-glass.md"
++ls "$OPENCLAW_ROOT/orama-system/docs/plans/2026-05-24-periscope-l4-integration-plan.md"
+ 
+ # 4. gbrain knows about periscope
+ gbrain sources list | grep periscope
+diff --git a/docs/superpowers/specs/2026-05-24-worktree-parallel-agents-design.md b/docs/superpowers/specs/2026-05-24-worktree-parallel-agents-design.md
+new file mode 100644
+index 0000000..9f4e6ad
+--- /dev/null
++++ b/docs/superpowers/specs/2026-05-24-worktree-parallel-agents-design.md
+@@ -0,0 +1,235 @@
++# Git Worktrees for Parallel Agents — Design Spec
++
++**Date:** 2026-05-24
++**Branch:** feat/worktree-doctrine
++**Scope:** orama-system + Perpetua-Tools only (periscope + AlphaClaw excluded)
++**Author:** cyre
++**Status:** Approved — proceeding to implementation plan
++
++> This spec was written FROM a worktree (`~/Documents/oramasys/worktrees/worktree-doctrine`),
++> dogfooding the very workflow it describes. Eight real friction datums were captured in
++> `.experience-log/dogfood-notes.md` and resolved into specific defenses below.
++
++---
++
++## Goal
++
++Give a human operator (or an orchestrator) a decision under 5 seconds:
++**Does this task need its own worktree?** If yes: how do I bootstrap, run, and tear it down safely
++on a single Mac with one Win RTX3080, without port collisions, GPU fights, or CRG corruption?
++
++Target: **2–5 parallel agents on one machine**. Not theoretical cluster scaling.
++
++---
++
++## Section 1 — Architecture: When to Use a Worktree
++
++### The 4-Quadrant Rule
++
++```
++                      ISOLATION NEEDED?
++                      No              Yes
++                 ┌──────────────┬───────────────────┐
++      Writes?  Y │ Bad idea     │ WORKTREE ✅        │
++                 ├──────────────┼───────────────────┤
++                 N │ Canonical ✅ │ Canonical ✅      │
++                 └──────────────┴───────────────────┘
++```
++
++**Use a worktree when ALL of:**
++1. The agent will WRITE files (not just read/analyze)
++2. The work is isolated from another agent's concurrent writes
++3. The agent operates on a separate named branch
++
++**Use the canonical checkout when ANY of:**
++- Read-only analysis (code review, semantic search, test runs against committed code)
++- Sequential work (one agent at a time)
++- The task completes faster than worktree bootstrap time (~30s)
++
++### Decision Tree (copy this to CLAUDE.md)
++
++```
++Will this agent write files?
++  └─ No  → Use canonical checkout. Done.
++  └─ Yes → Is another agent already writing to canonical?
++               └─ No  → Use canonical. Done.
++               └─ Yes → Create a worktree. Bootstrap with worktree-bootstrap.sh.
++```
++
++### Canonical Location
++
++```
++~/Documents/oramasys/worktrees/<slug>/
++```
++
++Where `<slug>` = `<yyyy-mm-dd>-<brief-purpose>` (e.g. `2026-05-24-worktree-doctrine`).
++
++**Why external to the repo directory:** avoids `.gitignore` issues, macOS Finder dedup
++contamination of tracked files, and allows multiple orama-family repos to share the hub.
++
++---
++
++## Section 2 — Components
++
++Six artifacts ship with this doctrine:
++
++| # | Artifact | Path | Purpose |
++|---|----------|------|---------|
++| 1 | Canonical doc | `orama-system/docs/v2/19-worktree-parallel-agents.md` | Full reference + decision tree |
++| 2 | Cross-repo nav | `OpenClaw/CLAUDE-instru.md` §Worktrees | One-paragraph hook into canonical doc |
++| 3 | orama-system stub | `orama-system/CLAUDE.md` §Worktrees | Points to canonical doc |
++| 4 | Perpetua-Tools stub | `Perpetua-Tools/CLAUDE.md` §Worktrees | Points to canonical doc |
++| 5 | Invocable skill | `~/.claude/skills/using-git-worktrees/SKILL.md` | Agents invoke this for real-time guidance |
++| 6 | Bootstrap script | `orama-system/scripts/worktree-bootstrap.sh` | One-command idempotent setup |
++
++### Bootstrap Script Contract (`worktree-bootstrap.sh`)
++
++Accepts: `<repo-path> <branch> <slug> [gbrain-source-id]`
++
++Steps (idempotent — safe to re-run):
++1. Pre-flight: check no stale `.git/*.lock`, no orphan refs with spaces
++2. `git worktree add ~/Documents/oramasys/worktrees/<slug> -b <branch>` (or attach if exists)
++3. Write `.gbrain-source` from argument or copy from canonical
++4. Write `.gitignore` lines: `*\ 2/`, `*\ 2.*`, `*\ 3/`, `*\ 3.*` (macOS dedup junk)
++5. Print assigned port offset and ENV_OFFSET value
++
++---
++
++## Section 3 — Data Flow
++
++### Bootstrap → Work → Cleanup
++
++```
++Human/Orchestrator
++      │
++      ▼
++worktree-bootstrap.sh <repo> <branch> <slug> [gbrain-source]
++      │
++      ├─ Pre-flight checks (locks, orphan refs)
++      ├─ git worktree add
++      ├─ .gbrain-source written
++      ├─ macOS dedup .gitignore entries added
++      └─ Port offset printed
++      │
++      ▼
++Agent works in ~/Documents/oramasys/worktrees/<slug>/
++      │
++      ├─ Writes files, runs tests
++      ├─ git add / git commit on isolated branch
++      └─ (optional) git push origin <branch>
++      │
++      ▼
++superpowers:finishing-a-development-branch skill
++      │
++      ├─ Verifies tests pass
++      ├─ Presents: merge / PR / keep / discard
++      └─ On merge or discard: git worktree remove <path>
++```
++
++### Port Allocation: Static ENV_OFFSET per Worktree Index
++
++Worktree index = sequential number assigned at bootstrap time (0 = canonical, 1 = first worktree, etc.)
++
++```
++Base ports (canonical / index 0):
++  AlphaClaw:   3000   Ollama: 11434
++  PT:          8000   LM Studio Win: 1234
++  orama-api:   8001   LM Studio Mac: 1234 (optional fallback only)
++  orama-portal:8002
++
++Per worktree (offset = index × 100):
++  worktree-1:  3100, 8100, 8101, 8102
++  worktree-2:  3200, 8200, 8201, 8202
++  worktree-3:  3300, 8300, 8301, 8302
++  worktree-4:  3400, 8400, 8401, 8402
++```
++
++`ENV_OFFSET` written to worktree root `.worktree-env` file. AlphaClaw and PT must be started
++with these ports when running in a non-canonical worktree. Cursor IDE `.cursor/environment.json`
++must be updated accordingly (bootstrap script does this).
++
++### GPU Coordination: PT Dispatch Queue (not filesystem lock)
++
++All inference (Mac Ollama + Win LM Studio) routes through PT's `backend_resolver.py` +
++`dispatch_models.py`. This is the single chokepoint.
++
++**Rule:** No agent ever POSTs directly to LM Studio or Ollama. Always via PT dispatch.
++
++When 2+ worktrees run agents simultaneously:
++- Each worktree starts its own PT instance on its offset port (e.g., 8100, 8200)
++- Each PT instance queues requests through the shared Win endpoint (`$LM_STUDIO_WIN_ENDPOINTS`)
++- First-come-first-served; no additional locking needed (HTTP server serializes)
++- Mac Ollama (`qwen3.5:9b-nvfp4`) handles light models concurrently; Win RTX3080 serializes heavy
++
++**Out of scope (future):** multi-Win-device round-robin (see Datum 8 in dogfood notes).
++
++### CRG (`graph.db`) Coordination: Query Against Canonical
++
++`graph.db` lives in the canonical checkout. Worktrees do NOT rebuild it.
++
++```
++# In any worktree agent — query canonical graph, don't rebuild
++mcp__code-review-graph__query_graph_tool(repo_root="/path/to/canonical/orama-system")
++
++# Only rebuild from canonical checkout, never from a worktree
++# (run post-merge in canonical)
++mcp__code-review-graph__build_or_update_graph_tool()
++```
++
++This avoids concurrent writes to `graph.db` from multiple worktrees.
++
++---
++
++## Section 4 — Error Handling (from Dogfood)
++
++Eight datums from `.experience-log/dogfood-notes.md` → eight defenses:
++
++| Datum | Symptom | Defense | Where |
++|-------|---------|---------|-------|
++| D1 | `git fetch` fails: `bad object refs/heads/... 2` | Pre-flight: `find .git/refs -name "* *" -print` → `git update-ref -d` | bootstrap.sh |
++| D2 | Fresh worktree missing `.gbrain-source` | Bootstrap always writes it (arg or copy from canonical) | bootstrap.sh |
++| D3 | Duplicate `18-` prefix in `docs/v2/` | Numbering note in canonical doc: always `ls docs/v2/` before picking number | canonical doc |
++| D4 | `/autoplan` from non-git dir breaks Step 0 | Canonical doc: always `cd` to repo root before invoking skills | canonical doc |
++| D5 | Stale `.git/*.lock` files block operations | Pre-flight: `find .git -name "*.lock" -delete` | bootstrap.sh |
++| D6 | `* 2/`, `* 3/` untracked dirs from macOS dedup | Bootstrap adds patterns to `.gitignore`; add to per-worktree | bootstrap.sh |
++| D7 | `.cursor/environment.json` port collision | Bootstrap writes `ENV_OFFSET` to `.worktree-env`; ports offset by index×100 | bootstrap.sh |
++| D8 | Multi-Win device pool ignores extra devices | Out of scope for doctrine; noted as future PT enhancement | canonical doc footnote |
++
++---
++
++## Section 5 — Testing the Doctrine
++
++Five verification approaches (in order of cost):
++
++1. **Bootstrap idempotency**: run `worktree-bootstrap.sh` twice on same slug → second run no-ops cleanly, no duplicate entries in `git worktree list`
++
++2. **2-agent dogfood** (this session): write doctrine FROM worktree-doctrine, use finishing-a-development-branch to clean up → proves the loop closes
++
++3. **Parallel write test**: create 2 worktrees on the same repo, have each write to a different file, commit independently, verify no cross-contamination in `git log --all`
++
++4. **CRG no-rebuild test**: query `query_graph_tool` from a worktree with `repo_root=<canonical>` → results match canonical; worktree's own `graph.db` is absent (never created)
++
++5. **5-agent stress test** (pre-Phase 2 integration): 5 parallel worktrees, each with PT on offset port, all posting inference via their local PT → Win LM Studio serializes, no 500s, no GPU OOM; Mac Ollama handles light models concurrently
++
++---
++
++## Open Questions Resolved
++
++| OQ | Resolution |
++|----|------------|
++| OQ1 — worktree location | `~/Documents/oramasys/worktrees/<slug>/` — external hub, not in-repo |
++| OQ2 — port allocation | Static index×100 offset; written to `.worktree-env` by bootstrap |
++| OQ3 — GPU serialization | PT dispatch queue is the chokepoint; no separate filesystem lock |
++| OQ4 — CRG concurrency | Worktrees query canonical `graph.db` via `repo_root=`; no parallel rebuilds |
++| OQ5 — lifecycle (no Conductor) | `finishing-a-development-branch` skill handles `git worktree remove`; human runs it |
++| OQ6 — worktree vs branch | Parallel+writes → worktree; serial or reads-only → canonical |
++
++---
++
++## Out of Scope
++
++- AlphaClaw CLAUDE.md stub (excluded per user instruction)
++- Periscope CLAUDE.md stub (excluded per user instruction)
++- Multi-Win device pool hardening (Datum 8 — separate PT task)
++- Auto-port discovery (static offsets sufficient for 2–5 agents)
++- Worktree NFS/iCloud-sync support (use local APFS only)
+diff --git a/docs/v2/19-worktree-parallel-agents.md b/docs/v2/19-worktree-parallel-agents.md
+new file mode 100644
+index 0000000..55a4d9b
+--- /dev/null
++++ b/docs/v2/19-worktree-parallel-agents.md
+@@ -0,0 +1,251 @@
++# 19 — Git Worktrees for Parallel Agents
++
++> **Quick reference.** Full design rationale in `docs/superpowers/specs/2026-05-24-worktree-parallel-agents-design.md`.
++> Applies to: orama-system, Perpetua-Tools. Excludes: periscope, AlphaClaw.
++
++---
++
++## TL;DR — Decision in 5 Seconds
++
++```
++Will this agent WRITE files AND another agent is also writing?
++  Yes → create a worktree.  Run: scripts/worktree-bootstrap.sh <repo> <branch> <slug>
++  No  → use the canonical checkout.  Done.
++```
++
++---
++
++## 1. When to Create a Worktree
++
++### 4-Quadrant Rule
++
++|                      | Isolated writes? **No** | Isolated writes? **Yes** |
++|----------------------|------------------------|--------------------------|
++| **Parallel agents?** **No**  | Canonical ✅ | Canonical ✅ |
++| **Parallel agents?** **Yes** | Canonical ✅ | **Worktree** ✅ |
++
++**Worktree triggers — ALL must be true:**
++1. Agent will write/modify files
++2. Another agent is concurrently writing to the same repo
++3. The work lives on a separate named branch
++
++**Stay on canonical — ANY of these is enough:**
++- Read-only work (code review, semantic search, test runs against committed code)
++- Sequential work (one agent at a time)
++- Task completes faster than ~30s worktree bootstrap time
++
++### Decision Tree
++
++```
++Will this agent write files?
++├─ No  → Canonical. Done.
++└─ Yes → Is another agent already writing to canonical?
++          ├─ No  → Canonical. Done.
++          └─ Yes → git worktree. Run worktree-bootstrap.sh.
++```
++
++---
++
++## 2. Canonical Worktree Location
++
++```
++~/Documents/oramasys/worktrees/<slug>/
++```
++
++**Slug format:** `yyyy-mm-dd-<brief-purpose>` — e.g. `2026-05-24-worktree-doctrine`
++
++Why external to the repo directory:
++- Avoids `.gitignore` conflicts with tracked files
++- Prevents macOS Finder `* 2` dedup contamination
++- Lets multiple orama-family repos share the same hub at `~/Documents/oramasys/worktrees/`
++
++---
++
++## 3. Bootstrap
++
++```bash
++# One command — idempotent, safe to re-run
++scripts/worktree-bootstrap.sh <repo-path> <branch> <slug> [gbrain-source-id]
++
++# Example
++scripts/worktree-bootstrap.sh \
++  ~/Documents/Terminal\ xCode/claude/OpenClaw/orama-system \
++  feat/my-feature \
++  2026-05-24-my-feature \
++  orama-src
++```
++
++Bootstrap does (in order):
++1. **Pre-flight**: removes stale `.git/*.lock` files; detects orphan refs with spaces
++2. **`git worktree add`** `~/Documents/oramasys/worktrees/<slug>` `-b <branch>` (or attaches if the worktree already exists)
++3. **`.gbrain-source`**: writes from argument, or copies from canonical if omitted
++4. **`.gitignore`**: appends macOS dedup patterns (`*\ 2/`, `*\ 2.*`, `*\ 3/`, `*\ 3.*`)
++5. **Port offset**: assigns `ENV_OFFSET = index × 100`, writes `.worktree-env`
++6. **Prints summary**: worktree path, branch, ENV_OFFSET, gbrain source
++
++---
++
++## 4. Port Allocation
++
++Hardware baseline (2026-05-24): **1 Windows RTX3080 (LM Studio) + Mac (Ollama)**.
++
++```
++Canonical / index 0:
++  AlphaClaw  3000   |  orama-api    8001
++  PT         8000   |  orama-portal 8002
++  Ollama    11434   |  LM Studio Win 1234
++
++Worktree index N (ENV_OFFSET = N × 100):
++  AlphaClaw  3000+N×100  |  orama-api    8001+N×100
++  PT         8000+N×100  |  orama-portal 8002+N×100
++```
++
++Example — worktree-1 (N=1): AlphaClaw=3100, PT=8100, orama-api=8101, orama-portal=8102
++
++`bootstrap.sh` writes `ENV_OFFSET=N` to `.worktree-env`. AlphaClaw and PT started inside a
++worktree MUST source this file. Cursor `.cursor/environment.json` is updated by bootstrap.
++
++**Why static offsets:** 2–5 agents on one machine; static is simpler than dynamic discovery
++and collision-free within the supported range.
++
++---
++
++## 5. GPU / Inference Coordination
++
++**Single chokepoint rule:** All inference routes through PT's `backend_resolver.py` +
++`dispatch_models.py`. No agent ever POSTs directly to Ollama or LM Studio.
++
++```
++Agent (any worktree)
++  → PT instance on its offset port (8000, 8100, 8200 …)
++    → backend_resolver selects endpoint
++      → Win LM Studio :1234 (heavy — serialized by HTTP server)
++      → Mac Ollama :11434 (light — concurrent)
++```
++
++When 2+ worktrees run simultaneously:
++- Each starts its own PT instance on its offset port
++- Each PT routes to the same Win endpoint (`$LM_STUDIO_WIN_ENDPOINTS`)
++- Win LM Studio HTTP server serializes heavy-model requests naturally — no extra lock needed
++- Mac Ollama (`qwen3.5:9b-nvfp4` + `bge-m3`) handles light-model concurrency
++
++**Multi-Win future (not yet implemented):** see Datum 8 in dogfood notes; PT dispatcher
++needs dynamic endpoint re-read + round-robin before this matters.
++
++---
++
++## 6. CRG (`graph.db`) Coordination
++
++`graph.db` lives in the canonical checkout. Worktrees **never rebuild it**.
++
++```python
++# ✅ From any worktree — query canonical graph
++mcp__code-review-graph__query_graph_tool(
++    repo_root="/path/to/canonical/orama-system"
++)
++
++# ✅ Rebuild only from canonical checkout (post-merge)
++mcp__code-review-graph__build_or_update_graph_tool()
++
++# ❌ Never rebuild from inside a worktree
++```
++
++---
++
++## 7. GBrain per Worktree
++
++Every worktree needs a `.gbrain-source` file (kubectl-style context pin). Bootstrap writes it.
++
++```bash
++# Verify
++cat .gbrain-source          # should print a source ID, e.g. "orama-src"
++
++# For doc-only worktrees: point to parent's source
++echo "orama-src" > .gbrain-source
++
++# For code worktrees with substantially diverged branches: create a new source
++gbrain sources add --name worktree-<slug>-src --path .
++echo "worktree-<slug>-src" > .gbrain-source
++```
++
++---
++
++## 8. Pre-flight Checklist
++
++Run before `git worktree add` (bootstrap does this automatically):
++
++```bash
++# 1. Remove stale lock files (macOS Finder / interrupted git ops)
++find .git -name "*.lock" -delete
++
++# 2. Check for orphan refs with spaces (blocks git fetch)
++find .git/refs -name "* *" -print
++# If any found: git update-ref -d "refs/heads/<bad ref with space>"
++
++# 3. Check for macOS dedup junk (contaminates git status)
++ls | grep " 2$" || true
++# If found: rm -rf "directory name 2/"
++```
++
++---
++
++## 9. Cleanup (After Work Completes)
++
++**Always use `finishing-a-development-branch`** — it handles `git worktree remove` correctly.
++
++```bash
++# From inside the worktree
++# Invoke the superpowers:finishing-a-development-branch skill
++# It will: verify tests → offer merge/PR/keep/discard → run git worktree remove
++```
++
++Manual cleanup (if skill unavailable):
++```bash
++# 1. From canonical checkout:
++git worktree remove ~/Documents/oramasys/worktrees/<slug>
++
++# 2. Verify
++git worktree list
++
++# 3. Delete branch if merged
++git branch -d <branch>
++git push origin --delete <branch>
++```
++
++**Never `rm -rf` a worktree directory directly** — it leaves a dangling entry in `git worktree list`.
++
++---
++
++## 10. Dogfood Defenses (from `.experience-log/dogfood-notes.md`)
++
++| Datum | Problem | Defense |
++|-------|---------|---------|
++| D1 | Orphan refs with spaces block `git fetch` | bootstrap pre-flight: `find .git/refs -name "* *"` |
++| D2 | Fresh worktrees don't inherit `.gbrain-source` | bootstrap always writes it |
++| D3 | Duplicate `docs/v2/` prefixes | always `ls docs/v2/` before picking a number |
++| D4 | `/autoplan` from non-git dir breaks Step 0 | always `cd` to repo root before skill invocation |
++| D5 | Stale `.git/*.lock` files block checkout | bootstrap pre-flight: `find .git -name "*.lock" -delete` |
++| D6 | `* 2/`, `* 3/` dirs from macOS dedup | bootstrap appends dedup patterns to `.gitignore` |
++| D7 | `.cursor/environment.json` port collisions | bootstrap writes `ENV_OFFSET`; ports offset by N×100 |
++| D8 | Multi-Win pool ignores extra devices | future PT enhancement; current: 1 Win is correct |
++
++---
++
++## 11. Invocable Skill
++
++For real-time agent guidance during a worktree session:
++
++```
++~/.claude/skills/using-git-worktrees/SKILL.md
++```
++
++Invoke with `/using-git-worktrees` or via the `Skill` tool.
++
++---
++
++## Related Docs
++
++- Design spec: `docs/superpowers/specs/2026-05-24-worktree-parallel-agents-design.md`
++- Dogfood log: `.experience-log/dogfood-notes.md` (in `worktree-doctrine` worktree)
++- Bootstrap script: `scripts/worktree-bootstrap.sh`
++- Build order: `docs/v2/04-build-order.md`
+diff --git a/scripts/worktree-bootstrap.sh b/scripts/worktree-bootstrap.sh
+new file mode 100755
+index 0000000..beba6a0
+--- /dev/null
++++ b/scripts/worktree-bootstrap.sh
+@@ -0,0 +1,221 @@
++#!/usr/bin/env bash
++# worktree-bootstrap.sh — idempotent worktree setup for orama-system family
++#
++# Usage: scripts/worktree-bootstrap.sh <repo-path> <branch> <slug> [gbrain-source-id]
++#
++# Example:
++#   scripts/worktree-bootstrap.sh \
++#     ~/Documents/Terminal\ xCode/claude/OpenClaw/orama-system \
++#     feat/my-feature \
++#     2026-05-24-my-feature \
++#     orama-src
++#
++# Idempotent: safe to re-run. If worktree already exists, skips creation.
++# See docs/v2/19-worktree-parallel-agents.md for full doctrine.
++
++set -euo pipefail
++
++# ── Args ─────────────────────────────────────────────────────────────────────
++REPO_PATH="${1:?Usage: worktree-bootstrap.sh <repo-path> <branch> <slug> [gbrain-source-id]}"
++BRANCH="${2:?Missing branch}"
++SLUG="${3:?Missing slug}"
++GBRAIN_SOURCE="${4:-}"   # optional; falls back to canonical's .gbrain-source
++
++WORKTREE_HUB="$HOME/Documents/oramasys/worktrees"
++WORKTREE_PATH="$WORKTREE_HUB/$SLUG"
++
++# Resolve repo path (expand ~)
++REPO_PATH="${REPO_PATH/#\~/$HOME}"
++
++echo "═══════════════════════════════════════════════════"
++echo " worktree-bootstrap.sh"
++echo "  repo   : $REPO_PATH"
++echo "  branch : $BRANCH"
++echo "  slug   : $SLUG"
++echo "  target : $WORKTREE_PATH"
++echo "═══════════════════════════════════════════════════"
++
++# ── Step 0: Sanity check ─────────────────────────────────────────────────────
++if [ ! -d "$REPO_PATH/.git" ] && [ ! -f "$REPO_PATH/.git" ]; then
++  echo "ERROR: $REPO_PATH is not a git repository" >&2
++  exit 1
++fi
++
++cd "$REPO_PATH"
++
++# ── Step 1: Pre-flight ───────────────────────────────────────────────────────
++echo ""
++echo "── Step 1: Pre-flight checks"
++
++# Remove stale lock files (macOS Finder / interrupted git ops — Datum D5)
++LOCK_COUNT=$(find .git -name "*.lock" 2>/dev/null | wc -l | tr -d ' ')
++if [ "$LOCK_COUNT" -gt 0 ]; then
++  echo "  Found $LOCK_COUNT stale .lock file(s) — removing..."
++  find .git -name "*.lock" -delete
++  echo "  ✓ Lock files removed"
++else
++  echo "  ✓ No stale lock files"
++fi
++
++# Check for orphan refs with spaces (blocks git fetch — Datum D1)
++SPACE_REFS=$(find .git/refs -name "* *" 2>/dev/null || true)
++if [ -n "$SPACE_REFS" ]; then
++  echo "  WARNING: Orphan refs with spaces detected:"
++  echo "$SPACE_REFS" | sed 's/^/    /'
++  echo "  Fix: git update-ref -d \"refs/heads/<ref with space>\""
++  echo "  Continuing (worktree add may still succeed with --no-checkout)..."
++else
++  echo "  ✓ No orphan refs with spaces"
++fi
++
++# ── Step 2: Create hub directory ─────────────────────────────────────────────
++echo ""
++echo "── Step 2: Ensure worktree hub exists"
++mkdir -p "$WORKTREE_HUB"
++echo "  ✓ $WORKTREE_HUB"
++
++# ── Step 3: Assign port offset ───────────────────────────────────────────────
++echo ""
++echo "── Step 3: Assign port offset"
++
++# Count existing worktrees (excluding main worktree) to determine index
++EXISTING=$(git worktree list --porcelain | grep "^worktree " | grep -v "^worktree $REPO_PATH$" | wc -l | tr -d ' ')
++
++# Check if this worktree already exists (idempotent: reuse its existing index)
++EXISTING_ENTRY=$(git worktree list --porcelain | grep -A2 "^worktree $WORKTREE_PATH$" | grep "^branch" | head -1 || true)
++if [ -n "$EXISTING_ENTRY" ]; then
++  # Already registered — compute index from existing list position
++  WT_INDEX=$(git worktree list --porcelain | grep "^worktree " | grep -v "^worktree $REPO_PATH$" | \
++    grep -n "$WORKTREE_PATH" | cut -d: -f1 || echo "$EXISTING")
++  WT_INDEX="${WT_INDEX:-$EXISTING}"
++else
++  WT_INDEX=$((EXISTING + 1))
++fi
++
++ENV_OFFSET=$((WT_INDEX * 100))
++
++echo "  Worktree index : $WT_INDEX"
++echo "  ENV_OFFSET     : $ENV_OFFSET"
++echo "  Port map:"
++echo "    AlphaClaw  : $((3000 + ENV_OFFSET))"
++echo "    PT         : $((8000 + ENV_OFFSET))"
++echo "    orama-api  : $((8001 + ENV_OFFSET))"
++echo "    portal     : $((8002 + ENV_OFFSET))"
++
++# ── Step 4: Create or attach worktree ────────────────────────────────────────
++echo ""
++echo "── Step 4: Create/attach worktree"
++
++if [ -d "$WORKTREE_PATH" ]; then
++  echo "  Worktree directory already exists at $WORKTREE_PATH"
++  # Verify it's tracked by git
++  if git worktree list --porcelain | grep -q "^worktree $WORKTREE_PATH$"; then
++    echo "  ✓ Already registered in git worktree list — skipping creation"
++  else
++    echo "  WARNING: Directory exists but not tracked. Re-registering..."
++    git worktree add --force "$WORKTREE_PATH" "$BRANCH" 2>/dev/null || \
++      git worktree repair "$WORKTREE_PATH" 2>/dev/null || true
++  fi
++else
++  # Create branch if it doesn't exist, otherwise attach
++  if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
++    echo "  Branch '$BRANCH' exists — attaching"
++    git worktree add "$WORKTREE_PATH" "$BRANCH"
++  else
++    echo "  Creating new branch '$BRANCH'"
++    git worktree add "$WORKTREE_PATH" -b "$BRANCH"
++  fi
++  echo "  ✓ Worktree created"
++fi
++
++# ── Step 5: Write .gbrain-source ─────────────────────────────────────────────
++echo ""
++echo "── Step 5: Write .gbrain-source (Datum D2)"
++
++if [ -n "$GBRAIN_SOURCE" ]; then
++  echo "$GBRAIN_SOURCE" > "$WORKTREE_PATH/.gbrain-source"
++  echo "  ✓ Pinned to: $GBRAIN_SOURCE"
++elif [ -f "$REPO_PATH/.gbrain-source" ]; then
++  cp "$REPO_PATH/.gbrain-source" "$WORKTREE_PATH/.gbrain-source"
++  CANONICAL_SOURCE=$(cat "$REPO_PATH/.gbrain-source" | tr -d '[:space:]')
++  echo "  ✓ Copied from canonical: $CANONICAL_SOURCE"
++else
++  echo "  WARNING: No gbrain-source provided and none found in canonical."
++  echo "  Run: echo \"<source-id>\" > $WORKTREE_PATH/.gbrain-source"
++  echo "  Or:  /sync-gbrain --full  inside the worktree to index and pin"
++fi
++
++# ── Step 6: macOS dedup .gitignore entries ────────────────────────────────────
++echo ""
++echo "── Step 6: macOS dedup .gitignore (Datum D6)"
++
++GITIGNORE="$WORKTREE_PATH/.gitignore"
++DEDUP_MARKER="# macOS dedup (worktree-bootstrap)"
++
++if [ -f "$GITIGNORE" ] && grep -q "$DEDUP_MARKER" "$GITIGNORE" 2>/dev/null; then
++  echo "  ✓ Already present — skipping"
++else
++  {
++    echo ""
++    echo "$DEDUP_MARKER"
++    echo "*\ 2/"
++    echo "*\ 2.*"
++    echo "*\ 3/"
++    echo "*\ 3.*"
++  } >> "$GITIGNORE"
++  echo "  ✓ Added dedup patterns to .gitignore"
++fi
++
++# ── Step 7: Write .worktree-env ───────────────────────────────────────────────
++echo ""
++echo "── Step 7: Write .worktree-env"
++
++cat > "$WORKTREE_PATH/.worktree-env" <<ENV
++# Auto-generated by worktree-bootstrap.sh — do not edit manually
++# Source this file before starting services in this worktree:
++#   source .worktree-env
++WORKTREE_SLUG=$SLUG
++WORKTREE_INDEX=$WT_INDEX
++ENV_OFFSET=$ENV_OFFSET
++ALPHACLAW_PORT=$((3000 + ENV_OFFSET))
++PT_PORT=$((8000 + ENV_OFFSET))
++ORAMA_API_PORT=$((8001 + ENV_OFFSET))
++ORAMA_PORTAL_PORT=$((8002 + ENV_OFFSET))
++ENV
++
++echo "  ✓ Written to $WORKTREE_PATH/.worktree-env"
++
++# ── Step 8: Update .cursor/environment.json if present ───────────────────────
++CURSOR_ENV="$WORKTREE_PATH/.cursor/environment.json"
++if [ -f "$CURSOR_ENV" ] && command -v python3 >/dev/null 2>&1; then
++  echo ""
++  echo "── Step 8: Update .cursor/environment.json"
++  python3 - <<PYEOF
++import json, sys
++path = "$CURSOR_ENV"
++with open(path) as f:
++    data = json.load(f)
++env = data.get("env", {})
++env["ALPHACLAW_PORT"] = "$((3000 + ENV_OFFSET))"
++env["PORTAL_PORT"]    = "$((8002 + ENV_OFFSET))"
++env["PT_PORT"]        = "$((8000 + ENV_OFFSET))"
++data["env"] = env
++with open(path, "w") as f:
++    json.dump(data, f, indent=2)
++print("  ✓ Updated port vars in .cursor/environment.json")
++PYEOF
++fi
++
++# ── Done ──────────────────────────────────────────────────────────────────────
++echo ""
++echo "═══════════════════════════════════════════════════"
++echo " ✅ Worktree ready: $WORKTREE_PATH"
++echo "    Branch     : $BRANCH"
++echo "    ENV_OFFSET : $ENV_OFFSET"
++echo ""
++echo "    Next steps:"
++echo "    1. cd $WORKTREE_PATH"
++echo "    2. source .worktree-env   (sets port vars)"
++echo "    3. Do your work"
++echo "    4. Invoke finishing-a-development-branch when done"
++echo "═══════════════════════════════════════════════════"

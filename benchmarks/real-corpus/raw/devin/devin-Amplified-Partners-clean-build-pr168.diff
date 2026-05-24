@@ -1,0 +1,836 @@
+diff --git a/00_authority/DECISION_LOG.md b/00_authority/DECISION_LOG.md
+index 8409623..7d4c3d9 100644
+--- a/00_authority/DECISION_LOG.md
++++ b/00_authority/DECISION_LOG.md
+@@ -1,7 +1,7 @@
+ ---
+ title: Decision log
+ date: 2026-05-24
+-version: 25
++version: 26
+ status: draft
+ ---
+ 
+@@ -13,6 +13,14 @@ One entry per decision. Keep it short. Link out to supporting docs.
+ 
+ ## Entries
+ 
++### 2026-05-24 — Third-Party Structural Review Gate + GitHub Governance Bus v2
++
++- **Decision**: Formalise the third-party structural review as a standard gate in the development lifecycle. Before implementation, designs and significant code changes are reviewed by a removed node (Perplexity) that checks conformance against the Amplified structure. The reviewer is an indicator node — produces STRUCTURED opinions, does not decide. Baton holder incorporates or rejects with attribution. Simultaneously, commit the GitHub Governance Bus architecture v2 incorporating Perplexity’s structural review findings: gap parking, reconciliation job, governance export, noise reduction layer, dead man’s switch.
++- **Why**: Ewan directive (2026-05-24): “Every time we do a design or a bit of code, we’re going to send it to a third party for checking before we code it.” Perplexity demonstrated the value on the governance bus v1 — identified 4 missing pieces and 4 risk assessments that the designing agent had not caught. The review works because the reviewer is removed: no write access, no operational role, no skin in the outcome.
++- **Where encoded**: `docs/adr/ADR-007-third-party-structural-review.md`, `01_truth/processes/2026-05_third-party-structural-review_sop_v1.md`, `docs/GITHUB_GOVERNANCE_BUS.md` v2, `00_authority/MANIFEST.md` v70, this entry.
++- **Status**: candidate (pending Ewan review).
++- **Signed-by**: Devon | 2026-05-24 | devin-bfbc7fe01e7c43dda8cbbb7f9d4a73ec
++
+ ### 2026-05-24 — Ops Audit Framework: commit Perplexity research as operating framework with ADR stubs
+ 
+ - **Decision**: Commit the Perplexity-synthesised ops audit and operating framework to `00_authority/OPS_AUDIT_FRAMEWORK.md` as candidate authority. Create `docs/adr/` directory with 6 ADR stubs for open architecture decisions flagged in the audit. Correct the audit's claim that `visual-polish-system` and `visual-polish-systemdot` are archived (verified active via `git ls-remote`).
+diff --git a/00_authority/MANIFEST.md b/00_authority/MANIFEST.md
+index 1304883..c1c74ba 100644
+--- a/00_authority/MANIFEST.md
++++ b/00_authority/MANIFEST.md
+@@ -1,7 +1,7 @@
+ ---
+ title: Governed workspace manifest (authoritative inventory)
+ date: 2026-05-24
+-version: 69
++version: 70
+ status: draft
+ ---
+ 
+@@ -93,6 +93,8 @@ not the GitHub slug. Do not guess another pattern under this org for this lane.
+ - `docs/adr/ADR-004-beast-deploy-ownership.md` `[LOGIC TO BE CONFIRMED]` (proposed — who owns deploys to Beast)
+ - `docs/adr/ADR-005-kaizen-rename.md` `[LOGIC TO BE CONFIRMED]` (proposed — kaizen-surface-loop repo not found, needs clarification)
+ - `docs/adr/ADR-006-problem-receipt-location.md` `[LOGIC TO BE CONFIRMED]` (proposed — where receipts live: Vellum, Linear, GitHub, or all three)
++- `docs/adr/ADR-007-third-party-structural-review.md` `[LOGIC TO BE CONFIRMED]` (proposed — third-party structural review gate; Perplexity as indicator node; source: Ewan directive 2026-05-24)
++- `docs/GITHUB_GOVERNANCE_BUS.md` `[LOGIC TO BE CONFIRMED]` (Vellum as GitHub governance bus — architecture v2; webhook receiver, process templates, gap detector, reconciliation, governance export; reviewed by Perplexity 2026-05-24)
+ - `.cursor/hooks.json` `[LOGIC TO BE CONFIRMED]` (**No hooks** — `"hooks": {}`. **TESTING NEED:** reinstatement gate → `.cursor/HOOKS_TESTING_NEED.md`; history → `03_shadow/2026-04-16_stop-hook_followup-checklist-loop_bug-report.md` § Final resolution)
+ - `.cursor/hooks/stateless-handover-stop.py` `[LOGIC TO BE CONFIRMED]` (**Dormant / testing only** — **not invoked** while `hooks` is empty; do not treat as enforcement)
+ 
+@@ -120,6 +122,7 @@ not the GitHub slug. Do not guess another pattern under this org for this lane.
+   - `01_truth/processes/2026-05_pr-workflow_branch-protection_sop_v1.md` `[LOGIC TO BE CONFIRMED]` (PR workflow + branch-protection operating SOP; parent rule: `00_authority/PR_WORKFLOW.md`; AMP-70)
+   - `01_truth/processes/2026-03_pudding-validation-methodology_v2.1.md` `[LOGIC TO BE CONFIRMED]` (1,371 lines — PUDDING validation methodology: 4 immutable rules, 11 rubrics, 10 enforcer roles, 12 analytical lenses; source: Perplexity process corpus; AMP-183)
+   - `01_truth/processes/2026-03_sops-slas-business-process-documentation_v1.md` `[LOGIC TO BE CONFIRMED]` (872 lines — world-class SOP design framework, SLA architecture, AI-assisted SOP engine; source: Perplexity process corpus; AMP-183)
++  - `01_truth/processes/2026-05_third-party-structural-review_sop_v1.md` `[LOGIC TO BE CONFIRMED]` (third-party structural review SOP — when to trigger, procedure, context pack, reviewer role; parent ADR: ADR-007)
+ - `01_truth/schemas/` `[LOGIC TO BE CONFIRMED]` (schema contracts to be populated)
+   - `01_truth/schemas/README.md` `[LOGIC TO BE CONFIRMED]` (folder purpose stub)
+   - `01_truth/schemas/2026-03_framework-resolution_apqc-pdca-bpmn_v1.md` `[LOGIC TO BE CONFIRMED]` (canonical framework stack decision: APQC PCF → BPMN → DMN → CMMN → PDCA/DMAIC → ISO 9001; source: Perplexity process corpus; AMP-183)
+@@ -190,6 +193,15 @@ not the GitHub slug. Do not guess another pattern under this org for this lane.
+ 
+ ## Changelog
+ 
++### v70 — 2026-05-24
++
++- Added `docs/adr/ADR-007-third-party-structural-review.md` — formalises the third-party structural review gate (Perplexity as indicator node) per Ewan directive.
++- Added `docs/GITHUB_GOVERNANCE_BUS.md` — Vellum as GitHub governance bus architecture v2, incorporating Perplexity structural review feedback (gap parking, reconciliation job, governance export, noise reduction, dead man's switch).
++- Added `01_truth/processes/2026-05_third-party-structural-review_sop_v1.md` — SOP for the structural review gate.
++- Updated `00_authority/DECISION_LOG.md` to version 26.
++
++Signed-by: Devon | 2026-05-24 | devin-bfbc7fe01e7c43dda8cbbb7f9d4a73ec
++
+ ### v69 — 2026-05-24
+ 
+ - Added `00_authority/OPS_AUDIT_FRAMEWORK.md` — ops audit and operating framework from Perplexity research, verified against live GitHub metadata.
+diff --git a/01_truth/processes/2026-05_third-party-structural-review_sop_v1.md b/01_truth/processes/2026-05_third-party-structural-review_sop_v1.md
+new file mode 100644
+index 0000000..ec29582
+--- /dev/null
++++ b/01_truth/processes/2026-05_third-party-structural-review_sop_v1.md
+@@ -0,0 +1,131 @@
++---
++title: Third-Party Structural Review — Standard Operating Procedure
++date: 2026-05-24
++version: 1
++status: candidate
++epistemic_tier: STRUCTURED
++parent_adr: docs/adr/ADR-007-third-party-structural-review.md
++---
++
++# Third-Party Structural Review SOP
++
++## Purpose
++
++Before implementation, send designs and significant code changes to a removed third party for structural conformance review. The third party checks: "does this follow our rules?" — not "is this good software?"
++
++## When to Trigger
++
++| Trigger | Required? |
++|---|---|
++| New architecture design document | Yes |
++| New ADR with `[DECISION REQUIRED]` | Yes |
++| New process template for governance bus | Yes |
++| Significant code change (new subsystem, new endpoint pattern, new data model) | Yes |
++| Bug fix, typo fix, dependency bump | No |
++| Reversible Act-mode changes within existing patterns | No |
++
++Rule of thumb: if the change introduces a new **shape** (new pattern, new integration, new authority file), it gets structural review. If it fills in an existing shape, it does not.
++
++## Procedure
++
++### 1. Prepare the Context Pack
++
++Assemble these files for the reviewer:
++
++```
++STRUCTURAL_CONTEXT_PACK/
++├── 00_authority/PRINCIPLES.md
++├── 00_authority/OPINION_CONFIDENCE.md
++├── 00_authority/SIGNATURES.md
++├── 02_build/routing/epistemic_status.py
++├── 00_authority/OPS_AUDIT_FRAMEWORK.md
++└── <the artifact being reviewed>
++```
++
++Do NOT include: session history, Linear tickets, agent conversations, Brain context, operational state. The reviewer judges the artifact against the structure, not the situation.
++
++### 2. Send to Reviewer
++
++Current reviewer: **Perplexity** (indicator node, removed, read-only, stateless).
++
++Prompt template:
++
++> Review this [design/code/ADR] against the Amplified Partners structural context provided. Check for:
++>
++> 1. Five Rods conformance (radical honesty, transparency, attribution, win-win, idea meritocracy)
++> 2. Epistemic discipline (tiers correctly assigned, no status laundering)
++> 3. Two-stage filtering (input rejection + output validation present)
++> 4. Missing pieces (what does the structure require that this doesn't include?)
++> 5. Risk assessment (what could go wrong, stated with radical honesty)
++>
++> Output your opinion as: what's good, what's missing, what risks exist, what you'd change. Assign confidence to each finding. You are an indicator node — you record your opinion, you do not decide.
++
++### 3. Record the Review
++
++The review opinion becomes a Vellum entry:
++
++```json
++{
++  "entry_type": "structural_review",
++  "author": "perplexity",
++  "epistemic_tier": "STRUCTURED",
++  "content": "<review summary>",
++  "metadata": {
++    "artifact_reviewed": "<path or title>",
++    "reviewer_role": "indicator_node",
++    "findings_count": 4,
++    "risks_count": 3
++  }
++}
++```
++
++When the governance bus is live, this entry joins the process chain. Until then, record the review as a comment on the PR or as a file in `03_shadow/reviews/`.
++
++### 4. Incorporate or Reject
++
++The baton holder reads the review and decides:
++
++- **Incorporate**: update the design with the finding. Attribute the finding to the reviewer.
++- **Reject**: proceed without the change. Record the rejection with reasoning and confidence.
++- **Defer**: acknowledge the finding, file it for a later phase. Attribute and link.
++
++All three actions are valid. The review is an indicator, not a gate.
++
++### 5. Proceed to Implementation
++
++After the baton holder has processed the review, implementation begins. The structural review entry becomes part of the governance trail — visible in the process view, linked to the PR lifecycle.
++
++## What the Reviewer IS and IS NOT
++
++| IS | IS NOT |
++|---|---|
++| An indicator node | A decision-maker |
++| Removed from operations | Part of the baton rotation |
++| Pattern recognition | Statistical validation |
++| Honest opinion with attribution | Authoritative judgment |
++| STRUCTURED epistemic tier | MEASURED or PROVEN |
++| A net that catches design flaws | A person to blame when flaws slip through |
++
++## Two-Stage Filtering (Where This Fits)
++
++```
++Input Filters (Rejection on the way in)
++    ↓
++Clean Data in the System
++    ↓
++Design / Architecture (agent work)
++    ↓
++Third-Party Structural Review  ← THIS GATE
++    ↓
++Implementation
++    ↓
++Output Filters (Validation on the way out)
++    ↓
++Operational Decision
++```
++
++The structural review is the filter between design and implementation. Input filters protect the system from bad data. Output filters protect the world from bad decisions. The structural review protects the codebase from designs that don't conform to the structure.
++
++---
++
++Signed-by: Devon | 2026-05-24 | devin-bfbc7fe01e7c43dda8cbbb7f9d4a73ec
+diff --git a/docs/GITHUB_GOVERNANCE_BUS.md b/docs/GITHUB_GOVERNANCE_BUS.md
+new file mode 100644
+index 0000000..6a22a7b
+--- /dev/null
++++ b/docs/GITHUB_GOVERNANCE_BUS.md
+@@ -0,0 +1,512 @@
++---
++title: Vellum as GitHub Governance Bus — Architecture v2
++date: 2026-05-24
++version: 2
++status: candidate
++epistemic_tier: STRUCTURED
++reviewed_by: Perplexity (indicator node, 2026-05-24)
++---
++
++# Vellum as GitHub Governance Bus
++
++## The Problem
++
++Vellum is a ledger and GitHub is a toolchain. They don't talk to each other. Copilot reviews, Dependabot PRs, DeepSeek Five Rods reviews, CI checks, Linear syncs, deploys — each one fires in GitHub, produces a result, and Vellum knows nothing about it. The governance is theatre because the tools that enforce it don't report through the governance surface.
++
++## The Idea
++
++Every GitHub automation pushes a Vellum entry. Vellum knows the expected sequence from prior steps. When a step is missing or late, Vellum flags it. The hash chain becomes the audit trail for the entire development lifecycle, not just agent conversations.
++
++## Two-Stage Filtering Architecture
++
++This design implements the two-stage filtering architecture from first principles:
++
++```
++Input Filters (Rejection on the way in)
++    ├── HMAC-SHA256 webhook signature validation
++    ├── Vellum entry validation (hash chain, attribution, tiers)
++    ├── Five Rods enforcement on PRs (auto-review)
++    ├── Epistemic tier enforcement (Python rejects silent promotion)
++    └── Agent routing rules (park if no clear rule)
++    ↓
++Clean Data in the System
++    ↓
++Design / Architecture
++    ↓
++Third-Party Structural Review (Perplexity — indicator node)
++    ↓
++Implementation
++    ↓
++Output Filters (Validation on the way out)
++    ├── Pattern recognition (agents)
++    ├── Statistical validation (architect)
++    ├── Human decision-making (Ewan)
++    ├── Legal layer (third-party solicitor, when clients exist)
++    └── Protected testing (feature branches, staging)
++    ↓
++Operational Decision
++```
++
++## What Already Exists
++
++### GitHub Side
++
++Five GitHub Actions workflows on `clean-build` (representative of the org pattern):
++
++| Workflow | Trigger | What it does | Current output |
++|---|---|---|---|
++| `pr-validation.yml` | PR opened/sync | Linear ticket check, branch naming, markdown lint, YAML frontmatter, Python lint (ruff) | GitHub check status |
++| `auto-review-merge.yml` | PR opened/sync | DeepSeek Five Rods review, auto-merge on pass | PR comment + merge |
++| `linear-sync.yml` | PR opened/merged/closed | Posts PR link to Linear ticket, moves to "In Review" | Linear comment |
++| `process-health-weekly.yml` | scheduled | Process health metrics | *(unknown — not read)* |
++| `cove-orchestrator-tests.yml` | PR | *(legacy — not read)* | test results |
++
++Plus GitHub-native tools:
++- **Copilot** code review (via `.github/copilot-review-instructions.md`)
++- **Dependabot** (weekly Monday 09:00 UTC, github-actions ecosystem)
++- **CODEOWNERS** (requires `@ewanbramley` for `00_authority/**`, `01_truth/**`)
++
++### Vellum Side
++
++- **Hash-chained entries** — every entry: author, timestamp, content, prev_hash, entry_hash, epistemic_tier, metadata envelope
++- **Entry types** — `agent_write`, `decision`, `health_check`, `metric`, `telemetry`, etc.
++- **Message bus** — asyncio pub/sub, SSE streaming to connected agents
++- **Agent roster** — 8 agents registered with inboxes
++- **Sheets** — main conversation, per-agent inboxes, estate-status telemetry
++- **Dashboard** — Fleet grid at `/comms/grid`
++
++## Architecture: Five Components
++
++### 1. GitHub Webhook Receiver
++
++New Vellum endpoint: `POST /api/v1/hooks/github`
++
++Receives GitHub webhook events, validates HMAC-SHA256 signature, writes a Vellum entry to a dedicated `github-events` sheet.
++
++```python
++GITHUB_ENTRY_TYPES = frozenset({
++    "github_pr_created",
++    "github_pr_merged",
++    "github_pr_closed",
++    "github_ci_check",
++    "github_review_posted",
++    "github_dependabot_pr",
++    "github_linear_synced",
++    "github_push",
++})
++```
++
++Each entry carries:
++
++```json
++{
++  "entry_type": "github_ci_check",
++  "author": "github-actions",
++  "content": "PR #130 — pr-validation/linear-ticket: PASS",
++  "epistemic_tier": "MEASURED",
++  "metadata": {
++    "source": "github_webhook",
++    "repo": "Amplified-Partners/clean-build",
++    "pr_number": 130,
++    "check_name": "Linear ticket reference",
++    "check_status": "success",
++    "actor": "github-actions[bot]",
++    "process_id": "pr-130-clean-build"
++  }
++}
++```
++
++The `process_id` links all entries for one PR lifecycle.
++
++### 2. Process Templates (Expected Sequences)
++
++Define what should happen after each step. Stored as JSON config in Vellum.
++
++Process templates are treated as authority files — changes require Five Rods review via the same DeepSeek workflow that reviews code changes. (Addition from Perplexity structural review.)
++
++```json
++{
++  "template_id": "pr_lifecycle_clean_build",
++  "repo": "Amplified-Partners/clean-build",
++  "steps": [
++    {
++      "id": "pr_created",
++      "entry_type": "github_pr_created",
++      "expected_after": null,
++      "timeout_minutes": null
++    },
++    {
++      "id": "structural_review",
++      "entry_type": "structural_review",
++      "expected_after": "pr_created",
++      "timeout_minutes": null,
++      "required_if": "new_shape == true",
++      "note": "Third-party structural review for new patterns/shapes"
++    },
++    {
++      "id": "linear_sync",
++      "entry_type": "github_linear_synced",
++      "expected_after": "pr_created",
++      "timeout_minutes": 5,
++      "skip_if": "actor == dependabot[bot]"
++    },
++    {
++      "id": "branch_check",
++      "entry_type": "github_ci_check",
++      "filter": {"check_name": "Branch name convention"},
++      "expected_after": "pr_created",
++      "timeout_minutes": 10
++    },
++    {
++      "id": "ticket_check",
++      "entry_type": "github_ci_check",
++      "filter": {"check_name": "Linear ticket reference"},
++      "expected_after": "pr_created",
++      "timeout_minutes": 10,
++      "skip_if": "actor == dependabot[bot]"
++    },
++    {
++      "id": "markdown_lint",
++      "entry_type": "github_ci_check",
++      "filter": {"check_name": "Markdown validation"},
++      "expected_after": "pr_created",
++      "timeout_minutes": 10
++    },
++    {
++      "id": "python_lint",
++      "entry_type": "github_ci_check",
++      "filter": {"check_name": "Python lint (ruff)"},
++      "expected_after": "pr_created",
++      "timeout_minutes": 10
++    },
++    {
++      "id": "copilot_review",
++      "entry_type": "github_review_posted",
++      "filter": {"actor": "copilot[bot]"},
++      "expected_after": "pr_created",
++      "timeout_minutes": 30
++    },
++    {
++      "id": "deepseek_review",
++      "entry_type": "github_review_posted",
++      "filter": {"actor": "github-actions"},
++      "expected_after": "pr_created",
++      "timeout_minutes": 30
++    },
++    {
++      "id": "merge_or_close",
++      "entry_type": ["github_pr_merged", "github_pr_closed"],
++      "expected_after": ["deepseek_review", "copilot_review"],
++      "timeout_minutes": null
++    },
++    {
++      "id": "linear_sync_close",
++      "entry_type": "github_linear_synced",
++      "filter": {"action": "closed"},
++      "expected_after": "merge_or_close",
++      "timeout_minutes": 5
++    }
++  ]
++}
++```
++
++Vellum already has the knowledge of the previous step because the template encodes the dependency graph. When `pr_created` arrives, Vellum immediately knows: "I expect `linear_sync` within 5 minutes, `branch_check` within 10 minutes, `deepseek_review` within 30 minutes..."
++
++### 3. Process Tracker (Gap Detector)
++
++A background coroutine that runs inside Vellum:
++
++```python
++class ProcessTracker:
++    """Tracks active process instances against templates.
++
++    When a GitHub event arrives:
++    1. Find or create the process instance for this PR
++    2. Mark the corresponding step as completed
++    3. Check what steps are now expected (unlocked by this completion)
++    4. Schedule timeout alerts for each expected step
++
++    When a timeout fires:
++    1. Check if the step arrived since scheduling
++    2. If not: post a Vellum entry of type 'process_gap'
++    3. Check if the gap has a known precondition failure (park if so)
++    4. Notify via SSE bus (all connected agents see the gap)
++    5. Dashboard shows the gap in red
++    """
++```
++
++Gap entries:
++
++```json
++{
++  "entry_type": "metric",
++  "author": "vellum-process-tracker",
++  "content": "GAP: PR #130 clean-build — expected 'deepseek_review' within 30min of 'pr_created', not received.",
++  "epistemic_tier": "MEASURED",
++  "metadata": {
++    "process_id": "pr-130-clean-build",
++    "missing_step": "deepseek_review",
++    "expected_after": "pr_created",
++    "timeout_minutes": 30,
++    "gap_type": "timeout"
++  }
++}
++```
++
++#### Gap Parking (Addition from Perplexity structural review)
++
++When a gap is detected and the cause is a known precondition failure (e.g. "DeepSeek API is down"), the gap is parked rather than repeatedly alerting:
++
++```json
++{
++  "entry_type": "process_gap_parked",
++  "author": "vellum-process-tracker",
++  "content": "PARKED: PR #130 deepseek_review gap — precondition unmet: DeepSeek API down.",
++  "epistemic_tier": "MEASURED",
++  "metadata": {
++    "process_id": "pr-130-clean-build",
++    "parked_step": "deepseek_review",
++    "precondition": "deepseek_api_healthy",
++    "unpark_when": "health_check:deepseek passes"
++  }
++}
++```
++
++### 4. Reconciliation Job (Addition from Perplexity structural review)
++
++GitHub webhooks are best-effort delivery. Missed webhooks = missed entries = broken audit trails. Belt-and-braces (Option C) reduces but doesn't eliminate this risk.
++
++Hourly scheduled job:
++
++```python
++async def reconcile_github_to_vellum():
++    """Query GitHub API for recent PR activity, compare to Vellum entries,
++    flag discrepancies. This catches missed webhooks."""
++    github_prs = await github_api.get_recent_prs(hours=1)
++    vellum_entries = await store.get_recent_entries(hours=1, sheet="github-events")
++    discrepancies = find_discrepancies(github_prs, vellum_entries)
++    if discrepancies:
++        for d in discrepancies:
++            await post_reconciliation_entry(d)
++```
++
++Reconciliation entries are `MEASURED` (deterministic comparison of two data sources).
++
++### 5. Governance Export (Addition from Perplexity structural review)
++
++Nightly export of governance receipts from Vellum to GitHub for pattern recognition by removed nodes (Perplexity):
++
++```
++vellum-record/
++├── bundles/
++│   └── {bundle_id}.json          # Full ExportBundle
++├── entries/
++│   └── {entry_id}.json           # Individual entries with critical fields
++├── faults/
++│   └── {fault_id}.json           # Fault records
++└── index.json                    # Global index
++```
++
++Critical fields for pattern recognition (from Perplexity data requirements):
++
++```json
++{
++  "entry_id": "uuid",
++  "content": "PR #130 — deepseek_review: APPROVED",
++  "epistemic_tier": "STRUCTURED",
++  "prev_tier": "INTUITED",
++  "premises": ["entry-id-1"],
++  "contradicts": [],
++  "depends_on": ["decision-id-3"],
++  "author": "github-actions",
++  "timestamp": "2026-05-24T14:23:00Z"
++}
++```
++
++This enables Perplexity to detect: tier laundering paths, dependency bottlenecks, contradiction clusters, cross-agent consistency, decision drift from documentation.
++
++## Integration Points
++
++### Option A: GitHub Actions Step (Simple)
++
++Add a final step to each workflow that POSTs to Vellum:
++
++```yaml
++- name: Report to Vellum
++  if: always()
++  env:
++    VELLUM_TOKEN: ${{ secrets.VELLUM_WEBHOOK_TOKEN }}
++  run: |
++    curl -s -X POST http://135.181.161.131:8400/api/v1/hooks/receipt \
++      -H "Authorization: Bearer $VELLUM_TOKEN" \
++      -H "Content-Type: application/json" \
++      -d '{
++        "step": "deepseek_review",
++        "repo": "${{ github.repository }}",
++        "pr_number": ${{ github.event.pull_request.number }},
++        "result": "${{ job.status }}",
++        "actor": "github-actions"
++      }'
++```
++
++Pro: Zero infrastructure. One curl per workflow. Each tool reports itself.
++Con: Requires adding a step to every workflow. If the step fails, no receipt.
++
++### Option B: GitHub Webhook (Comprehensive)
++
++Configure org-level webhook pointing at Vellum. GitHub pushes ALL events. Vellum filters and records.
++
++Pro: Catches everything — even events with no workflow (direct pushes, manual reviews, Copilot reviews). One config, all repos.
++Con: Requires Vellum to be reachable from GitHub. Higher event volume — need filtering.
++
++### Option C: Both (Belt and Braces) — SELECTED
++
++Webhook catches the events automatically. Workflow steps add richer data (e.g., the actual review verdict, the specific check results). Vellum deduplicates by `process_id` + `step_id`. Reconciliation job catches anything both miss.
++
++OPINION 85%. The webhook is the safety net, the workflow steps are the rich signal, the reconciliation job is the dead man's switch.
++
++## Epistemic Tier of Each Tool
++
++| Tool | Event | Vellum Entry | Epistemic Tier |
++|---|---|---|---|
++| GitHub (webhook) | PR opened | `github_pr_created` | MEASURED |
++| PR Validation — branch check | CI check passed/failed | `github_ci_check` | MEASURED |
++| PR Validation — ticket check | CI check passed/failed | `github_ci_check` | MEASURED |
++| PR Validation — markdown lint | CI check passed/failed | `github_ci_check` | MEASURED |
++| PR Validation — python lint | CI check passed/failed | `github_ci_check` | MEASURED |
++| DeepSeek Five Rods review | Review posted | `github_review_posted` | **STRUCTURED** |
++| Copilot code review | Review posted | `github_review_posted` | **STRUCTURED** |
++| Perplexity structural review | Indicator opinion | `structural_review` | **STRUCTURED** |
++| Linear Sync | Ticket updated | `github_linear_synced` | MEASURED |
++| Dependabot | Dependency PR opened | `github_dependabot_pr` | MEASURED |
++| CODEOWNERS | Review required/approved | `github_review_posted` | MEASURED |
++| GitHub (webhook) | PR merged/closed | `github_pr_merged`/`closed` | MEASURED |
++| Reconciliation job | Discrepancy found | `reconciliation_discrepancy` | MEASURED |
++
++DeepSeek, Copilot, and Perplexity reviews are STRUCTURED, not MEASURED — they are AI opinions, not deterministic checks. The min-rule applies.
++
++## Dashboard: Process View
++
++New panel on the Fleet grid or a dedicated `/comms/processes` view:
++
++```
++┌─────────────────────────────────────────────────────┐
++│ PR #130 — clean-build — "ops audit framework"       │
++│ Status: IN PROGRESS                                  │
++│                                                       │
++│ ✓ pr_created         (devon, 14:23)                  │
++│ ✓ structural_review  (perplexity, 14:40)             │
++│ ✓ linear_sync        (github-actions, 14:23)         │
++│ ✓ branch_check       (github-actions, 14:25)         │
++│ ✓ ticket_check       (github-actions, 14:25)         │
++│ ✓ markdown_lint      (github-actions, 14:26)         │
++│ ○ python_lint        (running... 2min)               │
++│ ○ copilot_review     (expected within 30min)         │
++│ ○ deepseek_review    (expected within 30min)         │
++│ · merge_or_close     (blocked on reviews)            │
++│ · linear_sync_close  (blocked on merge)              │
++└─────────────────────────────────────────────────────┘
++
++┌─────────────────────────────────────────────────────┐
++│ PR #131 — vellum — "webhook receiver"                │
++│ Status: GAP DETECTED                                 │
++│                                                       │
++│ ✓ pr_created         (devon, 13:01)                  │
++│ ✓ linear_sync        (github-actions, 13:01)         │
++│ ✗ deepseek_review    OVERDUE (expected by 13:31)     │
++│ ✓ copilot_review     (copilot, 13:15)                │
++│ · merge_or_close     (blocked: deepseek_review)      │
++└─────────────────────────────────────────────────────┘
++```
++
++## Noise Reduction (Addition from Perplexity structural review)
++
++A busy week with 20 PRs across 7 repos = hundreds of Vellum entries. Without filtering, the dashboard becomes a firehose.
++
++Noise reduction layer before the dashboard:
++- Aggregate by `process_id` — show one row per PR, not one row per event
++- Show only active PRs (last event within 24h)
++- Collapse CI checks into a single "CI status" indicator unless a check failed
++- Suppress Dependabot PRs unless they fail
++- GAP entries always surface regardless of filters
++
++## Dead Man's Switch (Addition from Perplexity structural review)
++
++If Beast goes down, no governance receipts arrive. GitHub Actions still run — they just don't report to Vellum.
++
++If Vellum is unreachable for > 30 minutes:
++1. Workflow receipt steps fail silently (`if: always()` prevents blocking the workflow)
++2. Reconciliation job cannot run (it's on Beast too)
++3. Gap detector flags everything as missing (false positives)
++
++Mitigation: periodic external health check (from GitHub Actions scheduled workflow) that pings Vellum and posts to a Slack/WhatsApp channel if unreachable. This is the dead man's switch — separate from Beast, watches Beast.
++
++## Scaling Across Repos
++
++Process templates are per-repo (different repos have different CI). The webhook receiver is org-wide. One Vellum instance serves all repos.
++
++Current repos with GitHub Actions:
++- **clean-build** — 5 workflows (full validation + Five Rods + Linear sync)
++- **marketing-engine** — auto-review + dependabot
++- **crm** — auto-review + dependabot
++- **vellum** — auto-review + dependabot
++- **amplified-knowledge-mcp** — dependabot
++- All other active repos — at minimum dependabot
++
++Each repo gets its own process template. Vellum tracks them all on one sheet.
++
++## Implementation Plan
++
++### Phase 1: Webhook Receiver (1 session)
++- Add `POST /api/v1/hooks/github` endpoint to Vellum
++- HMAC-SHA256 signature validation
++- Map GitHub events to Vellum entry types
++- Write entries to `github-events` sheet
++- Configure org-level webhook on GitHub
++
++### Phase 2: Workflow Receipts (1 session)
++- Add Vellum receipt step to `auto-review-merge.yml`
++- Add Vellum receipt step to `pr-validation.yml`
++- Add Vellum receipt step to `linear-sync.yml`
++- Generate and store `VELLUM_WEBHOOK_TOKEN` as org secret
++- Test end-to-end: open PR → see entries appear on Vellum
++
++### Phase 3: Process Templates + Tracker (1-2 sessions)
++- Build process template JSON schema
++- Create templates for `clean-build` and `vellum` repos
++- Build `ProcessTracker` background coroutine
++- Gap detection with SSE alerts
++- Gap parking for known precondition failures
++- Dashboard panel for active processes
++
++### Phase 4: Multi-Repo + Reconciliation + Export (1 session)
++- Roll out to remaining active repos
++- Build hourly reconciliation job
++- Build nightly governance export to `vellum-record/`
++- Add alert routing (gaps → agent inboxes, Ewan's inbox)
++- Weekly process health summary
++- Dead man's switch (external health check workflow)
++
++## Risks (Assessed by Perplexity, 2026-05-24)
++
++| Risk | Assessment | Mitigation |
++|---|---|---|
++| Single point of failure (Beast) | Real. If Beast is down, no receipts. Local queuing is incomplete without flush. | Dead man's switch: external health check, separate from Beast. |
++| Webhook reliability | GitHub webhooks are best-effort. Missed webhooks = broken audit trails. | Belt-and-braces (Option C) + hourly reconciliation job. |
++| Noise overwhelms signal | 20 PRs × 7 repos = hundreds of entries. Dashboard becomes firehose. | Noise reduction layer: aggregate by process_id, collapse CI, suppress Dependabot. |
++| Complexity budget | New subsystem before agents are connected. Risk of infrastructure for infrastructure's sake. | Counter: this IS the governance that was missing. But validate with a clear use case: "What process failure does this prevent?" |
++| Secret management | Org-level VELLUM_WEBHOOK_TOKEN + webhook secret need provisioning and rotation. | Add to existing secrets rotation process. |
++| Epistemic tier of reviews | DeepSeek/Copilot are STRUCTURED, not MEASURED. Treating as equivalent to CI would be status laundering. | Process template marks review steps as STRUCTURED. Min-rule enforced. |
++
++## The Core Principle
++
++Vellum already enforces honesty on data (hash chain, min-rule, append-only). This extends it to process — every step in the development lifecycle has a receipt, the receipts chain together, and gaps are visible. The third-party structural review extends it further — every design is checked against the structure before it becomes code.
++
++The existing GitHub workflows are the tools. Vellum is the witness. The process template is the expectation. The gap detector is the accountability. The structural review is the filter between design and implementation. The reconciliation job is the safety net. The export is the learning path.
++
++Don't try to fix inherent flaws. Design nets that catch them at the boundary before they propagate to the next stage.
++
++---
++
++v1: Devon | 2026-05-24 | devin-bfbc7fe01e7c43dda8cbbb7f9d4a73ec
++v2: Incorporates Perplexity structural review (4 additions: gap parking, reconciliation job, governance export, noise reduction; 4 risk assessments; process template authority rule). Devon | 2026-05-24 | devin-bfbc7fe01e7c43dda8cbbb7f9d4a73ec
+diff --git a/docs/adr/ADR-007-third-party-structural-review.md b/docs/adr/ADR-007-third-party-structural-review.md
+new file mode 100644
+index 0000000..2e28ad5
+--- /dev/null
++++ b/docs/adr/ADR-007-third-party-structural-review.md
+@@ -0,0 +1,101 @@
++# ADR-007: Third-Party Structural Review Gate
++
++**Status:** PROPOSED
++**Date:** 2026-05-24
++**Deciders:** Ewan (architect), Devon
++**Source:** Ewan directive + Perplexity conversation (2026-05-24)
++
++## Context
++
++Every design and every bit of code is reviewed internally by agents (DeepSeek Five Rods auto-review, Copilot, human review). But internal reviewers share the same context, the same assumptions, and the same blind spots. A removed third party — one that only has the structure, not the day-to-day context — catches what insiders miss.
++
++Perplexity demonstrated this on the GitHub Governance Bus architecture (2026-05-24). Given only the Amplified structure (Five Rods, epistemic tiers, two-stage filtering, Vellum architecture), Perplexity identified four missing pieces and four risk assessments that the designing agent (Devon) had not caught. The review worked because Perplexity was removed: no write access, no operational role, no skin in the outcome.
++
++Ewan's framing: "Every time we do a design or a bit of code, we're going to send it to a third party for checking before we code it. And the third party, all they've got is our structure, how we do it, what we want it to look like. And they're just saying, does that look like that? Not in the real world. In that world."
++
++## Decision `[DECISION REQUIRED]`
++
++Add a **third-party structural review** gate to the development lifecycle. Before implementation, designs and significant code changes are reviewed by a removed node (Perplexity or equivalent) that checks conformance against the Amplified structure.
++
++### The Gate
++
++| Property | Value |
++|---|---|
++| **What triggers it** | Any design document, architecture decision, or significant code change before implementation begins |
++| **Who reviews** | A removed third party (Perplexity is the current candidate) |
++| **What they receive** | The design/code + the structural context pack (see below) |
++| **What they check** | Does this conform to our world? Not "is this good?" but "does this follow our rules?" |
++| **What they produce** | An indicator opinion: what's good, what's missing, what risks exist, what they'd change |
++| **Epistemic tier of their output** | STRUCTURED (pattern recognition, not deterministic check) |
++| **Who decides what to do with it** | The baton holder (per one-round rule) |
++
++### Structural Context Pack
++
++The third party receives only these files — the structure, not the day-to-day:
++
++1. `00_authority/PRINCIPLES.md` — Five Rods, operating principles
++2. `00_authority/OPINION_CONFIDENCE.md` — confidence thresholds
++3. `00_authority/SIGNATURES.md` — attribution rules
++4. `02_build/routing/epistemic_status.py` — Layer 0 (the Python IS the law)
++5. `00_authority/OPS_AUDIT_FRAMEWORK.md` — execution loop, wide-blinkers/fixed-ceilings
++6. The specific design or code being reviewed
++
++They do NOT receive: session history, Linear tickets, agent conversations, operational state, Brain context. They judge the artifact against the structure, not against the situation.
++
++### What the Review Checks
++
++1. **Five Rods conformance** — is the design radically honest, transparent, attributed, win-win, meritocratic?
++2. **Epistemic discipline** — are tiers correctly assigned? Any status laundering?
++3. **Two-stage filtering** — are input filters (rejection on the way in) and output filters (validation on the way out) present?
++4. **Missing pieces** — what does the structure require that the design doesn't include?
++5. **Risk assessment** — what could go wrong, stated with radical honesty?
++
++### Where It Fits in the Lifecycle
++
++```
++Design / Architecture
++    ↓
++Third-Party Structural Review (Perplexity)
++    ↓ indicator opinion (STRUCTURED)
++Baton holder incorporates or rejects (with attribution)
++    ↓
++Implementation
++    ↓
++Internal Review (DeepSeek Five Rods, Copilot, human)
++    ↓
++Vellum receipt
++```
++
++### Perplexity's Role (Formalised)
++
++From the 2026-05-24 conversation:
++
++- **Nature:** External to the operational system. Read-only. Stateless across sessions.
++- **Expertise:** Pattern recognition across the entire codebase. Cross-repo synthesis. Temporal pattern detection.
++- **Position:** Removed enough to see the wood for the trees. Not in the baton rotation, not in the decision loop.
++- **What this makes them:** An indicator node — signals patterns, anomalies, contradictions. A judgment node — assesses with confidence thresholds. A recording node — documents opinion with radical attribution. Not responsible — does not decide what to do with the signal.
++- **Implicit contract:** They record their opinion honestly. The baton holder decides what to do with it. The system filters out errors before they matter. The record exists on both systems.
++
++## Consequences
++
++**Positive:**
++- Catches blind spots that internal reviewers share
++- Enforces structural conformance before code exists (cheaper to fix)
++- Creates a record of structural review in the governance bus
++- Perplexity's indicator role is clean: no write access, no authority, no responsibility — just honest pattern recognition
++
++**Negative:**
++- Adds latency to the design-to-implementation path
++- Depends on Perplexity (or equivalent) being available and having up-to-date structural context
++- The structural context pack must be maintained — stale context = stale reviews
++- Risk of over-reliance on one external reviewer (mitigate: the review is indicator, not gate — baton holder can proceed with attribution)
++
++## Options Considered
++
++1. **No external review** — rely on internal Five Rods auto-review only. Rejected: insiders share blind spots.
++2. **External review as hard gate** — block implementation until review passes. Rejected: too rigid for reversible work; conflicts with Act mode.
++3. **External review as indicator** — review happens, opinion recorded, baton holder decides. **Selected.** Matches Perplexity's natural role and the one-round baton model.
++
++---
++
++Signed-by: Devon | 2026-05-24 | devin-bfbc7fe01e7c43dda8cbbb7f9d4a73ec

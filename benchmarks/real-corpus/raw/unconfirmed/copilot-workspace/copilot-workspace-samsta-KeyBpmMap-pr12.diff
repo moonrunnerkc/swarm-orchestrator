@@ -1,0 +1,214 @@
+diff --git a/package.json b/package.json
+index 0f04ec1..0955a06 100644
+--- a/package.json
++++ b/package.json
+@@ -1,7 +1,7 @@
+ {
+   "name": "keybpmmap",
+   "private": true,
+-  "version": "0.1.0",
++  "version": "0.2.0",
+   "type": "module",
+   "scripts": {
+     "dev": "vite",
+diff --git a/src/App.tsx b/src/App.tsx
+index 676a07d..83b9e7f 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -14,6 +14,7 @@ import {
+ } from './lib/analysis'
+ import { CAMELOT_KEYS, formatKey, type KeyRepresentation } from './lib/camelot'
+ import { downloadSvgAsPng } from './lib/exportSvg'
++import { getShareButtonLabel, sharePlot } from './lib/sharePlots'
+ import { loadLibraryFromFile } from './lib/libraryLoader'
+ import { createMockLibrary } from './lib/mockData'
+ import {
+@@ -780,6 +781,22 @@ function App() {
+     await downloadSvgAsPng(svgElement, fileName)
+   }
+ 
++  const sharePolarChart = async (platform: 'facebook' | 'instagram') => {
++    await sharePlot(platform, {
++      chartName: 'Polar Harmonic Density Map',
++      chartDescription:
++        'Exploring my music library with a polar density map showing harmonic key distribution by tempo.',
++    })
++  }
++
++  const shareHeatmapChart = async (platform: 'facebook' | 'instagram') => {
++    await sharePlot(platform, {
++      chartName: 'BPM vs Key Heatmap',
++      chartDescription:
++        'Analyzing my music library with a heatmap showing the relationship between tempo and harmonic key.',
++    })
++  }
++
+   const selectedPlaylistName =
+     filters.playlistId === 'all'
+       ? 'All playlists'
+@@ -1579,6 +1596,22 @@ function App() {
+               >
+                 Export PNG
+               </button>
++              <button
++                type="button"
++                className="secondary-button"
++                title={getShareButtonLabel('facebook')}
++                onClick={() => sharePolarChart('facebook')}
++              >
++                Share to Facebook
++              </button>
++              <button
++                type="button"
++                className="secondary-button"
++                title={getShareButtonLabel('instagram')}
++                onClick={() => sharePolarChart('instagram')}
++              >
++                Share to Instagram
++              </button>
+             </div>
+           </div>
+           <PolarDensityChart
+@@ -1623,6 +1656,22 @@ function App() {
+               >
+                 Export PNG
+               </button>
++              <button
++                type="button"
++                className="secondary-button"
++                title={getShareButtonLabel('facebook')}
++                onClick={() => shareHeatmapChart('facebook')}
++              >
++                Share to Facebook
++              </button>
++              <button
++                type="button"
++                className="secondary-button"
++                title={getShareButtonLabel('instagram')}
++                onClick={() => shareHeatmapChart('instagram')}
++              >
++                Share to Instagram
++              </button>
+             </div>
+           </div>
+           <HeatmapChart
+diff --git a/src/lib/sharePlots.ts b/src/lib/sharePlots.ts
+new file mode 100644
+index 0000000..ed9986a
+--- /dev/null
++++ b/src/lib/sharePlots.ts
+@@ -0,0 +1,114 @@
++/**
++ * Utilities for sharing plots to social media platforms (Facebook and Instagram).
++ * Posts link back to the GitHub Pages site.
++ */
++
++const GITHUB_PAGES_URL = 'https://samsta.github.io/KeyBpmMap/'
++
++export interface SharePlotOptions {
++  chartName: string
++  chartDescription: string
++}
++
++/**
++ * Generates a share message that includes the app URL
++ */
++export function generateShareMessage(options: SharePlotOptions): string {
++  return `Check out my music library analysis using KeyBpmMap! ${options.chartDescription}\n\n${GITHUB_PAGES_URL}`
++}
++
++/**
++ * Creates a Facebook share URL (without requiring an app ID)
++ * Uses the standard share endpoint which works for any website
++ */
++export function createFacebookShareUrl(options: SharePlotOptions): string {
++  const params = new URLSearchParams({
++    u: GITHUB_PAGES_URL,
++    quote: `${options.chartName}: ${options.chartDescription}`,
++  })
++  return `https://www.facebook.com/sharer/sharer.php?${params.toString()}`
++}
++
++/**
++ * Creates an Instagram share URL
++ * Note: Instagram does not provide a direct web-based share API.
++ * This function opens Instagram.com; users can manually share via their mobile app
++ * or use the clipboard-based sharing approach.
++ */
++export function createInstagramShareUrl(): string {
++  return 'https://www.instagram.com/'
++}
++
++/**
++ * Shares content to social media using the Web Share API if available,
++ * with fallback to direct links
++ */
++export async function sharePlot(
++  platform: 'facebook' | 'instagram',
++  options: SharePlotOptions,
++): Promise<void> {
++  const message = generateShareMessage(options)
++
++  // Try using the Web Share API (available on mobile browsers and some desktop browsers)
++  if (typeof navigator !== 'undefined' && 'share' in navigator) {
++    try {
++      await navigator.share({
++        title: 'KeyBpmMap - ' + options.chartName,
++        text: message,
++        url: GITHUB_PAGES_URL,
++      })
++      return
++    } catch (error) {
++      // User cancelled or share failed; fall back to platform-specific URLs
++      if (error instanceof Error && error.name === 'AbortError') {
++        return // User cancelled, don't show error
++      }
++      console.log('Web Share API failed, falling back to platform URLs', error)
++    }
++  }
++
++  // Fallback: Open platform-specific share URLs
++  if (platform === 'facebook') {
++    const facebookUrl = createFacebookShareUrl(options)
++    window.open(facebookUrl, '_blank', 'width=600,height=600')
++  } else {
++    // Instagram fallback: Copy message to clipboard and open Instagram
++    if (navigator.clipboard) {
++      try {
++        await navigator.clipboard.writeText(message)
++        console.log(
++          'Message copied to clipboard! Open Instagram and paste it in your post caption.',
++        )
++        // Open Instagram in a new window
++        window.open(createInstagramShareUrl(), '_blank')
++      } catch (err) {
++        console.warn('Failed to copy to clipboard:', err)
++        window.open(createInstagramShareUrl(), '_blank')
++      }
++    } else {
++      console.log(
++        'Please copy this message and share it on Instagram:',
++        message,
++      )
++      window.open(createInstagramShareUrl(), '_blank')
++    }
++  }
++}
++
++/**
++ * Checks if the browser supports the Web Share API
++ * Useful for conditionally showing share buttons or adjusting UI
++ */
++export function canShare(): boolean {
++  return typeof navigator !== 'undefined' && 'share' in navigator
++}
++
++/**
++ * Gets the appropriate share button label based on platform and available features
++ */
++export function getShareButtonLabel(platform: 'facebook' | 'instagram'): string {
++  if (typeof navigator !== 'undefined' && 'share' in navigator) {
++    return `Share to ${platform === 'facebook' ? 'Facebook' : 'Instagram'}`
++  }
++  return `Share to ${platform === 'facebook' ? 'Facebook' : 'Instagram'} (opens in new window)`
++}

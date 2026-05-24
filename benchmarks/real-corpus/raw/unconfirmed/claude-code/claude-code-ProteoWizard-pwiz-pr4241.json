@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-ProteoWizard-pwiz-pr4241",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 4241,
+    "headSha": "eec6b77b0a4114171bc6b09e92e1cb32fc226923",
+    "baseSha": "0599784b33054f924f9114951cb4f8faf52958ba",
+    "title": "Fixed Full Scan graph crash on mixed-polarity transition lists (#4240)",
+    "body": "## Summary\r\n\r\n* `GraphFullScan.CreateSingleScan` now skips transitions whose polarity differs from the displayed scan instead of asserting — fixes the `AssumptionException` in exception report #74770.\r\n* Added `MixedPolarityFullScanTest`: a regression test that builds a `ScanProvider` whose transition list spans both polarities and opens the Full Scan on a positive scan. A plain UI click can't reproduce it (opposite-polarity precursors always render in separate panes), so the test constructs the condition directly via `ShowGraphFullScan`.\r\n* Added a scan **Polarity** row to the Full Scan Acquisition property sheet (useful for mixed-polarity data), and made \"True\"/\"False\" localizable for \"Is Centroided\" display. This is the only user-facing change.\r\n \r\n<img width=\"732\" height=\"541\" alt=\"image\" src=\"https://github.com/user-attachments/assets/56c990ac-49f7-4d28-bd9d-3484ee3b0c94\" />\r\n\r\n\r\nFixes #4240\r\n\r\n## Test plan\r\n\r\n- [x] TestMixedPolarityFullScan — fails with `AssumptionException` (GraphFullScan.cs:1951) without the fix, passes with it\r\n- [x] TestFullScanGraph — passes with the new Polarity property\r\n\r\nCo-Authored-By: Claude <noreply@anthropic.com>\r\n",
+    "author": "bspratt",
+    "headRef": "Skyline/work/20260522_mixed_polarity_fullscan_crash",
+    "repository": "ProteoWizard/pwiz"
+  },
+  "diffRef": {
+    "repository": "ProteoWizard/pwiz",
+    "headSha": "eec6b77b0a4114171bc6b09e92e1cb32fc226923",
+    "baseSha": "0599784b33054f924f9114951cb4f8faf52958ba"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-ProteoWizard-pwiz-pr4241.diff",
+  "vendoredAt": "2026-05-24T03:09:01.391Z",
+  "collectedAt": "2026-05-24T03:09:01.391Z"
+}

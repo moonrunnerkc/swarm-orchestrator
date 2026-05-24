@@ -1,0 +1,800 @@
+diff --git a/codex-rs/analytics/src/analytics_client_tests.rs b/codex-rs/analytics/src/analytics_client_tests.rs
+index cabea808865..b8e3950005d 100644
+--- a/codex-rs/analytics/src/analytics_client_tests.rs
++++ b/codex-rs/analytics/src/analytics_client_tests.rs
+@@ -4,6 +4,8 @@ use crate::events::CodexAcceptedLineFingerprintsEventParams;
+ use crate::events::CodexAcceptedLineFingerprintsEventRequest;
+ use crate::events::CodexAppMentionedEventRequest;
+ use crate::events::CodexAppServerClientMetadata;
++use crate::events::CodexAppServerStartedEventParams;
++use crate::events::CodexAppServerStartedEventRequest;
+ use crate::events::CodexAppUsedEventRequest;
+ use crate::events::CodexCommandExecutionEventParams;
+ use crate::events::CodexCommandExecutionEventRequest;
+@@ -41,6 +43,7 @@ use crate::facts::AnalyticsFact;
+ use crate::facts::AnalyticsJsonRpcError;
+ use crate::facts::AppInvocation;
+ use crate::facts::AppMentionedInput;
++use crate::facts::AppServerStartedInput;
+ use crate::facts::AppUsedInput;
+ use crate::facts::CodexCompactionEvent;
+ use crate::facts::CompactionImplementation;
+@@ -1362,6 +1365,39 @@ fn thread_initialized_event_serializes_expected_shape() {
+     );
+ }
+ 
++#[test]
++fn app_server_started_event_serializes_expected_shape() {
++    let event = TrackEventRequest::AppServerStarted(CodexAppServerStartedEventRequest {
++        event_type: "codex_app_server_started",
++        event_params: CodexAppServerStartedEventParams {
++            runtime: sample_runtime_metadata(),
++            remote_control_enabled: true,
++            startup_duration_ms: 987,
++            completed_at: 12,
++        },
++    });
++
++    let payload = serde_json::to_value(&event).expect("serialize app-server started event");
++
++    assert_eq!(
++        payload,
++        json!({
++            "event_type": "codex_app_server_started",
++            "event_params": {
++                "runtime": {
++                    "codex_rs_version": "0.1.0",
++                    "runtime_os": "macos",
++                    "runtime_os_version": "15.3.1",
++                    "runtime_arch": "aarch64"
++                },
++                "remote_control_enabled": true,
++                "startup_duration_ms": 987,
++                "completed_at": 12
++            }
++        })
++    );
++}
++
+ #[test]
+ fn command_execution_event_serializes_expected_shape() {
+     let event = TrackEventRequest::CommandExecution(CodexCommandExecutionEventRequest {
+@@ -1639,6 +1675,45 @@ async fn initialize_caches_client_and_thread_lifecycle_publishes_once_initialize
+     );
+ }
+ 
++#[tokio::test]
++async fn app_server_started_fact_emits_event() {
++    let mut reducer = AnalyticsReducer::default();
++    let mut events = Vec::new();
++
++    reducer
++        .ingest(
++            AnalyticsFact::Custom(CustomAnalyticsFact::AppServerStarted(
++                AppServerStartedInput {
++                    runtime: sample_runtime_metadata(),
++                    remote_control_enabled: true,
++                    startup_duration_ms: 456,
++                    completed_at: 12,
++                },
++            )),
++            &mut events,
++        )
++        .await;
++
++    let payload = serde_json::to_value(&events).expect("serialize events");
++    assert_eq!(
++        payload,
++        json!([{
++            "event_type": "codex_app_server_started",
++            "event_params": {
++                "runtime": {
++                    "codex_rs_version": "0.1.0",
++                    "runtime_os": "macos",
++                    "runtime_os_version": "15.3.1",
++                    "runtime_arch": "aarch64"
++                },
++                "remote_control_enabled": true,
++                "startup_duration_ms": 456,
++                "completed_at": 12
++            }
++        }])
++    );
++}
++
+ #[tokio::test]
+ async fn unrelated_client_requests_are_ignored_by_reducer() {
+     let mut reducer = AnalyticsReducer::default();
+diff --git a/codex-rs/analytics/src/client.rs b/codex-rs/analytics/src/client.rs
+index fbcfa32dc5e..fac6644bca4 100644
+--- a/codex-rs/analytics/src/client.rs
++++ b/codex-rs/analytics/src/client.rs
+@@ -8,6 +8,7 @@ use crate::facts::AnalyticsFact;
+ use crate::facts::AnalyticsJsonRpcError;
+ use crate::facts::AppInvocation;
+ use crate::facts::AppMentionedInput;
++use crate::facts::AppServerStartedInput;
+ use crate::facts::AppUsedInput;
+ use crate::facts::CustomAnalyticsFact;
+ use crate::facts::HookRunFact;
+@@ -20,6 +21,7 @@ use crate::facts::SubAgentThreadStartedInput;
+ use crate::facts::TrackEventsContext;
+ use crate::facts::TurnResolvedConfigFact;
+ use crate::facts::TurnTokenUsageFact;
++use crate::now_unix_seconds;
+ use crate::reducer::AnalyticsReducer;
+ use codex_app_server_protocol::ClientRequest;
+ use codex_app_server_protocol::ClientResponsePayload;
+@@ -38,12 +40,35 @@ use std::collections::HashSet;
+ use std::sync::Arc;
+ use std::sync::Mutex;
+ use std::time::Duration;
++use std::time::Instant;
+ use tokio::sync::mpsc;
+ 
+ const ANALYTICS_EVENTS_QUEUE_SIZE: usize = 256;
+ const ANALYTICS_EVENTS_TIMEOUT: Duration = Duration::from_secs(10);
+ const ANALYTICS_EVENT_DEDUPE_MAX_KEYS: usize = 4096;
+ 
++#[derive(Clone, Copy, Debug)]
++pub struct StartedTimer {
++    started_at: Instant,
++}
++
++impl StartedTimer {
++    #[must_use]
++    pub fn start() -> Self {
++        Self {
++            started_at: Instant::now(),
++        }
++    }
++
++    fn elapsed_ms(self) -> u64 {
++        self.started_at
++            .elapsed()
++            .as_millis()
++            .try_into()
++            .unwrap_or(u64::MAX)
++    }
++}
++
+ #[derive(Clone)]
+ pub(crate) struct AnalyticsEventsQueue {
+     pub(crate) sender: mpsc::Sender<AnalyticsFact>,
+@@ -163,6 +188,17 @@ impl AnalyticsEventsClient {
+         });
+     }
+ 
++    pub fn track_app_server_started(&self, timer: StartedTimer, remote_control_enabled: bool) {
++        self.record_fact(AnalyticsFact::Custom(
++            CustomAnalyticsFact::AppServerStarted(AppServerStartedInput {
++                runtime: current_runtime_metadata(),
++                remote_control_enabled,
++                startup_duration_ms: timer.elapsed_ms(),
++                completed_at: now_unix_seconds(),
++            }),
++        ));
++    }
++
+     pub fn track_subagent_thread_started(&self, input: SubAgentThreadStartedInput) {
+         self.record_fact(AnalyticsFact::Custom(
+             CustomAnalyticsFact::SubAgentThreadStarted(input),
+diff --git a/codex-rs/analytics/src/events.rs b/codex-rs/analytics/src/events.rs
+index 87cb165ac21..48d668573c1 100644
+--- a/codex-rs/analytics/src/events.rs
++++ b/codex-rs/analytics/src/events.rs
+@@ -56,6 +56,7 @@ pub(crate) struct TrackEventsRequest {
+ #[serde(untagged)]
+ pub(crate) enum TrackEventRequest {
+     SkillInvocation(SkillInvocationEventRequest),
++    AppServerStarted(CodexAppServerStartedEventRequest),
+     ThreadInitialized(ThreadInitializedEvent),
+     GuardianReview(Box<GuardianReviewEventRequest>),
+     AppMentioned(CodexAppMentionedEventRequest),
+@@ -144,6 +145,20 @@ pub(crate) struct CodexRuntimeMetadata {
+     pub(crate) runtime_arch: String,
+ }
+ 
++#[derive(Serialize)]
++pub(crate) struct CodexAppServerStartedEventParams {
++    pub(crate) runtime: CodexRuntimeMetadata,
++    pub(crate) remote_control_enabled: bool,
++    pub(crate) startup_duration_ms: u64,
++    pub(crate) completed_at: u64,
++}
++
++#[derive(Serialize)]
++pub(crate) struct CodexAppServerStartedEventRequest {
++    pub(crate) event_type: &'static str,
++    pub(crate) event_params: CodexAppServerStartedEventParams,
++}
++
+ #[derive(Serialize)]
+ pub(crate) struct ThreadInitializedEventParams {
+     pub(crate) thread_id: String,
+diff --git a/codex-rs/analytics/src/facts.rs b/codex-rs/analytics/src/facts.rs
+index 56bd0a5d2c3..7ca0736c00a 100644
+--- a/codex-rs/analytics/src/facts.rs
++++ b/codex-rs/analytics/src/facts.rs
+@@ -274,6 +274,13 @@ pub struct CodexCompactionEvent {
+     pub duration_ms: Option<u64>,
+ }
+ 
++pub(crate) struct AppServerStartedInput {
++    pub runtime: CodexRuntimeMetadata,
++    pub remote_control_enabled: bool,
++    pub startup_duration_ms: u64,
++    pub completed_at: u64,
++}
++
+ #[allow(dead_code)]
+ pub(crate) enum AnalyticsFact {
+     Initialize {
+@@ -323,6 +330,7 @@ pub(crate) enum AnalyticsFact {
+ }
+ 
+ pub(crate) enum CustomAnalyticsFact {
++    AppServerStarted(AppServerStartedInput),
+     SubAgentThreadStarted(SubAgentThreadStartedInput),
+     Compaction(Box<CodexCompactionEvent>),
+     GuardianReview(Box<GuardianReviewEventParams>),
+diff --git a/codex-rs/analytics/src/lib.rs b/codex-rs/analytics/src/lib.rs
+index a33ca7b9e3e..a1ebd25c6ce 100644
+--- a/codex-rs/analytics/src/lib.rs
++++ b/codex-rs/analytics/src/lib.rs
+@@ -10,6 +10,7 @@ use std::time::UNIX_EPOCH;
+ pub use accepted_lines::accepted_line_fingerprints_from_unified_diff;
+ pub use accepted_lines::fingerprint_hash;
+ pub use client::AnalyticsEventsClient;
++pub use client::StartedTimer;
+ pub use events::AppServerRpcTransport;
+ pub use events::GuardianApprovalRequestSource;
+ pub use events::GuardianReviewAnalyticsResult;
+diff --git a/codex-rs/analytics/src/reducer.rs b/codex-rs/analytics/src/reducer.rs
+index d072720d10d..f68e42c1d1c 100644
+--- a/codex-rs/analytics/src/reducer.rs
++++ b/codex-rs/analytics/src/reducer.rs
+@@ -5,6 +5,8 @@ use crate::accepted_lines::accepted_line_repo_hash_for_cwd;
+ use crate::events::AppServerRpcTransport;
+ use crate::events::CodexAppMentionedEventRequest;
+ use crate::events::CodexAppServerClientMetadata;
++use crate::events::CodexAppServerStartedEventParams;
++use crate::events::CodexAppServerStartedEventRequest;
+ use crate::events::CodexAppUsedEventRequest;
+ use crate::events::CodexCollabAgentToolCallEventParams;
+ use crate::events::CodexCollabAgentToolCallEventRequest;
+@@ -61,6 +63,7 @@ use crate::events::subagent_thread_started_event_request;
+ use crate::facts::AnalyticsFact;
+ use crate::facts::AnalyticsJsonRpcError;
+ use crate::facts::AppMentionedInput;
++use crate::facts::AppServerStartedInput;
+ use crate::facts::AppUsedInput;
+ use crate::facts::CodexCompactionEvent;
+ use crate::facts::CustomAnalyticsFact;
+@@ -446,6 +449,9 @@ impl AnalyticsReducer {
+                 self.ingest_server_request_aborted(completed_at_ms, request_id, out);
+             }
+             AnalyticsFact::Custom(input) => match input {
++                CustomAnalyticsFact::AppServerStarted(input) => {
++                    self.ingest_app_server_started(input, out);
++                }
+                 CustomAnalyticsFact::SubAgentThreadStarted(input) => {
+                     self.ingest_subagent_thread_started(input, out);
+                 }
+@@ -508,6 +514,24 @@ impl AnalyticsReducer {
+         );
+     }
+ 
++    fn ingest_app_server_started(
++        &mut self,
++        input: AppServerStartedInput,
++        out: &mut Vec<TrackEventRequest>,
++    ) {
++        out.push(TrackEventRequest::AppServerStarted(
++            CodexAppServerStartedEventRequest {
++                event_type: "codex_app_server_started",
++                event_params: CodexAppServerStartedEventParams {
++                    runtime: input.runtime,
++                    remote_control_enabled: input.remote_control_enabled,
++                    startup_duration_ms: input.startup_duration_ms,
++                    completed_at: input.completed_at,
++                },
++            },
++        ));
++    }
++
+     fn ingest_subagent_thread_started(
+         &mut self,
+         input: SubAgentThreadStartedInput,
+diff --git a/codex-rs/app-server/src/lib.rs b/codex-rs/app-server/src/lib.rs
+index 80305d2d9fc..16d79e57418 100644
+--- a/codex-rs/app-server/src/lib.rs
++++ b/codex-rs/app-server/src/lib.rs
+@@ -41,6 +41,7 @@ use crate::transport::start_remote_control;
+ use crate::transport::start_stdio_connection;
+ use crate::transport::start_websocket_acceptor;
+ use codex_analytics::AppServerRpcTransport;
++use codex_analytics::StartedTimer;
+ use codex_app_server_protocol::ConfigLayerSource;
+ use codex_app_server_protocol::ConfigWarningNotification;
+ use codex_app_server_protocol::JSONRPCMessage;
+@@ -428,6 +429,7 @@ pub async fn run_main_with_transport_options(
+     auth: AppServerWebsocketAuthSettings,
+     runtime_options: AppServerRuntimeOptions,
+ ) -> IoResult<()> {
++    let app_server_start_timer = StartedTimer::start();
+     let (transport_event_tx, mut transport_event_rx) =
+         mpsc::channel::<TransportEvent>(CHANNEL_CAPACITY);
+     let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<OutgoingEnvelope>(CHANNEL_CAPACITY);
+@@ -698,6 +700,9 @@ pub async fn run_main_with_transport_options(
+ 
+     let auth_manager =
+         AuthManager::shared_from_config(&config, /*enable_codex_api_key_env*/ false).await;
++    let analytics_events_client =
++        analytics_events_client_from_config(Arc::clone(&auth_manager), &config);
++    let analytics_transport = analytics_rpc_transport(&transport);
+ 
+     let remote_control_requested = runtime_options.remote_control_enabled;
+     let remote_control_enabled = remote_control_requested && state_db.is_some();
+@@ -787,8 +792,7 @@ pub async fn run_main_with_transport_options(
+ 
+     let processor_handle = tokio::spawn({
+         let auth_manager = Arc::clone(&auth_manager);
+-        let analytics_events_client =
+-            analytics_events_client_from_config(Arc::clone(&auth_manager), &config);
++        let analytics_events_client = analytics_events_client.clone();
+         let outgoing_message_sender = Arc::new(OutgoingMessageSender::new(
+             outgoing_tx,
+             analytics_events_client.clone(),
+@@ -809,7 +813,7 @@ pub async fn run_main_with_transport_options(
+             session_source,
+             auth_manager,
+             installation_id,
+-            rpc_transport: analytics_rpc_transport(&transport),
++            rpc_transport: analytics_transport,
+             remote_control_handle: Some(remote_control_handle.clone()),
+             plugin_startup_tasks: runtime_options.plugin_startup_tasks,
+         }));
+@@ -1065,6 +1069,8 @@ pub async fn run_main_with_transport_options(
+             info!("processor task exited (channel closed)");
+         }
+     });
++    analytics_events_client
++        .track_app_server_started(app_server_start_timer, remote_control_enabled);
+ 
+     drop(transport_event_tx);
+ 
+diff --git a/codex-rs/app-server/tests/suite/v2/analytics.rs b/codex-rs/app-server/tests/suite/v2/analytics.rs
+index c6f95af95df..06adf862b93 100644
+--- a/codex-rs/app-server/tests/suite/v2/analytics.rs
++++ b/codex-rs/app-server/tests/suite/v2/analytics.rs
+@@ -98,28 +98,6 @@ pub(crate) async fn mount_analytics_capture(server: &MockServer, codex_home: &Pa
+     Ok(())
+ }
+ 
+-pub(crate) async fn wait_for_analytics_payload(
+-    server: &MockServer,
+-    read_timeout: Duration,
+-) -> Result<Value> {
+-    let body = timeout(read_timeout, async {
+-        loop {
+-            let Some(requests) = server.received_requests().await else {
+-                tokio::time::sleep(Duration::from_millis(25)).await;
+-                continue;
+-            };
+-            if let Some(request) = requests.iter().find(|request| {
+-                request.method == "POST" && request.url.path() == "/codex/analytics-events/events"
+-            }) {
+-                break request.body.clone();
+-            }
+-            tokio::time::sleep(Duration::from_millis(25)).await;
+-        }
+-    })
+-    .await?;
+-    serde_json::from_slice(&body).map_err(|err| anyhow::anyhow!("invalid analytics payload: {err}"))
+-}
+-
+ pub(crate) async fn wait_for_analytics_event(
+     server: &MockServer,
+     read_timeout: Duration,
+@@ -133,7 +111,10 @@ pub(crate) async fn wait_for_analytics_event(
+             };
+             for request in &requests {
+                 if request.method != "POST"
+-                    || request.url.path() != "/codex/analytics-events/events"
++                    || !request
++                        .url
++                        .path()
++                        .ends_with("/codex/analytics-events/events")
+                 {
+                     continue;
+                 }
+@@ -155,16 +136,6 @@ pub(crate) async fn wait_for_analytics_event(
+     .await?
+ }
+ 
+-pub(crate) fn thread_initialized_event(payload: &Value) -> Result<&Value> {
+-    let events = payload["events"]
+-        .as_array()
+-        .ok_or_else(|| anyhow::anyhow!("analytics payload missing events array"))?;
+-    events
+-        .iter()
+-        .find(|event| event["event_type"] == "codex_thread_initialized")
+-        .ok_or_else(|| anyhow::anyhow!("codex_thread_initialized event should be present"))
+-}
+-
+ pub(crate) fn assert_basic_thread_initialized_event(
+     event: &Value,
+     thread_id: &str,
+diff --git a/codex-rs/app-server/tests/suite/v2/plugin_install.rs b/codex-rs/app-server/tests/suite/v2/plugin_install.rs
+index 9d17e8747fd..bd80ce4a3a0 100644
+--- a/codex-rs/app-server/tests/suite/v2/plugin_install.rs
++++ b/codex-rs/app-server/tests/suite/v2/plugin_install.rs
+@@ -58,6 +58,8 @@ use wiremock::matchers::method;
+ use wiremock::matchers::path;
+ use wiremock::matchers::query_param;
+ 
++use super::analytics::wait_for_analytics_event;
++
+ // Plugin install tests wait on connector discovery after the install response path
+ // starts, which is noticeably slower on Windows CI.
+ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
+@@ -727,22 +729,22 @@ async fn plugin_install_tracks_analytics_event() -> Result<()> {
+     let response: PluginInstallResponse = to_response(response)?;
+     assert_eq!(response.apps_needing_auth, Vec::<AppSummary>::new());
+ 
+-    let payload = wait_for_plugin_analytics_payload(&analytics_server).await?;
++    let event =
++        wait_for_analytics_event(&analytics_server, DEFAULT_TIMEOUT, "codex_plugin_installed")
++            .await?;
+     assert_eq!(
+-        payload,
++        event,
+         json!({
+-            "events": [{
+-                "event_type": "codex_plugin_installed",
+-                "event_params": {
+-                    "plugin_id": "sample-plugin@debug",
+-                    "plugin_name": "sample-plugin",
+-                    "marketplace_name": "debug",
+-                    "has_skills": false,
+-                    "mcp_server_count": 0,
+-                    "connector_ids": [],
+-                    "product_client_id": DEFAULT_CLIENT_NAME,
+-                }
+-            }]
++            "event_type": "codex_plugin_installed",
++            "event_params": {
++                "plugin_id": "sample-plugin@debug",
++                "plugin_name": "sample-plugin",
++                "marketplace_name": "debug",
++                "has_skills": false,
++                "mcp_server_count": 0,
++                "connector_ids": [],
++                "product_client_id": DEFAULT_CLIENT_NAME,
++            }
+         })
+     );
+     Ok(())
+@@ -780,22 +782,21 @@ async fn plugin_install_tracks_remote_plugin_analytics_event() -> Result<()> {
+     let response: PluginInstallResponse = to_response(response)?;
+     assert_eq!(response.apps_needing_auth, Vec::<AppSummary>::new());
+ 
+-    let payload = wait_for_plugin_analytics_payload(&server).await?;
++    let event =
++        wait_for_analytics_event(&server, DEFAULT_TIMEOUT, "codex_plugin_installed").await?;
+     assert_eq!(
+-        payload,
++        event,
+         json!({
+-            "events": [{
+-                "event_type": "codex_plugin_installed",
+-                "event_params": {
+-                    "plugin_id": REMOTE_PLUGIN_ID,
+-                    "plugin_name": "linear",
+-                    "marketplace_name": "openai-curated-remote",
+-                    "has_skills": true,
+-                    "mcp_server_count": 0,
+-                    "connector_ids": [],
+-                    "product_client_id": DEFAULT_CLIENT_NAME,
+-                }
+-            }]
++            "event_type": "codex_plugin_installed",
++            "event_params": {
++                "plugin_id": REMOTE_PLUGIN_ID,
++                "plugin_name": "linear",
++                "marketplace_name": "openai-curated-remote",
++                "has_skills": true,
++                "mcp_server_count": 0,
++                "connector_ids": [],
++                "product_client_id": DEFAULT_CLIENT_NAME,
++            }
+         })
+     );
+     Ok(())
+@@ -1288,29 +1289,6 @@ async fn mount_backend_analytics_events(server: &MockServer) {
+         .await;
+ }
+ 
+-async fn wait_for_plugin_analytics_payload(server: &MockServer) -> Result<serde_json::Value> {
+-    timeout(DEFAULT_TIMEOUT, async {
+-        loop {
+-            let Some(requests) = server.received_requests().await else {
+-                tokio::time::sleep(Duration::from_millis(25)).await;
+-                continue;
+-            };
+-            if let Some(request) = requests.iter().find(|request| {
+-                request.method == "POST"
+-                    && request
+-                        .url
+-                        .path()
+-                        .ends_with("/codex/analytics-events/events")
+-            }) {
+-                return serde_json::from_slice(&request.body)
+-                    .map_err(|err| anyhow::anyhow!("invalid analytics payload: {err}"));
+-            }
+-            tokio::time::sleep(Duration::from_millis(25)).await;
+-        }
+-    })
+-    .await?
+-}
+-
+ fn write_remote_plugin_catalog_config(
+     codex_home: &std::path::Path,
+     base_url: &str,
+diff --git a/codex-rs/app-server/tests/suite/v2/plugin_share.rs b/codex-rs/app-server/tests/suite/v2/plugin_share.rs
+index 69f93f0b7e4..dd1dba4ef2c 100644
+--- a/codex-rs/app-server/tests/suite/v2/plugin_share.rs
++++ b/codex-rs/app-server/tests/suite/v2/plugin_share.rs
+@@ -383,7 +383,13 @@ plugin_sharing = false
+             .received_requests()
+             .await
+             .expect("wiremock should record requests")
+-            .is_empty()
++            .iter()
++            .all(|request| {
++                request
++                    .url
++                    .path()
++                    .ends_with("/codex/analytics-events/events")
++            })
+     );
+     Ok(())
+ }
+diff --git a/codex-rs/app-server/tests/suite/v2/plugin_uninstall.rs b/codex-rs/app-server/tests/suite/v2/plugin_uninstall.rs
+index 4feede934da..5256dec5715 100644
+--- a/codex-rs/app-server/tests/suite/v2/plugin_uninstall.rs
++++ b/codex-rs/app-server/tests/suite/v2/plugin_uninstall.rs
+@@ -24,6 +24,8 @@ use wiremock::matchers::header;
+ use wiremock::matchers::method;
+ use wiremock::matchers::path;
+ 
++use super::analytics::wait_for_analytics_event;
++
+ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+ const REMOTE_PLUGIN_ID: &str = "plugins~Plugin_linear";
+ const WORKSPACE_REMOTE_PLUGIN_ID: &str = "plugins_69f27c3e67848191a45cbaa5f2adb39d";
+@@ -116,37 +118,25 @@ async fn plugin_uninstall_tracks_analytics_event() -> Result<()> {
+     let response: PluginUninstallResponse = to_response(response)?;
+     assert_eq!(response, PluginUninstallResponse {});
+ 
+-    let payload = timeout(DEFAULT_TIMEOUT, async {
+-        loop {
+-            let Some(requests) = analytics_server.received_requests().await else {
+-                tokio::time::sleep(Duration::from_millis(25)).await;
+-                continue;
+-            };
+-            if let Some(request) = requests.iter().find(|request| {
+-                request.method == "POST" && request.url.path() == "/codex/analytics-events/events"
+-            }) {
+-                break request.body.clone();
+-            }
+-            tokio::time::sleep(Duration::from_millis(25)).await;
+-        }
+-    })
++    let event = wait_for_analytics_event(
++        &analytics_server,
++        DEFAULT_TIMEOUT,
++        "codex_plugin_uninstalled",
++    )
+     .await?;
+-    let payload: serde_json::Value = serde_json::from_slice(&payload).expect("analytics payload");
+     assert_eq!(
+-        payload,
++        event,
+         json!({
+-            "events": [{
+-                "event_type": "codex_plugin_uninstalled",
+-                "event_params": {
+-                    "plugin_id": "sample-plugin@debug",
+-                    "plugin_name": "sample-plugin",
+-                    "marketplace_name": "debug",
+-                    "has_skills": false,
+-                    "mcp_server_count": 0,
+-                    "connector_ids": [],
+-                    "product_client_id": DEFAULT_CLIENT_NAME,
+-                }
+-            }]
++            "event_type": "codex_plugin_uninstalled",
++            "event_params": {
++                "plugin_id": "sample-plugin@debug",
++                "plugin_name": "sample-plugin",
++                "marketplace_name": "debug",
++                "has_skills": false,
++                "mcp_server_count": 0,
++                "connector_ids": [],
++                "product_client_id": DEFAULT_CLIENT_NAME,
++            }
+         })
+     );
+     Ok(())
+diff --git a/codex-rs/app-server/tests/suite/v2/remote_control.rs b/codex-rs/app-server/tests/suite/v2/remote_control.rs
+index d71f05bf584..24225584979 100644
+--- a/codex-rs/app-server/tests/suite/v2/remote_control.rs
++++ b/codex-rs/app-server/tests/suite/v2/remote_control.rs
+@@ -17,6 +17,8 @@ use codex_config::types::AuthCredentialsStoreMode;
+ use pretty_assertions::assert_eq;
+ use tempfile::TempDir;
+ use tokio::io::AsyncBufReadExt;
++use tokio::io::AsyncReadExt;
++use tokio::io::AsyncWriteExt;
+ use tokio::io::BufReader;
+ use tokio::net::TcpListener;
+ use tokio::net::TcpStream;
+@@ -150,8 +152,12 @@ impl BlockingRemoteControlBackend {
+         let (enroll_request_tx, enroll_request_rx) = oneshot::channel();
+         let server_task = tokio::spawn(async move {
+             match read_enroll_request(listener).await {
+-                Ok((request_line, _reader)) => {
++                Ok(PendingHttpRequest {
++                    request_line,
++                    connection,
++                }) => {
+                     let _ = enroll_request_tx.send(Ok(request_line));
++                    let _connection = connection;
+                     std::future::pending::<()>().await;
+                 }
+                 Err(err) => {
+@@ -181,20 +187,48 @@ impl Drop for BlockingRemoteControlBackend {
+     }
+ }
+ 
+-async fn read_enroll_request(listener: TcpListener) -> Result<(String, BufReader<TcpStream>)> {
+-    let (stream, _) = listener.accept().await?;
+-    let mut reader = BufReader::new(stream);
+-
+-    let mut request_line = String::new();
+-    reader.read_line(&mut request_line).await?;
++struct PendingHttpRequest {
++    request_line: String,
++    connection: BufReader<TcpStream>,
++}
+ 
++async fn read_enroll_request(listener: TcpListener) -> Result<PendingHttpRequest> {
+     loop {
+-        let mut line = String::new();
+-        reader.read_line(&mut line).await?;
+-        if line == "\r\n" {
+-            break;
++        let (stream, _) = listener.accept().await?;
++        let mut reader = BufReader::new(stream);
++
++        let mut request_line = String::new();
++        reader.read_line(&mut request_line).await?;
++
++        let mut content_length = 0usize;
++        loop {
++            let mut line = String::new();
++            reader.read_line(&mut line).await?;
++            if let Some(value) = line.strip_prefix("Content-Length: ") {
++                content_length = value.trim().parse().unwrap_or_default();
++            }
++            if line == "\r\n" {
++                break;
++            }
+         }
+-    }
+ 
+-    Ok((request_line.trim_end().to_string(), reader))
++        if content_length > 0 {
++            let mut body = vec![0; content_length];
++            reader.read_exact(&mut body).await?;
++        }
++
++        let request_line = request_line.trim_end().to_string();
++        if request_line.contains("/codex/analytics-events/events ") {
++            reader
++                .get_mut()
++                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
++                .await?;
++            continue;
++        }
++
++        return Ok(PendingHttpRequest {
++            request_line,
++            connection: reader,
++        });
++    }
+ }
+diff --git a/codex-rs/app-server/tests/suite/v2/thread_fork.rs b/codex-rs/app-server/tests/suite/v2/thread_fork.rs
+index cc89dd71cb9..d0006b2e5b0 100644
+--- a/codex-rs/app-server/tests/suite/v2/thread_fork.rs
++++ b/codex-rs/app-server/tests/suite/v2/thread_fork.rs
+@@ -43,8 +43,7 @@ use wiremock::matchers::path;
+ 
+ use super::analytics::assert_basic_thread_initialized_event;
+ use super::analytics::mount_analytics_capture;
+-use super::analytics::thread_initialized_event;
+-use super::analytics::wait_for_analytics_payload;
++use super::analytics::wait_for_analytics_event;
+ 
+ #[cfg(windows)]
+ const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
+@@ -403,9 +402,9 @@ async fn thread_fork_tracks_thread_initialized_analytics() -> Result<()> {
+     .await??;
+     let ThreadForkResponse { thread, .. } = to_response::<ThreadForkResponse>(fork_resp)?;
+ 
+-    let payload = wait_for_analytics_payload(&server, DEFAULT_READ_TIMEOUT).await?;
+-    let event = thread_initialized_event(&payload)?;
+-    assert_basic_thread_initialized_event(event, &thread.id, "mock-model", "forked", "user");
++    let event =
++        wait_for_analytics_event(&server, DEFAULT_READ_TIMEOUT, "codex_thread_initialized").await?;
++    assert_basic_thread_initialized_event(&event, &thread.id, "mock-model", "forked", "user");
+     Ok(())
+ }
+ 
+diff --git a/codex-rs/app-server/tests/suite/v2/thread_resume.rs b/codex-rs/app-server/tests/suite/v2/thread_resume.rs
+index 6416499663a..baaa783c068 100644
+--- a/codex-rs/app-server/tests/suite/v2/thread_resume.rs
++++ b/codex-rs/app-server/tests/suite/v2/thread_resume.rs
+@@ -94,8 +94,7 @@ use wiremock::matchers::path;
+ 
+ use super::analytics::assert_basic_thread_initialized_event;
+ use super::analytics::mount_analytics_capture;
+-use super::analytics::thread_initialized_event;
+-use super::analytics::wait_for_analytics_payload;
++use super::analytics::wait_for_analytics_event;
+ 
+ #[cfg(windows)]
+ const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
+@@ -419,9 +418,9 @@ async fn thread_resume_tracks_thread_initialized_analytics() -> Result<()> {
+     );
+     assert_eq!(thread.thread_source, Some(ThreadSource::User));
+ 
+-    let payload = wait_for_analytics_payload(&server, DEFAULT_READ_TIMEOUT).await?;
+-    let event = thread_initialized_event(&payload)?;
+-    assert_basic_thread_initialized_event(event, &thread.id, "gpt-5.3-codex", "resumed", "user");
++    let event =
++        wait_for_analytics_event(&server, DEFAULT_READ_TIMEOUT, "codex_thread_initialized").await?;
++    assert_basic_thread_initialized_event(&event, &thread.id, "gpt-5.3-codex", "resumed", "user");
+     assert_eq!(event["event_params"]["thread_source"], "user");
+     Ok(())
+ }
+diff --git a/codex-rs/app-server/tests/suite/v2/thread_start.rs b/codex-rs/app-server/tests/suite/v2/thread_start.rs
+index ecd8ad8e3d6..1c6759152d1 100644
+--- a/codex-rs/app-server/tests/suite/v2/thread_start.rs
++++ b/codex-rs/app-server/tests/suite/v2/thread_start.rs
+@@ -46,8 +46,7 @@ use wiremock::matchers::path;
+ 
+ use super::analytics::assert_basic_thread_initialized_event;
+ use super::analytics::mount_analytics_capture;
+-use super::analytics::thread_initialized_event;
+-use super::analytics::wait_for_analytics_payload;
++use super::analytics::wait_for_analytics_event;
+ 
+ const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+ const INVALID_REQUEST_ERROR_CODE: i64 = -32600;
+@@ -436,10 +435,9 @@ async fn thread_start_tracks_thread_initialized_analytics() -> Result<()> {
+     .await??;
+     let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(resp)?;
+ 
+-    let payload = wait_for_analytics_payload(&server, DEFAULT_READ_TIMEOUT).await?;
+-    assert_eq!(payload["events"].as_array().expect("events array").len(), 1);
+-    let event = thread_initialized_event(&payload)?;
+-    assert_basic_thread_initialized_event(event, &thread.id, "mock-model", "new", "user");
++    let event =
++        wait_for_analytics_event(&server, DEFAULT_READ_TIMEOUT, "codex_thread_initialized").await?;
++    assert_basic_thread_initialized_event(&event, &thread.id, "mock-model", "new", "user");
+     Ok(())
+ }
+ 

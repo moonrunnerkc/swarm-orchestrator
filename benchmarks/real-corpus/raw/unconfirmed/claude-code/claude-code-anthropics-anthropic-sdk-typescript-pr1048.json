@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1048",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1048,
+    "headSha": "97e4481e37006548cc92bd81b3d4ad78e3fa9311",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02",
+    "title": "fix(stream): preserve cache creation usage deltas",
+    "body": "## Summary\n\n- expose `cache_creation` on stable and beta message delta usage types\n- preserve cache creation TTL breakdowns when accumulating streamed message deltas into the final message snapshot\n- add stable and beta mock-stream regression coverage for `ephemeral_5m_input_tokens` and `ephemeral_1h_input_tokens`\n\nFixes #793.\n\n## Validation\n\n- `./node_modules/.bin/jest tests/api-resources/MessageStream.test.ts tests/api-resources/BetaMessageStream.test.ts --runInBand --testNamePattern=\"cache creation TTL\"`\n- `./node_modules/.bin/jest tests/api-resources/MessageStream.test.ts tests/api-resources/BetaMessageStream.test.ts --runInBand`\n- `./node_modules/.bin/prettier --check tests/api-resources/BetaMessageStream.test.ts tests/api-resources/MessageStream.test.ts src/lib/BetaMessageStream.ts src/lib/MessageStream.ts src/resources/beta/messages/messages.ts src/resources/messages/messages.ts`\n- `./node_modules/.bin/eslint src/resources/messages/messages.ts src/resources/beta/messages/messages.ts src/lib/MessageStream.ts src/lib/BetaMessageStream.ts tests/api-resources/MessageStream.test.ts tests/api-resources/BetaMessageStream.test.ts`\n- `./node_modules/typescript/bin/tsc --noEmit`\n- `./scripts/build`\n- `git diff --check`",
+    "author": "pragnyanramtha",
+    "headRef": "codex/stream-cache-creation-usage",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "97e4481e37006548cc92bd81b3d4ad78e3fa9311",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1048.diff",
+  "vendoredAt": "2026-05-24T03:16:24.223Z",
+  "collectedAt": "2026-05-24T03:16:24.223Z"
+}

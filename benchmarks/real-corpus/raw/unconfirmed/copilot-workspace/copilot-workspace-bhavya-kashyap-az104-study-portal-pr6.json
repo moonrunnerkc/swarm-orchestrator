@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-bhavya-kashyap-az104-study-portal-pr6",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 6,
+    "headSha": "358a38ae1a9c66a0caad84b2125eb353ef45d9fe",
+    "baseSha": "e3ae69b09c2bdef335ad47c549a70572923f8523",
+    "title": "Add ExamTopics AZ-104 Q1–Q20 question bank and surface it in Course Modules",
+    "body": "Extracts 20 real ExamTopics AZ-104 Topic 1 questions into a structured static database and wires them into the Course Modules page with interactive reveal-on-click behaviour.\n\n## Data layer\n- **`examtopics-data.json`** — canonical JSON database; 20 questions (Q1–Q20), each with `id`, `topic`, optional `note`, full `question` text, `options[]`, `answer` (letter), `answerIndex` (0-based), `communityVote`, `explanation`, and `discussion: []`\n- **`examtopics-data.js`** — thin `window.EXAMTOPICS_DATA = ...` wrapper; matches the existing `quiz-data.js` / `course-data.js` loader pattern so no `fetch()` is needed on a static host\n\n```js\n// schema per question\n{\n  id: 12, topic: 1,\n  question: \"...\",\n  options: [\"Geo-redundant storage\", \"Read-only geo-redundant storage\", ...],\n  answer: \"B\", answerIndex: 1,\n  communityVote: \"B (76%)\",\n  explanation: \"RA-GRS satisfies all three requirements...\",\n  discussion: []\n}\n```\n\n## UI — Course Modules page (`modules.js`)\n- Appends an **\"ExamTopics Practice Questions\"** card after the five domain study cards\n- Each question is an accordion row: Q-number badge + truncated title → expands to full question + options\n- **Reveal Answer** button highlights the correct option green, dims wrong ones, then shows the explanation block and community vote percentage\n- `discussion[]` is rendered per question — empty state shows a placeholder; ready for future comment injection\n\n## HTML\n- `index.html` loads `examtopics-data.js` alongside the other data scripts",
+    "author": "Copilot",
+    "headRef": "copilot/fetch-data-from-exam-page",
+    "repository": "bhavya-kashyap/az104-study-portal"
+  },
+  "diffRef": {
+    "repository": "bhavya-kashyap/az104-study-portal",
+    "headSha": "358a38ae1a9c66a0caad84b2125eb353ef45d9fe",
+    "baseSha": "e3ae69b09c2bdef335ad47c549a70572923f8523"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-bhavya-kashyap-az104-study-portal-pr6.diff",
+  "vendoredAt": "2026-05-24T03:05:41.506Z",
+  "collectedAt": "2026-05-24T03:05:41.506Z"
+}

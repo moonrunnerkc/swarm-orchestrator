@@ -1,0 +1,559 @@
+diff --git a/components/ui/tabs.tsx b/components/ui/tabs.tsx
+new file mode 100644
+index 0000000..8ee8054
+--- /dev/null
++++ b/components/ui/tabs.tsx
+@@ -0,0 +1,82 @@
++"use client"
++
++import { Tabs as TabsPrimitive } from "@base-ui/react/tabs"
++import { cva, type VariantProps } from "class-variance-authority"
++
++import { cn } from "@/lib/utils"
++
++function Tabs({
++  className,
++  orientation = "horizontal",
++  ...props
++}: TabsPrimitive.Root.Props) {
++  return (
++    <TabsPrimitive.Root
++      data-slot="tabs"
++      data-orientation={orientation}
++      className={cn(
++        "group/tabs flex gap-2 data-horizontal:flex-col",
++        className
++      )}
++      {...props}
++    />
++  )
++}
++
++const tabsListVariants = cva(
++  "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-horizontal/tabs:h-8 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
++  {
++    variants: {
++      variant: {
++        default: "bg-muted",
++        line: "gap-1 bg-transparent",
++      },
++    },
++    defaultVariants: {
++      variant: "default",
++    },
++  }
++)
++
++function TabsList({
++  className,
++  variant = "default",
++  ...props
++}: TabsPrimitive.List.Props & VariantProps<typeof tabsListVariants>) {
++  return (
++    <TabsPrimitive.List
++      data-slot="tabs-list"
++      data-variant={variant}
++      className={cn(tabsListVariants({ variant }), className)}
++      {...props}
++    />
++  )
++}
++
++function TabsTrigger({ className, ...props }: TabsPrimitive.Tab.Props) {
++  return (
++    <TabsPrimitive.Tab
++      data-slot="tabs-trigger"
++      className={cn(
++        "relative inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-1.5 py-0.5 text-sm font-medium whitespace-nowrap text-foreground/60 transition-all group-data-vertical/tabs:w-full group-data-vertical/tabs:justify-start hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 has-data-[icon=inline-end]:pr-1 has-data-[icon=inline-start]:pl-1 aria-disabled:pointer-events-none aria-disabled:opacity-50 dark:text-muted-foreground dark:hover:text-foreground group-data-[variant=default]/tabs-list:data-active:shadow-sm group-data-[variant=line]/tabs-list:data-active:shadow-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
++        "group-data-[variant=line]/tabs-list:bg-transparent group-data-[variant=line]/tabs-list:data-active:bg-transparent dark:group-data-[variant=line]/tabs-list:data-active:border-transparent dark:group-data-[variant=line]/tabs-list:data-active:bg-transparent",
++        "data-active:bg-background data-active:text-foreground dark:data-active:border-input dark:data-active:bg-input/30 dark:data-active:text-foreground",
++        "after:absolute after:bg-foreground after:opacity-0 after:transition-opacity group-data-horizontal/tabs:after:inset-x-0 group-data-horizontal/tabs:after:bottom-[-5px] group-data-horizontal/tabs:after:h-0.5 group-data-vertical/tabs:after:inset-y-0 group-data-vertical/tabs:after:-right-1 group-data-vertical/tabs:after:w-0.5 group-data-[variant=line]/tabs-list:data-active:after:opacity-100",
++        className
++      )}
++      {...props}
++    />
++  )
++}
++
++function TabsContent({ className, ...props }: TabsPrimitive.Panel.Props) {
++  return (
++    <TabsPrimitive.Panel
++      data-slot="tabs-content"
++      className={cn("flex-1 text-sm outline-none", className)}
++      {...props}
++    />
++  )
++}
++
++export { Tabs, TabsList, TabsTrigger, TabsContent, tabsListVariants }
+diff --git a/components/workspace/CandidateDashboardPane.tsx b/components/workspace/CandidateDashboardPane.tsx
+index 89b1524..885d884 100644
+--- a/components/workspace/CandidateDashboardPane.tsx
++++ b/components/workspace/CandidateDashboardPane.tsx
+@@ -10,6 +10,7 @@ import { Package } from "lucide-react";
+ 
+ import { type Part } from "@/lib/schema";
+ import { CATEGORY_LABELS } from "@/lib/labels";
++import { cn } from "@/lib/utils";
+ import { Badge } from "@/components/ui/badge";
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+ import { ScrollArea } from "@/components/ui/scroll-area";
+@@ -17,12 +18,13 @@ import { Separator } from "@/components/ui/separator";
+ 
+ type PartDetailPaneProps = {
+   part: Part | null;
++  className?: string;
+ };
+ 
+-export function CandidateDashboardPane({ part }: PartDetailPaneProps) {
++export function CandidateDashboardPane({ part, className }: PartDetailPaneProps) {
+   if (!part) {
+     return (
+-      <div className="flex flex-1 flex-col items-center justify-center gap-2 border-r border-border bg-background text-muted-foreground">
++      <div className={cn("flex flex-1 flex-col items-center justify-center gap-2 border-r border-border bg-background text-muted-foreground", className)}>
+         <Package className="size-8 opacity-40" />
+         <p className="text-sm">部品を選択してください</p>
+       </div>
+@@ -32,7 +34,7 @@ export function CandidateDashboardPane({ part }: PartDetailPaneProps) {
+   const categoryLabel = CATEGORY_LABELS[part.category] ?? part.category;
+ 
+   return (
+-    <div className="flex flex-1 flex-col border-r border-border bg-background">
++    <div className={cn("flex flex-1 flex-col border-r border-border bg-background", className)}>
+       {/* ヘッダー */}
+       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+         <h2 className="min-w-0 truncate text-sm font-semibold text-foreground">
+diff --git a/components/workspace/CandidateDetailPane.tsx b/components/workspace/CandidateDetailPane.tsx
+index 3ca43d5..a31a33f 100644
+--- a/components/workspace/CandidateDetailPane.tsx
++++ b/components/workspace/CandidateDetailPane.tsx
+@@ -13,6 +13,7 @@ import {
+   closestCenter,
+   KeyboardSensor,
+   PointerSensor,
++  TouchSensor,
+   useSensor,
+   useSensors,
+   type DragEndEvent,
+@@ -42,6 +43,9 @@ type BomPaneProps = {
+   onUpdateQty: (partId: string, quantity: number) => void;
+   onRemoveEntry: (partId: string) => void;
+   onReorderBom: (orderedPartIds: string[]) => void;
++  className?: string;
++  showToggle?: boolean;
++  dndContextId?: string;
+ };
+ 
+ export function CandidateDetailPane({
+@@ -52,11 +56,15 @@ export function CandidateDetailPane({
+   onUpdateQty,
+   onRemoveEntry,
+   onReorderBom,
++  className,
++  showToggle = true,
++  dndContextId = "bom-dnd-context",
+ }: BomPaneProps) {
+   const total = calcBomTotal(rows);
+ 
+   const sensors = useSensors(
+     useSensor(PointerSensor),
++    useSensor(TouchSensor),
+     useSensor(KeyboardSensor, {
+       coordinateGetter: sortableKeyboardCoordinates,
+     }),
+@@ -102,11 +110,12 @@ export function CandidateDetailPane({
+       className={cn(
+         "flex shrink-0 flex-col border-l border-border bg-background transition-[width] duration-200",
+         pane4Open ? "w-[300px]" : "w-10",
++        className,
+       )}
+     >
+       {/* ヘッダー */}
+       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2">
+-        <Pane4Toggle open={pane4Open} onToggle={onTogglePane4} />
++        {showToggle && <Pane4Toggle open={pane4Open} onToggle={onTogglePane4} />}
+         {pane4Open && (
+           <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
+             BOM
+@@ -141,7 +150,7 @@ export function CandidateDetailPane({
+             <>
+               <ScrollArea className="min-h-0 flex-1">
+                 <DndContext
+-                  id="bom-dnd-context"
++                  id={dndContextId}
+                   sensors={sensors}
+                   collisionDetection={closestCenter}
+                   onDragEnd={handleDragEnd}
+diff --git a/components/workspace/CandidateListPane.tsx b/components/workspace/CandidateListPane.tsx
+index 572b00a..3fbf76c 100644
+--- a/components/workspace/CandidateListPane.tsx
++++ b/components/workspace/CandidateListPane.tsx
+@@ -43,6 +43,7 @@ type PartsPaneProps = {
+   onSelectPart: (id: string) => void;
+   onAddToBom: (partId: string) => void;
+   onImportParts: (parts: Part[]) => void;
++  className?: string;
+ };
+ 
+ export function CandidateListPane({
+@@ -51,6 +52,7 @@ export function CandidateListPane({
+   onSelectPart,
+   onAddToBom,
+   onImportParts,
++  className,
+ }: PartsPaneProps) {
+   const fileInputRef = useRef<HTMLInputElement>(null);
+   const [searchQuery, setSearchQuery] = useState("");
+@@ -178,7 +180,7 @@ export function CandidateListPane({
+   }
+ 
+   return (
+-    <section className="flex w-[300px] shrink-0 flex-col border-r border-border bg-background">
++    <section className={cn("flex w-[300px] shrink-0 flex-col border-r border-border bg-background", className)}>
+       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
+         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
+           部品カタログ
+diff --git a/components/workspace/GlobalHeader.tsx b/components/workspace/GlobalHeader.tsx
+index 07b5f1e..10d7867 100644
+--- a/components/workspace/GlobalHeader.tsx
++++ b/components/workspace/GlobalHeader.tsx
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { Settings } from "lucide-react";
++import { PanelLeft, Settings } from "lucide-react";
+ 
+ import {
+   Breadcrumb,
+@@ -11,6 +11,7 @@ import {
+   BreadcrumbSeparator,
+ } from "@/components/ui/breadcrumb";
+ import { Button } from "@/components/ui/button";
++import { useSidebar } from "@/components/ui/sidebar";
+ import {
+   Tooltip,
+   TooltipContent,
+@@ -28,8 +29,22 @@ export function GlobalHeader({
+   clientName,
+   partName,
+ }: GlobalHeaderProps) {
++  const { toggleSidebar } = useSidebar();
++
+   return (
+     <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background px-3">
++      {/* モバイルのみ: プロジェクト一覧を Sheet で開くボタン */}
++      <Button
++        type="button"
++        variant="ghost"
++        size="icon-sm"
++        onClick={toggleSidebar}
++        aria-label="プロジェクト一覧を開く"
++        className="shrink-0 text-muted-foreground hover:text-foreground md:hidden"
++      >
++        <PanelLeft aria-hidden="true" />
++      </Button>
++
+       <Breadcrumb
+         className="min-w-0 flex-1 overflow-hidden"
+         aria-label="パンくず"
+diff --git a/components/workspace/ProjectFormDialog.tsx b/components/workspace/ProjectFormDialog.tsx
+index f6599e0..9382723 100644
+--- a/components/workspace/ProjectFormDialog.tsx
++++ b/components/workspace/ProjectFormDialog.tsx
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { useState, useEffect } from "react";
++import { useState } from "react";
+ 
+ import {
+   AlertDialog,
+@@ -37,27 +37,6 @@ export function ProjectFormDialog({
+   onSubmit,
+ }: ProjectFormDialogProps) {
+   const isEdit = initialName !== undefined;
+-  const [name, setName] = useState(initialName ?? "");
+-  const [client, setClient] = useState(initialClient ?? "");
+-  const [folder, setFolder] = useState(initialFolder ?? "");
+-
+-  // ダイアログが開くたびに初期値をリセット
+-  useEffect(() => {
+-    if (open) {
+-      setName(initialName ?? "");
+-      setClient(initialClient ?? "");
+-      setFolder(initialFolder ?? "");
+-    }
+-  }, [open, initialName, initialClient, initialFolder]);
+-
+-  const handleSubmit = () => {
+-    const trimmedName = name.trim();
+-    if (!trimmedName) return;
+-    onSubmit(trimmedName, client.trim(), folder.trim());
+-    onOpenChange(false);
+-  };
+-
+-  const datalistId = "folder-suggestions";
+ 
+   return (
+     <AlertDialog open={open} onOpenChange={onOpenChange}>
+@@ -72,63 +51,112 @@ export function ProjectFormDialog({
+               : "新しい制御盤プロジェクトを追加します"}
+           </AlertDialogDescription>
+         </AlertDialogHeader>
+-        <FieldGroup>
+-          <Field>
+-            <FieldLabel htmlFor="project-name">盤名</FieldLabel>
+-            <Input
+-              id="project-name"
+-              autoFocus
+-              value={name}
+-              onChange={(e) => setName(e.target.value)}
+-              onKeyDown={(e) => {
+-                if (e.key === "Enter") handleSubmit();
+-              }}
+-              placeholder="例: 第2ライン動力盤"
+-            />
+-          </Field>
+-          <Field>
+-            <FieldLabel htmlFor="project-client">客先名</FieldLabel>
+-            <Input
+-              id="project-client"
+-              value={client}
+-              onChange={(e) => setClient(e.target.value)}
+-              onKeyDown={(e) => {
+-                if (e.key === "Enter") handleSubmit();
+-              }}
+-              placeholder="例: 〇〇工場"
+-            />
+-          </Field>
+-          <Field>
+-            <FieldLabel htmlFor="project-folder">フォルダ</FieldLabel>
+-            <Input
+-              id="project-folder"
+-              value={folder}
+-              onChange={(e) => setFolder(e.target.value)}
+-              onKeyDown={(e) => {
+-                if (e.key === "Enter") handleSubmit();
+-              }}
+-              placeholder="例: 第1工場（空白でフォルダなし）"
+-              list={datalistId}
+-            />
+-            {existingFolders.length > 0 && (
+-              <datalist id={datalistId}>
+-                {existingFolders.map((f) => (
+-                  <option key={f} value={f} />
+-                ))}
+-              </datalist>
+-            )}
+-          </Field>
+-        </FieldGroup>
+-        <AlertDialogFooter>
+-          <AlertDialogCancel>キャンセル</AlertDialogCancel>
+-          <AlertDialogAction
+-            onClick={handleSubmit}
+-            disabled={!name.trim()}
+-          >
+-            {isEdit ? "保存" : "追加"}
+-          </AlertDialogAction>
+-        </AlertDialogFooter>
++        {/* key でリマウントして useState を再初期化 — Effect+setState を使わない */}
++        <FormFields
++          key={`${open ? "open" : "closed"}-${initialName ?? ""}-${initialClient ?? ""}-${initialFolder ?? ""}`}
++          initialName={initialName}
++          initialClient={initialClient}
++          initialFolder={initialFolder}
++          existingFolders={existingFolders}
++          isEdit={isEdit}
++          onSubmit={onSubmit}
++          onOpenChange={onOpenChange}
++        />
+       </AlertDialogContent>
+     </AlertDialog>
+   );
+ }
++
++type FormFieldsProps = {
++  initialName?: string;
++  initialClient?: string;
++  initialFolder?: string;
++  existingFolders: string[];
++  isEdit: boolean;
++  onSubmit: (name: string, client: string, folder: string) => void;
++  onOpenChange: (open: boolean) => void;
++};
++
++function FormFields({
++  initialName,
++  initialClient,
++  initialFolder,
++  existingFolders,
++  isEdit,
++  onSubmit,
++  onOpenChange,
++}: FormFieldsProps) {
++  const [name, setName] = useState(initialName ?? "");
++  const [client, setClient] = useState(initialClient ?? "");
++  const [folder, setFolder] = useState(initialFolder ?? "");
++
++  const handleSubmit = () => {
++    const trimmedName = name.trim();
++    if (!trimmedName) return;
++    onSubmit(trimmedName, client.trim(), folder.trim());
++    onOpenChange(false);
++  };
++
++  const datalistId = "folder-suggestions";
++
++  return (
++    <>
++      <FieldGroup>
++        <Field>
++          <FieldLabel htmlFor="project-name">盤名</FieldLabel>
++          <Input
++            id="project-name"
++            autoFocus
++            value={name}
++            onChange={(e) => setName(e.target.value)}
++            onKeyDown={(e) => {
++              if (e.key === "Enter") handleSubmit();
++            }}
++            placeholder="例: 第2ライン動力盤"
++          />
++        </Field>
++        <Field>
++          <FieldLabel htmlFor="project-client">客先名</FieldLabel>
++          <Input
++            id="project-client"
++            value={client}
++            onChange={(e) => setClient(e.target.value)}
++            onKeyDown={(e) => {
++              if (e.key === "Enter") handleSubmit();
++            }}
++            placeholder="例: 〇〇工場"
++          />
++        </Field>
++        <Field>
++          <FieldLabel htmlFor="project-folder">フォルダ</FieldLabel>
++          <Input
++            id="project-folder"
++            value={folder}
++            onChange={(e) => setFolder(e.target.value)}
++            onKeyDown={(e) => {
++              if (e.key === "Enter") handleSubmit();
++            }}
++            placeholder="例: 第1工場（空白でフォルダなし）"
++            list={datalistId}
++          />
++          {existingFolders.length > 0 && (
++            <datalist id={datalistId}>
++              {existingFolders.map((f) => (
++                <option key={f} value={f} />
++              ))}
++            </datalist>
++          )}
++        </Field>
++      </FieldGroup>
++      <AlertDialogFooter>
++        <AlertDialogCancel>キャンセル</AlertDialogCancel>
++        <AlertDialogAction
++          onClick={handleSubmit}
++          disabled={!name.trim()}
++        >
++          {isEdit ? "保存" : "追加"}
++        </AlertDialogAction>
++      </AlertDialogFooter>
++    </>
++  );
++}
+diff --git a/components/workspace/Workspace.tsx b/components/workspace/Workspace.tsx
+index 36a6798..861c66c 100644
+--- a/components/workspace/Workspace.tsx
++++ b/components/workspace/Workspace.tsx
+@@ -9,10 +9,16 @@
+  * ┌─ Sidebar (Pane 1) ─┬─ SidebarInset ──────────────────────┐
+  * │ ProjectPane         │ ┌─ GlobalHeader (h-12) ────────────┐ │
+  * │ collapsible="icon"  │ └──────────────────────────────────┘ │
++ * │                     │ [デスクトップ: md以上]                │
+  * │                     │ ┌─ Pane 2 ──┬─ Pane 3 ──┬─ Pane 4 ─┐ │
+  * │                     │ │ Parts     │ Part      │ BOM      │ │
+  * │                     │ │ Catalog   │ Detail    │          │ │
+- * └─────────────────────┴─┴───────────┴───────────┴──────────┘
++ * │                     │ └──────────────────────────────────┘ │
++ * │                     │ [モバイル: md未満]                    │
++ * │                     │ ┌─ タブバー ──────────────────────┐ │
++ * │                     │ │ 部品一覧 │ 部品詳細 │ BOM       │ │
++ * │                     │ └──────────────────────────────────┘ │
++ * └─────────────────────┴────────────────────────────────────┘
+  * ```
+  */
+ 
+@@ -40,6 +46,7 @@ import { createMinimalProject } from "@/lib/data/factories";
+ import { buildBomRows } from "@/lib/computed/bom";
+ import { CATEGORY_LABELS } from "@/lib/labels";
+ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
++import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+ import { GlobalHeader } from "@/components/workspace/GlobalHeader";
+ import { PositionPane } from "@/components/workspace/PositionPane";
+ import { CandidateListPane } from "@/components/workspace/CandidateListPane";
+@@ -251,7 +258,9 @@ export function Workspace({
+           clientName={activeProject?.client ?? ""}
+           partName={activePart?.name ?? ""}
+         />
+-        <div className="flex min-h-0 flex-1">
++
++        {/* デスクトップレイアウト（md 以上）: 3ペイン横並び */}
++        <div className="hidden min-h-0 flex-1 md:flex">
+           <CandidateListPane
+             groups={partGroups}
+             selectedPartId={selectedPartId}
+@@ -270,6 +279,50 @@ export function Workspace({
+             onReorderBom={reorderBom}
+           />
+         </div>
++
++        {/* モバイルレイアウト（md 未満）: タブ切り替え */}
++        <div className="flex min-h-0 flex-1 flex-col md:hidden">
++          <Tabs defaultValue="catalog" className="flex min-h-0 flex-1 flex-col">
++            <TabsList
++              variant="line"
++              className="h-11 w-full shrink-0 rounded-none border-b border-border px-2"
++            >
++              <TabsTrigger value="catalog">部品一覧</TabsTrigger>
++              <TabsTrigger value="detail">部品詳細</TabsTrigger>
++              <TabsTrigger value="bom">BOM</TabsTrigger>
++            </TabsList>
++            <TabsContent value="catalog" className="flex min-h-0 flex-col">
++              <CandidateListPane
++                groups={partGroups}
++                selectedPartId={selectedPartId}
++                onSelectPart={setSelectedPartId}
++                onAddToBom={addToBom}
++                onImportParts={importParts}
++                className="flex-1 w-full border-r-0"
++              />
++            </TabsContent>
++            <TabsContent value="detail" className="flex min-h-0 flex-col">
++              <CandidateDashboardPane
++                part={activePart}
++                className="border-r-0"
++              />
++            </TabsContent>
++            <TabsContent value="bom" className="flex min-h-0 flex-col">
++              <CandidateDetailPane
++                projectName={activeProject?.name ?? ""}
++                rows={bomRows}
++                pane4Open={true}
++                onTogglePane4={() => {}}
++                onUpdateQty={updateBomQty}
++                onRemoveEntry={removeFromBom}
++                onReorderBom={reorderBom}
++                className="flex-1 w-full border-l-0"
++                showToggle={false}
++                dndContextId="bom-dnd-context-mobile"
++              />
++            </TabsContent>
++          </Tabs>
++        </div>
+       </SidebarInset>
+     </SidebarProvider>
+   );

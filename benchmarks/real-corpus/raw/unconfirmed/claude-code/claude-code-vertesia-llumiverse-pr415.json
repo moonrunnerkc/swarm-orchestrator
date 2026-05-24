@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-vertesia-llumiverse-pr415",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer"
+  },
+  "pr": {
+    "number": 415,
+    "headSha": "b18da765498c1b1519e7aa0368ee1b64e019d5f8",
+    "baseSha": "ccf7af0f9757a5c79e4925599fd9552fd82fdbd4",
+    "title": "lint hardening + retry VertexAI URL throttling 400s",
+    "body": "## Summary\n\n### Lint rule rollout\n- `noDeprecatedImports` enabled (+ remove dead deprecated code)\n- `noImportCycles` enabled; break vertexai index/models cycle\n- `noFloatingPromises` enabled; fix the one real bug\n- `useJsxKeyInIterable` enabled\n- Bug-class autofix-friendly rules enabled (multi-phase)\n- `recommended: true` flipped on biome rules\n\n### VertexAI retry classification\n- `gemini.formatLlumiverseError` now passes the message to `isGeminiErrorRetryable`.\n- 400 INVALID_ARGUMENT whose message contains `URL_REJECTED-REJECTED_CLIENT_THROTTLED` or `URL_REJECTED-REJECTED_RATE_LIMITED` is now retryable. These come from Vertex AI's inline URL fetcher (multimodal models loading files by URL — e.g. `sys:AnalyzeAudio`); the 400 is misleading, it's a transient Google-side throttle. Previously a single throttle failed the parent intake workflow.\n- 4 new unit tests in `gemini-error-handling.test.ts` covering the new classifications; 26/26 pass.\n\n### Misc\n- `TestDriver`: re-expose `protected isRetryableError` for downstream consumers\n- drivers tests: `--passWithNoTests` so local runs with no API keys don't fail\n- Pre-commit hook now runs lint-staged instead of full-repo biome\n- CI: collapse `typecheck:test` + `vitest` into a single \"Typecheck and test\" step (was two)\n- `package.json`: add `ci:local` script; alphabetize the scripts block\n\n## Verification\n- `pnpm exec biome lint --diagnostic-level=error` → 119 files, 0 errors\n- `vitest run src/vertexai/models/gemini-error-handling.test.ts` → 26/26 pass\n\n## Test Plan\n- [ ] CI Build+Test workflow green on main\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\nCo-Authored-By: Claude <noreply@anthropic.com>",
+    "author": "michaelva",
+    "headRef": "fix-deprecated",
+    "repository": "vertesia/llumiverse"
+  },
+  "diffRef": {
+    "repository": "vertesia/llumiverse",
+    "headSha": "b18da765498c1b1519e7aa0368ee1b64e019d5f8",
+    "baseSha": "ccf7af0f9757a5c79e4925599fd9552fd82fdbd4"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-vertesia-llumiverse-pr415.diff",
+  "vendoredAt": "2026-05-24T03:09:48.248Z",
+  "collectedAt": "2026-05-24T03:09:48.248Z"
+}

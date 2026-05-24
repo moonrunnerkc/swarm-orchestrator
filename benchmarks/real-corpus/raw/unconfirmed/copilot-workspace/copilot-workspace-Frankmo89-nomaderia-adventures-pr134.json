@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-Frankmo89-nomaderia-adventures-pr134",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 134,
+    "headSha": "8dcd037847b2945bc439010f8d71c56a12224c96",
+    "baseSha": "409f72d827ab1e453896239b6cfa3eb47eca1f7f",
+    "title": "Tune React Query cache windows for static content hooks",
+    "body": "The app was using a single 5-minute `staleTime` globally, which is suboptimal for mostly-static public content (destinations, gear, blog). This update keeps the global default intact while applying longer per-hook cache windows for low-churn content and a medium window for media slider content.\n\n- **Global query policy (unchanged baseline)**\n  - Kept `QueryClient` default `staleTime` at `5 * 60 * 1000` in `src/App.tsx`.\n\n- **Public static-content hooks: 30-minute cache window**\n  - Added `staleTime: 30 * 60 * 1000` to every query in:\n    - `src/hooks/use-destinations.ts` (`useDestinations`, `useDestinationBySlug`, `useRelatedDestinations`)\n    - `src/hooks/use-gear-articles.ts` (`useGearArticles`, `useFeaturedGearArticles`)\n    - `src/hooks/use-blog-posts.ts` (`useBlogPosts`)\n\n- **Media slider hook: 10-minute cache window**\n  - Added `staleTime: 10 * 60 * 1000` to `useMediaSlider` in `src/hooks/use-media.ts`.\n\n- **Scope guardrails preserved**\n  - No changes to admin hooks.\n  - No changes to quiz or stats hooks.\n\n- **Documentation update**\n  - Added a changelog entry in `docs/pending-tasks.md` documenting the cache policy split.\n\n```ts\n// Example of per-hook override applied in public content hooks\nreturn useQuery<BlogPost[]>({\n  queryKey: [\"blog_posts\"],\n  staleTime: 30 * 60 * 1000,\n  queryFn: async () => { /* ... */ },\n});\n```",
+    "author": "Copilot",
+    "headRef": "copilot/update-queryclient-stale-times",
+    "repository": "Frankmo89/nomaderia-adventures"
+  },
+  "diffRef": {
+    "repository": "Frankmo89/nomaderia-adventures",
+    "headSha": "8dcd037847b2945bc439010f8d71c56a12224c96",
+    "baseSha": "409f72d827ab1e453896239b6cfa3eb47eca1f7f"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-Frankmo89-nomaderia-adventures-pr134.diff",
+  "vendoredAt": "2026-05-24T03:06:18.647Z",
+  "collectedAt": "2026-05-24T03:06:18.647Z"
+}

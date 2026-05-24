@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-claude-code-pr61697",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 61697,
+    "headSha": "c19a4d385e740fdec3470e35762f3a0bf4c199fd",
+    "baseSha": "39e853e4074d90f27afdfb7ea601e0fc378bd0c5",
+    "title": "[docs] Add workaround for background tasks silently relaunched as duplicates (#61689)",
+    "body": "## Summary\n\nDocuments the background task duplicate relaunch issue and workaround.\n\nCloses #61689\n\n## Problem\n\nBackground tasks (via Agent tool or `run_in_background`) are silently duplicated after ~90–120 seconds while the original is still running. This is a regression of the fix in v2.1.78 (CHANGELOG line 1452): \"Fixed background subagents becoming invisible after context compaction, which could cause duplicate agents to be spawned.\"\n\n## Workaround\n\n```bash\nexport CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1\n```\n\n## Fixes Needed (CLI internal)\n\n1. Preserve background task metadata during context compaction\n2. Check if original PID is still alive before spawning a replacement\n3. Kill older duplicate when relaunch is detected\n4. Add elapsed time and start order to `/tasks` output\n",
+    "author": "giruuuuj",
+    "headRef": "fix/background-task-duplicates-61689",
+    "repository": "anthropics/claude-code"
+  },
+  "diffRef": {
+    "repository": "anthropics/claude-code",
+    "headSha": "c19a4d385e740fdec3470e35762f3a0bf4c199fd",
+    "baseSha": "39e853e4074d90f27afdfb7ea601e0fc378bd0c5"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-claude-code-pr61697.diff",
+  "vendoredAt": "2026-05-24T03:15:44.444Z",
+  "collectedAt": "2026-05-24T03:15:44.444Z"
+}

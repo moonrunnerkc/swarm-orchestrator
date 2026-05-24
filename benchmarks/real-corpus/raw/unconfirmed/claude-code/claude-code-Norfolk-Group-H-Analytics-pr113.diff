@@ -1,0 +1,731 @@
+diff --git a/docs/solutions/architecture-patterns/variant-graduation-shared-component-pattern-2026-05-11.md b/docs/solutions/architecture-patterns/variant-graduation-shared-component-pattern-2026-05-11.md
+new file mode 100644
+index 000000000..3d96a1d58
+--- /dev/null
++++ b/docs/solutions/architecture-patterns/variant-graduation-shared-component-pattern-2026-05-11.md
+@@ -0,0 +1,147 @@
++---
++title: "Variant graduation: extend a shared component with a new variant prop, never mutate the default"
++date: 2026-05-11
++category: architecture-patterns
++module: shared-graphics-components
++problem_type: architecture_pattern
++component: tooling
++severity: medium
++applies_when:
++  - "Graduating an approved canvas mockup variant into a shared production component"
++  - "A shared component (e.g. KPIGrid) is consumed by 2+ surfaces and the new design only applies to one of them"
++  - "The mockup hardcodes brand colors that would break dark mode if copy-pasted"
++  - "Per-instance theming (per-card accents, per-row colors) is needed without bloating the default API"
++tags:
++  - mockup-graduate
++  - shared-components
++  - variants
++  - dark-mode
++  - kpi-grid
++related_components:
++  - tooling
++  - documentation
++---
++
++# Variant graduation: extend a shared component with a new variant prop, never mutate the default
++
++## Context
++
++When an approved canvas mockup graduates into production, the natural reflex is to "make the production component look like the mockup" by editing its default rendering path. In a multi-tenant component (`KPIGrid` is consumed by `CompanyHeader`, `CurrentPlanTab`, `RecommendedTab`, `ComparisonView`, and Scenarios), this silently rewrites four other surfaces that never asked for the new look.
++
++The mockup also typically hardcodes brand colors lifted from a Figma palette (e.g., `#FAFAF7` background, `#6B7843` olive accent). Copying those literals into the production component breaks dark mode, because the production design system uses CSS-variable tokens (`--background`, `--primary`, `--border`) that already resolve `#6B7843`-equivalent in light mode and the correct dark-mode equivalent in dark mode.
++
++This doc captures the discipline that survived a real graduation (Swiss Minimal KPI hero, Variant D → `CompanyHeader`) without breaking the four other call sites and without breaking dark mode.
++
++## Guidance
++
++**Rule 1 — Add a `variant` prop, branch internally, leave the default rendering path untouched.**
++
++```tsx
++// KPIGrid.tsx
++type KPIGridVariant = "default" | "swiss";
++
++export function KPIGrid({ items, variant = "default", ...rest }: KPIGridProps) {
++  if (variant === "swiss") return <KPIGridSwiss items={items} {...rest} />;
++  return <KPIGridDefault items={items} {...rest} />;
++}
++```
++
++The four other call sites continue to receive `KPIGridDefault` with zero diff in their rendered output. Only the new caller opts in.
++
++**Rule 2 — Extend `KPIItem` with optional fields. Never make a new field required.**
++
++```tsx
++type KPIItem = {
++  label: string;
++  value: number;
++  // Existing required fields stay required.
++  // New fields used only by the swiss variant:
++  baselineValue?: number;
++  positiveDirection?: "up" | "down";
++  accentClassName?: string;
++};
++```
++
++Existing call sites compile unchanged. The variant uses the new fields when present and falls back to a sensible default when absent.
++
++**Rule 3 — Use design-system tokens, not raw hex from the mockup.**
++
++| Mockup literal       | Production token       | Why                                                 |
++| -------------------- | ---------------------- | --------------------------------------------------- |
++| `bg-[#FAFAF7]`       | `bg-background`        | Auto-flips for dark mode                            |
++| `text-[#6B7843]`     | `text-primary`         | `--primary` already resolves to olive in light mode |
++| `border-[#E5E5E0]`   | `border-border`        | Hairline border token, theme-aware                  |
++| Per-card hex accents | `bg-emerald-600` etc.  | Tailwind palette tokens, opt-in via prop            |
++
++**Rule 4 — Hairline borders that survive responsive collapse.**
++
++The mockup used a fixed grid with manual `border-r` / `border-b` on each cell. At small breakpoints those borders end up on the wrong edges (right border on the last visible cell, bottom border on cells that wrap). Use Tailwind's `divide-x divide-y divide-border` on a single bordered container — `divide-*` only renders interior lines and respects flex/grid wrapping automatically.
++
++```tsx
++<div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-y divide-border border border-border">
++  {items.map((item) => <KPICell key={item.label} item={item} />)}
++</div>
++```
++
++**Rule 5 — Per-card accents are passed through, not hardcoded.**
++
++The graduating caller decides the accent semantics (Revenue=emerald, NetIncome=primary, Expenses=amber, Properties=sky). The shared component just renders whatever `accentClassName` it receives. Future callers pick their own palette without editing the shared component.
++
++## Why This Matters
++
++- **No silent regressions on sibling surfaces.** The four other consumers of `KPIGrid` were never on the architect's screen during the graduation. Without the variant branch, they would have received the new look in production with no review.
++- **Dark mode survives.** Hardcoded mockup hex breaks the moment a user toggles theme. Token-based styling stays correct in both modes for free.
++- **Future variants are cheap.** The next mockup that graduates adds `variant="bauhaus"` next to `variant="swiss"` and reuses the same KPIItem fields.
++- **Reviewability.** A reviewer scanning the diff sees a single new branch in the shared component plus one new caller — they can reason about blast radius without grep-walking every consumer.
++
++## When to Apply
++
++- Any component shared across 2+ call sites where one caller needs a different look.
++- Any time you copy a literal hex color out of a Figma file or canvas mockup.
++- Any time the mockup uses a fixed grid with per-cell borders.
++- Any time per-instance theming (per-card, per-row) is requested.
++
++## Examples
++
++**Before (graduation that would have broken siblings + dark mode):**
++
++```tsx
++// KPIGrid.tsx — mutated default rendering
++export function KPIGrid({ items }) {
++  return (
++    <div className="bg-[#FAFAF7] grid grid-cols-4">
++      {items.map(item => (
++        <div className="border-r border-b border-[#E5E5E0] text-[#6B7843]">
++          {item.label}: {item.value}
++        </div>
++      ))}
++    </div>
++  );
++}
++```
++
++Result: `CurrentPlanTab`, `RecommendedTab`, `ComparisonView`, `Scenarios` all suddenly look Swiss. Dark mode shows white-on-white because `#FAFAF7` doesn't flip.
++
++**After (variant graduation, default untouched):**
++
++```tsx
++// CompanyHeader.tsx — only this caller opts in
++<KPIGrid
++  variant="swiss"
++  items={[
++    { label: "Revenue", value: revenue, baselineValue: yearlyChartData[0].revenue, accentClassName: "bg-emerald-600" },
++    { label: "Net Income", value: netIncome, baselineValue: yearlyChartData[0].netIncome, accentClassName: "bg-primary" },
++    { label: "Expenses", value: expenses, baselineValue: yearlyChartData[0].expenses, positiveDirection: "down", accentClassName: "bg-amber-600" },
++    { label: "Properties", value: propertyCount, accentClassName: "bg-sky-600" },
++  ]}
++/>
++```
++
++The four sibling call sites continue to render the default layout, dark mode works, and the next graduation is one more `variant="…"` branch away.
++
++## Related
++
++- `mockup-graduate` skill — overall workflow for graduating canvas mockups
++- `nai-design-system` skill — token taxonomy that replaces mockup hex
++- `hbg-design-philosophy` skill — Tuscan Olive palette tokens
++- `docs/solutions/architecture-patterns/agent-native-precision-pipeline-pattern-2026-05-06.md` — broader pattern of "extend, never mutate" in pipelines
+diff --git a/docs/solutions/documentation-gaps/rewritetax-and-best-practices-source-files-missing-2026-05-11.md b/docs/solutions/documentation-gaps/rewritetax-and-best-practices-source-files-missing-2026-05-11.md
+new file mode 100644
+index 000000000..f7bafb9f0
+--- /dev/null
++++ b/docs/solutions/documentation-gaps/rewritetax-and-best-practices-source-files-missing-2026-05-11.md
+@@ -0,0 +1,124 @@
++---
++title: "Memory.md cites rewritetax.md and best-practices.md but neither file exists at repo root"
++date: 2026-05-11
++category: documentation-gaps
++module: agent-memory-files
++problem_type: documentation_gap
++component: documentation
++severity: high
++applies_when:
++  - "An agent memory file (memory.md, CLAUDE.md, replit.md) cites a sibling source-of-truth file"
++  - "Agents in fresh sessions try to follow the citation and find a missing file"
++  - "Project doctrine (rewrite-tax discipline, forward-discipline playbook) lives only inside a file that no longer exists"
++symptoms:
++  - "`./memory.md` line 20 references `best-practices.md` (project root) — file does not exist"
++  - "`./memory.md` line 20 references `rewritetax.md`'s 7 cost vectors — file does not exist"
++  - "Agents asked to apply rewrite-tax discipline have no source to cite from"
++  - "`docs/memory-archive/2026-04-archive.md` referenced from `./memory.md` line 78 — exists, so the pattern of citing siblings is established"
++tags:
++  - rewrite-tax
++  - memory-files
++  - agent-memory
++  - documentation-drift
++  - source-of-truth
++related_components:
++  - documentation
++---
++
++# Memory.md cites rewritetax.md and best-practices.md but neither file exists at repo root
++
++## Context
++
++`./memory.md` (line 20) contains:
++
++> ## Forward-Discipline Playbook
++> See `best-practices.md` (project root) — 22-rule playbook from `rewritetax.md`'s 7 cost vectors. Categories: (A) multi-agent hygiene, (B) avoiding architectural redirection, (C) vendor & library decisions, (D) AI/prompt-tuning, (E) DB & migration hygiene, (F) cosmetic churn, (G) platform tax.
++
++Neither `./rewritetax.md` nor `./best-practices.md` exists at the repo root as of 2026-05-11. Both filenames return file-not-found from `read` and from `find . -maxdepth 4 -iname …`. The 22-rule playbook and the 7 cost vectors that doctrine depends on are no longer in the repository.
++
++This is the rewrite-tax problem documenting itself: the source of truth for the team's discipline against context-loss has itself been lost to context-loss.
++
++## Symptoms in Context
++
++- An agent in a fresh session reads `./memory.md`, sees the citation, opens what it expects to be the playbook, and gets a parser error or a guess. Worst case, the agent fabricates the 22 rules from the seven category letters in the citation.
++- Code review and planning agents asked to "apply rewrite-tax discipline" cannot cite specific cost vectors. They fall back to generic engineering hygiene that doesn't match the team's documented framing.
++- `replit.md` (line 5) declares `CLAUDE.md` as the canonical deep source. Neither `CLAUDE.md` nor `replit.md` references `rewritetax.md` or `best-practices.md`. The doctrine is orphaned in `./memory.md` only.
++
++## Guidance
++
++**Treat any "see file X" citation in a memory file as a load-bearing reference. Verify the file exists. If it does not, one of three actions is required:**
++
++1. **Restore.** If the file existed and was deleted in error, restore from a checkpoint or from a `.claude/worktrees/agent-*/memory.md` snapshot (these often contain copies of cited files captured during earlier sessions).
++2. **Inline.** If the cited content is short (a 22-rule playbook fits in one screen), inline the rules into the memory file itself and remove the citation. This trades file-modularity for guaranteed availability.
++3. **Repath.** If the file was moved (e.g., into `docs/`), update the citation to the new path and verify the link.
++
++**Do not silently leave the citation pointing at nothing.** That is strictly worse than no citation at all because it implies the playbook exists and is being followed.
++
++**Add a memory-file integrity check** to the project's pre-merge gates:
++
++```bash
++# scripts/check-memory-citations.sh
++set -euo pipefail
++errors=0
++for f in memory.md replit.md CLAUDE.md AGENTS.md; do
++  [ -f "$f" ] || continue
++  # Extract backtick-wrapped filenames that look like markdown files
++  while IFS= read -r cited; do
++    if [ ! -e "$cited" ] && [ ! -e "./$cited" ]; then
++      echo "::error file=$f::cites missing file: $cited"
++      errors=$((errors+1))
++    fi
++  done < <(grep -oE '`[A-Za-z0-9._/-]+\.md`' "$f" | tr -d '`' | sort -u)
++done
++exit $errors
++```
++
++Wire it into the existing `check:*` workflow set so any future drift fails fast.
++
++## Why This Matters
++
++This isn't a cosmetic doc issue — it is a self-evidencing instance of the rewrite tax. The team built a discipline framework specifically to combat agent context-loss. That framework's source files have themselves vanished, which means:
++
++- Any agent applying the discipline today is applying it from memory of the citation, not from the rules. That is the same failure mode the rules were meant to prevent.
++- The 22 rules are the only artifact that operationalizes the 7 cost vectors. Without them, the cost-vector taxonomy is decorative.
++- Every fresh session compounds the loss further: agents learn the citation exists, find no file, and either fabricate or ignore. Both outcomes drift.
++
++## When to Apply
++
++- Any time you read a memory file (`memory.md`, `CLAUDE.md`, `replit.md`, `AGENTS.md`) and notice a `see X.md` reference.
++- Before relying on any memory-file directive that points at an external source.
++- During the discoverability check at the end of `/ce-compound` — verify cited files exist.
++- When onboarding a new agent or new session — the citation graph is part of the contract.
++
++## Examples
++
++**Today, in this repo:**
++
++```
++$ rg '`[a-z-]+\.md`' memory.md
++`best-practices.md` (project root)
++`rewritetax.md`'s 7 cost vectors
++docs/memory-archive/2026-04-archive.md
++
++$ ls best-practices.md rewritetax.md
++ls: cannot access 'best-practices.md': No such file or directory
++ls: cannot access 'rewritetax.md': No such file or directory
++
++$ ls docs/memory-archive/2026-04-archive.md
++docs/memory-archive/2026-04-archive.md          # this one exists
++```
++
++Two of three cited files are missing.
++
++**Recovery options for this specific case:**
++
++- Search `.claude/worktrees/agent-*/memory.md` for verbatim copies of the 22 rules — Claude Code worktree memory files often contain ingested copies of the canonical rules.
++- Inline the recovered 22 rules directly into `./memory.md` § "Forward-Discipline Playbook", remove the `see best-practices.md` reference, and let the section stand on its own.
++- Add `rewrite-tax: 7-cost-vector synthesis` as a `docs/solutions/best-practices/` doc so future agents discover it through the searchable knowledge store rather than through a brittle root-level citation.
++
++## Related
++
++- `docs/solutions/documentation-gaps/agent-memory-file-divergence-2026-05-04.md` — earlier instance of memory-file drift between `claude.md` and `replit.md`
++- `agent-memory-files` skill — harmonization discipline for multi-file memory setups
++- `./memory.md` — the file with the broken citation
++- `docs/memory-archive/2026-04-archive.md` — the archive pattern that does work, as evidence that this team can do it right
+diff --git a/docs/solutions/workflow-issues/cc-replit-branch-hygiene-2026-05-10.md b/docs/solutions/workflow-issues/cc-replit-branch-hygiene-2026-05-10.md
+index 560af37b6..71b29229f 100644
+--- a/docs/solutions/workflow-issues/cc-replit-branch-hygiene-2026-05-10.md
++++ b/docs/solutions/workflow-issues/cc-replit-branch-hygiene-2026-05-10.md
+@@ -15,6 +15,7 @@ applies_when:
+   - Local main (not a PR branch) has accumulated mixed CC + Replit Agent commits before push
+   - A valuable Replit Agent commit needs to ship but cannot be mixed into a CC PR
+   - Multiple PRs need to wait for CI gates and manual polling would otherwise be required
++  - CC is actively authoring a file across multiple bash calls and the Replit Agent may touch the same path
+ tags:
+   - git-hygiene
+   - branch-management
+@@ -24,6 +25,8 @@ tags:
+   - agent-coordination
+   - auto-merge
+   - gh-pr-checks
++  - wip-file-collision
++  - dirty-branch-rename
+ ---
+ 
+ # CC branch hygiene: Replit Agent stages unreviewed commits on CC PR branches
+@@ -218,6 +221,84 @@ git reset --hard origin/main
+ 
+ Safe because (a) the CC commit is on its PR branch, (b) the valuable Replit commits are on their PR branches, (c) worthless Replit commits are by definition disposable. After each PR merges, `git pull --ff-only origin main` brings local `main` forward with the squashed merge commits.
+ 
++## Sub-pattern: Replit Agent edits CC's in-flight WIP file mid-session
++
++The PR-branch and local-main patterns above cover the case where the Replit Agent stages **new, unrelated** commits onto a CC branch. A sharper variant: while CC is **actively authoring a file** across multiple bash calls (typical for a spike, a scratch script, or any multi-step edit), the Replit Agent commits its own version of the same file onto the same branch — overwriting CC's WIP state in the working tree at the next `git checkout`.
++
++### When it surfaces
++
++- CC creates a feature branch and starts work that involves several rounds of edit → run → debug → edit (e.g., the U1 pptx substitution spike on 2026-05-11)
++- The Replit Agent independently decides to edit a file CC has open and commits its take
++- `git status` on the CC side starts showing `deleted:` or `modified:` for files CC was authoring — the Replit commit overwrote them
++- `git log origin/main..HEAD` shows two Replit-authored commits between CC's commits, one of which has a subject like "Update script to customize…" matching the file CC was editing
++
++### Why cherry-picking-only is insufficient
++
++The standard cherry-pick workflow (§ Step 2 above) assumes CC's work is already **committed**. When CC's work is partially committed and partially WIP, naive cherry-picking will:
++
++- Reset the WIP files to the Replit-edited version (silently discarding CC's in-progress changes)
++- Or skip the WIP files entirely, leaving CC to manually reconstruct them from memory
++
++The recovery has to preserve CC's WIP outside Git first.
++
++### Recovery procedure (`*-DIRTY-with-replit` branch rename)
++
++```bash
++# 1. Back up CC's uncommitted/WIP files OUTSIDE the repo before any branch ops
++mkdir -p /tmp/<unit>-backup
++cp <cc-wip-file-1> <cc-wip-file-2> ... /tmp/<unit>-backup/
++
++# 2. Save any remaining uncommitted state as a safety net
++git stash --include-untracked
++
++# 3. Rename the dirty branch to preserve Replit's commits for a separate PR
++git branch -m <cc-branch> <cc-branch>-DIRTY-with-replit
++
++# 4. Create a fresh clean branch from origin/main
++git checkout -b <cc-branch> origin/main
++
++# 5. Cherry-pick any pre-existing fixes you authored elsewhere
++git cherry-pick <fix-sha>
++
++# 6. Re-run any installs / codegen / migrations that were part of CC's work
++pnpm --filter <pkg> add <dep>
++
++# 7. Restore the backed-up WIP files to their canonical paths
++cp /tmp/<unit>-backup/<file> <restore-path>
++
++# 8. Stage and commit as a single CC-authored commit
++git add <cc-files>
++git commit -m "<unit-scoped message>"
++
++# 9. Push the clean branch and open the PR
++git push -u origin <cc-branch>
++gh pr create --title "..." --body "..."
++```
++
++The `*-DIRTY-with-replit` branch acts as a safety net — until both PRs ship (the clean CC PR plus a separate PR cherry-picking Replit's valuable commits), no work is lost. Once both have merged, `git branch -D <cc-branch>-DIRTY-with-replit` cleans up.
++
++### Why this works
++
++- **Filesystem backup is the durable checkpoint.** Git stash is fragile across branch ops when working-tree state is messy; `cp` to `/tmp` guarantees the WIP survives any branch operation
++- **Renaming preserves both bodies of work.** Replit's commits live on the renamed branch and can be cherry-picked into their own PR with the correct title and scope. CC's clean branch ships CC-only history
++- **Cherry-pick + re-install is faster and safer than history rewriting.** No risk of corrupting refs that may already have been pushed; no fragile rebase conflicts; each commit on the new branch has a single clear author
++
++### Anti-patterns (would destroy work)
++
++- `git reset --hard origin/main` in place — destroys both Replit's valuable commits AND CC's uncommitted WIP
++- `git filter-branch` / interactive rebase to drop Replit commits — destructive history rewriting; loses Replit's work entirely
++- Merging Replit's commits into the CC PR — ships unreviewed-in-context work under a CC PR title; violates the same scope rule § "Cherry-pick workflow" enforces
++
++### Proactive check
++
++When starting CC work that will span more than ~10 minutes of bash calls on a single file, snapshot first:
++
++```bash
++cp scripts/src/<wip-file>.ts /tmp/<unit>-backup/  # immediate snapshot
++```
++
++Cheap insurance: even one snapshot at the start gives a recovery point if Replit commits over the file later.
++
+ ### Worked example — 2026-05-11 session
+ 
+ Starting state of local `main`:
+@@ -235,8 +316,49 @@ Cherry-picked Replit Agent commit → PR #91 with explicit authorship acknowledg
+ 
+ Both merged successfully: PR #90 as `5e245b24` (CodeRabbit "Review completed" PASS); PR #91 as `9be96277` (CodeRabbit "Review skipped" on docs-only diff, all other gates green). No Replit Agent commits in either PR's diff scope; both authors preserved in commit history. The empty `8fbe53c3` dropped via `git reset --hard origin/main`.
+ 
++### Worked example — 2026-05-11 U1 spike session (WIP-file collision variant)
++
++CC was executing U1 of the Factory v2 plan (PPTX substitution library spike). CC's flow: create `feat/u1-pptx-substitution-spike` from `origin/main`, `pnpm add pptx-automizer`, write `scripts/src/pptx-substitution-spike.ts` over ~6 rounds of edit/run/debug (discovered `cleanup: true` triggers a content-tracker bug, `modify.replaceText` is unstable on the canonical PPTX, pivoted to `modify.setText`), then start the decision doc.
++
++While CC was mid-debug, the Replit Agent committed twice onto the same branch:
++
++```
++51d34750 [Replit Agent] Update script to customize presentation text and save output
++27e10979 [Replit Agent] feat(company): graduate Swiss-Minimal KPI hero into KPIGrid + per-card accents
++```
++
++`27e10979` was independent and valuable (graduating a sandbox mockup into production `KPIGrid` with `variant="swiss"` + Y1 baselines + per-card accents). `51d34750` was Replit's own version of the spike file — overwriting CC's WIP. The diff stat showed `scripts/src/pptx-substitution-spike.ts | 56 ++++++++++++++++------------------` confirming Replit had rewritten CC's in-flight file.
++
++Recovery applied the `*-DIRTY-with-replit` procedure above:
++
++```bash
++mkdir -p /tmp/u1-backup
++cp scripts/src/pptx-substitution-spike.ts \
++   docs/solutions/architecture-patterns/pptx-substitution-library-decision-2026-05-11.md \
++   /tmp/u1-backup/
++
++git stash --include-untracked
++git branch -m feat/u1-pptx-substitution-spike feat/u1-spike-DIRTY-with-replit
++git checkout -b feat/u1-pptx-substitution-spike origin/main
++git cherry-pick fc436579   # pre-existing typecheck fix
++pnpm --filter @workspace/api-server --filter @workspace/scripts add pptx-automizer
++cp /tmp/u1-backup/pptx-substitution-spike.ts scripts/src/
++cp /tmp/u1-backup/pptx-substitution-library-decision-2026-05-11.md \
++   docs/solutions/architecture-patterns/
++
++git add scripts/src/pptx-substitution-spike.ts \
++        docs/solutions/architecture-patterns/pptx-substitution-library-decision-2026-05-11.md \
++        artifacts/api-server/package.json scripts/package.json pnpm-lock.yaml
++git commit -m "feat(factory-v2): U1 — choose pptx-automizer..."
++git push -u origin feat/u1-pptx-substitution-spike
++gh pr create --title "feat(factory-v2): U1 — pptx-automizer chosen, spike + decision doc"
++```
++
++Result: PR #112 shipped from the clean CC branch with CC-only history (verified via `git log --format='%h %an %ae'` showing zero `Replit-Commit-Author` trailers). The Swiss-Minimal KPI work on `feat/u1-spike-DIRTY-with-replit` remains locally available for a follow-up PR cherry-picking only `27e10979`.
++
+ ## Related
+ 
+ - `CLAUDE.md` § "CC branch hygiene — Replit agent staging risk" — the live enforcement rule (added PR #67, 2026-05-10)
+ - `docs/solutions/workflow-issues/coderabbit-iterative-review-loop-on-replit-agent-2026-05-09.md` — covers the Replit auto-checkpoint mechanism that enables this staging pattern
+ - `docs/solutions/workflow-issues/slide-factory-pre-merge-shipping-gates-2026-05-08.md` — the existing pre-merge gate sequence that the new scope-check gate extends
++- `docs/solutions/workflow-issues/squash-merge-with-failing-required-check-2026-05-11.md` — the complementary failure mode where a PR ships with a red required check and downstream branches inherit a regression
+diff --git a/docs/solutions/workflow-issues/merging-github-prs-from-replit-agent-without-origin-2026-05-11.md b/docs/solutions/workflow-issues/merging-github-prs-from-replit-agent-without-origin-2026-05-11.md
+new file mode 100644
+index 000000000..e4a1c9d44
+--- /dev/null
++++ b/docs/solutions/workflow-issues/merging-github-prs-from-replit-agent-without-origin-2026-05-11.md
+@@ -0,0 +1,125 @@
++---
++title: "Merging GitHub PRs from Replit Agent when the local repo has no GitHub remote"
++date: 2026-05-11
++category: workflow-issues
++module: development_workflow
++problem_type: workflow_issue
++component: development_workflow
++severity: medium
++applies_when:
++  - "The Replit project's git remote does not point at the GitHub repo (or has no remote at all)"
++  - "An external agent (Claude Code, a teammate) has pushed PRs to the GitHub repo and the user asks the Replit Agent to merge them"
++  - "`gh` CLI is unavailable (Replit Agent sandbox blocks it) but `GITHUB_PAT` is in environment secrets"
++  - "The repo's owner/name is not obvious from local config and you need to discover it"
++tags:
++  - github
++  - pr-merge
++  - replit-agent
++  - github-pat
++  - rest-api
++related_components:
++  - tooling
++  - authentication
++---
++
++# Merging GitHub PRs from Replit Agent when the local repo has no GitHub remote
++
++## Context
++
++Replit Agent sessions often run on a `main` branch that is not wired to any GitHub remote — the platform manages commits via checkpoints, not via `git push`. When an external agent (commonly Claude Code working in a separate worktree on the user's laptop) has pushed PRs to the GitHub repo, the user expects the Replit Agent to be able to "go merge those PRs."
++
++Three things conspire against the obvious approach:
++
++1. **No `gh` CLI.** The Replit Agent sandbox does not include the GitHub CLI. `gh pr merge` is not an option.
++2. **No origin to `git pull` from.** Even if you knew the repo, `git push` and most write-side `git` operations are blocked by the sandbox, so a "pull then merge then push" loop is not available.
++3. **The repo identity is not obvious.** `git remote -v` returns nothing useful, and the directory name (`workspace/`) does not encode owner/name.
++
++What does work: the GitHub REST API, called with `curl` and the `GITHUB_PAT` secret.
++
++## Guidance
++
++**Step 1 — Discover the repo via the search API, not by guessing.**
++
++The `GITHUB_PAT` belongs to a user; that user has access to a finite set of repos. Use the issues search endpoint (which returns repository metadata) instead of trying to guess the org/name:
++
++```bash
++curl -s -H "Authorization: Bearer $GITHUB_PAT" \
++  "https://api.github.com/search/issues?q=type:pr+state:open+author:@me" \
++  | jq -r '.items[].repository_url' | sort -u
++```
++
++The `repository_url` values reveal which repos the PAT owner is active on. Pick the one that matches the project (here: `Norfolk-Group/H-Analytics`).
++
++**Step 2 — List open PRs.**
++
++```bash
++OWNER=Norfolk-Group; REPO=H-Analytics
++curl -s -H "Authorization: Bearer $GITHUB_PAT" \
++  "https://api.github.com/repos/$OWNER/$REPO/pulls?state=open" \
++  | jq -r '.[] | "\(.number)\t\(.title)\t\(.head.ref) → \(.base.ref)"'
++```
++
++**Step 3 — Squash-merge each PR.**
++
++```bash
++PR=110
++curl -s -X PUT \
++  -H "Authorization: Bearer $GITHUB_PAT" \
++  -H "Accept: application/vnd.github+json" \
++  "https://api.github.com/repos/$OWNER/$REPO/pulls/$PR/merge" \
++  -d '{"merge_method":"squash"}' \
++  | jq '{merged, sha, message}'
++```
++
++A successful response returns `{ "merged": true, "sha": "<commit-sha>", "message": "Pull Request successfully merged" }`. Confirm by re-listing open PRs (count should drop).
++
++**Step 4 — Tell the user the SHAs you merged.**
++
++The Replit Agent's local `HEAD` is now behind `origin/main`. The user typically reconciles this on their laptop (or via the `inspect-cc-github-divergence` task pattern). Reporting the merged SHAs makes that next step explicit.
++
++## Why This Matters
++
++- **No reflexive "let me try `gh` first" turn wasted.** `gh` is not installed; trying it costs a turn and returns the same answer every time.
++- **No guessing the repo from the directory name.** The search-API discovery is two seconds and unambiguous.
++- **No silent failure.** The merge endpoint returns `merged: true/false` explicitly. Compare to `gh pr merge`, which exits non-zero on the same kind of failure but with less structured output.
++- **Auditable.** The merge SHAs returned by the API are what the user needs to fetch on their laptop to reconcile.
++
++## When to Apply
++
++- Any time the user says "merge that PR / merge all the PRs / clean up the PR queue" and the Replit Agent doesn't already have a working `git remote` for GitHub.
++- Any time you're tempted to ask "what's the GitHub repo?" — try the search API first.
++- Any time `gh` would be the obvious tool but you're inside a Replit Agent sandbox.
++
++## Examples
++
++**Discovering the repo and merging two PRs in one shell call:**
++
++```bash
++GITHUB_PAT_HEADER="Authorization: Bearer $GITHUB_PAT"
++ACCEPT="Accept: application/vnd.github+json"
++
++# 1. Discover repo
++REPO_URL=$(curl -s -H "$GITHUB_PAT_HEADER" \
++  "https://api.github.com/search/issues?q=type:pr+state:open+author:@me" \
++  | jq -r '.items[0].repository_url')
++OWNER_REPO=${REPO_URL#https://api.github.com/repos/}
++
++# 2. List open PRs
++curl -s -H "$GITHUB_PAT_HEADER" \
++  "https://api.github.com/repos/$OWNER_REPO/pulls?state=open" \
++  | jq -r '.[] | "\(.number) \(.title)"'
++
++# 3. Squash-merge each
++for PR in 110 111; do
++  curl -s -X PUT -H "$GITHUB_PAT_HEADER" -H "$ACCEPT" \
++    "https://api.github.com/repos/$OWNER_REPO/pulls/$PR/merge" \
++    -d '{"merge_method":"squash"}' \
++    | jq "{pr: $PR, merged, sha}"
++done
++```
++
++## Related
++
++- `docs/solutions/workflow-issues/coderabbit-iterative-review-loop-on-replit-agent-2026-05-09.md` — driving CodeRabbit re-reviews from the same kind of session
++- `.local/tasks/inspect-cc-github-divergence.md` — read-only inspection pattern for reconciling Replit Agent ↔ GitHub
++- `.agents/ce-agents/REPLIT-ADAPTATION.md` § "No GitHub CLI (`gh`)"
+diff --git a/docs/solutions/workflow-issues/squash-merge-with-failing-required-check-2026-05-11.md b/docs/solutions/workflow-issues/squash-merge-with-failing-required-check-2026-05-11.md
+new file mode 100644
+index 000000000..6caabeb79
+--- /dev/null
++++ b/docs/solutions/workflow-issues/squash-merge-with-failing-required-check-2026-05-11.md
+@@ -0,0 +1,155 @@
++---
++title: "Squash-merge can ship a stale tree: PR merged with a failing required check poisons main"
++date: 2026-05-11
++last_updated: 2026-05-11
++category: docs/solutions/workflow-issues
++module: ci-merge-gates
++problem_type: workflow_issue
++component: development_workflow
++severity: high
++applies_when:
++  - "A PR has a required CI check (e.g., Typecheck + Gates) in FAILURE status"
++  - "A fix commit exists on the branch but the merge button is clicked before CI re-runs the rollup"
++  - "Branch protection allows merge while the rollup status check shows FAILURE"
++  - "A foundation PR (factory-v2, schema migration, large refactor) is being shipped with stacked fixes"
++  - "Downstream U-numbered units inherit a regression because main shipped a broken tree"
++tags:
++  - squash-merge
++  - ci-gates
++  - typecheck-failure
++  - branch-protection
++  - pre-merge-verification
++  - factory-v2
++  - shipping-discipline
++  - forward-fix
++  - drive-by-cherry-pick
++---
++
++# Squash-merge can ship a stale tree: PR merged with a failing required check poisons main
++
++## Context
++
++PR #111 (Factory v2 foundation: plan doc + Company KPI reorg + KPI hero mockups) was opened, CI ran, and `Typecheck + Gates` reported FAILURE on `artifacts/hospitality-business-portal/src/components/company/CompanyIncomeTab.tsx:39:44 TS2322` — a `CompanyChartDataPoint[] | undefined` not assignable to the non-optional `yearlyChartData` prop on `CompanyBenchmarkPanel`. CC patched the bug (commit `fc436579`) on the same branch.
++
++The PR was MERGED to `main` as squash commit `797535c8` **before the fix landed in the squash**. Inspection after merge:
++
++```
++$ gh pr view 111 --json state,statusCheckRollup --jq '.statusCheckRollup[] | select(.conclusion=="FAILURE")'
++{"name": "Typecheck + Gates", "conclusion": "FAILURE"}
++
++$ git show origin/main:artifacts/hospitality-business-portal/src/components/company/CompanyIncomeTab.tsx | sed -n '38,42p'
++    )}
++    <CompanyBenchmarkPanel global={global} yearlyChartData={yearlyChartData} financials={financials} />
++    <ScrollReveal>
++```
++
++The merged tree on `main` contained the pre-fix code despite the PR title stating the work shipped. Every branch subsequently cut from `origin/main` inherited the broken typecheck. The downstream U1 PR (#112) tripped on it immediately and had to cherry-pick `fc436579` as a drive-by fix to make its own CI green.
++
++This is orthogonal to the [pre-merge shipping gates discipline](./slide-factory-pre-merge-shipping-gates-2026-05-08.md) (which covers *silent* discipline gates being skipped). Here a *loud* technical gate was in FAILURE and the merge proceeded anyway.
++
++## Guidance
++
++### Pre-merge gate (mandatory for every CC PR)
++
++Before clicking merge:
++
++```bash
++gh pr checks <num>
++```
++
++Every required check must show `pass`. Never approve a merge with the rationale "the fix is on the branch, CI will rerun after merge" — the squash boundary is unforgiving and the rollup status is what `main`'s post-merge reality reflects.
++
++If the PR uses squash-merge and the latest push happened recently, **refresh the GitHub PR page** and re-confirm:
++
++1. The squash preview includes every commit listed in `git log origin/main..origin/<branch>` on the source branch
++2. The rollup shows green for every required check, not just for the latest run on the branch (GitHub's required-status-check setting must point at the latest commit; if it's configured loosely, tighten it)
++
++### Post-merge verification
++
++Immediately after merging:
++
++```bash
++git fetch origin main
++git diff origin/main~1...origin/main -- <files-that-had-fixes>
++```
++
++Confirm the diff on `main` includes every fix commit's changes by content, not just by commit count. If a fix is missing, open a hotfix PR before any further branches are cut from `main`.
++
++### Recovery — when main is already poisoned
++
++Two paths, pick by how many branches will diverge before the next big PR lands.
++
++**Tactical fix (next branch off main):** drive-by cherry-pick the fix commit into the very next CC branch cut from `origin/main`:
++
++```bash
++git checkout -b <next-unit-branch> origin/main
++git cherry-pick <fix-sha>
++# ... continue unit work
++```
++
++The next PR's body should acknowledge the drive-by:
++
++> **Drive-by fix (not in this unit's scope but required for CI):** cherry-picked `<fix-sha>` — main is currently broken because PR #<n> merged with this `Typecheck + Gates` failure unresolved.
++
++**Strategic fix (multiple branches will diverge soon):** open a dedicated hotfix PR off `origin/main` that contains only the cherry-picked fix commit, get it merged, then rebase all in-flight CC branches onto the now-green main. Costs a PR; saves N drive-by commits.
++
++## Why This Matters
++
++- A red `main` blocks every CC and Replit Agent session running on the repo until it's healed. The next branch each opens fails CI immediately, eroding trust in CI as a gate
++- Drive-by fixes inflate downstream PR scope and muddy review attention — the reviewer has to mentally separate "the unit's work" from "the fix for main's regression"
++- `git pull` doesn't heal it. Pulling broken `main` just propagates the breakage
++- Rebasing the new branch onto main re-inherits the bug; rebase doesn't replay commits that aren't in the upstream history
++- Trusting the squash captured the latest commit is the wrong default — GitHub squashes the PR-as-of-merge-time, and if a new commit was pushed after the squash preview rendered (or if the merger used an older preview), the latest commit is silently dropped
++
++## When to Apply
++
++- Always, before merging any PR with a required CI check
++- Especially before merging a foundation PR that downstream units depend on (factory-v2 plan, schema migration, large refactor) — a poisoned main here cascades through every dependent branch
++- Whenever a PR has had multiple force-pushes or post-CI commits — the highest-risk moment for squash-merge to capture a stale tree
++
++## Examples
++
++### Detecting the situation post-merge
++
++```bash
++# Did PR #111 actually ship with all checks green?
++$ gh pr view 111 --json statusCheckRollup --jq '.statusCheckRollup[] | "\(.name): \(.conclusion)"'
++Analyze (actions): SUCCESS
++Analyze (javascript-typescript): SUCCESS
++Typecheck + Gates: FAILURE
++...
++
++# Yes — Typecheck + Gates was FAILURE at merge time
++# Confirm main is broken
++$ git fetch origin main
++$ pnpm --filter @workspace/hospitality-business-portal run typecheck
++artifacts/hospitality-business-portal typecheck: src/components/company/CompanyIncomeTab.tsx(39,44): error TS2322: ...
++```
++
++### Drive-by recovery in the next PR
++
++```bash
++# On feat/u1-pptx-substitution-spike, cut from origin/main
++git cherry-pick fc436579   # the fix that should have been in #111's squash
++# ... unit work continues, gets committed normally
++git log origin/main..HEAD --oneline
++# 55006ee9 feat(factory-v2): U1 — choose pptx-automizer for PPTX substitution
++# 84c8d679 fix(company): guard CompanyBenchmarkPanel with yearlyChartData presence
++```
++
++PR #112's description explicitly flagged the drive-by:
++
++> **Drive-by fix (not in U1 scope but required for CI):** cherry-picked `84c8d679` (the `CompanyBenchmarkPanel` typecheck guard) — main is currently broken because PR #111 merged with this Typecheck+Gates failure unresolved.
++
++## Anti-patterns
++
++- **"Merge anyway" / admin-override on a red required check** — even if the human reviewer believes the next commit fixes it, the squash boundary is unforgiving. If the fix is on the branch, wait for CI to re-run on the latest commit and confirm green before merging
++- **Skipping `gh pr checks` because the GitHub UI looks green** — the UI sometimes caches stale state. The CLI hits the API and is authoritative
++- **Force-pushing right before merging** — the squash preview may not reflect the latest force-pushed commit. Either wait for CI to settle on the force-push, or amend the PR after merge with a follow-up commit
++- **Relying on the next PR to fix it** — every additional branch that diverges from a red main inherits the bug. If recovery is going to take more than one drive-by, open a hotfix PR
++
++## Related
++
++- [`docs/solutions/workflow-issues/slide-factory-pre-merge-shipping-gates-2026-05-08.md`](./slide-factory-pre-merge-shipping-gates-2026-05-08.md) — discipline gates (review, parity, harmonization) that fail silently; this doc is the technical-gate counterpart
++- [`docs/solutions/workflow-issues/cc-replit-branch-hygiene-2026-05-10.md`](./cc-replit-branch-hygiene-2026-05-10.md) — the related scope-check gate; the `feat/u1-pptx-substitution-spike` recovery from PR #111's red main is in that doc's "WIP-file collision" worked example
++- `CLAUDE.md` § "CC branch hygiene — Replit agent staging risk" — pre-merge audit rules

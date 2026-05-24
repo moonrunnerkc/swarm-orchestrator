@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14503",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "author=openhands-agent+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14503,
+    "headSha": "d5e31a40b191df2aa4daeb49bd4e62243f72619a",
+    "baseSha": "9a7e3edd67eb60b160709cd4b603d5fce4d1a9b9",
+    "title": "Fix CVE-2026-39373: Update jwcrypto to 1.5.7",
+    "body": "## Summary\n\nAddresses **CVE-2026-39373** in the `jwcrypto` package by upgrading it from `1.5.6` to `1.5.7` (the latest available version on PyPI at the time of this change) in `enterprise/poetry.lock`.\n\n## Details\n\n- **Package:** `jwcrypto`\n- **Previous version:** `1.5.6`\n- **New version:** `1.5.7`\n- **CVE:** CVE-2026-39373\n- **Dependency type:** Transitive — pulled in via `python-keycloak` (declared in `enterprise/pyproject.toml`).\n\nBecause `jwcrypto` is a transitive dependency, no manifest file (`pyproject.toml`) needed to be edited. The upgrade was performed via:\n\n```bash\ncd enterprise\npoetry update jwcrypto --lock\n```\n\nThe lockfile was regenerated with Poetry `2.3.3` — the same version that originally produced `enterprise/poetry.lock` — to keep the diff minimal.\n\n> Note: The advisory does not list an official \"fixed version\" yet. We upgraded to the latest available release (`1.5.7`); if a future jwcrypto release explicitly remediates this CVE, a follow-up bump will be straightforward.\n\n## Files changed\n\n- `enterprise/poetry.lock` — `jwcrypto` version bumped from `1.5.6` → `1.5.7`.\n\n---\n_This PR was created by an AI agent (OpenHands) on behalf of the maintainers as part of automated CVE remediation._\n\n@aivong-openhands can click here to [continue refining the PR](https://app.all-hands.dev/conversations/c7312018-0c45-416a-8f55-911589fecda2)\n\n---\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-d5e31a4   docker.openhands.dev/openhands/openhands:d5e31a4\n```",
+    "author": "aivong-openhands",
+    "headRef": "fix-cve-2026-39373",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "d5e31a40b191df2aa4daeb49bd4e62243f72619a",
+    "baseSha": "9a7e3edd67eb60b160709cd4b603d5fce4d1a9b9"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14503.diff",
+  "vendoredAt": "2026-05-24T03:18:23.961Z",
+  "collectedAt": "2026-05-24T03:18:23.961Z"
+}

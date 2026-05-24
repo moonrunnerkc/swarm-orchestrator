@@ -1,0 +1,153 @@
+diff --git a/Documentation/docs-mobile/messages/index.md b/Documentation/docs-mobile/messages/index.md
+index 1a44e3d2f21..ee0de1f9b2b 100644
+--- a/Documentation/docs-mobile/messages/index.md
++++ b/Documentation/docs-mobile/messages/index.md
+@@ -157,6 +157,8 @@ Either change the value in the AndroidManifest.xml to match the $(SupportedOSPla
+ + [XA2000](xa2000.md): Use of AppDomain.CreateDomain() detected in assembly: {assembly}. .NET 6 will only support a single AppDomain, so this API will no longer be available in .NET for Android once .NET 6 is released.
+ + [XA2001](xa2001.md): Source file '{filename}' could not be found.
+ + [XA2002](xa2002.md): Can not resolve reference: \`{missing}\`, referenced by {assembly}. Perhaps it doesn't exist in the .NET for Android profile?
+++ [XA2024](xa2024.md): Unable to load assembly '{assembly}'.
+++ [XA2025](xa2025.md): Assembly {assembly} does not exist.
+ + XA2006: Could not resolve reference to '{member}' (defined in assembly '{assembly}') with scope '{scope}'. When the scope is different from the defining assembly, it usually means that the type is forwarded.
+ + XA2007: Exception while loading assemblies: {exception}
+ + XA2008: In referenced assembly {assembly}, Java.Interop.DoNotPackageAttribute requires non-null file name.
+diff --git a/Documentation/docs-mobile/messages/xa2024.md b/Documentation/docs-mobile/messages/xa2024.md
+new file mode 100644
+index 00000000000..c486cd2c3f8
+--- /dev/null
++++ b/Documentation/docs-mobile/messages/xa2024.md
+@@ -0,0 +1,27 @@
++---
++title: .NET for Android error XA2024
++description: XA2024 error code
++ms.date: 05/24/2026
++f1_keywords:
++  - "XA2024"
++---
++
++# .NET for Android error XA2024
++
++## Example messages
++
++```
++error XA2024: Unable to load assembly 'Mono.Android.dll'.
++```
++
++## Issue
++
++The build task was unable to load a required framework assembly. This
++could indicate that the assembly is missing, corrupt, or otherwise
++inaccessible.
++
++## Solution
++
++Ensure the assembly exists at the expected location and is not corrupt.
++Try cleaning and rebuilding the project. If the issue persists, reinstall
++the .NET for Android workload.
+diff --git a/Documentation/docs-mobile/messages/xa2025.md b/Documentation/docs-mobile/messages/xa2025.md
+new file mode 100644
+index 00000000000..b42a0a32196
+--- /dev/null
++++ b/Documentation/docs-mobile/messages/xa2025.md
+@@ -0,0 +1,27 @@
++---
++title: .NET for Android error XA2025
++description: XA2025 error code
++ms.date: 05/24/2026
++f1_keywords:
++  - "XA2025"
++---
++
++# .NET for Android error XA2025
++
++## Example messages
++
++```
++error XA2025: Assembly path/to/MyAssembly.dll does not exist.
++```
++
++## Issue
++
++A referenced assembly could not be found on disk during the build
++process. The assembly was expected to exist but is missing from the
++output directory.
++
++## Solution
++
++Ensure all referenced assemblies are properly built and available.
++Try cleaning and rebuilding the project. Verify that no build steps
++are inadvertently deleting required assemblies.
+diff --git a/src/Xamarin.Android.Build.Tasks/Properties/Resources.Designer.cs b/src/Xamarin.Android.Build.Tasks/Properties/Resources.Designer.cs
+index af79c555b11..13993c8e1bd 100644
+--- a/src/Xamarin.Android.Build.Tasks/Properties/Resources.Designer.cs
++++ b/src/Xamarin.Android.Build.Tasks/Properties/Resources.Designer.cs
+@@ -999,6 +999,24 @@ public static string XA2002_NuGet {
+             }
+         }
+         
++        /// <summary>
++        ///   Looks up a localized string similar to Unable to load assembly &apos;{0}&apos;..
++        /// </summary>
++        public static string XA2024 {
++            get {
++                return ResourceManager.GetString("XA2024", resourceCulture);
++            }
++        }
++        
++        /// <summary>
++        ///   Looks up a localized string similar to Assembly {0} does not exist..
++        /// </summary>
++        public static string XA2025 {
++            get {
++                return ResourceManager.GetString("XA2025", resourceCulture);
++            }
++        }
++        
+         /// <summary>
+         ///   Looks up a localized string similar to Could not resolve reference to &apos;{0}&apos; (defined in assembly &apos;{1}&apos;) with scope &apos;{2}&apos;. When the scope is different from the defining assembly, it usually means that the type is forwarded..
+         /// </summary>
+diff --git a/src/Xamarin.Android.Build.Tasks/Properties/Resources.resx b/src/Xamarin.Android.Build.Tasks/Properties/Resources.resx
+index 5d442e70aa0..d09f2a57736 100644
+--- a/src/Xamarin.Android.Build.Tasks/Properties/Resources.resx
++++ b/src/Xamarin.Android.Build.Tasks/Properties/Resources.resx
+@@ -516,6 +516,14 @@ Either change the value in the AndroidManifest.xml to match the $(SupportedOSPla
+ {1} -  The chain of references that causes a reference to the missing assembly, with &gt; as the separator between items. Example: `System.Memory` &gt; `System.Buffers`
+ {2} - The name of the first assembly in the chain of references. Example: System.Memory</comment>
+   </data>
++  <data name="XA2024" xml:space="preserve">
++    <value>Unable to load assembly '{0}'.</value>
++    <comment>{0} - The path to the assembly that could not be loaded.</comment>
++  </data>
++  <data name="XA2025" xml:space="preserve">
++    <value>Assembly {0} does not exist.</value>
++    <comment>{0} - The path to the assembly that does not exist.</comment>
++  </data>
+   <data name="XA2006" xml:space="preserve">
+     <value>Could not resolve reference to '{0}' (defined in assembly '{1}') with scope '{2}'. When the scope is different from the defining assembly, it usually means that the type is forwarded.</value>
+     <comment>{0} - The member name, such as a class name
+diff --git a/src/Xamarin.Android.Build.Tasks/Tasks/GenerateCompressedAssembliesNativeSourceFiles.cs b/src/Xamarin.Android.Build.Tasks/Tasks/GenerateCompressedAssembliesNativeSourceFiles.cs
+index f488b59546a..70830a93df3 100644
+--- a/src/Xamarin.Android.Build.Tasks/Tasks/GenerateCompressedAssembliesNativeSourceFiles.cs
++++ b/src/Xamarin.Android.Build.Tasks/Tasks/GenerateCompressedAssembliesNativeSourceFiles.cs
+@@ -73,7 +73,7 @@ void GenerateCompressedAssemblySources ()
+ 
+ 					var fi = new FileInfo (assembly.ItemSpec);
+ 					if (!fi.Exists) {
+-						Log.LogError ($"Assembly {assembly.ItemSpec} does not exist");
++						Log.LogCodedError ("XA2025", Properties.Resources.XA2025, assembly.ItemSpec);
+ 						continue;
+ 					}
+ 
+diff --git a/src/Xamarin.Android.Build.Tasks/Tasks/RemoveRegisterAttribute.cs b/src/Xamarin.Android.Build.Tasks/Tasks/RemoveRegisterAttribute.cs
+index 55da9e1ec02..3f37284588f 100644
+--- a/src/Xamarin.Android.Build.Tasks/Tasks/RemoveRegisterAttribute.cs
++++ b/src/Xamarin.Android.Build.Tasks/Tasks/RemoveRegisterAttribute.cs
+@@ -31,7 +31,7 @@ public override bool RunTask ()
+ 			
+ 			using (var assembly = resolver.Load (mono_android)) {
+ 				if (assembly is null) {
+-					Log.LogError ($"Unable to load assembly '{mono_android}'");
++					Log.LogCodedError ("XA2024", Properties.Resources.XA2024, mono_android);
+ 					return false;
+ 				}
+ 

@@ -1,0 +1,650 @@
+diff --git a/fern/products/cli-generator/cli-generator.yml b/fern/products/cli-generator/cli-generator.yml
+index 78c95aaeb..f55d2ceff 100644
+--- a/fern/products/cli-generator/cli-generator.yml
++++ b/fern/products/cli-generator/cli-generator.yml
+@@ -16,3 +16,23 @@ navigation:
+       - page: Customization
+         path: ./customization.mdx
+         slug: customization
++      - page: Quickstart
++        path: ./quickstart.mdx
++        slug: quickstart
++        hidden: true
++      - page: Configuration reference
++        path: ./configuration.mdx
++        slug: configuration
++        hidden: true
++      - page: GraphQL support
++        path: ./graphql.mdx
++        slug: graphql
++        hidden: true
++      - page: Distribution
++        path: ./distribution.mdx
++        slug: distribution
++        hidden: true
++      - page: Troubleshooting
++        path: ./troubleshooting.mdx
++        slug: troubleshooting
++        hidden: true
+diff --git a/fern/products/cli-generator/configuration.mdx b/fern/products/cli-generator/configuration.mdx
+new file mode 100644
+index 000000000..a5e9616b6
+--- /dev/null
++++ b/fern/products/cli-generator/configuration.mdx
+@@ -0,0 +1,111 @@
++---
++title: Configuration reference
++description: All generators.yml settings for the fernapi/fern-cli generator.
++availability: beta
++---
++
++<Note title="Early access">
++The CLI generator is in early access. [Reach out](https://buildwithfern.com/book-demo?type=cli) to get started.
++</Note>
++
++<Markdown src="/snippets/cli-generator-guides-nav.mdx" />
++
++The CLI generator is configured through your `generators.yml` file. This page covers every available setting.
++
++## Minimal configuration
++
++```yaml title="fern/generators.yml"
++api:
++  specs:
++    - openapi: openapi.yml
++default-group: cli
++groups:
++  cli:
++    generators:
++      - name: fernapi/fern-cli
++        version: 0.5.0
++        output:
++          location: local-file-system
++          path: ../../my-cli
++        config:
++          binaryName: my-cli
++```
++
++## `config` block
++
++Settings under `config:` control the generated CLI's identity and behavior.
++
++### `binaryName`
++
++<ParamField path="config.binaryName" type="string">
++The name of the compiled binary. Controls three things:
++
++1. The Rust binary target (`[[bin]] name` in `Cargo.toml` → `target/debug/<binaryName>`)
++2. The environment variable prefix for runtime configuration — the binary name is uppercased with hyphens mapped to underscores (e.g., `my-cli` → `MY_CLI_BASE_URL`, `MY_CLI_BEARER_AUTH_TOKEN`)
++3. The output subdirectory under `cli/` where `main.rs` is placed
++
++When omitted, the generator derives the name from the API's display name (kebab-cased). Multi-spec workspaces must set this field explicitly.
++
++Changing this value later breaks shell scripts that reference environment variables or the binary path.
++</ParamField>
++
++## Output location
++
++The `output` block determines where the generated Rust project is written.
++
++### Local file system
++
++```yaml
++output:
++  location: local-file-system
++  path: ../../my-cli
++```
++
++The `path` resolves relative to the `fern/` directory, not the repository root. The [Quickstart](/learn/cli-generator/get-started/quickstart) has a detailed directory layout diagram.
++
++### GitHub
++
++```yaml
++github:
++  repository: my-org/my-cli
++  mode: pull-request
++```
++
++Fern pushes the generated CLI source to the specified GitHub repository. When your spec changes, Fern opens a PR against your CLI repo with the updated source. The `mode` field supports `pull-request`, `release`, and `push` — the [generators.yml reference](/learn/sdks/reference/generators-yml-reference#github) covers each mode in detail.
++
++## Multi-spec workspaces
++
++A single CLI can combine multiple OpenAPI specs into one command tree. Each spec can optionally be placed under a namespace:
++
++```yaml title="fern/generators.yml"
++api:
++  specs:
++    - openapi: core.yml
++    - openapi: billing.yml
++      namespace: billing
++default-group: cli
++groups:
++  cli:
++    generators:
++      - name: fernapi/fern-cli
++        version: 0.5.0
++        output:
++          location: local-file-system
++          path: ../../my-cli
++        config:
++          binaryName: my-cli
++```
++
++Specs without a `namespace` merge into the top level of the command tree. Specs with a `namespace` appear under a subcommand. The [Customization](/learn/cli-generator/get-started/customization#multi-spec-merging) page covers how namespaces interact with the generated Rust code, including stutter elision.
++
++<Note>
++`binaryName` is required for multi-spec workspaces: there is no automatic derivation when multiple specs are present.
++</Note>
++
++## OpenAPI extensions
++
++The CLI generator reads several [Fern OpenAPI extensions](/learn/cli-generator/get-started/openapi-extensions) that shape the command tree, filter operations, add availability badges, and rename flags. Apply these directly in your spec or through [overlays](/learn/api-definitions/openapi/overlays).
++
++## Authentication
++
++Authentication is configured through your OpenAPI spec's `securitySchemes`, not through `generators.yml`. The [Authentication](/learn/cli-generator/get-started/authentication) page covers supported schemes, credential sources, and env-var naming.
+diff --git a/fern/products/cli-generator/distribution.mdx b/fern/products/cli-generator/distribution.mdx
+new file mode 100644
+index 000000000..14b5047eb
+--- /dev/null
++++ b/fern/products/cli-generator/distribution.mdx
+@@ -0,0 +1,133 @@
++---
++title: Distribution
++description: Build release binaries and publish your generated CLI via GitHub Releases, npm, Homebrew, or curl.
++availability: beta
++---
++
++<Note title="Early access">
++The CLI generator is in early access. [Reach out](https://buildwithfern.com/book-demo?type=cli) to get started.
++</Note>
++
++<Markdown src="/snippets/cli-generator-guides-nav.mdx" />
++
++The generated CLI is a standard Rust project. This page covers building optimized binaries, choosing a TLS backend, and publishing through common distribution channels.
++
++## Building
++
++### Debug build
++
++```bash
++cargo build
++./target/debug/my-cli --help
++```
++
++A debug build compiles in ~15 seconds on an M-series Mac. The binary is unoptimized and includes debug symbols.
++
++### Release build
++
++```bash
++cargo build --release
++./target/release/my-cli --help
++```
++
++Release builds enable optimizations and produce smaller binaries. The generated project includes a `[profile.dist]` section with `lto = "thin"` for further size reduction during distribution builds.
++
++## TLS backend
++
++The generated `Cargo.toml` ships with two TLS feature flags:
++
++| Feature | Default | Description |
++| --- | --- | --- |
++| `native-tls` | Yes | Uses the OS's native TLS stack (Secure Transport on macOS, SChannel on Windows, OpenSSL on Linux). Honors the OS certificate store. |
++| `rustls` | No | Uses the pure-Rust rustls crate with Mozilla's bundled webpki roots. Produces self-contained static binaries with no system OpenSSL dependency. |
++
++To build with `rustls` instead of the default:
++
++```bash
++cargo build --release --no-default-features --features rustls
++```
++
++Use `rustls` when:
++- Targeting musl-based Linux (Alpine, scratch Docker images)
++- Cross-compiling for other architectures (e.g., aarch64)
++- Distributing to environments where system OpenSSL is unavailable or outdated
++
++<Note>
++The `rustls` backend doesn't read the OS certificate store. Users who need custom CA certificates must set the [`<NAME>_CA_BUNDLE`](/learn/cli-generator/get-started/features#tls-proxies-and-ca-bundles) environment variable.
++</Note>
++
++## Cargo-dist
++
++The generated project includes a `dist-workspace.toml` pre-configured for [cargo-dist](https://opensource.axo.dev/cargo-dist/), which automates cross-platform binary builds and GitHub Releases.
++
++The shipped configuration targets:
++
++| Platform | Target triple |
++| --- | --- |
++| macOS (Apple Silicon) | `aarch64-apple-darwin` |
++| macOS (Intel) | `x86_64-apple-darwin` |
++| Linux (x86_64, glibc) | `x86_64-unknown-linux-gnu` |
++| Linux (x86_64, musl) | `x86_64-unknown-linux-musl` |
++| Linux (ARM64, glibc) | `aarch64-unknown-linux-gnu` |
++| Linux (ARM64, musl) | `aarch64-unknown-linux-musl` |
++| Windows (x86_64) | `x86_64-pc-windows-msvc` |
++
++Included installers: shell script (Unix), PowerShell (Windows), and npm.
++
++### Setting up cargo-dist
++
++1. Install cargo-dist:
++
++```bash
++cargo install cargo-dist
++```
++
++2. Edit `dist-workspace.toml` to set your npm scope and package name (the generator strips Fern's defaults):
++
++```toml title="dist-workspace.toml"
++npm-scope = "@my-org"
++npm-package = "my-cli"
++```
++
++3. Preview the release plan:
++
++```bash
++cargo dist plan
++```
++
++4. Generate the CI workflow:
++
++```bash
++cargo dist init
++```
++
++This creates a `.github/workflows/release.yml` that triggers on Git tags matching `v*`. When you push a tag, cargo-dist builds binaries for all configured targets and publishes them as a GitHub Release with installers.
++
++## Publishing channels
++
++### GitHub releases
++
++cargo-dist handles this automatically. Each tagged release includes:
++- Platform-specific archives (`.tar.gz` for Unix, `.zip` for Windows)
++- A shell installer script (`curl -fsSL <url> | sh`)
++- A PowerShell installer script
++
++### Npm
++
++With the npm installer enabled in `dist-workspace.toml`, cargo-dist publishes a thin npm wrapper that downloads the correct binary for the user's platform:
++
++```bash
++npm install -g @my-org/my-cli
++```
++
++### Homebrew
++
++To distribute via Homebrew, create a tap repository and add a formula that points to the GitHub Release archives. cargo-dist can generate Homebrew formulas with additional configuration — see the [cargo-dist Homebrew docs](https://opensource.axo.dev/cargo-dist/book/installers/homebrew.html).
++
++## `.gitignore`
++
++The generator doesn't include a `.gitignore` in the output. After the first build, add one to avoid committing the `target/` directory (~80 MB):
++
++```gitignore title=".gitignore"
++/target
++```
+diff --git a/fern/products/cli-generator/graphql.mdx b/fern/products/cli-generator/graphql.mdx
+new file mode 100644
+index 000000000..99b13c1f9
+--- /dev/null
++++ b/fern/products/cli-generator/graphql.mdx
+@@ -0,0 +1,97 @@
++---
++title: GraphQL support
++description: Generate a CLI from a GraphQL introspection schema.
++availability: beta
++---
++
++<Note title="Early access">
++The CLI generator is in early access. [Reach out](https://buildwithfern.com/book-demo?type=cli) to get started.
++</Note>
++
++<Markdown src="/snippets/cli-generator-guides-nav.mdx" />
++
++The CLI generator also supports GraphQL schemas. The generated CLI maps GraphQL `Query` types to read-only subcommands and `Mutation` types to write subcommands, with arguments derived from each field's input types.
++
++## How it works
++
++Instead of deriving commands from OpenAPI paths and tags, the GraphQL path:
++
++- Parses the introspection schema to discover `Query` and `Mutation` fields
++- Creates a subcommand for each field, grouped under `query` and `mutation` top-level commands
++- Maps field arguments to CLI flags
++- Sends GraphQL requests to the configured endpoint
++
++The same runtime features apply: output formatting (`--format json|table|yaml|csv`), dry-run mode, TLS/proxy configuration, and authentication.
++
++## Quickstart
++
++### 1. Add a GraphQL spec to your Fern project
++
++Place your GraphQL introspection schema (JSON) in the `fern/` directory.
++
++### 2. Configure the generator
++
++```yaml title="fern/generators.yml"
++api:
++  specs:
++    - openapi: graphql-schema.json
++default-group: cli
++groups:
++  cli:
++    generators:
++      - name: fernapi/fern-cli
++        version: 0.5.0
++        output:
++          location: local-file-system
++          path: ../../my-cli
++        config:
++          binaryName: my-cli
++```
++
++GraphQL specs can also be combined with OpenAPI specs in the same CLI using [multi-spec workspaces](/learn/cli-generator/get-started/configuration#multi-spec-workspaces). Use `namespace` to keep the command trees separate:
++
++```yaml title="fern/generators.yml"
++api:
++  specs:
++    - openapi: rest-api.yml
++    - openapi: graphql-schema.json
++      namespace: graphql
++```
++
++### 3. Generate, build, and run
++
++```bash
++fern generate --group cli
++cd ../my-cli
++cargo build
++./target/debug/my-cli --help
++```
++
++## Command tree structure
++
++For a schema with:
++
++```graphql
++type Query {
++  user(id: ID!): User
++  users(limit: Int): [User]
++}
++
++type Mutation {
++  createUser(input: CreateUserInput!): User
++  deleteUser(id: ID!): Boolean
++}
++```
++
++The generated CLI produces:
++
++```bash
++my-cli query user --params '{"id": "123"}'
++my-cli query users --params '{"limit": 10}'
++my-cli mutation create-user --json '{"input": {"name": "Alice"}}'
++my-cli mutation delete-user --params '{"id": "123"}'
++```
++
++## Combining with OpenAPI
++
++When a GraphQL spec is namespaced alongside an OpenAPI spec, both command trees are accessible from the same binary. The [Customization](/learn/cli-generator/get-started/customization) page covers multi-spec merging behavior.
+diff --git a/fern/products/cli-generator/quickstart.mdx b/fern/products/cli-generator/quickstart.mdx
+new file mode 100644
+index 000000000..f2d186e54
+--- /dev/null
++++ b/fern/products/cli-generator/quickstart.mdx
+@@ -0,0 +1,108 @@
++---
++title: Quickstart
++description: Generate a working CLI binary from an OpenAPI spec in five steps.
++availability: beta
++---
++
++<Note title="Early access">
++The CLI generator is in early access. [Reach out](https://buildwithfern.com/book-demo?type=cli) to get started.
++</Note>
++
++<Markdown src="/snippets/cli-generator-guides-nav.mdx" />
++
++This guide walks through generating a CLI from an OpenAPI spec and running it locally. By the end you will have a compiled binary that maps every API endpoint to a subcommand.
++
++## Prerequisites
++
++- [Fern CLI](https://www.npmjs.com/package/fern-api) v5.37.9 or later (`npm install -g fern-api`)
++- [Rust toolchain](https://rustup.rs/) (stable)
++- An OpenAPI 3.x spec with at least one endpoint
++
++## 1. Initialize a Fern project
++
++```bash
++mkdir my-api-config && cd my-api-config
++fern init --organization my-org
++```
++
++This creates a `fern/` directory containing the default configuration files.
++
++## 2. Add your OpenAPI spec
++
++Place your spec at `fern/openapi.yml` (or any path you reference in the next step). The spec must include at least one path and should declare `securitySchemes` under `components` if you want the CLI to handle authentication.
++
++## 3. Configure the generator
++
++Replace the contents of `fern/generators.yml`:
++
++```yaml title="fern/generators.yml"
++api:
++  specs:
++    - openapi: openapi.yml
++default-group: cli
++groups:
++  cli:
++    generators:
++      - name: fernapi/fern-cli
++        version: 0.5.0
++        output:
++          location: local-file-system
++          path: ../../my-cli
++        config:
++          binaryName: my-cli
++```
++
++<Warning title="Output paths resolve relative to fern/, not the repo root">
++The `path` field under `local-file-system` resolves relative to the `fern/` directory, not the repository root. For the standard layout where the config repo and output repo are siblings:
++
++```
++~/projects/
++├── my-api-config/
++│   └── fern/
++│       ├── fern.config.json
++│       ├── generators.yml    ← path resolves from here
++│       └── openapi.yml
++└── my-cli/                   ← target output repo
++```
++
++Writing to the sibling `my-cli/` requires `path: ../../my-cli` — one level up out of `fern/`, another level up out of `my-api-config/`.
++
++A common mistake is using `path: ../my-cli`, which resolves to `my-api-config/my-cli/` instead of the intended sibling directory.
++</Warning>
++
++## 4. Generate the CLI
++
++```bash
++fern generate --group cli
++```
++
++Fern reads the OpenAPI spec, runs the CLI generator, and writes a complete Rust project to the output path.
++
++## 5. Build and run
++
++```bash
++cd ../my-cli
++cargo build
++./target/debug/my-cli --help
++```
++
++The `--help` output shows the full command tree: top-level commands derived from OpenAPI tags, subcommands from individual operations, plus built-in utilities like `completion` and `man`.
++
++## What the generated CLI includes
++
++Every generated CLI ships with:
++
++- **Subcommands** mapped from your API's endpoints, grouped by OpenAPI tags
++- **[Authentication](/learn/cli-generator/get-started/authentication)** configured from your spec's `securitySchemes`
++- **[Output formatting](/learn/cli-generator/get-started/features)** via `--format json|table|yaml|csv`
++- **Dry-run mode** (`--dry-run`) to preview requests without sending them
++- **Auto-pagination** for endpoints annotated with `x-fern-pagination`
++- **Shell completions** via the `completion` subcommand (Bash, Zsh, Fish, PowerShell)
++- **Man pages** via the `man` subcommand
++- **TLS and proxy configuration** via environment variables scoped to your binary name
++
++## Next steps
++
++- [Configuration reference](/learn/cli-generator/get-started/configuration) for all `generators.yml` options
++- [Distribution](/learn/cli-generator/get-started/distribution) for building release binaries and publishing
++- [Troubleshooting](/learn/cli-generator/get-started/troubleshooting) for common first-time issues
+diff --git a/fern/products/cli-generator/troubleshooting.mdx b/fern/products/cli-generator/troubleshooting.mdx
+new file mode 100644
+index 000000000..eee67d34b
+--- /dev/null
++++ b/fern/products/cli-generator/troubleshooting.mdx
+@@ -0,0 +1,120 @@
++---
++title: Troubleshooting
++description: Solutions for common issues when generating, building, and running a CLI.
++availability: beta
++---
++
++<Note title="Early access">
++The CLI generator is in early access. [Reach out](https://buildwithfern.com/book-demo?type=cli) to get started.
++</Note>
++
++<Markdown src="/snippets/cli-generator-guides-nav.mdx" />
++
++## Generated files appear in the wrong directory
++
++The `path` field under `local-file-system` resolves relative to the `fern/` directory, not the repository root. For a standard layout where the config repo and output repo are siblings:
++
++```
++~/projects/
++├── my-api-config/
++│   └── fern/
++│       └── generators.yml    ← path resolves from here
++└── my-cli/                   ← intended output
++```
++
++Use `path: ../../my-cli` (two levels up), not `path: ../my-cli`.
++
++The [Quickstart](/learn/cli-generator/get-started/quickstart) has a full directory layout diagram.
++
++## `--help` doesn't show authentication
++
++The CLI derives auth from the `security` block and `components.securitySchemes` in your OpenAPI spec. If `--help` shows no `Authentication:` section:
++
++1. Verify the spec has a top-level `security` array referencing at least one scheme:
++
++```yaml title="openapi.yml"
++security:
++  - BearerAuth: []
++
++components:
++  securitySchemes:
++    BearerAuth:
++      type: http
++      scheme: bearer
++```
++
++2. Run `fern generate --group cli` again after updating the spec.
++
++The [Authentication](/learn/cli-generator/get-started/authentication) page covers all supported schemes and how they map to environment variables.
++
++## Build fails with missing OpenSSL
++
++On Linux, the default `native-tls` feature requires OpenSSL development headers. If the build fails with errors about missing `openssl/ssl.h` or `pkg-config`:
++
++**Option A**: Install OpenSSL development packages:
++
++```bash
++# Debian / Ubuntu
++sudo apt-get install -y pkg-config libssl-dev
++
++# Fedora / RHEL
++sudo dnf install -y openssl-devel pkg-config
++```
++
++**Option B**: Switch to the `rustls` TLS backend, which has no system dependencies:
++
++```bash
++cargo build --no-default-features --features rustls
++```
++
++The [TLS backend](/learn/cli-generator/get-started/distribution#tls-backend) section covers trade-offs between the two options.
++
++## `fern check` reports unexpected keys
++
++If `fern check` errors about unrecognized fields in `generators.yml`, the Fern CLI version is likely too old to know about the `fernapi/fern-cli` generator:
++
++```bash
++fern upgrade
++```
++
++Verify with `fern --version` (v5.37.9 or later required).
++
++## `/target/` directory committed by mistake
++
++The generator doesn't ship a `.gitignore` in the output. After the first build, add one:
++
++```gitignore title=".gitignore"
++/target
++```
++
++To remove an already-committed `target/` directory from Git history without deleting the local files:
++
++```bash
++echo '/target' >> .gitignore
++git rm -r --cached target/
++git add .gitignore
++git commit -m "Remove target/ from tracking"
++```
++
++## `generators.yml` vs `generators.yaml`
++
++Fern expects `generators.yml` (not `.yaml`). If the CLI can't find your configuration, check the file extension.
++
++## Binary name conflicts with existing commands
++
++If the generated binary name conflicts with a system command (e.g., `test`, `time`), set a different name:
++
++```yaml
++config:
++  binaryName: my-api-cli
++```
++
++The `binaryName` also controls the environment variable prefix, so choose a name that produces readable env vars (e.g., `my-api-cli` → `MY_API_CLI_BEARER_AUTH_TOKEN`).
++
++## Generation succeeds but `cargo build` fails
++
++If `fern generate` completes but `cargo build` fails:
++
++1. **Rust toolchain version**: The generated project requires a stable Rust toolchain. Run `rustup update stable`.
++2. **Stale `Cargo.lock`**: If you previously generated with a different generator version, delete `Cargo.lock` and rebuild: `cargo build`.
++3. **Feature flag mismatch**: If you added features to `Cargo.toml` manually, verify they're compatible with the current template version.
+diff --git a/fern/snippets/cli-generator-guides-nav.mdx b/fern/snippets/cli-generator-guides-nav.mdx
+new file mode 100644
+index 000000000..51cc7e007
+--- /dev/null
++++ b/fern/snippets/cli-generator-guides-nav.mdx
+@@ -0,0 +1,17 @@
++<CardGroup cols={3}>
++  <Card title="Quickstart" icon="fa-regular fa-rocket" href="/learn/cli-generator/get-started/quickstart">
++    End-to-end setup from OpenAPI spec to compiled binary
++  </Card>
++  <Card title="Configuration" icon="fa-regular fa-gear" href="/learn/cli-generator/get-started/configuration">
++    All generators.yml settings for the CLI generator
++  </Card>
++  <Card title="GraphQL" icon="fa-regular fa-diagram-project" href="/learn/cli-generator/get-started/graphql">
++    Generate a CLI from a GraphQL introspection schema
++  </Card>
++  <Card title="Distribution" icon="fa-regular fa-box" href="/learn/cli-generator/get-started/distribution">
++    Build release binaries and publish via npm, Homebrew, or GitHub
++  </Card>
++  <Card title="Troubleshooting" icon="fa-regular fa-wrench" href="/learn/cli-generator/get-started/troubleshooting">
++    Solutions for common first-time issues
++  </Card>
++</CardGroup>

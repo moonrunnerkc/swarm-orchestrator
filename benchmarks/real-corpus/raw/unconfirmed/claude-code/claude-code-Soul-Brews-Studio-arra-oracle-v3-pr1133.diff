@@ -1,0 +1,86 @@
+diff --git a/src/tools/learn.ts b/src/tools/learn.ts
+index 3f4c778e..644e3e33 100644
+--- a/src/tools/learn.ts
++++ b/src/tools/learn.ts
+@@ -210,7 +210,7 @@ export async function handleLearn(ctx: ToolContext, input: OracleLearnInput): Pr
+     } catch (err) {
+       // Never block ingest on the queue — same posture as the inline path.
+       embeddingStatus = 'failed';
+-      console.warn(`[arra_learn] enqueue failed: ${err instanceof Error ? err.message : String(err)}`);
++      console.error(`[arra_learn] enqueue failed: ${err instanceof Error ? err.message : String(err)}`);
+     }
+   } else {
+     try {
+@@ -229,8 +229,8 @@ export async function handleLearn(ctx: ToolContext, input: OracleLearnInput): Pr
+       embeddingStatus = 'ok';
+     } catch (err) {
+       embeddingStatus = 'failed';
+-      console.warn(`[arra_learn] vector embedding failed for ${id}: ${err instanceof Error ? err.message : String(err)}`);
+-      console.warn(`[arra_learn] document still searchable via FTS5; run 'bun src/scripts/index-model.ts <model>' later to backfill vectors`);
++      console.error(`[arra_learn] vector embedding failed for ${id}: ${err instanceof Error ? err.message : String(err)}`);
++      console.error(`[arra_learn] document still searchable via FTS5; run 'bun src/scripts/index-model.ts <model>' later to backfill vectors`);
+     }
+   }
+ 
+diff --git a/src/vector/adapters/lancedb.ts b/src/vector/adapters/lancedb.ts
+index b1791550..891e87d0 100644
+--- a/src/vector/adapters/lancedb.ts
++++ b/src/vector/adapters/lancedb.ts
+@@ -26,13 +26,13 @@ export class LanceDBAdapter implements VectorStoreAdapter {
+ 
+     const lancedb = await import('@lancedb/lancedb');
+     this.db = await lancedb.connect(this.dbPath);
+-    console.log(`[LanceDB] Connected at ${this.dbPath}`);
++    console.error(`[LanceDB] Connected at ${this.dbPath}`);
+   }
+ 
+   async close(): Promise<void> {
+     this.db = null;
+     this.table = null;
+-    console.log('[LanceDB] Closed');
++    console.error('[LanceDB] Closed');
+   }
+ 
+   async ensureCollection(): Promise<void> {
+@@ -53,7 +53,7 @@ export class LanceDBAdapter implements VectorStoreAdapter {
+       await this.table.delete('id = "__init__"');
+     }
+ 
+-    console.log(`[LanceDB] Collection '${this.collectionName}' ready`);
++    console.error(`[LanceDB] Collection '${this.collectionName}' ready`);
+   }
+ 
+   async deleteCollection(): Promise<void> {
+@@ -62,9 +62,9 @@ export class LanceDBAdapter implements VectorStoreAdapter {
+     try {
+       await this.db.dropTable(this.collectionName);
+       this.table = null;
+-      console.log(`[LanceDB] Collection '${this.collectionName}' deleted`);
++      console.error(`[LanceDB] Collection '${this.collectionName}' deleted`);
+     } catch (e) {
+-      console.warn('[LanceDB] deleteCollection failed:', e instanceof Error ? e.message : String(e));
++      console.error('[LanceDB] deleteCollection failed:', e instanceof Error ? e.message : String(e));
+     }
+   }
+ 
+@@ -96,9 +96,9 @@ export class LanceDBAdapter implements VectorStoreAdapter {
+     await this.table.add(rows);
+     const reused = docs.length - needEmbed.length;
+     if (reused > 0) {
+-      console.log(`[LanceDB] Added ${docs.length} documents (${reused} with precomputed vectors)`);
++      console.error(`[LanceDB] Added ${docs.length} documents (${reused} with precomputed vectors)`);
+     } else {
+-      console.log(`[LanceDB] Added ${docs.length} documents`);
++      console.error(`[LanceDB] Added ${docs.length} documents`);
+     }
+   }
+ 
+diff --git a/start-mcp.sh b/start-mcp.sh
+new file mode 100755
+index 00000000..f8ef6aac
+--- /dev/null
++++ b/start-mcp.sh
+@@ -0,0 +1,3 @@
++#!/bin/bash
++cd "$(dirname "$0")"
++exec bun src/index.ts "$@"

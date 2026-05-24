@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24127",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24127,
+    "headSha": "415c590ce0b50369838c0560468c367cba9aaa3e",
+    "baseSha": "c9ce60c857972fa97b2dc8d6af256f67353235b5",
+    "title": "feat(app-server): add next prompt suggestion RPC [2 of 3]",
+    "body": "## Why\n\nClients need an explicit v2 API for requesting a next-prompt suggestion from an existing thread. This layer exposes that API on top of the core engine without adding the TUI presentation behavior.\n\n## What changed\n\n- Add `thread/suggestNextPrompt` v2 request/response types and generated JSON/TypeScript schema fixtures.\n- Route the new request through the app-server message processor and turn processor.\n- Sample suggestions from loaded thread history with cancellation support and no tool exposure.\n- Add focused app-server coverage for loaded-history sampling and in-flight cancellation.\n- Document the new method in the app-server README.\n\n## Testing\n\n- `cargo test -p codex-app-server-protocol`\n- `cargo test -p codex-app-server thread_suggest_next_prompt`\n- `CARGO_TARGET_DIR=/private/tmp/codex-next-suggestion-stack-target ./tools/argument-comment-lint/run.py -p codex-core -p codex-app-server-protocol -p codex-app-server -p codex-tui`\n\nGenerated/schema churn: yes, app-server v2 JSON and TypeScript schema fixtures are updated in this PR.\n\n## Stack\n\n1. [#24126](https://github.com/openai/codex/pull/24126) next-prompt suggestion engine\n2. #24127 next-prompt app-server RPC (this PR)\n3. [#23976](https://github.com/openai/codex/pull/23976) next-prompt TUI\n",
+    "author": "fcoury-oai",
+    "headRef": "fcoury/next-suggestion-api",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "415c590ce0b50369838c0560468c367cba9aaa3e",
+    "baseSha": "c9ce60c857972fa97b2dc8d6af256f67353235b5"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24127.diff",
+  "vendoredAt": "2026-05-24T03:21:03.603Z",
+  "collectedAt": "2026-05-24T03:21:03.603Z"
+}

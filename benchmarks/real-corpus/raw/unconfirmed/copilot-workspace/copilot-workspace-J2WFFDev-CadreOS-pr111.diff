@@ -1,0 +1,208 @@
+diff --git a/planning/PHASE_15A_USER_TEST_CASE_SUITE.md b/planning/PHASE_15A_USER_TEST_CASE_SUITE.md
+new file mode 100644
+index 0000000..e1c1144
+--- /dev/null
++++ b/planning/PHASE_15A_USER_TEST_CASE_SUITE.md
+@@ -0,0 +1,181 @@
++# Phase 15A — Practical User Test Case Suite
++
++## Purpose
++Create a hands-on user test suite that finds real workflow issues, UX friction, authorization gaps, deployment problems, and data consistency issues in currently implemented CadreOS behavior.
++
++## Scope Guardrails (Do Not Expand)
++- No new product/runtime features.
++- No messaging, notifications, Feed, Inbox, Journal, AI, automation, offline sync, or native mobile behavior.
++- No FieldOps or Entry runtime feature expansion.
++- Focus only on test planning, validation scenarios, and issue discovery for existing flows.
++
++## Confirmed Current Workflow Coverage Baseline
++This suite is aligned to implemented routes/models in current CadreOS:
++- Auth/bootstrap/linking: `/sign-in`, `/account/link-person`, `/account/bootstrap-admin`
++- Org/program/team/person model: Organization, Program, Team, Season, Person
++- Roles/roster/guardian visibility: RoleAssignment, RosterMembership, AthleteGuardianRelationship, staff-scoped guardian diagnostics
++- Events/attendance: Event + AttendanceRecord capture/update flows
++- Notes/tasks: ObservationNote + FollowUpTask create/review/edit flows
++- Dashboard/review: dashboard review cards + operational panels
++- FieldOps MVP: facilities/resources/bookings and approval/precheck workflows
++- Entry wrapper/context: `EntryRuntimeRef` + `/entry-runtime/[entryRuntimeRefId]` read-only relationship view
++- Rapid-capture/mobile web optimization: dashboard rapid actions, context prefill, return-path continuity, attendance continue-capture
++
++## Shared Test Data Preconditions
++Use seeded/demo baseline (or equivalent) before executing persona cases:
++- Demo organization, program, team, season exist.
++- At least one person for each role type: Org Admin, Program Director, Coach, Assistant Coach, Athlete, Parent/Guardian.
++- Team has at least one ATHLETE roster member and one staff member.
++- At least one athlete has guardian relationship; at least one athlete intentionally missing guardian relationship for edge tests.
++- At least one event exists for team and one event without team.
++- At least one ObservationNote and one FollowUpTask exist.
++- At least one FieldOps facility/resource pair exists.
++- Account-linking users available for staff and non-staff personas.
++
++## Testing Status Tracker
++Use this status in every test execution row:
++- **NOT TESTED**
++- **PASS**
++- **FAIL**
++- **BLOCKED**
++- **NEEDS RETEST**
++
++Recommended execution tracker format:
++
++| Test ID | Persona | Priority | Module Area | Status | Owner | Build/Commit | Notes |
++| --- | --- | --- | --- | --- | --- | --- | --- |
++| ORG-001 | Organization Admin | High | Auth/Bootstrap | NOT TESTED |  |  |  |
++
++---
++
++## Persona-Based Test Cases
++
++### Organization Admin
++
++| Test ID | Persona | Scenario | Preconditions / Test Data | Steps | Expected Result | Issue Symptoms to Watch For | Priority | Module Area |
++| --- | --- | --- | --- | --- | --- | --- | --- | --- |
++| ORG-001 | Organization Admin | Login + account link + bootstrap first admin | Signed-in Clerk user with UserAccount and no person link; no org admin role exists yet | 1) Sign in. 2) Open `/account/link-person`. 3) Link person. 4) Open `/account/bootstrap-admin`. 5) Submit bootstrap action. | Person links successfully; bootstrap succeeds once; success confirmation shown. | Link saves but does not persist; bootstrap loops/errors; org admin role not created. | High | Auth / Bootstrap |
++| ORG-002 | Organization Admin | Org/program/team/person structure review | Program/team/people records exist | 1) Open `/programs`, `/teams`, `/people`. 2) Open one program, team, person detail each. | Records load without schema/context errors; cross-links navigate correctly. | 500s, empty lists with existing data, broken links, wrong org scoping. | High | Core Data Model |
++| ORG-003 | Organization Admin | Team roster create/review/remove | Team + season + unrostered person exist | 1) Open team detail. 2) Add roster member. 3) Confirm in selected season roster. 4) Remove member. | Membership added/removed with success feedback and correct season scoping. | Duplicate membership accepted, wrong-season placement, stale roster counts. | High | Roster Management |
++| ORG-004 | Organization Admin | Team role assignment create/remove | Team + person without target team role exists | 1) Assign team role. 2) Verify role appears. 3) Remove role. | Team role assignment persists and deletes cleanly. | Duplicate assignment, role remains after delete, wrong person/role targeted. | High | Role Assignments |
++| ORG-005 | Organization Admin | End-to-end operational workflow | Staff user with full access and baseline data | 1) Confirm roster + roles on team page. 2) Validate guardian linkage indicators. 3) Create event. 4) Capture attendance. 5) Create note from event context. 6) Create follow-up from note/event context. 7) Review dashboard and operational panels. 8) Open linked Entry relationship page for created note/task. | Full chain completes with correct linkage and visibility; no cross-org leakage; Entry relationship is read-only and consistent with source data. | Missing links between entities, incorrect attribution, broken return paths, Entry record missing/unresolvable. | High | End-to-End Workflow |
++| ORG-006 | Organization Admin | Deployment/build smoke on hosted environment | Latest deployment available with DB + Prisma client + seed/demo data | 1) Open deployed app URL. 2) Sign in and load dashboard. 3) Hit key routes (`/dashboard`,`/people`,`/teams`,`/events`,`/notes`,`/tasks`,`/field-ops`). 4) Execute one create flow (event or note). | App loads; DB-backed pages render; key routes do not 500; create flow succeeds; seeded data visible. | Route-level 500s, Prisma client/runtime errors, empty dataset despite seed expectation. | High | Deployment Smoke |
++
++### Program Director
++
++| Test ID | Persona | Scenario | Preconditions / Test Data | Steps | Expected Result | Issue Symptoms to Watch For | Priority | Module Area |
++| --- | --- | --- | --- | --- | --- | --- | --- | --- |
++| DIR-001 | Program Director | Program/team scoped visibility and navigation | Program director role assigned at program scope | 1) Sign in as program director. 2) Open dashboard, teams, events, notes, tasks. | Access limited to authorized program/team scope; pages render with scoped data only. | Sees unrelated program data; denied on allowed scope; inconsistent counts vs lists. | High | Authorization / Scope |
++| DIR-002 | Program Director | Event creation and attendance readiness review | Program + team exist | 1) Create event for program/team. 2) Open event detail. 3) Review attendance capture prompts/readiness context. | Event saves; attendance workflow available; readiness indicators reflect current roster/task context. | Team/program mismatch accepted incorrectly; readiness cues stale/wrong. | High | Events / Attendance |
++| DIR-003 | Program Director | Dashboard review cadence links | Existing unresolved tasks/events/notes data | 1) Open dashboard review cadence links. 2) Validate filtered destination pages. | Filter links preserve context and land on matching records. | Broken filters, empty filtered list despite known data, navigation context loss. | Medium | Dashboard / Review |
++
++### Coach
++
++| Test ID | Persona | Scenario | Preconditions / Test Data | Steps | Expected Result | Issue Symptoms to Watch For | Priority | Module Area |
++| --- | --- | --- | --- | --- | --- | --- | --- | --- |
++| COA-001 | Coach | Rapid attendance capture with continue-capture mode | Team event exists with roster athletes | 1) Open event detail. 2) Capture attendance for athlete A with continue mode. 3) Capture athlete B quickly using retained status/reason context. | Attendance saves repeatedly; continue mode retains context and returns to capture form anchor. | Context not retained, duplicate/wrong athlete updates, slow repetitive flow. | High | Attendance / Rapid Capture |
++| COA-002 | Coach | Quick note capture with event/team prefill | Event exists | 1) Launch note creation from contextual path. 2) Verify team/event prefill. 3) Save note. | Note saves with expected optional links and author attribution. | Wrong team prefill, event mismatch errors for valid context, note not persisted. | High | Observation Notes |
++| COA-003 | Coach | Follow-up task creation from note/event context | Existing note with/without linked event | 1) Create task from note context. 2) Verify source note/event prefill/validation. 3) Save task. | Task saves with valid assignee and context linkage; task appears in tasks list/detail. | Ambiguous source-note/source-event validation failures, missing linkage in detail view. | High | FollowUpTasks |
++| COA-004 | Coach | Entry wrapper/context inspection for created note/task | Existing note/task with EntryRuntimeRef | 1) Open linked entry relationship page. 2) Compare wrapper metadata to source record. | Read-only Entry view resolves and matches source linkage/visibility context. | Entry record missing, unresolved visibility context unexpectedly, wrong source pointer. | Medium | Entry Wrapper |
++| COA-005 | Coach | Mobile web small-screen rapid workflow | Use browser responsive mode (small viewport) | 1) Run attendance + note + task quick capture on small screen. 2) Validate form usability and completion without horizontal clipping. | Controls remain usable; critical actions reachable; flow completion possible without major friction. | Hidden buttons, clipped form fields, accidental navigation/back-stack confusion. | High | Mobile / Rapid Capture UX |
++
++### Assistant Coach
++
++| Test ID | Persona | Scenario | Preconditions / Test Data | Steps | Expected Result | Issue Symptoms to Watch For | Priority | Module Area |
++| --- | --- | --- | --- | --- | --- | --- | --- | --- |
++| AST-001 | Assistant Coach | Team-scoped daily workflow | Assistant coach role assigned to specific team | 1) Open team/events/notes/tasks for assigned team. 2) Attempt actions within team scope. | Assigned team workflows accessible and functional. | Unexpected denial in assigned team, partial permissions causing broken flows. | High | Authorization / Team Scope |
++| AST-002 | Assistant Coach | Unauthorized access attempt outside team scope | Additional team outside assignment exists | 1) Open unassigned team/event/task/note URLs directly. | Access denied or safely limited; no unauthorized data exposure. | Unassigned team data visible; mutation routes allow updates. | High | Authorization Negative |
++| AST-003 | Assistant Coach | Return-path continuity across create/edit | Start from filtered tasks or notes page | 1) Open filtered list. 2) Create/edit note or task. 3) Cancel/save and return. | Return path resolves safely to expected review context. | Returned to wrong module, dropped filters, unsafe/invalid return redirects. | Medium | Navigation Context |
++
++### Athlete
++
++| Test ID | Persona | Scenario | Preconditions / Test Data | Steps | Expected Result | Issue Symptoms to Watch For | Priority | Module Area |
++| --- | --- | --- | --- | --- | --- | --- | --- | --- |
++| ATH-001 | Athlete | Staff-only workflow access restriction | Athlete user account linked to athlete person | 1) Sign in as athlete. 2) Open notes/tasks/team operational detail and direct URLs. | Staff-only creation/detail surfaces deny access with safe messaging. | Athlete can see/edit staff-only notes/tasks/entry details. | High | Authorization / Staff-Only |
++| ATH-002 | Athlete | Non-destructive browsing experience | Athlete-scoped visible pages available | 1) Open dashboard and core lists. 2) Confirm no privileged action leakage. | App remains stable with no privileged action availability/execution. | Missing guardrails, visible admin actions, runtime errors from role assumptions. | Medium | UX / Authorization |
++
++### Guardian / Parent (Visibility/Context-Only Support)
++
++| Test ID | Persona | Scenario | Preconditions / Test Data | Steps | Expected Result | Issue Symptoms to Watch For | Priority | Module Area |
++| --- | --- | --- | --- | --- | --- | --- | --- | --- |
++| GRD-001 | Guardian/Parent | Guardian relationship visibility in staff workflows | Athlete with guardian relationship exists | 1) Sign in as staff and inspect team/people/task note contexts. 2) Verify guardian indicators shown where designed. | Guardian relationship diagnostics appear in staff surfaces only. | Missing guardian indicators where expected; inconsistent counts/labels. | Medium | Guardian Visibility |
++| GRD-002 | Guardian/Parent | Guardian direct access restriction | Guardian user account linked | 1) Sign in as guardian. 2) Attempt direct staff-only notes/tasks/entry URLs. | Guardian cannot access staff-only operational content; no data leakage. | Staff-only details exposed to guardian account. | High | Authorization / Guardian |
++
++---
++
++## Required Negative / Edge-Case Test Cases
++
++| Test ID | Persona | Scenario | Preconditions / Test Data | Steps | Expected Result | Issue Symptoms to Watch For | Priority | Module Area |
++| --- | --- | --- | --- | --- | --- | --- | --- | --- |
++| NEG-001 | Organization Admin | Missing guardian relationship | Athlete without guardian link exists on roster | Open team/dashboard guardian diagnostics filters. | Athlete appears in missing-linkage indicators and related review lanes. | Athlete missing from expected gap indicators. | High | Guardian Context |
++| NEG-002 | Organization Admin | Missing role assignment | Roster member without team role assignment exists | Open team detail and role-assignment readiness indicators. | Member is surfaced in missing-assignment counts/review cues. | Missing-assignment metrics do not match roster reality. | High | Roles / Roster |
++| NEG-003 | Assistant Coach | Unauthorized user attempts access | User lacks team/staff permissions for target record | Open protected route URLs directly and attempt form submission. | Access safely denied; mutation blocked; no record changes. | Unauthorized read/write succeeds, or unhandled server errors. | High | Authorization |
++| NEG-004 | Program Director | Empty roster handling | Team with selected season but no members | Open team and related event attendance context. | Empty-state messaging shown; no crash; no invalid counts. | Null/undefined rendering errors; incorrect implied attendance expectations. | Medium | Roster / Events |
++| NEG-005 | Coach | Event with no attendance records | Event exists with no captured attendance | Open event detail and events list readiness filters. | Event flagged as missing/not reviewed attendance where applicable. | Event incorrectly shown as fully captured. | Medium | Events / Attendance |
++| NEG-006 | Coach | Note without linked athlete/team/event | Create note with only body | Save note and open detail/list context. | Note saves successfully with optional links blank and clear UI context. | Save blocked unexpectedly; detail view breaks on null links. | High | Observation Notes |
++| NEG-007 | Coach | Task without due date | Create task with no `dueAt` | Save task and inspect list/detail. | Task saves and is tracked without due date-related errors. | Task rejected or misclassified due to null due date. | Medium | FollowUpTasks |
++| NEG-008 | Program Director | Stale/overdue task detection | Existing unresolved tasks with old update/due timestamps | Open dashboard/tasks filters for stale/overdue lanes. | Stale and overdue indicators/filters surface expected tasks. | Tasks not surfaced; stale logic inconsistent with timestamps. | High | Dashboard / Tasks |
++| NEG-009 | Coach | Missing Entry wrapper link | Record with absent/unresolvable EntryRuntimeRef id | Open `/entry-runtime/[id]` with missing record id. | Safe “not found/unavailable” message; no crash/data leak. | 500 errors, unrelated record leakage, broken fallback handling. | High | Entry Wrapper |
++
++---
++
++## Mobile / Rapid-Capture Focus Checks
++
++| Test ID | Persona | Scenario | Preconditions / Test Data | Steps | Expected Result | Issue Symptoms to Watch For | Priority | Module Area |
++| --- | --- | --- | --- | --- | --- | --- | --- | --- |
++| MOB-001 | Coach | Small-screen usability | Small viewport enabled | Traverse dashboard rapid actions and complete one note + task create flow. | Forms/buttons remain usable and readable in small viewport. | Clipped controls, overlap, unusable form fields. | High | Mobile UX |
++| MOB-002 | Coach | Repeated attendance entry speed | Team event with multiple roster athletes | Capture attendance for multiple athletes using continue mode and inline quick links. | Fast repeated entry works with minimal context re-entry. | Slow loop, lost selected status/reason, wrong target person updates. | High | Attendance Rapid Capture |
++| MOB-003 | Coach | Quick note capture | Note context from dashboard/event/team | Create note using contextual prefill and return-path continuity. | Note creation remains low-friction with context preserved. | Context lost, return path broken, extra navigation steps required. | Medium | Notes Rapid Capture |
++| MOB-004 | Coach | Quick follow-up creation | Source note or event selected | Create task from note/event context in rapid workflow. | Source context prefills correctly and persists through save/return. | Source mismatch validation noise for valid context. | Medium | Tasks Rapid Capture |
++| MOB-005 | Assistant Coach | Return-path/navigation context | Start from filtered review lane | Create/edit/cancel and return to originating filtered lane. | Return path resolves safely and preserves review context intent. | Redirects to generic list, loses workflow continuity. | Medium | Navigation Context |
++
++---
++
++## Deployment / Build Smoke Tests
++
++| Test ID | Persona | Scenario | Preconditions / Test Data | Steps | Expected Result | Issue Symptoms to Watch For | Priority | Module Area |
++| --- | --- | --- | --- | --- | --- | --- | --- | --- |
++| DEP-001 | Organization Admin | Vercel deployment loads | Latest Vercel deployment URL available | Open root and sign-in/dashboard routes. | App shell and authenticated dashboard load successfully. | White screen, edge/runtime boot failures. | High | Deployment |
++| DEP-002 | Organization Admin | Database connection works | Valid production/staging DATABASE_URL configured | Load DB-backed pages (`/dashboard`,`/people`,`/teams`). | Pages render with live data and no DB connectivity errors. | Prisma/database connection errors, schema unavailable unexpectedly. | High | Database |
++| DEP-003 | Organization Admin | Prisma client works in runtime | Deployment built with generated Prisma client | Execute one create mutation (event/note/task). | Mutation succeeds; record persists and can be read back. | Runtime “Prisma Client not generated”/query engine errors. | High | Prisma Runtime |
++| DEP-004 | Organization Admin | Seed/demo data presence | Seed process executed for environment under test | Verify demo org/program/team/person baseline presence. | Expected baseline data available for scripted tests. | Empty baseline preventing workflow validation. | Medium | Seed Data |
++| DEP-005 | Organization Admin | Key routes do not 500 | Authenticated user session available | Open key routes: dashboard, people, teams, events, notes, tasks, field-ops, entry-runtime known id. | No 500 responses on route load. | Route-level server errors, hydration/runtime crashes. | High | Route Stability |
++
++---
++
++## Defect Logging Template
++
++Use this template for every discovered issue:
++
++| Field | Value |
++| --- | --- |
++| Title |  |
++| Module |  |
++| Persona |  |
++| Severity |  |
++| Steps to Reproduce | 1. 2. 3. |
++| Expected Result |  |
++| Actual Result |  |
++| Screenshots / Logs |  |
++| Suspected Cause |  |
++
++Severity recommendation:
++- **High**: security/authorization leak, data corruption/loss, blocking workflow.
++- **Medium**: incorrect behavior with workaround, misleading operational signal.
++- **Low**: minor UX friction or non-blocking display inconsistency.
++
++---
++
++## Validation Notes for Phase 15A
++- Test cases are mapped to currently implemented models/routes and avoid deferred scope.
++- No assumptions are made about messaging/notifications/feed/inbox/journal/AI/automation/offline/native mobile behavior.
++- Guardian/parent flows are treated as visibility/context-only where currently supported.
++- FieldOps and Entry runtime are validated as implemented (MVP/read-only metadata) without runtime expansion.
++
++## PR Summary (Coverage + Known Gaps)
++This Phase 15A suite adds a persona-organized manual validation matrix across auth/bootstrap, org/program/team/person structure, role/roster workflows, guardian visibility diagnostics, events/attendance, notes/tasks, dashboard/review workflows, FieldOps MVP, Entry relationship wrapper behavior, rapid-capture mobile-web usability, and deployment smoke verification. It includes required end-to-end paths, explicit negative/edge cases, a defect template, and a status tracker for execution governance.
++
++Known gaps intentionally preserved in this phase:
++- No new runtime features were added.
++- Deferred capabilities remain deferred (messaging, notifications, Feed/Inbox/Journal runtime, AI/recommendation/automation, offline sync, native mobile behavior).
++- Guardian runtime workflows remain visibility/context-oriented and staff-scoped where currently implemented.
+diff --git a/planning/README.md b/planning/README.md
+index 82d62e2..c50cc28 100644
+--- a/planning/README.md
++++ b/planning/README.md
+@@ -125,6 +125,7 @@ CadreOS is an **Athlete Program Operating System**.
+ - [Phase 14C Operational Context Continuity & Fast-Entry Optimizations](./PHASE_14C_OPERATIONAL_CONTEXT_CONTINUITY_FAST_ENTRY_OPTIMIZATIONS.md)
+ - [Phase 14D Mobile & Capture Optimization Stabilization and Arc Closeout](./PHASE_14D_MOBILE_CAPTURE_OPTIMIZATION_STABILIZATION_CLOSEOUT.md)
+ - [Phase 14D Validation Checklist](./PHASE_14D_VALIDATION_CHECKLIST.md)
++- [Phase 15A Practical User Test Case Suite](./PHASE_15A_USER_TEST_CASE_SUITE.md)
+ - [**MVP Stability Checklist**](./MVP_STABILITY_CHECKLIST.md)
+ - [Module Roadmap: FieldOps and GearOps](./MODULE_ROADMAP_FIELDOPS_GEAROPS.md)
+ - [Build Readiness Review](./BUILD_READINESS_REVIEW.md)
+@@ -298,6 +299,8 @@ CadreOS is an **Athlete Program Operating System**.
+   - Summary: closes Arc 14 with consolidated mobile/capture runtime-boundary verification and operational-speed validation, confirms current staff-scoped rapid-capture behavior, documents explicit deferred scope (offline sync/local queues/native mobile/push/messaging/Feed/Inbox/guardian runtime), adds “Do Not Build Yet” and production risk tracking, and records post-arc strategic options.
+ - [Phase 14D Validation Checklist](./PHASE_14D_VALIDATION_CHECKLIST.md)
+   - Summary: validates mobile responsiveness, rapid-capture continuity, operational context preservation, authorization boundaries, organization scoping, and explicit non-implementation of offline/native mobile/push/Feed/Inbox/messaging runtime behavior.
++- [Phase 15A Practical User Test Case Suite](./PHASE_15A_USER_TEST_CASE_SUITE.md)
++  - Summary: provides a persona-based practical manual test suite for implemented CadreOS workflows (auth/bootstrap, roster/roles, guardian visibility, events/attendance, notes/tasks, dashboard review, FieldOps MVP, Entry wrapper read-only context, rapid-capture, and deployment smoke), including end-to-end scenarios, negative/edge checks, defect logging template, and execution status tracking.
+ 
+ ---
+ 

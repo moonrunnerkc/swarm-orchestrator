@@ -1,0 +1,26 @@
+{
+  "id": "devin-infomaximkeller90-byte-vpkn-bot-pr3",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 3,
+    "headSha": "78b8bd6806427a46092dee276f5c2ba786557726",
+    "baseSha": "d2c47a76216ca1d75b9c1eb61c0e5ee52a107347",
+    "title": "feat: accept PDF/photo uploads — analyze content or clone flyer style",
+    "body": "## Summary\n\nAdds two new message handlers so the bot can finally consume incoming files, not just emit them:\n\n* **Document handler** — accepts PDFs (and image documents) up to 20 MB. Two routes based on the user's caption:\n  * **Clone mode** (caption contains \"такой же\", \"флаер\", \"переделай\", \"make me\", \"clone\" …) — calls the new `AI.clone_flyer_html_from_pdf()` which feeds the PDF + caption to Gemini under a dedicated \"style cloner\" system prompt. The model returns self-contained HTML+CSS in the same visual language as the sample, with content rewritten for the user's new topic. That HTML is rendered to PDF via the existing WeasyPrint pipeline and sent back to the chat.\n  * **Analyze mode** (any other caption, or no caption) — the PDF/image is attached as an extra `Part` on the user's chat turn so Gemini can answer questions about it directly, \"like Claude on minimal\".\n* **Photo handler** — same analyze flow for compressed Telegram photos.\n\n`chat_reply()` was extended to take optional `attachment_data` / `attachment_mime` so the same code path serves text, images, and PDFs.\n\nChat history stores a placeholder (`[прикреплён application/pdf] <caption>`) instead of the raw bytes — that keeps follow-up turns meaningful without re-sending binaries.\n\nWelcome/help text and the chat system prompt are updated to mention PDF/photo support.\n\n### Smoke test\n\nBuilt a synthetic A4 \"MEGA SALE\" sample PDF locally and asked the new helper to clone it for \"открытие кофейни Coffee Lab в субботу 15:00\". Gemini returned 1.9 KB of HTML (proper `@page { size: A4; margin: 0; }`, same red header / large bold title composition as the sample, content rewritten) which WeasyPrint rendered into a 7.6 KB PDF. End-to-end pipeline works.\n\n## Review & Testing Checklist for Human\n\n- [ ] Merge this PR — Render will auto-redeploy in ~5 min.\n- [ ] In Telegram, send the bot a PDF with caption like `сделай такой же флаер, но про открытие моей пекарни Хлебница, телефон +7 999 12 34 567` → expect a new flyer-style PDF in the same visual language as your sample.\n- [ ] Send a PDF with a different caption (e.g. `что в этом документе важного?`) → expect a textual analysis, not a PDF.\n- [ ] Send a photo with caption `что на фото?` → expect a textual description.\n- [ ] Send a PDF >20 MB → expect a clear \"file too big\" error message.\n\n### Notes\n\n- Cloning intent is detected by a simple keyword list. False negatives just fall through to analyze mode, which is still useful. False positives only matter on PDFs (photos always go to analyze mode).\n- Render's free tier still has the 15-min sleep + ephemeral `/tmp/bot_data`; nothing about uploads changes that.\n- We're using inline `Part.from_bytes()` — Gemini accepts that up to 20 MB. For larger files we'd need the Files API.\n\n\nLink to Devin session: https://app.devin.ai/sessions/6091e9aa95da47f98f6a0e25aa82625f\nRequested by: @infomaximkeller90-byte",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779573690-pdf-style-clone",
+    "repository": "infomaximkeller90-byte/vpkn-bot"
+  },
+  "diffRef": {
+    "repository": "infomaximkeller90-byte/vpkn-bot",
+    "headSha": "78b8bd6806427a46092dee276f5c2ba786557726",
+    "baseSha": "d2c47a76216ca1d75b9c1eb61c0e5ee52a107347"
+  },
+  "vendoredDiffPath": "devin/devin-infomaximkeller90-byte-vpkn-bot-pr3.diff",
+  "vendoredAt": "2026-05-24T03:05:12.672Z",
+  "collectedAt": "2026-05-24T03:05:12.672Z"
+}

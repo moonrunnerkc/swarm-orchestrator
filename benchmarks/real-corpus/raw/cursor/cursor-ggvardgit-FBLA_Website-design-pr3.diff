@@ -1,0 +1,43 @@
+diff --git a/AGENTS.md b/AGENTS.md
+new file mode 100644
+index 0000000..b9ba517
+--- /dev/null
++++ b/AGENTS.md
+@@ -0,0 +1,37 @@
++# AGENTS.md
++
++## Cursor Cloud specific instructions
++
++### Project overview
++
++This is a static HTML/CSS/JavaScript web application (APUSH Learning Hub) with no build system, no package manager, and no external runtime dependencies. Python 3 is used only for the local dev server and CI linting.
++
++### Running the dev server
++
++```bash
++python3 test-server.py
++```
++
++Serves the app at `http://localhost:8000/index.html` on port 8000. The server script auto-opens a browser — in headless/CI environments this is harmless (it will fail silently).
++
++### Linting
++
++The CI workflow (`.github/workflows/python-app.yml`) runs `flake8` on the Python files. To replicate locally:
++
++```bash
++flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
++flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
++```
++
++There is no JavaScript linter configured in the repo.
++
++### Testing
++
++The CI runs `pytest`, but no Python tests exist yet — the suite collects 0 items and exits clean.
++
++### Key gotchas
++
++- There is **no `package.json`**, **no `requirements.txt`**, and **no build step**. Do not try to run `npm install` or `pip install -r requirements.txt`.
++- All data persistence is via browser `localStorage`. Clearing it resets all progress.
++- The Gemini AI integration is **optional** and requires a user-provided API key; the app gracefully falls back to sample questions without one.
++- `flake8` and `pytest` are installed via `pip install flake8 pytest` (they are not pinned in a requirements file).

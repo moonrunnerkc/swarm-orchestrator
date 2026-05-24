@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-Creator-Mario-Forschen-pr192",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 192,
+    "headSha": "d7a47e638cc05b26dd81f2d1708055d8058595ec",
+    "baseSha": "0dc11576d9ed32bd821bf15a2c3066b02bff067a",
+    "title": "Align Daily Sermon Warmup schedule with Berlin day rollover",
+    "body": "The daily sermon warmup was running too late relative to the 03:00 Europe/Berlin content rollover, which could leave `daily-sermon.json` on the previous day for part of the morning. This updates the workflow schedule to cover both CET and CEST without relying on a season-specific UTC time.\n\n- **Problem**\n  - `Daily Sermon Warmup` used a single UTC cron entry that did not consistently land just after the Berlin publication cutoff.\n  - Around DST changes, that made same-day sermon generation lag behind the intended local-day boundary.\n\n- **Workflow scheduling**\n  - Replaced the single daily cron with two UTC trigger windows so one run always lands shortly after 03:00 Berlin time in both DST states.\n  - Kept the change scoped to the workflow schedule only.\n\n- **Workflow clarity**\n  - Updated the inline schedule comment to describe the DST-aware behavior in terms of the actual UTC trigger times.\n\n```yaml\non:\n  schedule:\n    # 01:05/02:05 UTC ensures one run shortly after 03:00 Berlin\n    # in both DST states (CEST and CET).\n    - cron: '5 1,2 * * *'\n```",
+    "author": "Copilot",
+    "headRef": "copilot/check-daily-sermon-workflow",
+    "repository": "Creator-Mario/Forschen"
+  },
+  "diffRef": {
+    "repository": "Creator-Mario/Forschen",
+    "headSha": "d7a47e638cc05b26dd81f2d1708055d8058595ec",
+    "baseSha": "0dc11576d9ed32bd821bf15a2c3066b02bff067a"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-Creator-Mario-Forschen-pr192.diff",
+  "vendoredAt": "2026-05-24T03:05:42.755Z",
+  "collectedAt": "2026-05-24T03:05:42.755Z"
+}

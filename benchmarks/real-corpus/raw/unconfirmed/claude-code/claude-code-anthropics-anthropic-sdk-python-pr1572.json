@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1572",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1572,
+    "headSha": "5e7e9c28ac6bf9e02f95d6271dd63211b1e6e2fa",
+    "baseSha": "28cdc33644bfb3f8310d51867619cafb5dd8cf23",
+    "title": "fix: handle error SSE events from Bedrock without AttributeError",
+    "body": "## Problem\n\nBedrock delivers all event-stream frames over HTTP 200, including error payloads (rate-limit, model-not-found, etc.).  `AWSEventStreamDecoder` previously emitted every decoded frame as `ServerSentEvent(event=\\\"completion\\\")`, so a Bedrock error payload such as:\n\n```json\n{\"type\": \"error\", \"error\": {\"type\": \"rate_limit_error\", \"message\": \"Rate limited\", \"details\": null}, \"request_id\": \"req_...\"}\n```\n\nwas routed to `_process_response_data` and cast to the stream event union type.  The cast produced a `RawMessageStartEvent` whose required `message` field was `None`, causing:\n\n```\nAttributeError: 'NoneType' object has no attribute 'model'\nAttributeError: 'NoneType' object has no attribute 'usage'\n```\n\nThis was intermittently reproducible with `global.anthropic.claude-opus-4-7` cross-region inference profiles on Bedrock.\n\n## Fix\n\nAdd `_sse_event_type()` to `AWSEventStreamDecoder` which inspects the decoded JSON and returns `\"error\"` when `type == \"error\"`.  The existing `Stream.__stream__` / `AsyncStream.__stream__` methods in `_streaming.py` already contain a handler for `sse.event == \\\"error\\\"` that raises `_make_status_error`, so this routes the payload through the correct path and surfaces a clean `APIStatusError` instead of an `AttributeError`.\n\nNo changes to the streaming core are required; the fix is entirely contained in `src/anthropic/lib/bedrock/_stream_decoder.py`.\n\nFixes #1472",
+    "author": "pintaste",
+    "headRef": "fix/streaming-null-safety",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "5e7e9c28ac6bf9e02f95d6271dd63211b1e6e2fa",
+    "baseSha": "28cdc33644bfb3f8310d51867619cafb5dd8cf23"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1572.diff",
+  "vendoredAt": "2026-05-24T03:17:05.367Z",
+  "collectedAt": "2026-05-24T03:17:05.367Z"
+}

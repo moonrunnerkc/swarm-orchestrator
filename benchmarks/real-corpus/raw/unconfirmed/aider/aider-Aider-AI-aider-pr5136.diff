@@ -1,0 +1,29 @@
+diff --git a/benchmark/README.md b/benchmark/README.md
+index 7765c00b79c..4d13a36c48d 100644
+--- a/benchmark/README.md
++++ b/benchmark/README.md
+@@ -82,7 +82,7 @@ You can run `./benchmark/benchmark.py --help` for a list of all the arguments, b
+ - `--threads` specifies how many exercises to benchmark in parallel. Start with a single thread if you are working out the kinks on your benchmarking setup or working with a new model, etc. Once you are getting reliable results, you can speed up the process by running with more threads. 10 works well against the OpenAI APIs.
+ - `--num-tests` specifies how many of the tests to run before stopping. This is another way to start gently as you debug your benchmarking setup.
+ - `--keywords` filters the tests to run to only the ones whose name match the supplied argument (similar to `pytest -k xxxx`).
+-- `--read-model-settings=<filename.yml>` specify model settings, see here: https://aider.chat/docs/config/adv-model-settings.html#model-settings
++- `--model-settings-file=<filename.yml>` specifies model settings, see here: https://aider.chat/docs/config/adv-model-settings.html#model-settings. `--read-model-settings` is also accepted for backwards compatibility.
+ 
+ ### Benchmark report
+ 
+diff --git a/benchmark/benchmark.py b/benchmark/benchmark.py
+index cc694a9f70d..6551323faa8 100755
+--- a/benchmark/benchmark.py
++++ b/benchmark/benchmark.py
+@@ -204,7 +204,10 @@ def main(
+         None, "--num-ctx", help="Override model context window size"
+     ),
+     read_model_settings: str = typer.Option(
+-        None, "--read-model-settings", help="Load aider model settings from YAML file"
++        None,
++        "--model-settings-file",
++        "--read-model-settings",
++        help="Load aider model settings from YAML file",
+     ),
+     reasoning_effort: Optional[str] = typer.Option(
+         None, "--reasoning-effort", help="Set reasoning effort for models that support it"

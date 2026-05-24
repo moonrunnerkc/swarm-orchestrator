@@ -1,0 +1,422 @@
+diff --git a/docs/devin/ACCEPTANCE_CHECKLIST.md b/docs/devin/ACCEPTANCE_CHECKLIST.md
+index 4daac1e..4fad919 100644
+--- a/docs/devin/ACCEPTANCE_CHECKLIST.md
++++ b/docs/devin/ACCEPTANCE_CHECKLIST.md
+@@ -31,9 +31,16 @@ A task is accepted only if there is evidence.
+ ## Pass 3 acceptance
+ 
+ - [ ] WB token validation is implemented or verified.
+-- [ ] Valid token is accepted.
+-- [ ] Invalid token is rejected.
+-- [ ] Error class is documented.
++- [ ] WB sandbox availability is documented (see `docs/devin/WB_SANDBOX_NOTES.md`).
++- [ ] WB API proof plan is followed (see `docs/devin/WB_API_PROOF_PLAN.md`).
++- [ ] First WB surface used is `common-api.wildberries.ru` (`/ping` and `/api/v1/seller-info`).
++- [ ] Probe mode (A production / B sandbox / C no-secret) is recorded in the report.
++- [ ] Valid token is accepted (HTTP 200 on `/ping` and, in Mode A, on `/api/v1/seller-info` with non-empty `sid`).
++- [ ] Invalid token is rejected (HTTP 401 with `detail` matching `malformed_token` class).
++- [ ] No-token case is rejected (HTTP 401 with `detail == "empty Authorization header"`).
++- [ ] Error class is documented (mapped per `WB_API_PROOF_PLAN.md` §5).
++- [ ] WB `requestId`s are recorded; raw tokens are NOT.
++- [ ] No production mutations were issued; only GET on `/ping` and `/api/v1/seller-info`.
+ - [ ] No Ozon scope was added.
+ - [ ] No broad marketplace abstraction was added.
+ - [ ] Secrets were not exposed.
+diff --git a/docs/devin/WB_API_PROOF_PLAN.md b/docs/devin/WB_API_PROOF_PLAN.md
+new file mode 100644
+index 0000000..d253a84
+--- /dev/null
++++ b/docs/devin/WB_API_PROOF_PLAN.md
+@@ -0,0 +1,267 @@
++# Wildberries API Proof Plan (Pass 3, WB-first)
++
++Goal: prove SellerNerve can validate a Wildberries API token — accepting a valid token and rejecting an invalid one — using the smallest possible non-destructive surface and never exposing secrets.
++
++This plan complements `docs/devin/WB_SANDBOX_NOTES.md`. Read that first.
++
++## 1. First WB API surface used
++
++Primary (production, read-only, mutation-free):
++
++1. `GET https://common-api.wildberries.ru/ping`
++   - WB "Connection Check". Returns `200 {"TS": "...","Status":"OK"}` for any valid token category.
++   - Rate limit: 3 requests / 30 seconds per host per method.
++2. `GET https://common-api.wildberries.ru/api/v1/seller-info`
++   - Returns `200 {"name":"<seller name>","sid":"<uuid>","tin":"<tin>","tradeMark":"<brand>"}`.
++   - Proves the token is actually bound to a real WB seller (`sid`).
++   - Rate limit: 1 request/minute (Personal/Service/Base-with-secret); 1 request/24h (Base).
++
++Both endpoints:
++- Are documented at <https://dev.wildberries.ru/en/docs/openapi/api-information>.
++- Accept a token of any category (Personal/Service/Base/Test) — but Test scope tokens only resolve against `*-sandbox.wildberries.ru`, where there is no `common-api` host.
++- Are GET-only and read-only.
++
++Sandbox fallback (only useful if owner refuses a production token and instead provides a Test scope token):
++
++- `GET https://content-api-sandbox.wildberries.ru/ping` (or any other sandbox host's `/ping`).
++  - Confirms the token is syntactically valid, recognized by WB sandbox, and scoped correctly.
++  - Does **not** return seller identity (no `common-api-sandbox`).
++
++## 2. Test modes
++
++Three modes are supported. The selected mode is determined by which env vars are present at proof time. None of the modes ever requires writing to WB.
++
++| Mode | Pre-requisites                            | Proves                                                | When to use                                  |
++|------|-------------------------------------------|-------------------------------------------------------|----------------------------------------------|
++| A    | `WB_API_TOKEN` set to a production token  | Valid-token PASS + invalid-token FAIL on production   | Default. Safest read-only validation.        |
++| B    | `WB_API_TOKEN` set to a Test scope token  | Valid-token PASS + invalid-token FAIL on sandbox      | Owner cannot provide a production token.     |
++| C    | `WB_API_TOKEN` unset / empty              | Invalid-token FAIL on production; valid-token mocked  | Pre-credential dry run; CI without secrets.  |
++
++Mode C still produces a Pass 3 report with PASS for "invalid token rejected" and N/A (with mocked fixture evidence) for "valid token accepted". This is the safest dev approach when no real token is available.
++
++## 3. Environment variables (env-only, no values committed)
++
++Defined in `.env.example.sellernerve`:
++
++```
++WB_API_TOKEN=replace_me
++```
++
++Additional optional knobs used by the proof script (placeholders only):
++
++```
++WB_API_HOST=https://common-api.wildberries.ru     # override to a -sandbox host for Mode B
++WB_TOKEN_MASK_TAIL=4                              # last N chars retained when masking
++WB_PING_PATH=/ping
++WB_SELLER_INFO_PATH=/api/v1/seller-info
++```
++
++Real values must be loaded via the shell environment (e.g. a local `.env` file ignored by git, or platform secret manager). They MUST NOT appear in code, logs, commits, comments, screenshots, or reports.
++
++## 4. Exact commands
++
++All commands below assume the env var is already loaded into the current shell (e.g. via `set -a; . .env.local; set +a`). The token value is referenced as `$WB_API_TOKEN` and never echoed. The mask helper produces a label like `wb_****abcd` for safe reporting.
++
++### 4.1 Mask helper (paste into shell once)
++
++```bash
++mask() {
++  local t="${1:-$WB_API_TOKEN}"
++  local n="${WB_TOKEN_MASK_TAIL:-4}"
++  if [[ -z "$t" ]]; then echo "wb_(unset)"; return; fi
++  echo "wb_****${t: -$n}"
++}
++```
++
++`mask` is the only sanctioned way to refer to the token in any output.
++
++### 4.2 Negative case — no token (requires NO secret)
++
++```bash
++HOST="${WB_API_HOST:-https://common-api.wildberries.ru}"
++
++curl -sS -o /tmp/wb_no_token.json -w 'HTTP %{http_code}\n' \
++  --max-time 10 "$HOST/api/v1/seller-info"
++jq -r '.title, .detail' /tmp/wb_no_token.json
++```
++
++Expected (PASS criterion): HTTP `401` and `detail == "empty Authorization header"`.
++
++### 4.3 Negative case — bogus token (requires NO secret)
++
++```bash
++HOST="${WB_API_HOST:-https://common-api.wildberries.ru}"
++
++curl -sS -o /tmp/wb_bad_token.json -w 'HTTP %{http_code}\n' \
++  --max-time 10 -H 'Authorization: x.y.z' "$HOST/api/v1/seller-info"
++jq -r '.title, .detail' /tmp/wb_bad_token.json
++```
++
++Expected (PASS criterion): HTTP `401` and `detail` starts with `"access token problem; token is malformed"`.
++
++Note: The literal `x.y.z` is a deliberate non-secret. It is **not** a real token; treating it as such is impossible because each segment must base64-decode to JSON.
++
++### 4.4 Positive case — valid token (requires `WB_API_TOKEN`)
++
++```bash
++HOST="${WB_API_HOST:-https://common-api.wildberries.ru}"
++
++if [[ -z "$WB_API_TOKEN" ]]; then
++  echo "SKIP: WB_API_TOKEN not set (Mode C)"; exit 0
++fi
++
++# /ping
++curl -sS -o /tmp/wb_ping.json -w 'HTTP %{http_code}\n' \
++  --max-time 10 \
++  -H "Authorization: $WB_API_TOKEN" \
++  "$HOST/ping"
++echo "token=$(mask)"
++jq -r '.Status' /tmp/wb_ping.json
++
++# /seller-info (skip on Mode B because sandbox has no common-api)
++if [[ "$HOST" == *"-sandbox.wildberries.ru" ]]; then
++  echo "SKIP: /api/v1/seller-info not available on sandbox host"
++else
++  curl -sS -o /tmp/wb_seller.json -w 'HTTP %{http_code}\n' \
++    --max-time 10 \
++    -H "Authorization: $WB_API_TOKEN" \
++    "$HOST/api/v1/seller-info"
++  jq -r '"sid="+.sid+" tradeMark_len="+(.tradeMark|tostring|length|tostring)' /tmp/wb_seller.json
++fi
++```
++
++Expected (PASS criteria):
++- `/ping` → HTTP `200`, body `{"Status":"OK", "TS":"<RFC3339>"}`.
++- `/api/v1/seller-info` (Mode A only) → HTTP `200`, body contains non-empty `sid` (UUID v4) and `name`.
++
++The token value never enters stdout; only the masked label and HTTP/Status/sid are logged.
++
++### 4.5 One-shot script
++
++`scripts/wb_probe.sh` (to be added in the implementation pass — not committed yet) wraps the above into a single PASS/FAIL emitter. Skeleton:
++
++```bash
++#!/usr/bin/env bash
++set -euo pipefail
++HOST="${WB_API_HOST:-https://common-api.wildberries.ru}"
++mask() { local t="${1:-$WB_API_TOKEN}" n="${WB_TOKEN_MASK_TAIL:-4}"; \
++         [[ -z "$t" ]] && echo "wb_(unset)" || echo "wb_****${t: -$n}"; }
++
++probe() { # $1=label $2=auth_header_value(""=omit)
++  local label="$1" auth="$2" http body detail status
++  if [[ -n "$auth" ]]; then
++    http=$(curl -sS -o /tmp/wb.json -w '%{http_code}' --max-time 10 \
++              -H "Authorization: $auth" "$HOST/api/v1/seller-info")
++  else
++    http=$(curl -sS -o /tmp/wb.json -w '%{http_code}' --max-time 10 \
++              "$HOST/api/v1/seller-info")
++  fi
++  status=$(jq -r '.title // empty' /tmp/wb.json)
++  detail=$(jq -r '.detail // empty' /tmp/wb.json)
++  echo "[$label] http=$http title=$status detail=$detail"
++}
++
++echo "host=$HOST token=$(mask)"
++probe "no_token"   ""
++probe "bad_token"  "x.y.z"
++if [[ -n "${WB_API_TOKEN:-}" ]]; then
++  probe "valid_token" "$WB_API_TOKEN"
++fi
++```
++
++Operators run `WB_API_HOST=... bash scripts/wb_probe.sh` and capture the output verbatim into the validation report.
++
++## 5. Error classification table
++
++WB returns 401 with a stable `detail` string. The classifier maps these into safe error classes; the raw `detail` may be logged because it never contains secret material.
++
++| `detail` substring                                              | Class            | Action                                |
++|-----------------------------------------------------------------|------------------|---------------------------------------|
++| `empty Authorization header`                                    | `missing_token`  | Prompt seller to paste token          |
++| `token is malformed`                                            | `malformed_token`| Reject; advise re-copy from cabinet   |
++| `token is expired`                                              | `expired_token`  | Prompt seller to rotate (180-day TTL) |
++| `signature is invalid` / `signing method`                       | `tampered_token` | Reject; escalate                      |
++| `token category` / `access denied to the requested API`         | `wrong_scope`    | Ask seller to enable required category|
++| anything else with `status:401`                                 | `unauthorized_other` | Log requestId; surface to support |
++| `status:402` (`Payment required`)                               | `service_payment_required` | Only for `Solutions for business` tokens; surface to seller |
++| `status:403`                                                    | `access_denied`  | Check token owner / Jam subscription  |
++| `status:429`                                                    | `rate_limited`   | Honor `X-Ratelimit-Retry`             |
++| `status:5xx`                                                    | `wb_outage`      | Retry; check <https://dev.wildberries.ru/en/wb-status> |
++
++Only the class name + WB `requestId` should be persisted in any audit log.
++
++## 6. PASS/FAIL evidence template (paste into the final validation report)
++
++```text
++WB token validation — Pass 3 evidence
++
++Mode: <A | B | C>
++Host: <https://common-api.wildberries.ru | https://content-api-sandbox.wildberries.ru | ...>
++Token reference: <wb_****xxxx | wb_(unset)>
++Date: <YYYY-MM-DD>
++
++| Check                                              | Result   | HTTP | detail / class             |
++|----------------------------------------------------|----------|------|----------------------------|
++| Negative: no Authorization header                  | PASS/FAIL| 401  | empty Authorization header |
++| Negative: malformed token `x.y.z`                  | PASS/FAIL| 401  | malformed_token            |
++| Positive: /ping with valid token                   | PASS/FAIL/N-A| 200| Status=OK                  |
++| Positive: /api/v1/seller-info with valid token     | PASS/FAIL/N-A| 200| sid=<UUID present>         |
++| Token category mismatch (if tested)                | PASS/FAIL/N-A| 401| wrong_scope                |
++
++requestIds (for WB support, never secrets):
++- no_token:    <requestId>
++- bad_token:   <requestId>
++- valid_ping:  <requestId>
++- valid_info:  <requestId>
++
++Commands executed: see scripts/wb_probe.sh
++Changed files: <list>
++
++Secrets were not exposed.
++```
++
++A `PASS` for "valid token accepted" requires HTTP 200 on `/ping` AND HTTP 200 on `/api/v1/seller-info` (Mode A) with a non-empty `sid`. In Mode B, only the `/ping` row contributes to the positive PASS, and the seller-info row is recorded as N/A with the reason "no sandbox host for common-api".
++
++## 7. Safe dev approach when no sandbox / no token is available (Mode C)
++
++If neither a production token nor a Test scope token is available, the proof is still actionable:
++
++1. **Read-only probe against production** with no Authorization header AND with the literal `x.y.z` bogus token. This yields deterministic 401 responses (verified in this session) that exercise the classifier end-to-end.
++2. **Mocked fixtures** for the positive case using the documented response shapes:
++
++   `tests/fixtures/wb_seller_info_ok.json` (shape from WB docs, no real seller):
++
++   ```json
++   {
++     "name": "OOO Test Seller",
++     "sid": "00000000-0000-4000-8000-000000000000",
++     "tin": "0000000000",
++     "tradeMark": "Test Brand"
++   }
++   ```
++
++   `tests/fixtures/wb_ping_ok.json`:
++
++   ```json
++   { "TS": "2025-01-01T00:00:00+00:00", "Status": "OK" }
++   ```
++
++   Tests assert that the classifier returns `ok` for these fixtures and `malformed_token` for the live 401 from production.
++
++3. **No production mutations.** Mode C never sends authenticated POST/PUT/DELETE/PATCH requests. The repository should not even contain client code that targets mutating WB endpoints until a later, scoped milestone.
++
++This is the safest dev approach: it produces real evidence (live HTTP captures) without any secret, and proves the classifier is wired correctly when paired with the fixtures.
++
++## 8. Secret-handling rules (recap)
++
++- Tokens are loaded only from runtime env (`WB_API_TOKEN`).
++- Tokens are referenced in logs only via `mask()`.
++- Tokens are passed to `curl` via `-H "Authorization: $WB_API_TOKEN"`, never embedded in URLs.
++- Tokens are not written to `/tmp/wb*.json` (responses contain only seller identity fields).
++- `set -x` is forbidden during probe execution.
++- Decoded JWT contents (sid, exp) may be logged. Raw JWT must not.
++- WB sandbox data is randomly generated and is also not logged in full; only `sid` and HTTP/Status are surfaced.
++
++## 9. Confirmation
++
++Secrets were not exposed. No tokens, real `sid` values, or `.env` contents appear in this document. All `requestId` values are placeholders; the real ones come from the operator's own run.
+diff --git a/docs/devin/WB_SANDBOX_NOTES.md b/docs/devin/WB_SANDBOX_NOTES.md
+new file mode 100644
+index 0000000..8144498
+--- /dev/null
++++ b/docs/devin/WB_SANDBOX_NOTES.md
+@@ -0,0 +1,119 @@
++# Wildberries Sandbox / Test Environment Notes
++
++Scope: SellerNerve Pass 3 (WB token validation proof). WB-first only.
++No Ozon. No broad marketplace abstraction. Secrets are loaded from env only and never echoed.
++
++## TL;DR
++
++- WB has an official **sandbox** (`*-sandbox.wildberries.ru`) advertised at <https://dev.wildberries.ru/en/sandbox>.
++- The sandbox is **per-surface**, not a single host. It only exists for some API categories. Notably, the host that exposes seller identity (`common-api.wildberries.ru`) has **no sandbox twin**.
++- Sandbox access requires a **Test token** (token type `t=true`, `acc=2`). Test tokens only work against `*-sandbox.wildberries.ru` and never touch real seller data.
++- Production has a **read-only, non-mutating** "connection check" surface (`GET /ping`) on every host, plus a read-only seller identity endpoint (`GET /api/v1/seller-info` on `common-api`). These are the safest WB-first validation endpoints when an owner-provided production token must be used.
++- Negative cases (no token, malformed token) can be probed **without any secret** on either production or sandbox; both return structured `401` JSON with stable `detail` strings.
++
++## Authoritative sources
++
++- WB API docs: <https://dev.wildberries.ru/en/docs/openapi/api-information>
++- Sandbox page: <https://dev.wildberries.ru/en/sandbox>
++- API status: <https://dev.wildberries.ru/en/wb-status>
++- Token format: JWT, RFC 7519, 180-day validity, header `Authorization: <jwt>`.
++
++## Token types (WB official)
++
++Determined by `payload` fields of the JWT (`acc`, `for`, `t`).
++
++| Type     | `acc` | `for`              | `t`     | Where it works                  | Risk for SellerNerve |
++|----------|-------|--------------------|---------|---------------------------------|----------------------|
++| Personal | `3`   | `self`             | `false` | Production hosts                | Highest privilege; on-prem only per WB rules |
++| Service  | `4`   | `asid:{ServiceID}` | `false` | Production hosts                | Bound to a single registered cloud service |
++| Base     | `1`   | (absent)           | `false` | Production hosts                | Limited capabilities; recommended for SellerNerve validation |
++| Test     | `2`   | (absent)           | `true`  | **Sandbox hosts only**          | Cannot leak real seller data |
++
++Token bitmask `s` controls per-category access (Content=bit 1, Analytics=bit 2, …, ReadOnly=bit 30). For SellerNerve's validation probe, a Read-Only token in any category is sufficient because both `/ping` and `/api/v1/seller-info` work with a token of any category.
++
++## Sandbox surface coverage (from <https://dev.wildberries.ru/en/sandbox>)
++
++| Category                                      | Sandbox host                                          | Notes |
++|-----------------------------------------------|-------------------------------------------------------|-------|
++| Content (cards, media, tags, subjects)        | `https://content-api-sandbox.wildberries.ru`          | 1 rps total; no `locale` param; product cards created instantly |
++| Prices and Discounts, Promotions Calendar     | `https://discounts-prices-api-sandbox.wildberries.ru` | 1 rps total; depends on cards created in content sandbox |
++| Marketplace (FBS/DBS/In-Store Pickup orders)  | `https://marketplace-api-sandbox.wildberries.ru`      | 1 rps per method; cross-border stickers/status_history return empty 200 |
++| FBW Supplies                                  | `https://supplies-api-sandbox.wildberries.ru`         | 1 rps per method; barcodes from content sandbox |
++| Promotion (advert campaigns)                  | `https://advert-api-sandbox.wildberries.ru`           | Test balance top-up available; campaign stats limited to 30 days |
++| Feedbacks and Questions                       | `https://feedbacks-api-sandbox.wildberries.ru`        | Test feedback/question creation; auto-delete after 5 days idle |
++| Statistics, Financial Reports                 | `https://statistics-api-sandbox.wildberries.ru`       | `dateFrom`/`dateTo` limited to last 4 months |
++
++WB ping table (from the Authorization docs) also confirms sandbox `/ping` exists for: content, discounts-prices, marketplace (production-only per the dev portal table, but the host resolves and responds 401 to anonymous probes), statistics, advert, feedbacks.
++
++## What is NOT in the sandbox
++
++The following categories have **no `*-sandbox` host**. Validation against them is production-only:
++
++- `common-api.wildberries.ru` — Tariffs, News, **Seller Information**, Jam subscriptions. *(DNS confirmed: `common-api-sandbox.wildberries.ru` does not resolve.)*
++- `seller-analytics-api.wildberries.ru` — Analytics and Data
++- `user-management-api.wildberries.ru` — Seller User Management
++- `buyer-chat-api.wildberries.ru` — Buyers Chat
++- `returns-api.wildberries.ru` — Buyers Returns
++- `documents-api.wildberries.ru` — Documents
++- `finance-api.wildberries.ru` — Balance and Financial Reports (note: read-only Statistics financial reports do have a sandbox)
++
++Implication: the canonical "is this a real seller's token?" probe (`/api/v1/seller-info`) **cannot** be tested in sandbox. If an owner refuses to issue a production token, the closest sandbox equivalent for SellerNerve's narrow needs is `GET /ping` on a sandbox host using a Test scope token — this proves the token is syntactically valid and recognized by WB, but does not return identity fields.
++
++## Sandbox properties relevant to SellerNerve
++
++- "The data in the test scope is randomly generated and does not belong to real sellers. Using the test environment does not carry the risk of unintentional disclosure of information." — WB sandbox page.
++- Hard rate limit: typically 1 request per second per method (or in total). The `/ping` endpoint everywhere is limited to "3 requests every 30 seconds; if you try to use this method programmatically the method will be temporarily blocked. The rate limit applies individually to each instance of the method on each host." — WB Authorization docs.
++- Sandbox responses use the same JSON error envelope as production: `{title, detail, code, requestId, origin, status, statusText, timestamp}`. We verified this directly (see below).
++
++## Direct probe evidence (executed from this session, no real token)
++
++Production `common-api.wildberries.ru`:
++
++```
++GET /api/v1/seller-info                              -> HTTP 401
++  detail: "empty Authorization header"
++
++GET /api/v1/seller-info  Authorization: not-a-real-token  -> HTTP 401
++  detail: "access token problem; token is malformed: token contains an invalid number of segments"
++
++GET /api/v1/seller-info  Authorization: x.y.z              -> HTTP 401
++  detail: "access token problem; token is malformed: could not base64 decode header: illegal base64 data at input byte 0"
++```
++
++Sandbox `content-api-sandbox.wildberries.ru` (same shape):
++
++```
++GET /ping                                             -> HTTP 401
++  detail: "empty Authorization header"
++
++GET /ping  Authorization: x.y.z                       -> HTTP 401
++  detail: "access token problem; token is malformed: could not base64 decode header: illegal base64 data at input byte 0"
++```
++
++This identical error envelope is what makes a deterministic "invalid token" negative test possible **without any secret**.
++
++## Decision for SellerNerve Pass 3
++
++**First surface = `common-api.wildberries.ru`.** Specifically:
++
++1. `GET https://common-api.wildberries.ru/ping` — cheapest reachability + auth check; works with any-category token.
++2. `GET https://common-api.wildberries.ru/api/v1/seller-info` — identity-proving check; returns `{name, sid, tin, tradeMark}` on 200. Read-only.
++
++Rationale:
++- WB-first and category-agnostic (any read-only token validates here).
++- Read-only; no mutation of seller data; no orders, no prices, no cards touched.
++- Returns enough identity data to prove "this token belongs to seller `sid`" without needing to enumerate product surfaces.
++- Aligns with the WB doc note: *"You can get seller information with a token of any category."*
++
++Sandbox is documented but does **not** cover this surface. Sandbox is therefore the fallback for code paths that require live writes (e.g., later passes that hit marketplace orders). For Pass 3 it is used only for shape/contract verification.
++
++## Risks and constraints
++
++- **No common-api sandbox.** Token-belongs-to-seller verification has to happen against the production host. We mitigate by: GET-only; read-only category; explicit rate limit budget (≤ 3 calls / 30 s per host); never log raw token.
++- **Test tokens are scoped to sandbox.** If only a Test token is provided, we cannot prove production reachability — only sandbox reachability. We document both paths.
++- **/ping rate-limit is per-host per-method.** Operators should not loop /ping calls; one call per validation event is enough.
++- **WB antibot on the dev portal** (HTTP 498 from non-browser clients) blocks programmatic doc fetching but does **not** affect the API hosts themselves.
++
++## Confirmation
++
++Secrets were not exposed. No tokens, .env contents, or seller identifiers appear in this document or in any commands above.

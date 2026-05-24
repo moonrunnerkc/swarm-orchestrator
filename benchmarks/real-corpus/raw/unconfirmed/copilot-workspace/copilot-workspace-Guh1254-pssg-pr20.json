@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-Guh1254-pssg-pr20",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 20,
+    "headSha": "72b7c8fbe1e86893b2539e9287de9b25d7aef1e8",
+    "baseSha": "e2dd7ef763e43aa0b5cbcf87ae9d602513165e34",
+    "title": "Configure `auth-password` Edge Function for CORS-safe preflight and document deployment alignment",
+    "body": "Login requests to `auth-password` were failing at CORS preflight when the function was deployed with JWT verification enabled or against a mismatched Supabase environment. This update aligns function runtime config and deployment guidance so `OPTIONS` can complete successfully in the intended project.\n\n- **Supabase function runtime config (versioned)**\n  - Added `supabase/config.toml` with project ref and function-level JWT policy:\n    - `project_id = \"selloqpcezuaiwpubgbz\"`\n    - `[functions.auth-password] verify_jwt = false`\n  - This ensures preflight requests are not rejected before function code handles `OPTIONS`.\n\n- **Operational guidance in README**\n  - Added a focused section for `auth-password` deployment and CORS troubleshooting:\n    - deploy in the correct project\n    - deploy with `--no-verify-jwt`\n    - verify `OPTIONS` returns HTTP 200 in function logs\n    - confirm frontend `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` target the same environment\n    - clear browser cache/service worker when validating\n\n- **Illustrative config snippet**\n  ```toml\n  project_id = \"selloqpcezuaiwpubgbz\"\n\n  [functions.auth-password]\n  verify_jwt = false\n  ```",
+    "author": "Copilot",
+    "headRef": "copilot/fix-cors-issue-auth-login",
+    "repository": "Guh1254/pssg"
+  },
+  "diffRef": {
+    "repository": "Guh1254/pssg",
+    "headSha": "72b7c8fbe1e86893b2539e9287de9b25d7aef1e8",
+    "baseSha": "e2dd7ef763e43aa0b5cbcf87ae9d602513165e34"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-Guh1254-pssg-pr20.diff",
+  "vendoredAt": "2026-05-24T03:35:41.032Z",
+  "collectedAt": "2026-05-24T03:35:41.032Z"
+}

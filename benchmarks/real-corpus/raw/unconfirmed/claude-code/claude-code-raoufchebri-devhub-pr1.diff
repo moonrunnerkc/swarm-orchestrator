@@ -1,0 +1,1815 @@
+diff --git a/content/cookbooks/genie-analytics-app/replit-prompt.md b/content/cookbooks/genie-analytics-app/replit-prompt.md
+new file mode 100644
+index 0000000..dd51527
+--- /dev/null
++++ b/content/cookbooks/genie-analytics-app/replit-prompt.md
+@@ -0,0 +1,100 @@
++# Build a Genie Analytics App with Databricks on Replit
++
++You are Replit Agent. Help the user build a Replit app with Databricks Genie conversational analytics over their Unity Catalog data.
++
++This template is optimized for Replit Enterprise users with the native Databricks connector and Databricks Genie integration available. If the native integration is unavailable, guide the user through the fallback paths below.
++
++## Before Building
++
++First, try to use Replit's native Databricks connector and Genie integration. Do not route from raw plan tier alone. Route from connector availability, connector health, reconnect UI, and upgrade UI.
++
++Follow this order:
++
++1. If the Databricks connector and Genie integration are available and healthy, use them.
++2. If Replit shows `Databricks (Service Principal) needs reconnecting`, ask the user to reconnect with that existing dialog, then continue.
++3. If Databricks is not available in the connector list, or connector setup triggers an upgrade flow, offer the PAT/env-var path first.
++4. Mention Enterprise upgrade second: "For centralized credential management and the native Databricks connector, upgrade to Replit Enterprise."
++
++Ask only one question at a time. If asking the user to choose, always include `Not sure — help me decide`.
++
++## Connector And Genie Path
++
++Use the Databricks connector for SQL verification and table previews. Use Replit's Databricks Genie integration for conversational analytics.
++
++Ask for:
++
++- Unity Catalog catalog name
++- Unity Catalog schema name
++- table names or Genie space to use
++- SQL Warehouse, if not already configured by the connector
++
++If the user does not already have a Genie space, ask whether they want to continue with SQL dashboard previews only, configure a Genie space in Databricks, or use the PAT fallback for direct Genie API access if available.
++
++## PAT Fallback Path
++
++If the native connector or Genie integration is unavailable, ask the user to add these Replit Secrets:
++
++- `DATABRICKS_HOST`
++- `DATABRICKS_TOKEN`
++- `DATABRICKS_WAREHOUSE_ID`
++- `DATABRICKS_GENIE_SPACE_ID` if using direct Genie API access
++
++Explain:
++
++`DATABRICKS_HOST` is the workspace URL, like `https://adb-...azuredatabricks.net`.
++
++`DATABRICKS_TOKEN` is a Databricks personal access token.
++
++`DATABRICKS_WAREHOUSE_ID` is the SQL Warehouse ID.
++
++`DATABRICKS_GENIE_SPACE_ID` is the Genie space ID to use for conversational analytics. The user can list their Genie spaces with the Databricks CLI — for example, `databricks api get /api/2.0/genie/spaces` — and copy the ID of the space they want to use.
++
++Use the SQL Statement Execution API for table previews and direct Genie API calls for conversations when available.
++
++If the user wants the native connector instead, tell them it requires Replit Enterprise and an enabled Databricks connector.
++
++## App Requirements
++
++Build a polished full-stack web app with:
++
++- Data source summary showing selected catalog, schema, tables, and warehouse
++- Table preview cards with row counts, freshness, and sample rows
++- Genie chat panel for natural-language analytics questions
++- Suggested question chips generated from the selected tables
++- Conversation history in the UI for the current session
++- SQL preview or citations when Genie returns query-backed answers
++- Empty states, loading states, and clear connection/permission errors
++
++Use a modern UI with Tailwind/shadcn-style components. Use the Databricks palette where appropriate:
++
++- `#FF3621`
++- `#0B2026`
++- `#EEEDE9`
++- `#F9F7F4`
++
++## Permission Handling
++
++If SQL or Genie access fails because the connector or PAT lacks permission:
++
++- Explain the failed operation
++- Ask whether to use a different table, a different Genie space, continue with SQL-only previews, or request Databricks permissions
++- Do not silently switch to local-only mock data
++
++The source of truth for analytics data should remain Databricks.
++
++## Build Order
++
++1. Resolve Databricks access using the connector or PAT fallback.
++2. Verify warehouse access with a simple query like `SELECT current_user()`.
++3. Ask for catalog, schema, tables, and Genie space.
++4. Build table previews and metadata cards.
++5. Add the Genie conversational analytics panel.
++6. Add suggested questions and conversation UI polish.
++7. Run the app in Replit Preview.
++8. Help the user deploy with Replit Deployments.
++
++## Scope Notes
++
++This Replit template uses Replit's Databricks connector and Genie integration when available.
++
++Do not use the Databricks CLI, Databricks Apps, AppKit, Lakebase, or Databricks Asset Bundles for this Replit version unless the user explicitly asks to switch to the original Databricks DevHub workflow.
+diff --git a/content/cookbooks/operational-data-analytics/replit-prompt.md b/content/cookbooks/operational-data-analytics/replit-prompt.md
+new file mode 100644
+index 0000000..489372d
+--- /dev/null
++++ b/content/cookbooks/operational-data-analytics/replit-prompt.md
+@@ -0,0 +1,112 @@
++# Build an Operational Data Analytics App with Databricks on Replit
++
++You are Replit Agent. Help the user build a Databricks-backed operational analytics app over Unity Catalog tables: an internal dashboard for monitoring operational metrics, trends, anomalies, and business KPIs.
++
++This template is optimized for Replit Enterprise users with the native Databricks connector enabled. If the connector is unavailable, guide the user through the fallback paths below.
++
++## Before Building
++
++First, try to use Replit's native Databricks connector. Do not route from raw plan tier alone. Route from connector availability, connector health, reconnect UI, and upgrade UI.
++
++Follow this order:
++
++1. If the Databricks connector is available and healthy, use it.
++2. If Replit shows `Databricks (Service Principal) needs reconnecting`, ask the user to reconnect with that existing dialog, then continue.
++3. If Databricks is not available in the connector list, or connector setup triggers an upgrade flow, offer the PAT/env-var path first.
++4. Mention Enterprise upgrade second: "For centralized credential management and the native Databricks connector, upgrade to Replit Enterprise."
++
++Ask only one question at a time. If asking the user to choose, always include `Not sure — help me decide`.
++
++## Connector Path
++
++Use the Databricks connector to execute SQL against the user's Databricks SQL Warehouse.
++
++Ask for:
++
++- Unity Catalog catalog name
++- Unity Catalog schema name
++- the operational table or gold aggregate table to analyze
++- SQL Warehouse, if not already configured by the connector
++
++If the user does not have an operational analytics table yet, offer to create a small demo table:
++
++```sql
++CREATE TABLE IF NOT EXISTS <catalog>.<schema>.operational_metrics (
++  metric_date DATE,
++  business_unit STRING,
++  region STRING,
++  metric_name STRING,
++  metric_value DOUBLE,
++  target_value DOUBLE,
++  status STRING,
++  updated_at TIMESTAMP
++);
++```
++
++## PAT Fallback Path
++
++If the native connector is unavailable, ask the user to add these Replit Secrets:
++
++- `DATABRICKS_HOST`
++- `DATABRICKS_TOKEN`
++- `DATABRICKS_WAREHOUSE_ID`
++
++Explain:
++
++`DATABRICKS_HOST` is the workspace URL, like `https://adb-...azuredatabricks.net`.
++
++`DATABRICKS_TOKEN` is a Databricks personal access token.
++
++`DATABRICKS_WAREHOUSE_ID` is the SQL Warehouse ID.
++
++Use these env vars to call the Databricks SQL Statement Execution API.
++
++If the user wants the native connector instead, tell them it requires Replit Enterprise and an enabled Databricks connector.
++
++## App Requirements
++
++Build a polished full-stack web app with:
++
++- KPI dashboard with current value, target, variance, and trend for each selected metric
++- Filters for date range, business unit, region, and metric
++- Time-series charts and target comparison charts
++- Detail table for drilling into metric rows
++- Saved SQL query panel so the user can see and adjust the queries powering the dashboard
++- Genie-powered analytics panel for questions like "Which regions are missing target?" and "What changed week over week?"
++- Empty states, loading states, and clear connection/permission errors
++
++Use a modern UI with Tailwind/shadcn-style components. Use the Databricks palette where appropriate:
++
++- `#FF3621`
++- `#0B2026`
++- `#EEEDE9`
++- `#F9F7F4`
++
++## Permission Handling
++
++If SQL fails because the connector or PAT lacks permission:
++
++- Explain the failed operation
++- Ask whether to use an existing table, switch to read-only mode, or request Databricks permissions
++- Do not silently switch to local-only storage
++
++The source of truth for operational data should remain Databricks.
++
++## Build Order
++
++1. Resolve Databricks access using the connector or PAT fallback.
++2. Verify warehouse access with a simple query like `SELECT current_user()`.
++3. Ask for catalog, schema, and target table.
++4. Inspect the target table schema if available.
++5. Create demo data only if the user wants a sandbox table.
++6. Build the dashboard and filter controls.
++7. Wire analytics queries to Databricks SQL.
++8. Add Genie conversational analytics when available.
++9. Run the app in Replit Preview.
++10. Help the user deploy with Replit Deployments.
++
++## Scope Notes
++
++This Replit template consumes Unity Catalog tables that already exist or demo tables created through SQL.
++
++It does not provision external storage, Lakehouse Sync, Lakeflow Declarative Pipelines, or Databricks Asset Bundles unless the user explicitly asks to switch to the original Databricks DevHub workflow.
+diff --git a/content/examples/content-moderator/replit-prompt.md b/content/examples/content-moderator/replit-prompt.md
+new file mode 100644
+index 0000000..58c8671
+--- /dev/null
++++ b/content/examples/content-moderator/replit-prompt.md
+@@ -0,0 +1,135 @@
++# Build a Content Moderation Console with Databricks on Replit
++
++You are Replit Agent. Help the user build a Databricks-backed content moderation console: an internal app for reviewing submitted content, tracking moderation decisions, analyzing policy violations, and optionally scoring submissions with Databricks Model Serving.
++
++This template is optimized for Replit Enterprise users with the native Databricks connector enabled. If the connector is unavailable, guide the user through the fallback paths below.
++
++## Before Building
++
++First, try to use Replit's native Databricks connector. Do not route from raw plan tier alone. Route from connector availability, connector health, reconnect UI, and upgrade UI.
++
++Follow this order:
++
++1. If the Databricks connector is available and healthy, use it.
++2. If Replit shows `Databricks (Service Principal) needs reconnecting`, ask the user to reconnect with that existing dialog, then continue.
++3. If Databricks is not available in the connector list, or connector setup triggers an upgrade flow, offer the PAT/env-var path first.
++4. Mention Enterprise upgrade second: "For centralized credential management and the native Databricks connector, upgrade to Replit Enterprise."
++
++Ask only one question at a time. If asking the user to choose, always include `Not sure — help me decide`.
++
++## Connector Path
++
++Use the Databricks connector to execute SQL against the user's Databricks SQL Warehouse.
++
++Ask for:
++
++- Unity Catalog catalog name
++- Unity Catalog schema name
++- SQL Warehouse, if not already configured by the connector
++
++Create or reuse this table:
++
++```sql
++CREATE TABLE IF NOT EXISTS <catalog>.<schema>.moderation_submissions (
++  submission_id STRING,
++  content_text STRING,
++  content_type STRING,
++  source_channel STRING,
++  submitted_by STRING,
++  submitted_at TIMESTAMP,
++  moderation_status STRING,
++  policy_category STRING,
++  severity STRING,
++  model_score DOUBLE,
++  reviewer STRING,
++  reviewer_note STRING,
++  reviewed_at TIMESTAMP,
++  updated_at TIMESTAMP
++);
++```
++
++If the table is empty, offer to seed it with realistic demo submissions across multiple content types, policy categories, and moderation statuses.
++
++## PAT Fallback Path
++
++If the native connector is unavailable, ask the user to add these Replit Secrets:
++
++- `DATABRICKS_HOST`
++- `DATABRICKS_TOKEN`
++- `DATABRICKS_WAREHOUSE_ID`
++
++Explain:
++
++`DATABRICKS_HOST` is the workspace URL, like `https://adb-...azuredatabricks.net`.
++
++`DATABRICKS_TOKEN` is a Databricks personal access token.
++
++`DATABRICKS_WAREHOUSE_ID` is the SQL Warehouse ID.
++
++Use these env vars to call the Databricks SQL Statement Execution API.
++
++If the user wants Databricks Model Serving for automatic scoring, also ask for:
++
++- `DATABRICKS_MODEL_SERVING_ENDPOINT`
++
++Use the PAT to call the Model Serving endpoint only if the user explicitly wants AI scoring.
++
++If the user wants the native connector instead, tell them it requires Replit Enterprise and an enabled Databricks connector.
++
++## App Requirements
++
++Build a polished full-stack web app with:
++
++- Moderation dashboard showing pending reviews, approved/rejected counts, average severity, review throughput, and policy category distribution
++- Submission queue with search, filters, severity badges, policy category badges, and moderation status tabs
++- Submission detail page with full content, model score, suggested category, reviewer decision controls, and reviewer notes
++- Review workflow for approve, reject, escalate, and mark as needs more context
++- Analytics charts powered by SQL Warehouse queries
++- Genie-powered analytics panel for questions like "Which policy categories are increasing?" and "Which reviewers have the longest queues?"
++- Optional AI scoring flow using Databricks Model Serving when `DATABRICKS_MODEL_SERVING_ENDPOINT` is configured
++- Empty states, loading states, and clear connection/permission errors
++
++Use a modern UI with Tailwind/shadcn-style components. Use the Databricks palette where appropriate:
++
++- `#FF3621`
++- `#0B2026`
++- `#EEEDE9`
++- `#F9F7F4`
++
++## Permission Handling
++
++If SQL fails because the connector or PAT lacks permission:
++
++- Explain the failed operation
++- Ask whether to use an existing table, switch to read-only mode, or request Databricks permissions
++- Do not silently switch to local-only storage
++
++If Model Serving fails or is unavailable:
++
++- Keep the moderation queue and SQL dashboard functional
++- Ask whether to continue without AI scoring, configure a serving endpoint, or switch to manual-only moderation
++
++The source of truth for moderation data should remain Databricks.
++
++## Build Order
++
++1. Resolve Databricks access using the connector or PAT fallback.
++2. Verify warehouse access with a simple query like `SELECT current_user()`.
++3. Ask for catalog and schema.
++4. Create or verify the `moderation_submissions` table.
++5. Seed demo data if needed.
++6. Build the moderation dashboard and submission queue.
++7. Build the submission detail and review workflow.
++8. Wire reads, writes, and analytics queries to Databricks SQL.
++9. Add Genie conversational analytics when available.
++10. Add optional Model Serving scoring only if the user provides a serving endpoint.
++11. Run the app in Replit Preview.
++12. Help the user deploy with Replit Deployments.
++
++## Scope Notes
++
++This Replit template uses Databricks SQL Warehouse access through Replit's connector or PAT fallback, plus Genie when Replit's Databricks Genie integration is available.
++
++Databricks Model Serving is optional in this Replit version. Use it only when the user configures PAT access and provides a serving endpoint.
++
++Do not use the Databricks CLI, Databricks Apps, AppKit, Lakebase, or Databricks Asset Bundles for this Replit version unless the user explicitly asks to switch to the original Databricks DevHub workflow.
+diff --git a/content/examples/inventory-intelligence/replit-prompt.md b/content/examples/inventory-intelligence/replit-prompt.md
+new file mode 100644
+index 0000000..90f823d
+--- /dev/null
++++ b/content/examples/inventory-intelligence/replit-prompt.md
+@@ -0,0 +1,118 @@
++# Build an Inventory Intelligence App with Databricks on Replit
++
++You are Replit Agent. Help the user build a Databricks-backed inventory intelligence app: an internal tool for monitoring stock levels, demand, replenishment risk, supplier performance, and inventory value.
++
++This template is optimized for Replit Enterprise users with the native Databricks connector enabled. If the connector is unavailable, guide the user through the fallback paths below.
++
++## Before Building
++
++First, try to use Replit's native Databricks connector. Do not route from raw plan tier alone. Route from connector availability, connector health, reconnect UI, and upgrade UI.
++
++Follow this order:
++
++1. If the Databricks connector is available and healthy, use it.
++2. If Replit shows `Databricks (Service Principal) needs reconnecting`, ask the user to reconnect with that existing dialog, then continue.
++3. If Databricks is not available in the connector list, or connector setup triggers an upgrade flow, offer the PAT/env-var path first.
++4. Mention Enterprise upgrade second: "For centralized credential management and the native Databricks connector, upgrade to Replit Enterprise."
++
++Ask only one question at a time. If asking the user to choose, always include `Not sure — help me decide`.
++
++## Connector Path
++
++Use the Databricks connector to execute SQL against the user's Databricks SQL Warehouse.
++
++Ask for:
++
++- Unity Catalog catalog name
++- Unity Catalog schema name
++- SQL Warehouse, if not already configured by the connector
++
++Create or reuse this table:
++
++```sql
++CREATE TABLE IF NOT EXISTS <catalog>.<schema>.inventory_items (
++  sku STRING,
++  product_name STRING,
++  category STRING,
++  location STRING,
++  supplier STRING,
++  on_hand INT,
++  reorder_point INT,
++  target_stock INT,
++  unit_cost DOUBLE,
++  trailing_30_day_demand INT,
++  forecast_30_day_demand INT,
++  replenishment_status STRING,
++  updated_at TIMESTAMP
++);
++```
++
++If the table is empty, offer to seed it with realistic inventory records across categories, locations, and suppliers.
++
++## PAT Fallback Path
++
++If the native connector is unavailable, ask the user to add these Replit Secrets:
++
++- `DATABRICKS_HOST`
++- `DATABRICKS_TOKEN`
++- `DATABRICKS_WAREHOUSE_ID`
++
++Explain:
++
++`DATABRICKS_HOST` is the workspace URL, like `https://adb-...azuredatabricks.net`.
++
++`DATABRICKS_TOKEN` is a Databricks personal access token.
++
++`DATABRICKS_WAREHOUSE_ID` is the SQL Warehouse ID.
++
++Use these env vars to call the Databricks SQL Statement Execution API.
++
++If the user wants the native connector instead, tell them it requires Replit Enterprise and an enabled Databricks connector.
++
++## App Requirements
++
++Build a polished full-stack web app with:
++
++- Inventory dashboard showing stockouts, at-risk SKUs, overstock, total inventory value, and replenishment workload
++- Item table with search, filters, status pills, and editable replenishment status
++- Reorder recommendation panel using SQL-derived logic from on-hand quantity, reorder point, and forecast demand
++- Supplier and location performance charts
++- Category-level inventory value and risk charts
++- Genie-powered analytics panel for questions like "Which suppliers have the most at-risk SKUs?" and "What should we reorder this week?"
++- Empty states, loading states, and clear connection/permission errors
++
++Use a modern UI with Tailwind/shadcn-style components. Use the Databricks palette where appropriate:
++
++- `#FF3621`
++- `#0B2026`
++- `#EEEDE9`
++- `#F9F7F4`
++
++## Permission Handling
++
++If SQL fails because the connector or PAT lacks permission:
++
++- Explain the failed operation
++- Ask whether to use an existing table, switch to read-only mode, or request Databricks permissions
++- Do not silently switch to local-only storage
++
++The source of truth for inventory data should remain Databricks.
++
++## Build Order
++
++1. Resolve Databricks access using the connector or PAT fallback.
++2. Verify warehouse access with a simple query like `SELECT current_user()`.
++3. Ask for catalog and schema.
++4. Create or verify the `inventory_items` table.
++5. Seed demo data if needed.
++6. Build the inventory dashboard and item table.
++7. Wire updates and analytics queries to Databricks SQL.
++8. Add Genie conversational analytics when available.
++9. Run the app in Replit Preview.
++10. Help the user deploy with Replit Deployments.
++
++## Scope Notes
++
++This Replit template uses Databricks SQL Warehouse access through Replit's connector or PAT fallback, plus Genie when Replit's Databricks Genie integration is available.
++
++Do not use the Databricks CLI, Databricks Apps, AppKit, Lakebase, Model Serving, or Databricks Asset Bundles for this Replit version unless the user explicitly asks to switch to the original Databricks DevHub workflow. If the user wants AI forecasting from Databricks Model Serving, ask whether to add Databricks PAT access for that specific feature.
+diff --git a/content/examples/saas-tracker/replit-prompt.md b/content/examples/saas-tracker/replit-prompt.md
+new file mode 100644
+index 0000000..13a7f73
+--- /dev/null
++++ b/content/examples/saas-tracker/replit-prompt.md
+@@ -0,0 +1,121 @@
++# Build a SaaS Subscription Tracker with Databricks on Replit
++
++You are Replit Agent. Help the user build a Databricks-backed SaaS Subscription Tracker: an internal app for tracking SaaS tools, owners, costs, billing cycles, status, categories, and renewal dates.
++
++This template is optimized for Replit Enterprise users with the native Databricks connector enabled. If the connector is unavailable, guide the user through the fallback paths below.
++
++## Before Building
++
++First, try to use Replit's native Databricks connector. Do not route from raw plan tier alone. Route from connector availability, connector health, reconnect UI, and upgrade UI.
++
++Follow this order:
++
++1. If the Databricks connector is available and healthy, use it.
++2. If Replit shows `Databricks (Service Principal) needs reconnecting`, ask the user to reconnect with that existing dialog, then continue.
++3. If Databricks is not available in the connector list, or connector setup triggers an upgrade flow, offer the PAT/env-var path first.
++4. Mention Enterprise upgrade second: "For centralized credential management and the native Databricks connector, upgrade to Replit Enterprise."
++
++Ask only one question at a time. If asking the user to choose, always include `Not sure — help me decide`.
++
++## Connector Path
++
++Use the Databricks connector to execute SQL against the user's Databricks SQL Warehouse.
++
++Ask for:
++
++- Unity Catalog catalog name
++- Unity Catalog schema name
++- SQL Warehouse, if not already configured by the connector
++
++Create or reuse this table:
++
++```sql
++CREATE TABLE IF NOT EXISTS <catalog>.<schema>.subscriptions (
++  id STRING,
++  name STRING,
++  vendor STRING,
++  category STRING,
++  owner STRING,
++  cost DOUBLE,
++  billing_cycle STRING,
++  status STRING,
++  renewal_date DATE,
++  notes STRING,
++  created_at TIMESTAMP
++);
++```
++
++If the table is empty, offer to seed it with realistic demo subscriptions.
++
++## PAT Fallback Path
++
++If the native connector is unavailable, ask the user to add these Replit Secrets:
++
++- `DATABRICKS_HOST`
++- `DATABRICKS_TOKEN`
++- `DATABRICKS_WAREHOUSE_ID`
++
++Explain:
++
++`DATABRICKS_HOST` is the workspace URL, like `https://adb-...azuredatabricks.net`.
++
++`DATABRICKS_TOKEN` is a Databricks personal access token.
++
++`DATABRICKS_WAREHOUSE_ID` is the SQL Warehouse ID.
++
++Use these env vars to call the Databricks SQL Statement Execution API.
++
++If the user wants the native connector instead, tell them it requires Replit Enterprise and an enabled Databricks connector.
++
++## App Requirements
++
++Build a polished full-stack web app with:
++
++- Dashboard showing total monthly spend, annualized spend, renewals due soon, active subscriptions, and spend by category
++- Genie-powered conversational analytics panel for questions like "Which renewals are coming up this month?" and "Which teams have the highest SaaS spend?"
++- Subscription table with search and filters
++- Add/edit/delete subscription flow
++- Renewal timeline
++- Category breakdown chart
++- Owner breakdown chart
++- Empty states and loading states
++- Clear error handling for Databricks connection, SQL permissions, missing tables, and unavailable warehouses
++
++Use a modern UI with Tailwind/shadcn-style components. Use the Databricks palette where appropriate:
++
++- `#FF3621`
++- `#0B2026`
++- `#EEEDE9`
++- `#F9F7F4`
++
++## Permission Handling
++
++If SQL fails because the connector or PAT lacks permission:
++
++- Explain the failed operation
++- Ask whether to use an existing table, switch to read-only mode, or request Databricks permissions
++- Do not silently switch to local-only storage
++
++The source of truth for subscription data should remain Databricks.
++
++## Build Order
++
++1. Resolve Databricks access using the connector or PAT fallback.
++2. Verify warehouse access with a simple query like `SELECT current_user()`.
++3. Ask for catalog and schema.
++4. Create or verify the `subscriptions` table.
++5. Seed demo data if needed.
++6. Build the app UI.
++7. Wire CRUD operations to Databricks SQL.
++8. Build the analytics dashboard.
++9. Add Genie conversational analytics when available.
++10. Run the app in Replit Preview.
++11. Help the user deploy with Replit Deployments.
++
++## Scope Notes
++
++This Replit template uses Databricks SQL Warehouse access through Replit's connector or PAT fallback.
++
++Use Genie when Replit's Databricks Genie integration is available. If Genie is unavailable, keep the SQL dashboard functional and ask whether the user wants to configure Genie access, continue without conversational analytics, or switch to the original Databricks DevHub workflow.
++
++Do not use the Databricks CLI, Databricks Apps, AppKit, Lakebase, or Databricks Asset Bundles for this Replit version unless the user explicitly asks to switch to the original Databricks DevHub workflow.
+diff --git a/content/examples/vacation-rentals/replit-prompt.md b/content/examples/vacation-rentals/replit-prompt.md
+new file mode 100644
+index 0000000..0d54c74
+--- /dev/null
++++ b/content/examples/vacation-rentals/replit-prompt.md
+@@ -0,0 +1,119 @@
++# Build a Vacation Rentals Operations Console with Databricks on Replit
++
++You are Replit Agent. Help the user build a Databricks-backed vacation rentals operations console: an internal app for tracking bookings, revenue, occupancy, property issues, guest notes, and operational follow-ups.
++
++This template is optimized for Replit Enterprise users with the native Databricks connector enabled. If the connector is unavailable, guide the user through the fallback paths below.
++
++## Before Building
++
++First, try to use Replit's native Databricks connector. Do not route from raw plan tier alone. Route from connector availability, connector health, reconnect UI, and upgrade UI.
++
++Follow this order:
++
++1. If the Databricks connector is available and healthy, use it.
++2. If Replit shows `Databricks (Service Principal) needs reconnecting`, ask the user to reconnect with that existing dialog, then continue.
++3. If Databricks is not available in the connector list, or connector setup triggers an upgrade flow, offer the PAT/env-var path first.
++4. Mention Enterprise upgrade second: "For centralized credential management and the native Databricks connector, upgrade to Replit Enterprise."
++
++Ask only one question at a time. If asking the user to choose, always include `Not sure — help me decide`.
++
++## Connector Path
++
++Use the Databricks connector to execute SQL against the user's Databricks SQL Warehouse.
++
++Ask for:
++
++- Unity Catalog catalog name
++- Unity Catalog schema name
++- SQL Warehouse, if not already configured by the connector
++
++Create or reuse this table:
++
++```sql
++CREATE TABLE IF NOT EXISTS <catalog>.<schema>.vacation_rental_bookings (
++  booking_id STRING,
++  property_id STRING,
++  property_name STRING,
++  market STRING,
++  guest_name STRING,
++  check_in DATE,
++  check_out DATE,
++  nights INT,
++  revenue DOUBLE,
++  channel STRING,
++  status STRING,
++  issue_status STRING,
++  owner_note STRING,
++  updated_at TIMESTAMP
++);
++```
++
++If the table is empty, offer to seed it with realistic demo bookings across multiple markets and channels.
++
++## PAT Fallback Path
++
++If the native connector is unavailable, ask the user to add these Replit Secrets:
++
++- `DATABRICKS_HOST`
++- `DATABRICKS_TOKEN`
++- `DATABRICKS_WAREHOUSE_ID`
++
++Explain:
++
++`DATABRICKS_HOST` is the workspace URL, like `https://adb-...azuredatabricks.net`.
++
++`DATABRICKS_TOKEN` is a Databricks personal access token.
++
++`DATABRICKS_WAREHOUSE_ID` is the SQL Warehouse ID.
++
++Use these env vars to call the Databricks SQL Statement Execution API.
++
++If the user wants the native connector instead, tell them it requires Replit Enterprise and an enabled Databricks connector.
++
++## App Requirements
++
++Build a polished full-stack web app with:
++
++- Operations dashboard showing revenue, occupancy, average daily rate, open issues, and upcoming check-ins
++- Booking queue with search, filters, status updates, issue status updates, and owner notes
++- Property performance table by market and property
++- Calendar-style upcoming arrivals and departures panel
++- Revenue and occupancy charts powered by SQL Warehouse queries
++- Genie-powered analytics panel for questions like "Which markets are underperforming?" and "Which properties have the most open issues?"
++- Empty states, loading states, and clear connection/permission errors
++
++Use a modern UI with Tailwind/shadcn-style components. Use the Databricks palette where appropriate:
++
++- `#FF3621`
++- `#0B2026`
++- `#EEEDE9`
++- `#F9F7F4`
++
++## Permission Handling
++
++If SQL fails because the connector or PAT lacks permission:
++
++- Explain the failed operation
++- Ask whether to use an existing table, switch to read-only mode, or request Databricks permissions
++- Do not silently switch to local-only storage
++
++The source of truth for booking and operations data should remain Databricks.
++
++## Build Order
++
++1. Resolve Databricks access using the connector or PAT fallback.
++2. Verify warehouse access with a simple query like `SELECT current_user()`.
++3. Ask for catalog and schema.
++4. Create or verify the `vacation_rental_bookings` table.
++5. Seed demo data if needed.
++6. Build the operations dashboard and booking queue.
++7. Wire updates and analytics queries to Databricks SQL.
++8. Add Genie conversational analytics when available.
++9. Run the app in Replit Preview.
++10. Help the user deploy with Replit Deployments.
++
++## Scope Notes
++
++This Replit template uses Databricks SQL Warehouse access through Replit's connector or PAT fallback, plus Genie when Replit's Databricks Genie integration is available.
++
++Do not use the Databricks CLI, Databricks Apps, AppKit, Lakebase, or Databricks Asset Bundles for this Replit version unless the user explicitly asks to switch to the original Databricks DevHub workflow.
+diff --git a/content/recipes/genie-conversational-analytics/replit-prompt.md b/content/recipes/genie-conversational-analytics/replit-prompt.md
+new file mode 100644
+index 0000000..8ff88be
+--- /dev/null
++++ b/content/recipes/genie-conversational-analytics/replit-prompt.md
+@@ -0,0 +1,100 @@
++# Add Genie Conversational Analytics to a Replit App
++
++You are Replit Agent. Help the user build a Replit app with Databricks Genie conversational analytics over their Unity Catalog data.
++
++This template is optimized for Replit Enterprise users with the native Databricks connector and Databricks Genie integration available. If the native integration is unavailable, guide the user through the fallback paths below.
++
++## Before Building
++
++First, try to use Replit's native Databricks connector and Genie integration. Do not route from raw plan tier alone. Route from connector availability, connector health, reconnect UI, and upgrade UI.
++
++Follow this order:
++
++1. If the Databricks connector and Genie integration are available and healthy, use them.
++2. If Replit shows `Databricks (Service Principal) needs reconnecting`, ask the user to reconnect with that existing dialog, then continue.
++3. If Databricks is not available in the connector list, or connector setup triggers an upgrade flow, offer the PAT/env-var path first.
++4. Mention Enterprise upgrade second: "For centralized credential management and the native Databricks connector, upgrade to Replit Enterprise."
++
++Ask only one question at a time. If asking the user to choose, always include `Not sure — help me decide`.
++
++## Connector And Genie Path
++
++Use the Databricks connector for SQL verification and table previews. Use Replit's Databricks Genie integration for conversational analytics.
++
++Ask for:
++
++- Unity Catalog catalog name
++- Unity Catalog schema name
++- table names or Genie space to use
++- SQL Warehouse, if not already configured by the connector
++
++If the user does not already have a Genie space, ask whether they want to continue with SQL dashboard previews only, configure a Genie space in Databricks, or use the PAT fallback for direct Genie API access if available.
++
++## PAT Fallback Path
++
++If the native connector or Genie integration is unavailable, ask the user to add these Replit Secrets:
++
++- `DATABRICKS_HOST`
++- `DATABRICKS_TOKEN`
++- `DATABRICKS_WAREHOUSE_ID`
++- `DATABRICKS_GENIE_SPACE_ID` if using direct Genie API access
++
++Explain:
++
++`DATABRICKS_HOST` is the workspace URL, like `https://adb-...azuredatabricks.net`.
++
++`DATABRICKS_TOKEN` is a Databricks personal access token.
++
++`DATABRICKS_WAREHOUSE_ID` is the SQL Warehouse ID.
++
++`DATABRICKS_GENIE_SPACE_ID` is the Genie space ID to use for conversational analytics. The user can list their Genie spaces with the Databricks CLI — for example, `databricks api get /api/2.0/genie/spaces` — and copy the ID of the space they want to use.
++
++Use the SQL Statement Execution API for table previews and direct Genie API calls for conversations when available.
++
++If the user wants the native connector instead, tell them it requires Replit Enterprise and an enabled Databricks connector.
++
++## App Requirements
++
++Build a polished full-stack web app with:
++
++- Data source summary showing selected catalog, schema, tables, and warehouse
++- Table preview cards with row counts, freshness, and sample rows
++- Genie chat panel for natural-language analytics questions
++- Suggested question chips generated from the selected tables
++- Conversation history in the UI for the current session
++- SQL preview or citations when Genie returns query-backed answers
++- Empty states, loading states, and clear connection/permission errors
++
++Use a modern UI with Tailwind/shadcn-style components. Use the Databricks palette where appropriate:
++
++- `#FF3621`
++- `#0B2026`
++- `#EEEDE9`
++- `#F9F7F4`
++
++## Permission Handling
++
++If SQL or Genie access fails because the connector or PAT lacks permission:
++
++- Explain the failed operation
++- Ask whether to use a different table, a different Genie space, continue with SQL-only previews, or request Databricks permissions
++- Do not silently switch to local-only mock data
++
++The source of truth for analytics data should remain Databricks.
++
++## Build Order
++
++1. Resolve Databricks access using the connector or PAT fallback.
++2. Verify warehouse access with a simple query like `SELECT current_user()`.
++3. Ask for catalog, schema, tables, and Genie space.
++4. Build table previews and metadata cards.
++5. Add the Genie conversational analytics panel.
++6. Add suggested questions and conversation UI polish.
++7. Run the app in Replit Preview.
++8. Help the user deploy with Replit Deployments.
++
++## Scope Notes
++
++This Replit template uses Replit's Databricks connector and Genie integration when available.
++
++Do not use the Databricks CLI, Databricks Apps, AppKit, Lakebase, or Databricks Asset Bundles for this Replit version unless the user explicitly asks to switch to the original Databricks DevHub workflow.
+diff --git a/content/recipes/genie-multi-space/replit-prompt.md b/content/recipes/genie-multi-space/replit-prompt.md
+new file mode 100644
+index 0000000..b5ae34a
+--- /dev/null
++++ b/content/recipes/genie-multi-space/replit-prompt.md
+@@ -0,0 +1,97 @@
++# Build a Multi-Space Genie Analytics App on Replit
++
++You are Replit Agent. Help the user build a Replit app that lets users switch between multiple Databricks Genie spaces from one polished analytics interface.
++
++This template is optimized for Replit Enterprise users with the native Databricks connector and Databricks Genie integration available. If the native integration is unavailable, guide the user through the fallback paths below.
++
++## Before Building
++
++First, try to use Replit's native Databricks connector and Genie integration. Do not route from raw plan tier alone. Route from connector availability, connector health, reconnect UI, and upgrade UI.
++
++Follow this order:
++
++1. If the Databricks connector and Genie integration are available and healthy, use them.
++2. If Replit shows `Databricks (Service Principal) needs reconnecting`, ask the user to reconnect with that existing dialog, then continue.
++3. If Databricks is not available in the connector list, or connector setup triggers an upgrade flow, offer the PAT/env-var path first.
++4. Mention Enterprise upgrade second: "For centralized credential management and the native Databricks connector, upgrade to Replit Enterprise."
++
++Ask only one question at a time. If asking the user to choose, always include `Not sure — help me decide`.
++
++## Connector And Genie Path
++
++Use the Databricks connector for SQL verification and space context. Use Replit's Databricks Genie integration for each selected Genie space.
++
++Ask for:
++
++- the list of Genie spaces to include
++- a short display name and description for each space
++- Unity Catalog catalog/schema/table context for each space, if useful for previews
++- SQL Warehouse, if not already configured by the connector
++
++If the user has only one Genie space, suggest starting with the Genie Conversational Analytics template instead, but continue if they want the multi-space UI.
++
++## PAT Fallback Path
++
++If the native connector or Genie integration is unavailable, ask the user to add these Replit Secrets:
++
++- `DATABRICKS_HOST`
++- `DATABRICKS_TOKEN`
++- `DATABRICKS_WAREHOUSE_ID`
++
++Ask the user for Genie space IDs and store them in code or secrets according to their preference. The user can list their Genie spaces with the Databricks CLI — for example, `databricks api get /api/2.0/genie/spaces` — and copy the IDs of the spaces they want to include.
++
++Explain:
++
++`DATABRICKS_HOST` is the workspace URL, like `https://adb-...azuredatabricks.net`.
++
++`DATABRICKS_TOKEN` is a Databricks personal access token.
++
++`DATABRICKS_WAREHOUSE_ID` is the SQL Warehouse ID.
++
++Use direct Genie API calls when available. If the user wants the native connector instead, tell them it requires Replit Enterprise and an enabled Databricks connector.
++
++## App Requirements
++
++Build a polished full-stack web app with:
++
++- Space selector with names, descriptions, and badges for each analytics domain
++- Genie chat panel that resets or scopes conversation state when the selected space changes
++- Suggested question chips per space
++- Optional table preview cards for the selected space's core tables
++- Conversation history display for the current selected space
++- Clear loading, empty, reconnect, and permission states
++- Responsive layout that works well on desktop and mobile
++
++Use a modern UI with Tailwind/shadcn-style components. Use the Databricks palette where appropriate:
++
++- `#FF3621`
++- `#0B2026`
++- `#EEEDE9`
++- `#F9F7F4`
++
++## Permission Handling
++
++If a Genie space fails because the connector or PAT lacks permission:
++
++- Explain which space failed
++- Ask whether to remove that space, use a different space, continue with the remaining spaces, or request Databricks permissions
++- Do not silently switch to local-only mock data
++
++The source of truth for analytics data and Genie space configuration should remain Databricks.
++
++## Build Order
++
++1. Resolve Databricks access using the connector or PAT fallback.
++2. Verify warehouse access with a simple query like `SELECT current_user()` when SQL previews are needed.
++3. Ask for Genie spaces, display names, and optional table context.
++4. Build the multi-space selector and page shell.
++5. Wire each space to the Genie chat panel.
++6. Add suggested questions, per-space context, and error states.
++7. Run the app in Replit Preview.
++8. Help the user deploy with Replit Deployments.
++
++## Scope Notes
++
++This Replit template uses Replit's Databricks connector and Genie integration when available.
++
++Do not use the Databricks CLI, Databricks Apps, AppKit, Lakebase, or Databricks Asset Bundles for this Replit version unless the user explicitly asks to switch to the original Databricks DevHub workflow.
+diff --git a/content/recipes/medallion-architecture-from-cdc/replit-prompt.md b/content/recipes/medallion-architecture-from-cdc/replit-prompt.md
+new file mode 100644
+index 0000000..fc655d9
+--- /dev/null
++++ b/content/recipes/medallion-architecture-from-cdc/replit-prompt.md
+@@ -0,0 +1,99 @@
++# Build a Medallion Analytics App from CDC Tables with Databricks on Replit
++
++You are Replit Agent. Help the user build a Replit app over Databricks medallion tables produced from CDC history: a dashboard for exploring current-state silver tables and aggregated gold tables.
++
++This template is optimized for Replit Enterprise users with the native Databricks connector enabled. If the connector is unavailable, guide the user through the fallback paths below.
++
++## Before Building
++
++First, try to use Replit's native Databricks connector. Do not route from raw plan tier alone. Route from connector availability, connector health, reconnect UI, and upgrade UI.
++
++Follow this order:
++
++1. If the Databricks connector is available and healthy, use it.
++2. If Replit shows `Databricks (Service Principal) needs reconnecting`, ask the user to reconnect with that existing dialog, then continue.
++3. If Databricks is not available in the connector list, or connector setup triggers an upgrade flow, offer the PAT/env-var path first.
++4. Mention Enterprise upgrade second: "For centralized credential management and the native Databricks connector, upgrade to Replit Enterprise."
++
++Ask only one question at a time. If asking the user to choose, always include `Not sure — help me decide`.
++
++## Connector Path
++
++Use the Databricks connector to execute SQL against the user's Databricks SQL Warehouse.
++
++Ask for:
++
++- Unity Catalog catalog name
++- silver schema or table name
++- gold schema or aggregate table name
++- SQL Warehouse, if not already configured by the connector
++
++If the user does not have medallion tables yet, offer to create demo silver and gold tables so the app can run immediately.
++
++## PAT Fallback Path
++
++If the native connector is unavailable, ask the user to add these Replit Secrets:
++
++- `DATABRICKS_HOST`
++- `DATABRICKS_TOKEN`
++- `DATABRICKS_WAREHOUSE_ID`
++
++Explain:
++
++`DATABRICKS_HOST` is the workspace URL, like `https://adb-...azuredatabricks.net`.
++
++`DATABRICKS_TOKEN` is a Databricks personal access token.
++
++`DATABRICKS_WAREHOUSE_ID` is the SQL Warehouse ID.
++
++Use these env vars to call the Databricks SQL Statement Execution API.
++
++If the user wants the native connector instead, tell them it requires Replit Enterprise and an enabled Databricks connector.
++
++## App Requirements
++
++Build a polished full-stack web app with:
++
++- Overview dashboard showing row counts, freshness, recent change volume, and gold aggregate health
++- Silver current-state table browser with search, filters, and change timestamp columns
++- Gold metrics dashboard with trend charts and grouped aggregates
++- Data freshness and pipeline status cards based on table timestamps
++- SQL query inspector showing the silver and gold queries used by the app
++- Genie-powered analytics panel for questions like "What changed most recently?" and "Which aggregates changed the most this week?"
++- Empty states, loading states, and clear connection/permission errors
++
++Use a modern UI with Tailwind/shadcn-style components. Use the Databricks palette where appropriate:
++
++- `#FF3621`
++- `#0B2026`
++- `#EEEDE9`
++- `#F9F7F4`
++
++## Permission Handling
++
++If SQL fails because the connector or PAT lacks permission:
++
++- Explain the failed operation
++- Ask whether to use existing tables, switch to read-only mode, or request Databricks permissions
++- Do not silently switch to local-only storage
++
++The source of truth for CDC-derived data should remain Databricks.
++
++## Build Order
++
++1. Resolve Databricks access using the connector or PAT fallback.
++2. Verify warehouse access with a simple query like `SELECT current_user()`.
++3. Ask for catalog, silver table, and gold table.
++4. Inspect available columns and timestamp fields.
++5. Create demo silver/gold tables only if the user wants a sandbox.
++6. Build the medallion dashboard and table browser.
++7. Wire analytics queries to Databricks SQL.
++8. Add Genie conversational analytics when available.
++9. Run the app in Replit Preview.
++10. Help the user deploy with Replit Deployments.
++
++## Scope Notes
++
++This Replit template visualizes medallion tables that already exist, or demo tables created through SQL.
++
++It does not create Lakeflow Declarative Pipelines, Lakehouse Sync, CDC replication, or Databricks Asset Bundles unless the user explicitly asks to switch to the original Databricks DevHub workflow.
+diff --git a/content/recipes/volume-file-upload/replit-prompt.md b/content/recipes/volume-file-upload/replit-prompt.md
+new file mode 100644
+index 0000000..e4d6c8a
+--- /dev/null
++++ b/content/recipes/volume-file-upload/replit-prompt.md
+@@ -0,0 +1,124 @@
++# Build a Unity Catalog Volume File Manager with Databricks on Replit
++
++You are Replit Agent. Help the user build a Databricks-backed file manager for Unity Catalog Volumes: an internal app for browsing files, uploading documents, downloading assets, previewing metadata, and tracking file activity.
++
++This template is optimized for Replit users who can access Databricks from Replit. The native Databricks connector is useful for SQL metadata and analytics, but Unity Catalog Volume file operations may require Databricks PAT/env-var access.
++
++## Before Building
++
++First, try to use Replit's native Databricks connector. Do not route from raw plan tier alone. Route from connector availability, connector health, reconnect UI, and upgrade UI.
++
++Follow this order:
++
++1. If the Databricks connector is available and healthy, use it for SQL verification and metadata queries.
++2. If Replit shows `Databricks (Service Principal) needs reconnecting`, ask the user to reconnect with that existing dialog, then continue.
++3. For Unity Catalog Volume file operations, ask the user to add PAT/env vars if the native integration cannot perform Volume file API calls.
++4. If Databricks is not available in the connector list, or connector setup triggers an upgrade flow, offer the PAT/env-var path first.
++5. Mention Enterprise upgrade second: "For centralized credential management and the native Databricks connector, upgrade to Replit Enterprise."
++
++Ask only one question at a time. If asking the user to choose, always include `Not sure — help me decide`.
++
++## Connector Path
++
++Use the Databricks connector to verify warehouse access and query file metadata tables if the user has them.
++
++Ask for:
++
++- Unity Catalog catalog name
++- Unity Catalog schema name
++- Volume name
++- SQL Warehouse, if not already configured by the connector
++
++If the user wants analytics over file activity, create or reuse this optional metadata table:
++
++```sql
++CREATE TABLE IF NOT EXISTS <catalog>.<schema>.volume_file_activity (
++  event_id STRING,
++  volume_path STRING,
++  file_name STRING,
++  file_extension STRING,
++  file_size_bytes BIGINT,
++  action STRING,
++  actor STRING,
++  event_time TIMESTAMP,
++  notes STRING
++);
++```
++
++## PAT Fallback Path
++
++For Unity Catalog Volume file operations, ask the user to add these Replit Secrets:
++
++- `DATABRICKS_HOST`
++- `DATABRICKS_TOKEN`
++
++If SQL analytics are needed through the REST fallback, also ask for:
++
++- `DATABRICKS_WAREHOUSE_ID`
++
++Explain:
++
++`DATABRICKS_HOST` is the workspace URL, like `https://adb-...azuredatabricks.net`.
++
++`DATABRICKS_TOKEN` is a Databricks personal access token with permission to access the target Unity Catalog Volume.
++
++`DATABRICKS_WAREHOUSE_ID` is the SQL Warehouse ID used for optional metadata and activity queries.
++
++Use the Databricks Files API or Workspace/Volumes API pattern available for Unity Catalog Volumes. Use the SQL Statement Execution API only for metadata tables and analytics.
++
++If the user wants the native connector instead, tell them it requires Replit Enterprise and an enabled Databricks connector, but Volume file operations may still require PAT access depending on connector capabilities.
++
++## App Requirements
++
++Build a polished full-stack web app with:
++
++- Volume picker or configuration panel for catalog, schema, and volume
++- File browser with folders, breadcrumbs, file size, extension, modified time, and action menu
++- Upload flow with drag-and-drop, progress state, success state, and error recovery
++- Download/open action for files
++- File preview panel for text, JSON, CSV, markdown, and image files when practical
++- Metadata/activity dashboard showing file counts, total bytes, recent uploads, file types, and actor activity when the metadata table is enabled
++- Genie-powered analytics panel for questions like "Which file types are growing fastest?" and "Who uploaded the most files this week?" when Genie integration is available and metadata is tracked
++- Empty states, loading states, reconnect states, and clear permission errors
++
++Use a modern UI with Tailwind/shadcn-style components. Use the Databricks palette where appropriate:
++
++- `#FF3621`
++- `#0B2026`
++- `#EEEDE9`
++- `#F9F7F4`
++
++## Permission Handling
++
++If Volume file operations fail:
++
++- Explain whether the failure happened during list, upload, download, delete, or preview
++- Ask whether to use a different volume, continue in read-only mode, add PAT access, or request Databricks permissions
++- Do not silently switch to local file storage
++
++If SQL metadata queries fail:
++
++- Keep direct file browsing functional if PAT file access works
++- Ask whether to skip analytics, use an existing metadata table, or request SQL permissions
++
++The source of truth for files should remain Unity Catalog Volumes.
++
++## Build Order
++
++1. Resolve Databricks access using the connector and/or PAT fallback.
++2. Verify workspace access.
++3. Ask for catalog, schema, and volume.
++4. Verify the Volume path can be listed.
++5. Build the file browser UI.
++6. Wire list, upload, download, and preview operations to Databricks Volume APIs.
++7. Add optional metadata/activity logging table if the user wants analytics.
++8. Build file activity dashboard from SQL queries when metadata is enabled.
++9. Add Genie conversational analytics when available.
++10. Run the app in Replit Preview.
++11. Help the user deploy with Replit Deployments.
++
++## Scope Notes
++
++This Replit template manages files in Unity Catalog Volumes. The native Databricks connector should be used when available for SQL and metadata analytics, but direct Volume file operations may require PAT/env-var access.
++
++Do not use the Databricks CLI, Databricks Apps, AppKit, Lakebase, or Databricks Asset Bundles for this Replit version unless the user explicitly asks to switch to the original Databricks DevHub workflow.
+diff --git a/package-lock.json b/package-lock.json
+index 69eeb66..783ab9d 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -24,6 +24,7 @@
+         "embla-carousel-react": "^8.6.0",
+         "input-otp": "^1.4.2",
+         "lucide-react": "^0.577.0",
++        "lz-string": "^1.5.0",
+         "mcp-handler": "^1.0.7",
+         "next-themes": "^0.4.6",
+         "prism-react-renderer": "^2.3.0",
+@@ -15988,6 +15989,15 @@
+       "integrity": "sha512-hWUAb2KqM3L7J5bcrngszzISY4BxrXn/Xhbb9TTCJYEGqlR1nG67/M14sp09+PTIRklobrn57IAxcdcO/ZFyNA==",
+       "license": "MPL-1.1"
+     },
++    "node_modules/lz-string": {
++      "version": "1.5.0",
++      "resolved": "https://registry.npmjs.org/lz-string/-/lz-string-1.5.0.tgz",
++      "integrity": "sha512-h5bgJWpxJNswbU7qCrV0tIKQCaS3blPDrqKWx+QxzuzL1zGUzij9XCWLrSLsJPu5t+eWA/ycetzYAO5IOMcWAQ==",
++      "license": "MIT",
++      "bin": {
++        "lz-string": "bin/bin.js"
++      }
++    },
+     "node_modules/magic-string": {
+       "version": "0.30.21",
+       "dev": true,
+diff --git a/package.json b/package.json
+index c88214e..6a8d6c2 100644
+--- a/package.json
++++ b/package.json
+@@ -43,6 +43,7 @@
+     "embla-carousel-react": "^8.6.0",
+     "input-otp": "^1.4.2",
+     "lucide-react": "^0.577.0",
++    "lz-string": "^1.5.0",
+     "mcp-handler": "^1.0.7",
+     "next-themes": "^0.4.6",
+     "prism-react-renderer": "^2.3.0",
+diff --git a/plugins/cookbooks.ts b/plugins/cookbooks.ts
+index 239a95e..0c2a8f0 100644
+--- a/plugins/cookbooks.ts
++++ b/plugins/cookbooks.ts
+@@ -2,12 +2,15 @@ import type { LoadContext, Plugin } from "@docusaurus/types";
+ import {
+   getCookbookSlugs,
+   readCookbookIntro,
++  readCookbookReplitPrompt,
+ } from "../src/lib/content-markdown";
+ import { cookbooks } from "../src/lib/recipes/recipes";
+ 
+ type CookbooksGlobalData = {
+   /** Raw `content/cookbooks/<slug>/intro.md` bodies keyed by cookbook id. */
+   introsBySlug: Record<string, string>;
++  /** Raw `content/cookbooks/<slug>/replit-prompt.md` bodies keyed by cookbook id. */
++  replitPromptsBySlug: Record<string, string>;
+ };
+ 
+ function assertCookbookSlugParity(contentSlugs: string[]): void {
+@@ -28,14 +31,22 @@ export default function cookbooksPlugin(context: LoadContext): Plugin<void> {
+       assertCookbookSlugParity(contentSlugs);
+ 
+       const introsBySlug: Record<string, string> = {};
++      const replitPromptsBySlug: Record<string, string> = {};
+       for (const slug of contentSlugs) {
+         const intro = readCookbookIntro(context.siteDir, slug);
+         if (intro) {
+           introsBySlug[slug] = intro;
+         }
++        const replitPrompt = readCookbookReplitPrompt(context.siteDir, slug);
++        if (replitPrompt) {
++          replitPromptsBySlug[slug] = replitPrompt;
++        }
+       }
+ 
+-      actions.setGlobalData({ introsBySlug } satisfies CookbooksGlobalData);
++      actions.setGlobalData({
++        introsBySlug,
++        replitPromptsBySlug,
++      } satisfies CookbooksGlobalData);
+     },
+   };
+ }
+diff --git a/scripts/validate-content.mjs b/scripts/validate-content.mjs
+index 0d657b6..41b7cb8 100644
+--- a/scripts/validate-content.mjs
++++ b/scripts/validate-content.mjs
+@@ -15,11 +15,12 @@ const RESOURCE_ALLOWED_FILES = new Set([
+   "content.md",
+   "prerequisites.md",
+   "deployment.md",
++  "replit-prompt.md",
+ ]);
+ const RESOURCE_REQUIRED_FILE = "content.md";
+ const RESOURCE_SECTIONS = /** @type {const} */ (["recipes", "examples"]);
+ 
+-const COOKBOOK_ALLOWED_FILES = new Set(["intro.md"]);
++const COOKBOOK_ALLOWED_FILES = new Set(["intro.md", "replit-prompt.md"]);
+ 
+ /** @type {string[]} */
+ const errors = [];
+diff --git a/src/components/cookbooks/cookbook-detail.tsx b/src/components/cookbooks/cookbook-detail.tsx
+index 227cf32..1ba3cdc 100644
+--- a/src/components/cookbooks/cookbook-detail.tsx
++++ b/src/components/cookbooks/cookbook-detail.tsx
+@@ -14,12 +14,14 @@ const recipeComponents = { a: BaseUrlAnchor, pre: RecipePre };
+ type CookbookDetailProps = {
+   cookbook: Cookbook;
+   rawMarkdown: string;
++  replitPrompt?: string;
+   children: ReactNode;
+ };
+ 
+ export function CookbookDetail({
+   cookbook,
+   rawMarkdown,
++  replitPrompt,
+   children,
+ }: CookbookDetailProps): ReactNode {
+   const contentRef = useRef<HTMLDivElement>(null);
+@@ -47,6 +49,7 @@ export function CookbookDetail({
+                   title={cookbook.name}
+                   description={cookbook.description}
+                   permalink={permalink}
++                  replitPrompt={replitPrompt}
+                 />
+ 
+                 <h1 className="mb-3 text-3xl font-bold tracking-tight text-foreground md:text-4xl">
+diff --git a/src/components/cookbooks/recipe-detail.tsx b/src/components/cookbooks/recipe-detail.tsx
+index caaefd8..9e0e0fd 100644
+--- a/src/components/cookbooks/recipe-detail.tsx
++++ b/src/components/cookbooks/recipe-detail.tsx
+@@ -6,7 +6,10 @@ import { TemplateUsageBanner } from "@/components/template-usage-banner";
+ import { RecipePre } from "@/components/cookbooks/recipe-code-block";
+ import { RecipeToc } from "@/components/cookbooks/recipe-toc";
+ import { recipes } from "@/lib/recipes/recipes";
+-import { useRawRecipeMarkdown } from "@/lib/use-raw-content-markdown";
++import {
++  useRawRecipeMarkdown,
++  useRecipeSections,
++} from "@/lib/use-raw-content-markdown";
+ import { BaseUrlAnchor } from "@/components/base-url-anchor";
+ 
+ const recipeComponents = { a: BaseUrlAnchor, pre: RecipePre };
+@@ -23,6 +26,7 @@ export function RecipeDetail({
+   const contentRef = useRef<HTMLDivElement>(null);
+   const recipe = recipes.find((item) => item.id === recipeId);
+   const rawMarkdown = useRawRecipeMarkdown(recipeId);
++  const sections = useRecipeSections(recipeId);
+ 
+   if (!recipe) {
+     throw new Error(`Recipe ${recipeId} not found`);
+@@ -49,6 +53,7 @@ export function RecipeDetail({
+                   title={recipe.name}
+                   description={recipe.description}
+                   permalink={`/templates/${recipe.id}`}
++                  replitPrompt={sections?.replitPrompt}
+                 />
+ 
+                 <div className="mb-3 flex flex-wrap items-center gap-3">
+diff --git a/src/components/examples/example-detail.tsx b/src/components/examples/example-detail.tsx
+index 1508ca7..04868c2 100644
+--- a/src/components/examples/example-detail.tsx
++++ b/src/components/examples/example-detail.tsx
+@@ -179,6 +179,7 @@ export function ExampleDetail({
+                   title={example.name}
+                   description={example.description}
+                   permalink={permalink}
++                  replitPrompt={sections.replitPrompt}
+                 />
+ 
+                 <h1 className="mb-3 text-3xl font-bold tracking-tight text-foreground md:text-4xl">
+diff --git a/src/components/template-usage-banner.tsx b/src/components/template-usage-banner.tsx
+index 4dd547e..19b1fcf 100644
+--- a/src/components/template-usage-banner.tsx
++++ b/src/components/template-usage-banner.tsx
+@@ -1,12 +1,27 @@
+ import type { ComponentProps } from "react";
+ import { useCallback, useRef } from "react";
+-import { ArrowDown, Bot, BookOpen, Info } from "lucide-react";
++import { ArrowDown, Bot, BookOpen, Info, Play } from "lucide-react";
++import { compressToEncodedURIComponent } from "lz-string";
+ import { Button } from "@/components/ui/button";
+ import { CopyPromptButton } from "@/components/copy-prompt-button";
+ 
+ type CopyPromptProps = ComponentProps<typeof CopyPromptButton>;
+ 
+-export function TemplateUsageBanner(copyPromptProps: CopyPromptProps) {
++type TemplateUsageBannerProps = CopyPromptProps & {
++  replitPrompt?: string;
++};
++
++function buildReplitUrl(prompt: string) {
++  const encoded = compressToEncodedURIComponent(prompt);
++  const utm =
++    "utm_source=devhub&utm_medium=docs&utm_campaign=run-on-replit&utm_content=template-usage-banner";
++  return `https://replit.com/?prompt=${encoded}&referrer=devhub&${utm}`;
++}
++
++export function TemplateUsageBanner({
++  replitPrompt,
++  ...copyPromptProps
++}: TemplateUsageBannerProps) {
+   const bannerRef = useRef<HTMLDivElement>(null);
+ 
+   const handleScrollToContent = useCallback(() => {
+@@ -55,8 +70,21 @@ export function TemplateUsageBanner(copyPromptProps: CopyPromptProps) {
+               result is exactly what you want
+             </li>
+           </ol>
+-          <div className="mt-auto pt-1">
++          <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
+             <CopyPromptButton {...copyPromptProps} />
++            {replitPrompt && (
++              <Button asChild size="sm" variant="outline">
++                <a
++                  href={buildReplitUrl(replitPrompt)}
++                  target="_blank"
++                  rel="noopener noreferrer"
++                  className="inline-flex items-center gap-2 no-underline"
++                >
++                  <Play className="h-4 w-4" />
++                  Build it on Replit
++                </a>
++              </Button>
++            )}
+           </div>
+         </div>
+ 
+diff --git a/src/components/templates/active-filters.tsx b/src/components/templates/active-filters.tsx
+index 4557f46..adf68c3 100644
+--- a/src/components/templates/active-filters.tsx
++++ b/src/components/templates/active-filters.tsx
+@@ -7,20 +7,40 @@ export function ActiveFilters({
+   onRemoveTag,
+   selectedServices,
+   onRemoveService,
++  replitOnly,
++  onRemoveReplitOnly,
+   onClearAll,
+ }: {
+   activeTags: Set<string>;
+   onRemoveTag: (tag: string) => void;
+   selectedServices: Set<Service>;
+   onRemoveService: (service: Service) => void;
++  replitOnly: boolean;
++  onRemoveReplitOnly: () => void;
+   onClearAll: () => void;
+ }) {
+-  const hasFilters = activeTags.size > 0 || selectedServices.size > 0;
++  const hasFilters =
++    activeTags.size > 0 || selectedServices.size > 0 || replitOnly;
+ 
+   if (!hasFilters) return null;
+ 
+   return (
+     <div className="flex flex-wrap items-center gap-1.5">
++      {replitOnly && (
++        <button
++          type="button"
++          onClick={onRemoveReplitOnly}
++          className="group/pill cursor-pointer"
++        >
++          <Badge
++            variant="outline"
++            className="gap-1 rounded-md border-db-lava/25 bg-db-lava/6 pr-1.5 text-[11px] font-medium text-db-lava dark:border-db-lava/30 dark:bg-db-lava/10 dark:text-db-lava-light"
++          >
++            Replit Apps
++            <XIcon className="size-3 opacity-50 group-hover/pill:opacity-100" />
++          </Badge>
++        </button>
++      )}
+       {[...selectedServices].map((service) => (
+         <button
+           key={`svc-${service}`}
+diff --git a/src/components/templates/template-filters.tsx b/src/components/templates/template-filters.tsx
+index 202e7eb..efee7ab 100644
+--- a/src/components/templates/template-filters.tsx
++++ b/src/components/templates/template-filters.tsx
+@@ -4,12 +4,31 @@ import { SERVICES, type Service } from "@/lib/recipes/recipes";
+ export function TemplateFilters({
+   selectedServices,
+   onToggleService,
++  replitOnly,
++  onToggleReplitOnly,
+ }: {
+   selectedServices: Set<Service>;
+   onToggleService: (service: Service) => void;
++  replitOnly: boolean;
++  onToggleReplitOnly: () => void;
+ }) {
+   return (
+     <nav className="space-y-6" aria-label="Filters">
++      <div>
++        <h3 className="mb-3 text-xs font-semibold tracking-wider text-black/50 uppercase dark:text-white/50">
++          Build with
++        </h3>
++        <div className="space-y-2">
++          <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-1 py-1 text-sm text-black/80 transition-colors hover:bg-black/4 dark:text-white/80 dark:hover:bg-white/4">
++            <Checkbox
++              checked={replitOnly}
++              onCheckedChange={onToggleReplitOnly}
++              aria-label="Replit Apps"
++            />
++            <span className="leading-tight">Replit Apps</span>
++          </label>
++        </div>
++      </div>
+       <div>
+         <h3 className="mb-3 text-xs font-semibold tracking-wider text-black/50 uppercase dark:text-white/50">
+           Services
+diff --git a/src/lib/content-markdown.ts b/src/lib/content-markdown.ts
+index cb12f2f..6d5b2b8 100644
+--- a/src/lib/content-markdown.ts
++++ b/src/lib/content-markdown.ts
+@@ -97,6 +97,20 @@ export function readCookbookIntro(
+   return readFileSync(filePath, "utf-8");
+ }
+ 
++/** Reads `content/cookbooks/<slug>/replit-prompt.md` if present. */
++export function readCookbookReplitPrompt(
++  rootDir: string,
++  slug: string,
++): string | undefined {
++  const filePath = resolve(
++    cookbookDirectory(rootDir),
++    slug,
++    "replit-prompt.md",
++  );
++  if (!existsSync(filePath)) return undefined;
++  return readFileSync(filePath, "utf-8");
++}
++
+ /** Reads all present section files; throws when the required content.md is missing. */
+ export function readContentSections(
+   rootDir: string,
+@@ -116,8 +130,15 @@ export function readContentSections(
+     "prerequisites",
+   );
+   const deployment = readContentSection(rootDir, section, slug, "deployment");
++  const replitPrompt = readContentSection(
++    rootDir,
++    section,
++    slug,
++    "replit-prompt",
++  );
+   const sections: ContentSections = { content };
+   if (prerequisites !== undefined) sections.prerequisites = prerequisites;
+   if (deployment !== undefined) sections.deployment = deployment;
++  if (replitPrompt !== undefined) sections.replitPrompt = replitPrompt;
+   return sections;
+ }
+diff --git a/src/lib/content-sections.ts b/src/lib/content-sections.ts
+index 0269335..46a1eee 100644
+--- a/src/lib/content-sections.ts
++++ b/src/lib/content-sections.ts
+@@ -3,6 +3,7 @@ const CONTENT_SECTION_FILES = [
+   "content",
+   "prerequisites",
+   "deployment",
++  "replit-prompt",
+ ] as const;
+ export type ContentSectionFile = (typeof CONTENT_SECTION_FILES)[number];
+ 
+@@ -13,6 +14,7 @@ export type ContentSections = {
+   content: string;
+   prerequisites?: string;
+   deployment?: string;
++  replitPrompt?: string;
+ };
+ 
+ /** Joins present sections in display order (prerequisites → content → deployment). */
+diff --git a/src/lib/use-cookbook-markdown.ts b/src/lib/use-cookbook-markdown.ts
+index b836541..c5e6a3d 100644
+--- a/src/lib/use-cookbook-markdown.ts
++++ b/src/lib/use-cookbook-markdown.ts
+@@ -2,12 +2,14 @@ import { cookbooks, recipes, type Cookbook } from "@/lib/recipes/recipes";
+ import {
+   useAllRecipeSections,
+   useCookbookIntro,
++  useCookbookReplitPrompt,
+ } from "@/lib/use-raw-content-markdown";
+ import { composeCookbookMarkdown } from "@/lib/cookbook-composition";
+ 
+ type UseCookbookMarkdownResult = {
+   cookbook: Cookbook;
+   rawMarkdown: string;
++  replitPrompt?: string;
+ };
+ 
+ /**
+@@ -24,6 +26,7 @@ export function useCookbookMarkdown(
+ 
+   const sectionsBySlug = useAllRecipeSections();
+   const intro = useCookbookIntro(cookbookId);
++  const replitPrompt = useCookbookReplitPrompt(cookbookId);
+ 
+   const recipeInputs = cookbook.recipeIds.map((id) => {
+     const recipe = recipes.find((r) => r.id === id);
+@@ -41,5 +44,5 @@ export function useCookbookMarkdown(
+     recipes: recipeInputs,
+   });
+ 
+-  return { cookbook, rawMarkdown };
++  return { cookbook, rawMarkdown, replitPrompt };
+ }
+diff --git a/src/lib/use-raw-content-markdown.ts b/src/lib/use-raw-content-markdown.ts
+index cf72f7d..320411a 100644
+--- a/src/lib/use-raw-content-markdown.ts
++++ b/src/lib/use-raw-content-markdown.ts
+@@ -25,6 +25,14 @@ export function useAllRecipeSections(): Record<string, ContentSections> {
+   return data.sectionsBySlug;
+ }
+ 
++export function useRecipeSections(slug: string): ContentSections | undefined {
++  const data = usePluginData(
++    "docusaurus-plugin-content-entries",
++    "recipes",
++  ) as ContentEntriesGlobalData;
++  return data.sectionsBySlug[slug];
++}
++
+ export function useRawSolutionMarkdown(slug: string): string | undefined {
+   const data = usePluginData(
+     "docusaurus-plugin-content-entries",
+@@ -35,6 +43,7 @@ export function useRawSolutionMarkdown(slug: string): string | undefined {
+ 
+ type CookbooksGlobalData = {
+   introsBySlug: Record<string, string>;
++  replitPromptsBySlug: Record<string, string>;
+ };
+ 
+ export function useCookbookIntro(slug: string): string | undefined {
+@@ -44,6 +53,13 @@ export function useCookbookIntro(slug: string): string | undefined {
+   return data.introsBySlug[slug];
+ }
+ 
++export function useCookbookReplitPrompt(slug: string): string | undefined {
++  const data = usePluginData(
++    "docusaurus-plugin-cookbooks",
++  ) as CookbooksGlobalData;
++  return data.replitPromptsBySlug[slug];
++}
++
+ export function useExampleSections(slug: string): ContentSections | undefined {
+   const data = usePluginData(
+     "docusaurus-plugin-content-entries",
+@@ -51,3 +67,35 @@ export function useExampleSections(slug: string): ContentSections | undefined {
+   ) as ContentEntriesGlobalData;
+   return data.sectionsBySlug[slug];
+ }
++
++export function useAllExampleSections(): Record<string, ContentSections> {
++  const data = usePluginData(
++    "docusaurus-plugin-content-entries",
++    "examples",
++  ) as ContentEntriesGlobalData;
++  return data.sectionsBySlug;
++}
++
++/**
++ * IDs of every template (example, recipe, or cookbook) that ships a
++ * `replit-prompt.md`. Used by the templates page to power the "Replit Apps"
++ * filter without requiring authors to mirror that fact in `recipes.ts`.
++ */
++export function useReplitTemplateIds(): ReadonlySet<string> {
++  const exampleSections = useAllExampleSections();
++  const recipeSections = useAllRecipeSections();
++  const cookbookData = usePluginData(
++    "docusaurus-plugin-cookbooks",
++  ) as CookbooksGlobalData;
++  const ids = new Set<string>();
++  for (const [slug, sections] of Object.entries(exampleSections)) {
++    if (sections.replitPrompt) ids.add(slug);
++  }
++  for (const [slug, sections] of Object.entries(recipeSections)) {
++    if (sections.replitPrompt) ids.add(slug);
++  }
++  for (const slug of Object.keys(cookbookData.replitPromptsBySlug)) {
++    ids.add(slug);
++  }
++  return ids;
++}
+diff --git a/src/pages/templates/genie-analytics-app.tsx b/src/pages/templates/genie-analytics-app.tsx
+index 8610a5b..da97418 100644
+--- a/src/pages/templates/genie-analytics-app.tsx
++++ b/src/pages/templates/genie-analytics-app.tsx
+@@ -5,10 +5,16 @@ import GenieConversationalAnalyticsPrereqs from "@site/content/recipes/genie-con
+ import GenieConversationalAnalyticsContent from "@site/content/recipes/genie-conversational-analytics/content.md";
+ 
+ export default function GenieAnalyticsAppPage(): ReactNode {
+-  const { cookbook, rawMarkdown } = useCookbookMarkdown("genie-analytics-app");
++  const { cookbook, rawMarkdown, replitPrompt } = useCookbookMarkdown(
++    "genie-analytics-app",
++  );
+ 
+   return (
+-    <CookbookDetail cookbook={cookbook} rawMarkdown={rawMarkdown}>
++    <CookbookDetail
++      cookbook={cookbook}
++      rawMarkdown={rawMarkdown}
++      replitPrompt={replitPrompt}
++    >
+       <h2 id="prerequisites">Prerequisites</h2>
+       <GenieConversationalAnalyticsPrereqs />
+       <hr />
+diff --git a/src/pages/templates/index.tsx b/src/pages/templates/index.tsx
+index 451e729..58aeaad 100644
+--- a/src/pages/templates/index.tsx
++++ b/src/pages/templates/index.tsx
+@@ -23,6 +23,7 @@ import {
+   type Service,
+ } from "@/lib/recipes/recipes";
+ import { useFeatureFlags } from "@/lib/feature-flags";
++import { useReplitTemplateIds } from "@/lib/use-raw-content-markdown";
+ 
+ function OfficialTemplatesCallout(): ReactNode {
+   return (
+@@ -95,9 +96,11 @@ export default function TemplatesPage(): ReactNode {
+     new Set(),
+   );
+   const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
++  const [replitOnly, setReplitOnly] = useState(false);
+   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+ 
+   const { showDrafts: includeDrafts } = useFeatureFlags();
++  const replitTemplateIds = useReplitTemplateIds();
+ 
+   const ALL_ITEMS = useMemo(
+     () => buildTemplateItems(includeDrafts),
+@@ -106,14 +109,22 @@ export default function TemplatesPage(): ReactNode {
+ 
+   const filteredItems = useMemo(
+     () =>
+-      ALL_ITEMS.filter((item) =>
+-        matchesTemplateFilter(item.data, {
++      ALL_ITEMS.filter((item) => {
++        if (replitOnly && !replitTemplateIds.has(item.data.id)) return false;
++        return matchesTemplateFilter(item.data, {
+           searchQuery,
+           selectedServices,
+           activeTags,
+-        }),
+-      ),
+-    [searchQuery, selectedServices, activeTags, ALL_ITEMS],
++        });
++      }),
++    [
++      searchQuery,
++      selectedServices,
++      activeTags,
++      replitOnly,
++      replitTemplateIds,
++      ALL_ITEMS,
++    ],
+   );
+ 
+   const handleToggleService = useCallback((service: Service) => {
+@@ -133,18 +144,26 @@ export default function TemplatesPage(): ReactNode {
+     });
+   }, []);
+ 
++  const handleToggleReplitOnly = useCallback(() => {
++    setReplitOnly((prev) => !prev);
++  }, []);
++
+   const handleClearAllFilters = useCallback(() => {
+     setSelectedServices(new Set());
+     setActiveTags(new Set());
+     setSearchQuery("");
++    setReplitOnly(false);
+   }, []);
+ 
+-  const hasActiveFilters = activeTags.size > 0 || selectedServices.size > 0;
++  const hasActiveFilters =
++    activeTags.size > 0 || selectedServices.size > 0 || replitOnly;
+ 
+   const filtersSidebar = (
+     <TemplateFilters
+       selectedServices={selectedServices}
+       onToggleService={handleToggleService}
++      replitOnly={replitOnly}
++      onToggleReplitOnly={handleToggleReplitOnly}
+     />
+   );
+ 
+@@ -183,7 +202,9 @@ export default function TemplatesPage(): ReactNode {
+                 Filters
+                 {hasActiveFilters && (
+                   <Badge className="ml-0.5 size-5 justify-center rounded-full p-0 text-[10px]">
+-                    {selectedServices.size + activeTags.size}
++                    {selectedServices.size +
++                      activeTags.size +
++                      (replitOnly ? 1 : 0)}
+                   </Badge>
+                 )}
+               </Button>
+@@ -200,6 +221,8 @@ export default function TemplatesPage(): ReactNode {
+                   onRemoveTag={handleRemoveTag}
+                   selectedServices={selectedServices}
+                   onRemoveService={handleToggleService}
++                  replitOnly={replitOnly}
++                  onRemoveReplitOnly={handleToggleReplitOnly}
+                   onClearAll={handleClearAllFilters}
+                 />
+               </div>
+diff --git a/src/pages/templates/operational-data-analytics.tsx b/src/pages/templates/operational-data-analytics.tsx
+index 57639d1..d9babef 100644
+--- a/src/pages/templates/operational-data-analytics.tsx
++++ b/src/pages/templates/operational-data-analytics.tsx
+@@ -13,12 +13,16 @@ import MedallionArchitectureFromCdcPrereqs from "@site/content/recipes/medallion
+ import MedallionArchitectureFromCdcContent from "@site/content/recipes/medallion-architecture-from-cdc/content.md";
+ 
+ export default function OperationalDataAnalyticsPage(): ReactNode {
+-  const { cookbook, rawMarkdown } = useCookbookMarkdown(
++  const { cookbook, rawMarkdown, replitPrompt } = useCookbookMarkdown(
+     "operational-data-analytics",
+   );
+ 
+   return (
+-    <CookbookDetail cookbook={cookbook} rawMarkdown={rawMarkdown}>
++    <CookbookDetail
++      cookbook={cookbook}
++      rawMarkdown={rawMarkdown}
++      replitPrompt={replitPrompt}
++    >
+       <h2 id="prerequisites">Prerequisites</h2>
+       <UnityCatalogSetupPrereqs />
+       <LakebaseCreateInstancePrereqs />

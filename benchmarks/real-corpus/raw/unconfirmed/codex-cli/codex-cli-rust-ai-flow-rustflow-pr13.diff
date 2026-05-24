@@ -1,0 +1,697 @@
+diff --git a/README.md b/README.md
+index 97c3d88..beeff88 100644
+--- a/README.md
++++ b/README.md
+@@ -158,6 +158,19 @@ rustflow serve
+ rustflow playground
+ ```
+ 
++### Codex CLI Provider
++
++Workflows can use the local Codex CLI without adding API keys to RustFlow:
++
++```yaml
++llm:
++  provider: codex
++  model: default   # or a Codex-supported model such as gpt-5.5
++  prompt: "Explain Rust ownership in three bullet points."
++```
++
++RustFlow invokes `codex exec` non-interactively and captures stdout as the response. Codex CLI remains the authentication boundary: RustFlow never reads, copies, logs, or persists Codex auth tokens. The executable defaults to `codex`; set `RUSTFLOW_CODEX_BIN` to use a custom path.
++
+ ---
+ 
+ ## CLI
+@@ -507,7 +520,7 @@ cargo run -- playground         # Start server + open Playground
+ - [x] Core type system (Agent, Step, Context, RetryPolicy)
+ - [x] DAG parser with topological sort and cycle detection
+ - [x] Async concurrent scheduler with event callbacks
+-- [x] Multi-provider LLM gateway (OpenAI, Anthropic, Ollama)
++- [x] Multi-provider LLM gateway (OpenAI, Anthropic, Ollama, GLM, Codex CLI)
+ - [x] 7 built-in tools (http, file_read, file_write, shell, json_extract, env, sleep)
+ - [x] YAML workflow definition and loading
+ - [x] HTTP API server (Agent CRUD + execution)
+diff --git a/crates/rustflow-cli/src/commands/dev.rs b/crates/rustflow-cli/src/commands/dev.rs
+index f85915d..7448247 100644
+--- a/crates/rustflow-cli/src/commands/dev.rs
++++ b/crates/rustflow-cli/src/commands/dev.rs
+@@ -12,6 +12,7 @@ use rustflow_core::context::Context;
+ use rustflow_core::workflow::WorkflowDef;
+ use rustflow_llm::LlmGateway;
+ use rustflow_llm::providers::anthropic::AnthropicProvider;
++use rustflow_llm::providers::codex::CodexProvider;
+ use rustflow_llm::providers::glm::GlmProvider;
+ use rustflow_llm::providers::ollama::OllamaProvider;
+ use rustflow_llm::providers::openai::OpenAiProvider;
+@@ -140,6 +141,8 @@ async fn run_workflow(file: &Path, raw_vars: &[String], allow_shell: bool) {
+         info!("registered GLM provider");
+     }
+     gateway.register(OllamaProvider::default());
++    gateway.register(CodexProvider::default());
++    info!("registered Codex provider");
+ 
+     // Tool registry.
+     let policy = Arc::new(SecurityPolicy {
+diff --git a/crates/rustflow-cli/src/commands/run.rs b/crates/rustflow-cli/src/commands/run.rs
+index 5081817..8245c08 100644
+--- a/crates/rustflow-cli/src/commands/run.rs
++++ b/crates/rustflow-cli/src/commands/run.rs
+@@ -12,6 +12,7 @@ use rustflow_core::types::Value;
+ use rustflow_core::workflow::WorkflowDef;
+ use rustflow_llm::LlmGateway;
+ use rustflow_llm::providers::anthropic::AnthropicProvider;
++use rustflow_llm::providers::codex::CodexProvider;
+ use rustflow_llm::providers::glm::GlmProvider;
+ use rustflow_llm::providers::ollama::OllamaProvider;
+ use rustflow_llm::providers::openai::OpenAiProvider;
+@@ -86,6 +87,9 @@ pub async fn execute(args: RunArgs) -> anyhow::Result<()> {
+     // Ollama is always available (local, no API key needed).
+     gateway.register(OllamaProvider::default());
+     info!("registered Ollama provider");
++    // Codex CLI is the auth boundary; the provider never reads Codex tokens.
++    gateway.register(CodexProvider::default());
++    info!("registered Codex provider");
+ 
+     // 3. Set up security policy and tool registry.
+     let policy = Arc::new(SecurityPolicy {
+diff --git a/crates/rustflow-llm/src/lib.rs b/crates/rustflow-llm/src/lib.rs
+index 6243215..39a0e36 100644
+--- a/crates/rustflow-llm/src/lib.rs
++++ b/crates/rustflow-llm/src/lib.rs
+@@ -7,5 +7,6 @@ pub mod types;
+ pub use error::LlmError;
+ pub use gateway::LlmGateway;
+ pub use provider::LlmProvider;
++pub use providers::CodexProvider;
+ pub use providers::GlmProvider;
+ pub use types::{LlmRequest, LlmResponse, Message, Role};
+diff --git a/crates/rustflow-llm/src/providers/codex.rs b/crates/rustflow-llm/src/providers/codex.rs
+new file mode 100644
+index 0000000..ac6d568
+--- /dev/null
++++ b/crates/rustflow-llm/src/providers/codex.rs
+@@ -0,0 +1,404 @@
++use std::path::PathBuf;
++use std::process::Stdio;
++use std::time::Duration;
++
++use async_trait::async_trait;
++use tokio::io::AsyncWriteExt;
++use tokio::process::Command;
++use tracing::{debug, instrument};
++
++use crate::error::{LlmError, Result};
++use crate::provider::{LlmProvider, ResponseStream};
++use crate::types::{LlmRequest, LlmResponse, Role};
++
++const DEFAULT_CODEX_EXECUTABLE: &str = "codex";
++const CODEX_EXECUTABLE_ENV: &str = "RUSTFLOW_CODEX_BIN";
++const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
++
++/// Codex CLI-backed provider.
++///
++/// This provider never reads or handles Codex authentication material. It invokes
++/// the local Codex CLI as the authentication boundary and captures stdout as the
++/// completion response.
++pub struct CodexProvider {
++    executable: PathBuf,
++    timeout: Duration,
++}
++
++impl CodexProvider {
++    /// Create a provider using `RUSTFLOW_CODEX_BIN` or `codex` by default.
++    pub fn new() -> Self {
++        let executable = std::env::var_os(CODEX_EXECUTABLE_ENV)
++            .filter(|value| !value.is_empty())
++            .map(PathBuf::from)
++            .unwrap_or_else(|| PathBuf::from(DEFAULT_CODEX_EXECUTABLE));
++
++        Self {
++            executable,
++            timeout: DEFAULT_TIMEOUT,
++        }
++    }
++
++    /// Override the Codex executable path. Useful for tests and custom installs.
++    pub fn with_executable(mut self, executable: impl Into<PathBuf>) -> Self {
++        self.executable = executable.into();
++        self
++    }
++
++    /// Override the subprocess timeout.
++    pub fn with_timeout(mut self, timeout: Duration) -> Self {
++        self.timeout = timeout;
++        self
++    }
++
++    fn render_prompt(request: &LlmRequest) -> String {
++        if request.messages.len() == 1 && request.messages[0].role == Role::User {
++            return request.messages[0].content.clone();
++        }
++
++        request
++            .messages
++            .iter()
++            .map(|message| {
++                let role = match message.role {
++                    Role::System => "System",
++                    Role::User => "User",
++                    Role::Assistant => "Assistant",
++                };
++                format!("{role}:\n{}", message.content)
++            })
++            .collect::<Vec<_>>()
++            .join("\n\n")
++    }
++
++    fn should_pass_model(model: &str) -> bool {
++        let model = model.trim();
++        !model.is_empty() && model != "default"
++    }
++
++    fn response_model(request: &LlmRequest) -> String {
++        let model = request.model.trim();
++        if model.is_empty() {
++            "default".to_string()
++        } else {
++            request.model.clone()
++        }
++    }
++
++    fn provider_error(message: impl Into<String>) -> LlmError {
++        LlmError::ProviderError {
++            provider: "codex".to_string(),
++            message: message.into(),
++        }
++    }
++}
++
++impl Default for CodexProvider {
++    fn default() -> Self {
++        Self::new()
++    }
++}
++
++#[async_trait]
++impl LlmProvider for CodexProvider {
++    fn name(&self) -> &str {
++        "codex"
++    }
++
++    #[instrument(skip(self, request), fields(model = %request.model))]
++    async fn complete(&self, request: &LlmRequest) -> Result<LlmResponse> {
++        let prompt = Self::render_prompt(request);
++
++        debug!(
++            executable = %self.executable.display(),
++            model = %request.model,
++            "invoking Codex CLI"
++        );
++
++        let mut command = Command::new(&self.executable);
++        command
++            .arg("--ask-for-approval")
++            .arg("never")
++            .arg("exec")
++            .arg("--color")
++            .arg("never")
++            .arg("--sandbox")
++            .arg("read-only")
++            .arg("--skip-git-repo-check")
++            .arg("--ephemeral");
++
++        if Self::should_pass_model(&request.model) {
++            command.arg("--model").arg(request.model.trim());
++        }
++
++        command
++            .arg("-")
++            .stdin(Stdio::piped())
++            .stdout(Stdio::piped())
++            .stderr(Stdio::piped())
++            .kill_on_drop(true);
++
++        let mut child = command.spawn().map_err(|error| {
++            if error.kind() == std::io::ErrorKind::NotFound {
++                Self::provider_error(format!(
++                    "Codex CLI not found at '{}'; install Codex CLI or set {CODEX_EXECUTABLE_ENV}",
++                    self.executable.display()
++                ))
++            } else {
++                Self::provider_error(format!("failed to start Codex CLI: {error}"))
++            }
++        })?;
++
++        let output = tokio::time::timeout(self.timeout, async move {
++            if let Some(mut stdin) = child.stdin.take() {
++                stdin.write_all(prompt.as_bytes()).await.map_err(|error| {
++                    Self::provider_error(format!(
++                        "failed to write prompt to Codex CLI stdin: {error}"
++                    ))
++                })?;
++            }
++
++            child.wait_with_output().await.map_err(|error| {
++                Self::provider_error(format!("failed to read Codex CLI output: {error}"))
++            })
++        })
++        .await
++        .map_err(|_| {
++            Self::provider_error(format!(
++                "Codex CLI timed out after {}s",
++                self.timeout.as_secs()
++            ))
++        })??;
++
++        if !output.status.success() {
++            let stderr = String::from_utf8_lossy(&output.stderr);
++            let stdout = String::from_utf8_lossy(&output.stdout);
++            let details = if stderr.trim().is_empty() {
++                stdout.trim()
++            } else {
++                stderr.trim()
++            };
++            let code = output
++                .status
++                .code()
++                .map_or_else(|| "signal".to_string(), |code| code.to_string());
++
++            return Err(Self::provider_error(format!(
++                "Codex CLI exited with code {code}: {details}"
++            )));
++        }
++
++        let content = String::from_utf8_lossy(&output.stdout)
++            .trim_end()
++            .to_string();
++
++        Ok(LlmResponse {
++            content,
++            model: Self::response_model(request),
++            usage: None,
++            stop_reason: Some("stop".to_string()),
++        })
++    }
++
++    async fn stream(&self, _request: &LlmRequest) -> Result<ResponseStream> {
++        Err(LlmError::StreamingNotSupported {
++            provider: "codex".to_string(),
++        })
++    }
++}
++
++#[cfg(all(test, unix))]
++mod tests {
++    use super::*;
++    use crate::provider::LlmProvider;
++    use crate::types::Message;
++    use std::fs;
++    use std::os::unix::fs::PermissionsExt;
++    use std::time::{SystemTime, UNIX_EPOCH};
++
++    fn unique_path(label: &str) -> PathBuf {
++        let nanos = SystemTime::now()
++            .duration_since(UNIX_EPOCH)
++            .unwrap()
++            .as_nanos();
++        std::env::temp_dir().join(format!(
++            "rustflow-codex-provider-{label}-{}-{nanos}",
++            std::process::id()
++        ))
++    }
++
++    fn shell_quote(value: &str) -> String {
++        format!("'{}'", value.replace('\'', "'\\''"))
++    }
++
++    fn write_script(body: &str) -> PathBuf {
++        let path = unique_path("script");
++        fs::write(&path, body).unwrap();
++        let mut permissions = fs::metadata(&path).unwrap().permissions();
++        permissions.set_mode(0o700);
++        fs::set_permissions(&path, permissions).unwrap();
++        path
++    }
++
++    #[tokio::test]
++    async fn complete_invokes_configured_codex_executable() {
++        let args_path = unique_path("args");
++        let stdin_path = unique_path("stdin");
++        let script = write_script(&format!(
++            "#!/bin/sh\nprintf '%s\\n' \"$@\" > {}\ncat > {}\nprintf 'mock codex response\\n'\n",
++            shell_quote(args_path.to_str().unwrap()),
++            shell_quote(stdin_path.to_str().unwrap())
++        ));
++
++        let provider = CodexProvider::new()
++            .with_executable(&script)
++            .with_timeout(Duration::from_secs(5));
++        let request = LlmRequest::new(
++            "gpt-5.5",
++            vec![
++                Message::system("Use terse answers."),
++                Message::user("Say hello."),
++            ],
++        );
++
++        let response = provider.complete(&request).await.unwrap();
++
++        assert_eq!(response.content, "mock codex response");
++        assert_eq!(response.model, "gpt-5.5");
++        assert!(response.usage.is_none());
++
++        let args = fs::read_to_string(&args_path).unwrap();
++        let args: Vec<_> = args.lines().collect();
++        assert_eq!(
++            args,
++            vec![
++                "--ask-for-approval",
++                "never",
++                "exec",
++                "--color",
++                "never",
++                "--sandbox",
++                "read-only",
++                "--skip-git-repo-check",
++                "--ephemeral",
++                "--model",
++                "gpt-5.5",
++                "-"
++            ]
++        );
++
++        let stdin = fs::read_to_string(&stdin_path).unwrap();
++        assert_eq!(stdin, "System:\nUse terse answers.\n\nUser:\nSay hello.");
++
++        let _ = fs::remove_file(script);
++        let _ = fs::remove_file(args_path);
++        let _ = fs::remove_file(stdin_path);
++    }
++
++    #[tokio::test]
++    async fn complete_omits_model_flag_for_default_model() {
++        let args_path = unique_path("args");
++        let script = write_script(&format!(
++            "#!/bin/sh\nprintf '%s\\n' \"$@\" > {}\ncat >/dev/null\nprintf 'ok\\n'\n",
++            shell_quote(args_path.to_str().unwrap())
++        ));
++
++        let provider = CodexProvider::new().with_executable(&script);
++        let request = LlmRequest::new("default", vec![Message::user("Hi")]);
++
++        let response = provider.complete(&request).await.unwrap();
++
++        assert_eq!(response.content, "ok");
++        assert_eq!(response.model, "default");
++
++        let args = fs::read_to_string(&args_path).unwrap();
++        let args: Vec<_> = args.lines().collect();
++        assert_eq!(
++            args,
++            vec![
++                "--ask-for-approval",
++                "never",
++                "exec",
++                "--color",
++                "never",
++                "--sandbox",
++                "read-only",
++                "--skip-git-repo-check",
++                "--ephemeral",
++                "-"
++            ]
++        );
++
++        let _ = fs::remove_file(script);
++        let _ = fs::remove_file(args_path);
++    }
++
++    #[tokio::test]
++    async fn complete_maps_subprocess_failure() {
++        let script =
++            write_script("#!/bin/sh\ncat >/dev/null\necho 'mock codex failure' >&2\nexit 42\n");
++        let provider = CodexProvider::new().with_executable(&script);
++        let request = LlmRequest::new("default", vec![Message::user("Hi")]);
++
++        let error = provider.complete(&request).await.unwrap_err();
++
++        assert!(matches!(
++            error,
++            LlmError::ProviderError { ref provider, ref message }
++                if provider == "codex"
++                    && message.contains("code 42")
++                    && message.contains("mock codex failure")
++        ));
++
++        let _ = fs::remove_file(script);
++    }
++
++    #[tokio::test]
++    async fn complete_maps_missing_cli() {
++        let provider = CodexProvider::new().with_executable(unique_path("missing"));
++        let request = LlmRequest::new("default", vec![Message::user("Hi")]);
++
++        let error = provider.complete(&request).await.unwrap_err();
++
++        assert!(matches!(
++            error,
++            LlmError::ProviderError { ref provider, ref message }
++                if provider == "codex" && message.contains("Codex CLI not found")
++        ));
++    }
++
++    #[tokio::test]
++    async fn complete_maps_timeout() {
++        let script = write_script("#!/bin/sh\nsleep 1\n");
++        let provider = CodexProvider::new()
++            .with_executable(&script)
++            .with_timeout(Duration::from_millis(10));
++        let request = LlmRequest::new("default", vec![Message::user("Hi")]);
++
++        let error = provider.complete(&request).await.unwrap_err();
++
++        assert!(matches!(
++            error,
++            LlmError::ProviderError { ref provider, ref message }
++                if provider == "codex" && message.contains("timed out")
++        ));
++
++        let _ = fs::remove_file(script);
++    }
++
++    #[tokio::test]
++    async fn stream_is_not_supported() {
++        let provider = CodexProvider::new();
++        let request = LlmRequest::new("default", vec![Message::user("Hi")]);
++
++        let error = match provider.stream(&request).await {
++            Ok(_) => panic!("Codex streaming should not be supported"),
++            Err(error) => error,
++        };
++
++        assert!(matches!(
++            error,
++            LlmError::StreamingNotSupported { provider } if provider == "codex"
++        ));
++    }
++}
+diff --git a/crates/rustflow-llm/src/providers/mod.rs b/crates/rustflow-llm/src/providers/mod.rs
+index 0d331dd..d179126 100644
+--- a/crates/rustflow-llm/src/providers/mod.rs
++++ b/crates/rustflow-llm/src/providers/mod.rs
+@@ -1,9 +1,11 @@
+ pub mod anthropic;
++pub mod codex;
+ pub mod glm;
+ pub mod ollama;
+ pub mod openai;
+ 
+ pub use anthropic::AnthropicProvider;
++pub use codex::CodexProvider;
+ pub use glm::GlmProvider;
+ pub use ollama::OllamaProvider;
+ pub use openai::OpenAiProvider;
+diff --git a/crates/rustflow-server/src/state.rs b/crates/rustflow-server/src/state.rs
+index c579ddc..0abd7aa 100644
+--- a/crates/rustflow-server/src/state.rs
++++ b/crates/rustflow-server/src/state.rs
+@@ -8,7 +8,10 @@ use tracing::warn;
+ use rustflow_core::agent::Agent;
+ use rustflow_core::circuit_breaker::CircuitBreakerRegistry;
+ use rustflow_core::types::AgentId;
+-use rustflow_llm::{LlmGateway, providers::glm::GlmProvider, providers::ollama::OllamaProvider};
++use rustflow_llm::{
++    LlmGateway, providers::codex::CodexProvider, providers::glm::GlmProvider,
++    providers::ollama::OllamaProvider,
++};
+ use rustflow_tools::security::{SecurityPolicy, ShellPolicy};
+ use rustflow_tools::{
+     EnvTool, FileReadTool, FileWriteTool, HttpTool, JsonExtractTool, ShellTool, SleepTool,
+@@ -137,6 +140,7 @@ impl AppState {
+ 
+         let mut llm_gateway = LlmGateway::new();
+         llm_gateway.register(OllamaProvider::new());
++        llm_gateway.register(CodexProvider::default());
+         if std::env::var("GLM_API_KEY").is_ok() {
+             llm_gateway.register(GlmProvider::from_env());
+         }
+@@ -560,6 +564,13 @@ mod tests {
+         std::env::temp_dir().join(format!("rustflow-run-store-test-{}", uuid::Uuid::new_v4()))
+     }
+ 
++    #[test]
++    fn test_default_llm_gateway_includes_codex_provider() {
++        let state = AppState::new();
++
++        assert!(state.llm_gateway.providers().contains(&"codex"));
++    }
++
+     #[tokio::test]
+     async fn test_start_or_observe_run_creates_missing_run() {
+         let state = AppState::new();
+diff --git a/examples/codex-six-step-workflow.yaml b/examples/codex-six-step-workflow.yaml
+new file mode 100644
+index 0000000..3b67887
+--- /dev/null
++++ b/examples/codex-six-step-workflow.yaml
+@@ -0,0 +1,120 @@
++name: codex-six-step-analysis
++description: >
++  Six-step workflow using the local Codex CLI provider. It turns a short product
++  brief into a compact research-style report through multiple dependent LLM steps.
++
++steps:
++  - id: brief
++    name: 1. Clarify Product Brief
++    llm:
++      provider: codex
++      model: default
++      prompt: |
++        You are analyzing this product idea:
++        "RustFlow is a high-performance Rust runtime for orchestrating AI-agent workflows."
++
++        In 3 concise bullets, clarify:
++        - target user
++        - core job-to-be-done
++        - strongest technical promise
++    timeout_ms: 120000
++
++  - id: audience
++    name: 2. Identify Audience Segments
++    llm:
++      provider: codex
++      model: default
++      prompt: |
++        Based on this clarified brief:
++        {{steps.brief.output}}
++
++        List 3 likely audience segments. For each, give:
++        - what they care about
++        - what would make them skeptical
++    depends_on:
++      - brief
++    timeout_ms: 120000
++
++  - id: differentiation
++    name: 3. Extract Differentiation
++    llm:
++      provider: codex
++      model: default
++      prompt: |
++        Brief:
++        {{steps.brief.output}}
++
++        Audience:
++        {{steps.audience.output}}
++
++        Extract 4 concrete differentiators versus Python-first agent frameworks.
++        Keep each differentiator falsifiable, not marketing fluff.
++    depends_on:
++      - audience
++    timeout_ms: 120000
++
++  - id: risks
++    name: 4. Surface Risks
++    llm:
++      provider: codex
++      model: default
++      prompt: |
++        Product positioning so far:
++        {{steps.differentiation.output}}
++
++        Identify 4 risks or weak points in this positioning.
++        For each, include one mitigation.
++    depends_on:
++      - differentiation
++    timeout_ms: 120000
++
++  - id: plan
++    name: 5. Build Action Plan
++    llm:
++      provider: codex
++      model: default
++      prompt: |
++        Differentiation:
++        {{steps.differentiation.output}}
++
++        Risks:
++        {{steps.risks.output}}
++
++        Produce a 5-item action plan for the next product demo.
++        Each item should be observable in the demo, not an internal TODO.
++    depends_on:
++      - risks
++    timeout_ms: 120000
++
++  - id: report
++    name: 6. Final Report
++    llm:
++      provider: codex
++      model: default
++      prompt: |
++        Combine the following into a concise final report:
++
++        Clarified brief:
++        {{steps.brief.output}}
++
++        Audience:
++        {{steps.audience.output}}
++
++        Differentiation:
++        {{steps.differentiation.output}}
++
++        Risks:
++        {{steps.risks.output}}
++
++        Action plan:
++        {{steps.plan.output}}
++
++        Output exactly these sections:
++        1. Positioning
++        2. Best audience
++        3. Demo narrative
++        4. Risks to mention honestly
++        5. Next actions
++    depends_on:
++      - plan
++    timeout_ms: 120000
+diff --git a/examples/codex-workflow.yaml b/examples/codex-workflow.yaml
+new file mode 100644
+index 0000000..61df03a
+--- /dev/null
++++ b/examples/codex-workflow.yaml
+@@ -0,0 +1,14 @@
++name: codex-hello
++description: >
++  Minimal workflow using the local Codex CLI as an LLM provider.
++  Requires `codex` to be installed and logged in locally.
++
++steps:
++  - id: answer
++    name: Answer with Codex
++    llm:
++      provider: codex
++      model: default
++      prompt: |
++        Explain Rust ownership in three concise bullet points.
++    timeout_ms: 120000

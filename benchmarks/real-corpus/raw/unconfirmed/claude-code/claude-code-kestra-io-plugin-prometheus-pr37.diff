@@ -1,0 +1,21 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.prometheus.md b/src/main/resources/doc/io.kestra.plugin.prometheus.md
+new file mode 100644
+index 0000000..c61cedf
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.prometheus.md
+@@ -0,0 +1,15 @@
++# How to use the Prometheus plugin
++
++Query metrics from Prometheus and push metrics to Pushgateway from Kestra flows.
++
++## Authentication
++
++Set `url` on each task to your Prometheus or Pushgateway endpoint. For basic auth, set `username` and `password`. Pass additional HTTP headers via `headers`. Store secrets in [secrets](https://kestra.io/docs/concepts/secret) and apply connection properties globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
++
++## Tasks
++
++`Query` runs an instant PromQL query set in `query` against the Prometheus server at `url` (default `http://localhost:9090`). Optionally set `time` for a specific evaluation timestamp (RFC3339 or Unix). Control result handling with `fetchType`: `NONE` (default), `FETCH`, `FETCH_ONE`, or `STORE`.
++
++`Push` sends metrics to Pushgateway at `url` (default `http://localhost:9091`) — set `job` as the Prometheus job label and `metrics` as a list of metric objects, each with `name`, `value`, and optional `labels`. Optionally set `instance` to add an instance label.
++
++`Trigger` polls Prometheus on a schedule (default 60 seconds) with a PromQL `query` and starts one execution when results are non-empty.

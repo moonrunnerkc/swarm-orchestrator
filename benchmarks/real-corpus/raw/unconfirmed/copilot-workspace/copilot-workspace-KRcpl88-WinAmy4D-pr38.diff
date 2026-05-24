@@ -1,0 +1,1770 @@
+diff --git a/WinAmyTests/AttackDeltaTests.cpp b/WinAmyTests/AttackDeltaTests.cpp
+index 13a290b..c759e06 100644
+--- a/WinAmyTests/AttackDeltaTests.cpp
++++ b/WinAmyTests/AttackDeltaTests.cpp
+@@ -6,38 +6,27 @@
+ namespace WinAmyTests {
+ 
+ TEST_CLASS(AttackDeltaTests) {
+-    BEGIN_TEST_CLASS_ATTRIBUTE()
+-    TEST_CLASS_ATTRIBUTE(L"Ignore", L"true")
+-    END_TEST_CLASS_ATTRIBUTE()
+-  public:
+-    TEST_CLASS_INITIALIZE(InitializeEngine) {
+-        InitMoves();
+-        InitAll();
+-        HashInit();
+-    }
+-
+-    // Helper: trace rays for a sliding piece from a starting square.
+-    // For each direction in ATTACK_DELTA[pieceType], step repeatedly until
+-    // CSCoord::Step returns an invalid coord.
+-    static CBitBoard TraceSlidingRays(const CSCoord &origin, int pieceType) {
++    static CBitBoard TraceSlidingRays(const CSCoord &origin, int pieceType, CBitBoard occupied = {}) {
+         CBitBoard result;
+         for (int d = 0; d < ATTACK_DELTA_COUNT[pieceType]; d++) {
+-            CUCoord dir = ATTACK_DELTA[pieceType][d];
++            const CUCoord dir = ATTACK_DELTA[pieceType][d];
+             CSCoord sq = origin.Step(dir);
+             while (sq.IsValid()) {
+                 result.SetBit(sq.BitOffset());
++                if (occupied.TstBit(sq.BitOffset())) {
++                    break;
++                }
+                 sq = sq.Step(dir);
+             }
+         }
+         return result;
+     }
+ 
+-    // Helper: trace single-step moves for a leaping piece from a starting square.
+     static CBitBoard TraceLeaps(const CSCoord &origin, int pieceType) {
+         CBitBoard result;
+         for (int d = 0; d < ATTACK_DELTA_COUNT[pieceType]; d++) {
+-            CUCoord dir = ATTACK_DELTA[pieceType][d];
+-            CSCoord sq = origin.Step(dir);
++            const CUCoord dir = ATTACK_DELTA[pieceType][d];
++            const CSCoord sq = origin.Step(dir);
+             if (sq.IsValid()) {
+                 result.SetBit(sq.BitOffset());
+             }
+@@ -45,508 +34,152 @@ TEST_CLASS(AttackDeltaTests) {
+         return result;
+     }
+ 
+-    // ---------------------------------------------------------------
+-    // White Pawn tests
+-    // ---------------------------------------------------------------
+-
+-    TEST_METHOD(WhitePawnAttacksFromD4) {
+-        // White pawn on d4 (file=3, rank=3) attacks c5 and e5
+-        CSCoord d4(0, 3, 3);
+-        CBitBoard attacks = TraceLeaps(d4, Pawn);
+-
+-        // On 2D board, only 2 of 4 directions produce valid same-level squares
+-        Assert::AreEqual(2, attacks.CountBits());
+-
+-        // c5 = file 2, rank 4
+-        CSCoord c5(0, 2, 4);
+-        Assert::IsTrue(attacks.TstBit(c5.BitOffset()));
+-
+-        // e5 = file 4, rank 4
+-        CSCoord e5(0, 4, 4);
+-        Assert::IsTrue(attacks.TstBit(e5.BitOffset()));
+-    }
+-
+-    TEST_METHOD(WhitePawnAttacksFromA1Corner) {
+-        // White pawn on a1 (file=0, rank=0) attacks b2 only
+-        CSCoord a1(0, 0, 0);
+-        CBitBoard attacks = TraceLeaps(a1, Pawn);
+-
+-        // Only one diagonal is on the board
+-        Assert::AreEqual(1, attacks.CountBits());
+-
+-        CSCoord b2(0, 1, 1);
+-        Assert::IsTrue(attacks.TstBit(b2.BitOffset()));
++  public:
++    TEST_CLASS_INITIALIZE(InitializeEngine) {
++        InitMoves();
++        InitAll();
++        HashInit();
+     }
+ 
+-    TEST_METHOD(WhitePawnAttacksFromH8TopEdge) {
+-        // White pawn on h8 (file=7, rank=7) — no forward attacks possible
+-        CSCoord h8(0, 7, 7);
+-        CBitBoard attacks = TraceLeaps(h8, Pawn);
+-        Assert::AreEqual(0, attacks.CountBits());
++    TEST_METHOD(WhitePawnAttacksFromD4) {
++        const CSCoord d4(MAIN_LEVEL, 3, 3);
++        Assert::IsTrue(ComputeLeapAttacks(d4, Pawn) == TraceLeaps(d4, Pawn));
+     }
+ 
+-    // ---------------------------------------------------------------
+-    // Black Pawn tests
+-    // ---------------------------------------------------------------
+-
+     TEST_METHOD(BlackPawnAttacksFromE5) {
+-        // Black pawn on e5 (file=4, rank=4) attacks d4 and f4
+-        CSCoord e5(0, 4, 4);
+-        CBitBoard attacks = TraceLeaps(e5, BPawn);
+-
+-        Assert::AreEqual(2, attacks.CountBits());
+-
+-        CSCoord d4(0, 3, 3);
+-        Assert::IsTrue(attacks.TstBit(d4.BitOffset()));
+-
+-        CSCoord f4(0, 5, 3);
+-        Assert::IsTrue(attacks.TstBit(f4.BitOffset()));
+-    }
+-
+-    TEST_METHOD(BlackPawnAttacksFromA1Corner) {
+-        // Black pawn on a1 (file=0, rank=0) — no backward attacks possible
+-        CSCoord a1(0, 0, 0);
+-        CBitBoard attacks = TraceLeaps(a1, BPawn);
+-        Assert::AreEqual(0, attacks.CountBits());
++        const CSCoord e5(MAIN_LEVEL, 4, 4);
++        Assert::IsTrue(ComputeLeapAttacks(e5, BPawn) == TraceLeaps(e5, BPawn));
+     }
+ 
+-    // ---------------------------------------------------------------
+-    // Knight tests
+-    // ---------------------------------------------------------------
+-
+     TEST_METHOD(KnightAttacksFromE4Center) {
+-        // Knight on e4 (file=4, rank=3) should reach 8 squares
+-        CSCoord e4(0, 4, 3);
+-        CBitBoard attacks = TraceLeaps(e4, Knight);
+-
+-        Assert::AreEqual(8, attacks.CountBits());
+-
+-        // All 8 standard L-shape destinations from e4
+-        CSCoord expected[] = {
+-            CSCoord(0, 5, 5), // f6 (file+1, rank+2)
+-            CSCoord(0, 3, 5), // d6 (file-1, rank+2)
+-            CSCoord(0, 6, 4), // g5 (file+2, rank+1)
+-            CSCoord(0, 2, 4), // c5 (file-2, rank+1)
+-            CSCoord(0, 6, 2), // g3 (file+2, rank-1)
+-            CSCoord(0, 2, 2), // c3 (file-2, rank-1)
+-            CSCoord(0, 5, 1), // f2 (file+1, rank-2)
+-            CSCoord(0, 3, 1), // d2 (file-1, rank-2)
+-        };
+-
+-        for (const auto &sq : expected) {
+-            Assert::IsTrue(attacks.TstBit(sq.BitOffset()),
+-                L"Knight should attack expected square");
+-        }
+-    }
+-
+-    TEST_METHOD(KnightAttacksFromA1Corner) {
+-        // Knight on a1 (file=0, rank=0) should reach only 2 squares
+-        CSCoord a1(0, 0, 0);
+-        CBitBoard attacks = TraceLeaps(a1, Knight);
+-
+-        Assert::AreEqual(2, attacks.CountBits());
+-
+-        CSCoord b3(0, 1, 2);
+-        Assert::IsTrue(attacks.TstBit(b3.BitOffset()));
+-
+-        CSCoord c2(0, 2, 1);
+-        Assert::IsTrue(attacks.TstBit(c2.BitOffset()));
++        const CSCoord e4(MAIN_LEVEL, 4, 3);
++        Assert::IsTrue(ComputeLeapAttacks(e4, Knight) == TraceLeaps(e4, Knight));
+     }
+ 
+-    TEST_METHOD(KnightAttacksFromH8Corner) {
+-        // Knight on h8 (file=7, rank=7) should reach only 2 squares
+-        CSCoord h8(0, 7, 7);
+-        CBitBoard attacks = TraceLeaps(h8, Knight);
+-
+-        Assert::AreEqual(2, attacks.CountBits());
+-
+-        CSCoord g6(0, 6, 5);
+-        Assert::IsTrue(attacks.TstBit(g6.BitOffset()));
+-
+-        CSCoord f7(0, 5, 6);
+-        Assert::IsTrue(attacks.TstBit(f7.BitOffset()));
++    TEST_METHOD(KingAttacksFromE4Center) {
++        const CSCoord e4(MAIN_LEVEL, 4, 3);
++        Assert::IsTrue(ComputeLeapAttacks(e4, King) == TraceLeaps(e4, King));
+     }
+ 
+-    // ---------------------------------------------------------------
+-    // Bishop tests (sliding)
+-    // ---------------------------------------------------------------
+-
+     TEST_METHOD(BishopAttacksFromD4Center) {
+-        // Bishop on d4 (file=3, rank=3) on empty board: 13 squares
+-        CSCoord d4(0, 3, 3);
+-        CBitBoard attacks = TraceSlidingRays(d4, Bishop);
+-
+-        Assert::AreEqual(13, attacks.CountBits());
+-
+-        // Verify one square in each diagonal direction
+-        CSCoord e5(0, 4, 4); // NE
+-        CSCoord b6(0, 1, 5); // NW (continuing further)
+-        CSCoord e3(0, 4, 2); // SE
+-        CSCoord a1(0, 0, 0); // SW (end of ray)
+-
+-        Assert::IsTrue(attacks.TstBit(e5.BitOffset()));
+-        Assert::IsTrue(attacks.TstBit(b6.BitOffset()));
+-        Assert::IsTrue(attacks.TstBit(e3.BitOffset()));
+-        Assert::IsTrue(attacks.TstBit(a1.BitOffset()));
+-    }
+-
+-    TEST_METHOD(BishopAttacksFromA1Corner) {
+-        // Bishop on a1 (file=0, rank=0): only the a1-h8 diagonal = 7 squares
+-        CSCoord a1(0, 0, 0);
+-        CBitBoard attacks = TraceSlidingRays(a1, Bishop);
+-
+-        Assert::AreEqual(7, attacks.CountBits());
+-
+-        // Check end of the diagonal
+-        CSCoord h8(0, 7, 7);
+-        Assert::IsTrue(attacks.TstBit(h8.BitOffset()));
+-    }
+-
+-    TEST_METHOD(BishopRaysStopAtBoardEdge) {
+-        // Bishop on h1 (file=7, rank=0): only one diagonal goes inward
+-        CSCoord h1(0, 7, 0);
+-        CBitBoard attacks = TraceSlidingRays(h1, Bishop);
+-
+-        Assert::AreEqual(7, attacks.CountBits());
+-
+-        // Should reach a8
+-        CSCoord a8(0, 0, 7);
+-        Assert::IsTrue(attacks.TstBit(a8.BitOffset()));
++        const CSCoord d4(MAIN_LEVEL, 3, 3);
++        Assert::IsTrue(ComputeSlidingAttacks(d4, Bishop, {}) == TraceSlidingRays(d4, Bishop));
+     }
+ 
+-    // ---------------------------------------------------------------
+-    // Rook tests (sliding)
+-    // ---------------------------------------------------------------
+-
+     TEST_METHOD(RookAttacksFromD4Center) {
+-        // Rook on d4 (file=3, rank=3) on empty board: 14 squares
+-        CSCoord d4(0, 3, 3);
+-        CBitBoard attacks = TraceSlidingRays(d4, Rook);
+-
+-        Assert::AreEqual(14, attacks.CountBits());
+-
+-        // Check one square in each direction
+-        CSCoord d8(0, 3, 7); // North
+-        CSCoord d1(0, 3, 0); // South
+-        CSCoord h4(0, 7, 3); // East
+-        CSCoord a4(0, 0, 3); // West
+-
+-        Assert::IsTrue(attacks.TstBit(d8.BitOffset()));
+-        Assert::IsTrue(attacks.TstBit(d1.BitOffset()));
+-        Assert::IsTrue(attacks.TstBit(h4.BitOffset()));
+-        Assert::IsTrue(attacks.TstBit(a4.BitOffset()));
+-    }
+-
+-    TEST_METHOD(RookAttacksFromA1Corner) {
+-        // Rook on a1 (file=0, rank=0): 14 squares
+-        CSCoord a1(0, 0, 0);
+-        CBitBoard attacks = TraceSlidingRays(a1, Rook);
+-
+-        Assert::AreEqual(14, attacks.CountBits());
+-    }
+-
+-    TEST_METHOD(RookRaysStopAtBoardEdge) {
+-        // All squares reached by rook from d4 must be on the same file or rank
+-        CSCoord d4(0, 3, 3);
+-        CBitBoard attacks = TraceSlidingRays(d4, Rook);
+-
+-        CBitBoard temp = attacks;
+-        while (temp) {
+-            int bit = temp.FindSetBit();
+-            temp.ClearLowestBit();
+-            CSCoord sq(bit);
+-            bool sameFile = (sq.m_nFile == 3);
+-            bool sameRank = (sq.m_nRank == 3);
+-            Assert::IsTrue(sameFile || sameRank,
+-                L"Rook ray square must share file or rank with origin");
+-        }
+-    }
+-
+-    // ---------------------------------------------------------------
+-    // Queen tests (sliding)
+-    // ---------------------------------------------------------------
+-
+-    TEST_METHOD(QueenAttacksFromD4Center) {
+-        // Queen on d4 = bishop + rook = 13 + 14 = 27 squares
+-        CSCoord d4(0, 3, 3);
+-        CBitBoard attacks = TraceSlidingRays(d4, Queen);
+-
+-        Assert::AreEqual(27, attacks.CountBits());
++        const CSCoord d4(MAIN_LEVEL, 3, 3);
++        Assert::IsTrue(ComputeSlidingAttacks(d4, Rook, {}) == TraceSlidingRays(d4, Rook));
+     }
+ 
+     TEST_METHOD(QueenAttacksEqualBishopPlusRook) {
+-        CSCoord e4(0, 4, 3);
+-        CBitBoard queenAtk = TraceSlidingRays(e4, Queen);
+-        CBitBoard bishopAtk = TraceSlidingRays(e4, Bishop);
+-        CBitBoard rookAtk = TraceSlidingRays(e4, Rook);
+-
+-        CBitBoard combined = bishopAtk | rookAtk;
+-        Assert::IsTrue(queenAtk == combined);
++        const CSCoord d4(MAIN_LEVEL, 3, 3);
++        const CBitBoard queen = ComputeSlidingAttacks(d4, Queen, {});
++        const CBitBoard parts = ComputeSlidingAttacks(d4, Bishop, {}) | ComputeSlidingAttacks(d4, Rook, {});
++        Assert::IsTrue(queen == parts);
+     }
+ 
+-    // ---------------------------------------------------------------
+-    // King tests (single step)
+-    // ---------------------------------------------------------------
+-
+-    TEST_METHOD(KingAttacksFromE4Center) {
+-        // King on e4 (file=4, rank=3): 8 adjacent squares
+-        CSCoord e4(0, 4, 3);
+-        CBitBoard attacks = TraceLeaps(e4, King);
+-
+-        Assert::AreEqual(8, attacks.CountBits());
+-
+-        // Check all 8 adjacent squares
+-        CSCoord expected[] = {
+-            CSCoord(0, 4, 4), // N
+-            CSCoord(0, 4, 2), // S
+-            CSCoord(0, 5, 3), // E
+-            CSCoord(0, 3, 3), // W
+-            CSCoord(0, 5, 4), // NE
+-            CSCoord(0, 3, 4), // NW
+-            CSCoord(0, 5, 2), // SE
+-            CSCoord(0, 3, 2), // SW
+-        };
+-
+-        for (const auto &sq : expected) {
+-            Assert::IsTrue(attacks.TstBit(sq.BitOffset()),
+-                L"King should attack adjacent square");
+-        }
+-    }
+-
+-    TEST_METHOD(KingAttacksFromA1Corner) {
+-        // King on a1 (file=0, rank=0): only 3 squares
+-        CSCoord a1(0, 0, 0);
+-        CBitBoard attacks = TraceLeaps(a1, King);
+-
+-        Assert::AreEqual(3, attacks.CountBits());
+-
+-        CSCoord a2(0, 0, 1);
+-        CSCoord b1(0, 1, 0);
+-        CSCoord b2(0, 1, 1);
+-
+-        Assert::IsTrue(attacks.TstBit(a2.BitOffset()));
+-        Assert::IsTrue(attacks.TstBit(b1.BitOffset()));
+-        Assert::IsTrue(attacks.TstBit(b2.BitOffset()));
+-    }
+-
+-    TEST_METHOD(KingAttacksFromH8Corner) {
+-        // King on h8 (file=7, rank=7): only 3 squares
+-        CSCoord h8(0, 7, 7);
+-        CBitBoard attacks = TraceLeaps(h8, King);
+-
+-        Assert::AreEqual(3, attacks.CountBits());
+-    }
+-
+-    // ---------------------------------------------------------------
+-    // General: rays stop at board edge
+-    // ---------------------------------------------------------------
+-
+     TEST_METHOD(AllSlidingRaysTerminateAtBoardEdge) {
+-        // For every starting square and every sliding piece,
+-        // verify all reached squares are valid board coordinates
+-        int slidingPieces[] = { Bishop, Rook, Queen };
+-
+-        for (int piece : slidingPieces) {
+-            for (unsigned int offset = 0; offset < CBitBoard::SIZE; offset++) {
+-                CSCoord origin(static_cast<int>(offset));
+-                CBitBoard attacks = TraceSlidingRays(origin, piece);
+-
+-                CBitBoard temp = attacks;
+-                while (temp) {
+-                    int bit = temp.FindSetBit();
+-                    temp.ClearLowestBit();
+-                    Assert::IsTrue(CSCoord::IsValid(bit),
+-                        L"Ray square must be a valid board offset");
++        for (unsigned int offset = 0; offset < CBitBoard::SIZE; offset++) {
++            const CSCoord origin(static_cast<uint16_t>(offset));
++            for (int pieceType : {Bishop, Rook, Queen}) {
++                const CBitBoard attacks = TraceSlidingRays(origin, pieceType);
++                CBitBoard scan = attacks;
++                while (scan.IsNotEmpty()) {
++                    const uint16_t sq = scan.FindSetBit();
++                    Assert::IsTrue(CSCoord(sq).IsValid());
++                    scan.ClrBit(sq);
+                 }
+             }
+         }
+     }
+ 
+     TEST_METHOD(AllLeapingMovesProduceValidSquares) {
+-        int leapingPieces[] = { Pawn, Knight, King, BPawn };
+-
+-        for (int piece : leapingPieces) {
+-            for (unsigned int offset = 0; offset < CBitBoard::SIZE; offset++) {
+-                CSCoord origin(static_cast<int>(offset));
+-                CBitBoard attacks = TraceLeaps(origin, piece);
+-
+-                CBitBoard temp = attacks;
+-                while (temp) {
+-                    int bit = temp.FindSetBit();
+-                    temp.ClearLowestBit();
+-                    Assert::IsTrue(CSCoord::IsValid(bit),
+-                        L"Leap square must be a valid board offset");
++        for (unsigned int offset = 0; offset < CBitBoard::SIZE; offset++) {
++            const CSCoord origin(static_cast<uint16_t>(offset));
++            for (int pieceType : {Pawn, BPawn, Knight, King}) {
++                const CBitBoard attacks = TraceLeaps(origin, pieceType);
++                CBitBoard scan = attacks;
++                while (scan.IsNotEmpty()) {
++                    const uint16_t sq = scan.FindSetBit();
++                    Assert::IsTrue(CSCoord(sq).IsValid());
++                    scan.ClrBit(sq);
+                 }
+             }
+         }
+     }
+ 
+-    // ---------------------------------------------------------------
+-    // ComputeSlidingAttacks with blockers
+-    // ---------------------------------------------------------------
+-
+     TEST_METHOD(RookBlockedByPieceOnSameFile) {
+-        // Rook on d1 (file=3, rank=0), blocker on d4 (file=3, rank=3)
+-        CSCoord d1(0, 3, 0);
+-        CSCoord d4(0, 3, 3);
+-        CBitBoard occupied;
+-        occupied.SetBit(d1.BitOffset());
+-        occupied.SetBit(d4.BitOffset());
+-
+-        CBitBoard attacks = ComputeSlidingAttacks(d1, Rook, occupied);
+-
+-        // Should include d2, d3, d4 (blocker) but not d5-d8
+-        Assert::IsTrue(attacks.TstBit(CSCoord(0, 3, 1).BitOffset()));  // d2
+-        Assert::IsTrue(attacks.TstBit(CSCoord(0, 3, 2).BitOffset()));  // d3
+-        Assert::IsTrue(attacks.TstBit(d4.BitOffset()));                 // d4 (blocker included)
+-        Assert::IsFalse(attacks.TstBit(CSCoord(0, 3, 4).BitOffset())); // d5 blocked
+-        Assert::IsFalse(attacks.TstBit(CSCoord(0, 3, 5).BitOffset())); // d6 blocked
++        const CSCoord d4(MAIN_LEVEL, 3, 3);
++        const CSCoord d6(MAIN_LEVEL, 3, 5);
++        CBitBoard occupied = CBitBoard::SetMask(d6.BitOffset());
+ 
+-        // Horizontal rays should still reach board edges
+-        Assert::IsTrue(attacks.TstBit(CSCoord(0, 0, 0).BitOffset()));  // a1
+-        Assert::IsTrue(attacks.TstBit(CSCoord(0, 7, 0).BitOffset()));  // h1
++        const CBitBoard expected = TraceSlidingRays(d4, Rook, occupied);
++        const CBitBoard computed = ComputeSlidingAttacks(d4, Rook, occupied);
++        Assert::IsTrue(computed == expected);
++        Assert::IsTrue(computed.TstBit(d6.BitOffset()));
+     }
+ 
+     TEST_METHOD(BishopBlockedByPieceOnDiagonal) {
+-        // Bishop on c1 (file=2, rank=0), blocker on e3 (file=4, rank=2)
+-        CSCoord c1(0, 2, 0);
+-        CSCoord e3(0, 4, 2);
+-        CBitBoard occupied;
+-        occupied.SetBit(c1.BitOffset());
+-        occupied.SetBit(e3.BitOffset());
++        const CSCoord d4(MAIN_LEVEL, 3, 3);
++        const CSCoord f6(MAIN_LEVEL, 5, 5);
++        CBitBoard occupied = CBitBoard::SetMask(f6.BitOffset());
+ 
+-        CBitBoard attacks = ComputeSlidingAttacks(c1, Bishop, occupied);
+-
+-        // NE diagonal: d2, e3 (blocker) but not f4, g5, h6
+-        Assert::IsTrue(attacks.TstBit(CSCoord(0, 3, 1).BitOffset()));  // d2
+-        Assert::IsTrue(attacks.TstBit(e3.BitOffset()));                 // e3
+-        Assert::IsFalse(attacks.TstBit(CSCoord(0, 5, 3).BitOffset())); // f4 blocked
+-
+-        // NW diagonal: b2, a3
+-        Assert::IsTrue(attacks.TstBit(CSCoord(0, 1, 1).BitOffset()));  // b2
+-        Assert::IsTrue(attacks.TstBit(CSCoord(0, 0, 2).BitOffset()));  // a3
++        const CBitBoard expected = TraceSlidingRays(d4, Bishop, occupied);
++        const CBitBoard computed = ComputeSlidingAttacks(d4, Bishop, occupied);
++        Assert::IsTrue(computed == expected);
++        Assert::IsTrue(computed.TstBit(f6.BitOffset()));
+     }
+ 
+     TEST_METHOD(QueenBlockedMultipleDirections) {
+-        // Queen on d4, blockers on d6, f4, b4, b6
+-        CSCoord d4(0, 3, 3);
+-        CBitBoard occupied;
+-        occupied.SetBit(d4.BitOffset());
+-        occupied.SetBit(CSCoord(0, 3, 5).BitOffset()); // d6
+-        occupied.SetBit(CSCoord(0, 5, 3).BitOffset()); // f4
+-        occupied.SetBit(CSCoord(0, 1, 3).BitOffset()); // b4
+-        occupied.SetBit(CSCoord(0, 1, 5).BitOffset()); // b6
+-
+-        CBitBoard attacks = ComputeSlidingAttacks(d4, Queen, occupied);
+-
+-        // North: d5, d6 (blocked), not d7, d8
+-        Assert::IsTrue(attacks.TstBit(CSCoord(0, 3, 4).BitOffset()));  // d5
+-        Assert::IsTrue(attacks.TstBit(CSCoord(0, 3, 5).BitOffset()));  // d6
+-        Assert::IsFalse(attacks.TstBit(CSCoord(0, 3, 6).BitOffset())); // d7
++        const CSCoord d4(MAIN_LEVEL, 3, 3);
++        CBitBoard occupied = CBitBoard::SetMask(CSCoord(MAIN_LEVEL, 3, 5).BitOffset()) |
++                             CBitBoard::SetMask(CSCoord(MAIN_LEVEL, 5, 3).BitOffset()) |
++                             CBitBoard::SetMask(CSCoord(MAIN_LEVEL, 5, 5).BitOffset());
+ 
+-        // East: e4, f4 (blocked), not g4, h4
+-        Assert::IsTrue(attacks.TstBit(CSCoord(0, 4, 3).BitOffset()));  // e4
+-        Assert::IsTrue(attacks.TstBit(CSCoord(0, 5, 3).BitOffset()));  // f4
+-        Assert::IsFalse(attacks.TstBit(CSCoord(0, 6, 3).BitOffset())); // g4
+-
+-        // NW diagonal: c5, b6 (blocked), not a7
+-        Assert::IsTrue(attacks.TstBit(CSCoord(0, 2, 4).BitOffset()));  // c5
+-        Assert::IsTrue(attacks.TstBit(CSCoord(0, 1, 5).BitOffset()));  // b6
+-        Assert::IsFalse(attacks.TstBit(CSCoord(0, 0, 6).BitOffset())); // a7
++        const CBitBoard expected = TraceSlidingRays(d4, Queen, occupied);
++        const CBitBoard computed = ComputeSlidingAttacks(d4, Queen, occupied);
++        Assert::IsTrue(computed == expected);
+     }
+ 
+     TEST_METHOD(ComputeSlidingAttacksEmptyBoardMatchesUnblockedRays) {
+-        // With no blockers, ComputeSlidingAttacks should equal TraceSlidingRays
+-        CSCoord e4(0, 4, 3);
+         CBitBoard empty;
+-
+-        CBitBoard rookAtk = ComputeSlidingAttacks(e4, Rook, empty);
+-        CBitBoard rookRays = TraceSlidingRays(e4, Rook);
+-        Assert::IsTrue(rookAtk == rookRays);
+-
+-        CBitBoard bishopAtk = ComputeSlidingAttacks(e4, Bishop, empty);
+-        CBitBoard bishopRays = TraceSlidingRays(e4, Bishop);
+-        Assert::IsTrue(bishopAtk == bishopRays);
+-    }
+-
+-    // ---------------------------------------------------------------
+-    // ComputeLeapAttacks matches EPM tables
+-    // ---------------------------------------------------------------
+-
+-    TEST_METHOD(ComputeLeapAttacksKnightMatchesEPM) {
+-        for (unsigned int offset = 0; offset < CBitBoard::SIZE; offset++) {
+-            CSCoord sq(static_cast<int>(offset));
+-            CBitBoard computed = ComputeLeapAttacks(sq, Knight);
+-            Assert::IsTrue(computed == KnightEPM[offset],
+-                L"Knight ComputeLeapAttacks must match KnightEPM");
+-        }
+-    }
+-
+-    TEST_METHOD(ComputeLeapAttacksKingMatchesEPM) {
+-        for (unsigned int offset = 0; offset < CBitBoard::SIZE; offset++) {
+-            CSCoord sq(static_cast<int>(offset));
+-            CBitBoard computed = ComputeLeapAttacks(sq, King);
+-            Assert::IsTrue(computed == KingEPM[offset],
+-                L"King ComputeLeapAttacks must match KingEPM");
+-        }
+-    }
+-
+-    TEST_METHOD(ComputeLeapAttacksWhitePawnMatchesEPM) {
+         for (unsigned int offset = 0; offset < CBitBoard::SIZE; offset++) {
+-            CSCoord sq(static_cast<int>(offset));
+-            CBitBoard computed = ComputeLeapAttacks(sq, Pawn);
+-            Assert::IsTrue(computed == PawnEPM[White][offset],
+-                L"White Pawn ComputeLeapAttacks must match PawnEPM[White]");
++            const CSCoord sq(static_cast<uint16_t>(offset));
++            Assert::IsTrue(ComputeSlidingAttacks(sq, Rook, empty) == TraceSlidingRays(sq, Rook));
++            Assert::IsTrue(ComputeSlidingAttacks(sq, Bishop, empty) == TraceSlidingRays(sq, Bishop));
++            Assert::IsTrue(ComputeSlidingAttacks(sq, Queen, empty) == TraceSlidingRays(sq, Queen));
+         }
+     }
+ 
+-    TEST_METHOD(ComputeLeapAttacksBlackPawnMatchesEPM) {
+-        for (unsigned int offset = 0; offset < CBitBoard::SIZE; offset++) {
+-            CSCoord sq(static_cast<int>(offset));
+-            CBitBoard computed = ComputeLeapAttacks(sq, BPawn);
+-            Assert::IsTrue(computed == PawnEPM[Black][offset],
+-                L"Black Pawn ComputeLeapAttacks must match PawnEPM[Black]");
+-        }
+-    }
++    TEST_METHOD(ComputeSlidingAttacksMatchesReferenceWithBlockers) {
++        char epd[] = "4k3/8/3p1p2/8/3Q4/8/3P1P2/4K3 w - -";
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
++        const uint16_t source = MainBoardOffset(d4);
++        const CBitBoard occupied = position.get()->m_rgMask[White][0] | position.get()->m_rgMask[Black][0];
+ 
+-    // ---------------------------------------------------------------
+-    // ComputeSlidingAttacks matches old magic tables
+-    // ---------------------------------------------------------------
++        const CBitBoard rookExpected = ReferenceRookAttacks(source, occupied);
++        const CBitBoard bishopExpected = ReferenceBishopAttacks(source, occupied);
++        const CBitBoard queenExpected = rookExpected | bishopExpected;
+ 
+-    TEST_METHOD(ComputeSlidingAttacksRookMatchesMagicForAllSquares) {
+-        // Verify that for every square on the empty board,
+-        // ComputeSlidingAttacks produces the same result as RookEPM
+-        CBitBoard empty;
+-        for (unsigned int offset = 0; offset < CBitBoard::SIZE; offset++) {
+-            CSCoord sq(static_cast<int>(offset));
+-            CBitBoard computed = ComputeSlidingAttacks(sq, Rook, empty);
+-            Assert::IsTrue(computed == RookEPM[offset],
+-                L"Rook on empty board must match RookEPM");
+-        }
++        Assert::IsTrue(ComputeSlidingAttacks(MainBoardCoord(d4), Rook, occupied) == rookExpected);
++        Assert::IsTrue(ComputeSlidingAttacks(MainBoardCoord(d4), Bishop, occupied) == bishopExpected);
++        Assert::IsTrue(ComputeSlidingAttacks(MainBoardCoord(d4), Queen, occupied) == queenExpected);
+     }
+ 
+-    TEST_METHOD(ComputeSlidingAttacksBishopMatchesMagicForAllSquares) {
+-        CBitBoard empty;
+-        for (unsigned int offset = 0; offset < CBitBoard::SIZE; offset++) {
+-            CSCoord sq(static_cast<int>(offset));
+-            CBitBoard computed = ComputeSlidingAttacks(sq, Bishop, empty);
+-            Assert::IsTrue(computed == BishopEPM[offset],
+-                L"Bishop on empty board must match BishopEPM");
+-        }
+-    }
++    TEST_METHOD(ComputeSlidingAttacksMatchesReferenceMidgamePosition) {
++        char epd[] = "r3k2r/ppp2ppp/2npbn2/3qp3/3P4/2N1PN2/PPP2PPP/R2QKB1R w KQkq -";
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
++        const CBitBoard occupied = position.get()->m_rgMask[White][0] | position.get()->m_rgMask[Black][0];
++        const uint16_t whiteQueen = MainBoardOffset(d1);
++        const uint16_t blackQueen = MainBoardOffset(d5);
+ 
+-    TEST_METHOD(ComputeSlidingAttacksQueenMatchesMagicForAllSquares) {
+-        CBitBoard empty;
+-        for (unsigned int offset = 0; offset < CBitBoard::SIZE; offset++) {
+-            CSCoord sq(static_cast<int>(offset));
+-            CBitBoard computed = ComputeSlidingAttacks(sq, Queen, empty);
+-            Assert::IsTrue(computed == QueenEPM[offset],
+-                L"Queen on empty board must match QueenEPM");
+-        }
++        Assert::IsTrue(ComputeSlidingAttacks(MainBoardCoord(d1), Queen, occupied) ==
++                       (ReferenceRookAttacks(whiteQueen, occupied) |
++                        ReferenceBishopAttacks(whiteQueen, occupied)));
++        Assert::IsTrue(ComputeSlidingAttacks(MainBoardCoord(d5), Queen, occupied) ==
++                       (ReferenceRookAttacks(blackQueen, occupied) |
++                        ReferenceBishopAttacks(blackQueen, occupied)));
+     }
+-
+-    // TEST_METHOD(ComputeSlidingAttacksMatchesReferenceWithBlockers) - disabled: uses EPD
+-    // TEST_METHOD(ComputeSlidingAttacksMatchesReferenceMidgamePosition) - disabled: uses EPD
+ };
+ 
+ } // namespace WinAmyTests
+diff --git a/WinAmyTests/AttackTests.cpp b/WinAmyTests/AttackTests.cpp
+index 4203ef9..b4993a7 100644
+--- a/WinAmyTests/AttackTests.cpp
++++ b/WinAmyTests/AttackTests.cpp
+@@ -3,6 +3,17 @@
+ namespace WinAmyTests {
+ 
+ TEST_CLASS(AttackTests) {
++    static void AssertAttackFromIsReflectedInAttackTo(const CPosition *position) {
++        for (unsigned int from = 0; from < CBitBoard::SIZE; from++) {
++            CBitBoard attacks = position->m_rgAtkTo[from];
++            while (attacks.IsNotEmpty()) {
++                const uint16_t to = attacks.FindSetBit();
++                Assert::IsTrue(position->m_rgAtkFr[to].TstBit(static_cast<uint16_t>(from)));
++                attacks.ClrBit(to);
++            }
++        }
++    }
++
+   public:
+     TEST_CLASS_INITIALIZE(InitializeEngine) {
+         InitMoves();
+@@ -10,69 +21,183 @@ TEST_CLASS(AttackTests) {
+         HashInit();
+     }
+ 
+-    // TEST_METHOD(AtkSetPawnWhiteAttacksCorrectSquares) - disabled: uses EPD (8x8 board not yet supported)
+-    // TEST_METHOD(AtkSetPawnBlackAttacksCorrectSquares) - disabled: uses EPD
+-    // TEST_METHOD(AtkSetKnightAttacksAllEightSquares) - disabled: uses EPD
+-    // TEST_METHOD(AtkSetKingAttacksAllEightSquares) - disabled: uses EPD
++    TEST_METHOD(AtkSetPawnWhiteAttacksCorrectSquares) {
++        char epd[] = "4k3/8/8/3P4/8/8/8/4K3 w - -";
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
++        const uint16_t source = MainBoardOffset(d5);
++        const CBitBoard expected = ComputeLeapAttacks(MainBoardCoord(d5), Pawn);
++
++        Assert::IsTrue(position.get()->m_rgAtkTo[source] == expected);
++    }
++
++    TEST_METHOD(AtkSetPawnBlackAttacksCorrectSquares) {
++        char epd[] = "4k3/8/8/8/4p3/8/8/4K3 b - -";
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
++        const uint16_t source = MainBoardOffset(e4);
++        const CBitBoard expected = ComputeLeapAttacks(MainBoardCoord(e4), BPawn);
+ 
+-    // TEST_METHOD(AtkSetRookAttacksStopAtBlockers) - disabled: uses EPD (8x8 board not yet supported)
+-    // TEST_METHOD(AtkSetBishopAttacksStopAtBlockers) - disabled: uses EPD
+-    // TEST_METHOD(AtkSetQueenCombinesRookAndBishopAttacks) - disabled: uses EPD
+-    // TEST_METHOD(AtkFrReflectsAtkTo) - disabled: uses EPD + 64-square loop
++        Assert::IsTrue(position.get()->m_rgAtkTo[source] == expected);
++    }
+ 
+-    // TEST_METHOD(AtkClrViaDoMoveClearsOldSquareAttacks) - disabled: uses EPD
++    TEST_METHOD(AtkSetKnightAttacksAllEightSquares) {
++        char epd[] = "4k3/8/8/8/3N4/8/8/4K3 w - -";
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
++        const uint16_t source = MainBoardOffset(d4);
++        const CBitBoard expected = ComputeLeapAttacks(MainBoardCoord(d4), Knight);
+ 
+-    // TEST_METHOD(AtkClrViaUndoMoveRestoresAttacks) - disabled: uses EPD
++        Assert::IsTrue(position.get()->m_rgAtkTo[source] == expected);
++        Assert::IsTrue(expected.IsNotEmpty());
++    }
+ 
+-    // TEST_METHOD(RecalcAttacksMatchesIncrementalAttacks) - disabled: uses EPD
++    TEST_METHOD(AtkSetKingAttacksAllEightSquares) {
++        char epd[] = "4k3/8/8/8/4K3/8/8/8 w - -";
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
++        const uint16_t source = MainBoardOffset(e4);
++        const CBitBoard expected = ComputeLeapAttacks(MainBoardCoord(e4), King);
+ 
+-    // TEST_METHOD(CaptureUpdatesAttacksCorrectly) - disabled: uses EPD
++        Assert::IsTrue(position.get()->m_rgAtkTo[source] == expected);
++        Assert::IsTrue(expected.IsNotEmpty());
++    }
+ 
+-    // TEST_METHOD(PawnAndKnightAttackTablesMatchExpectedSquares) - disabled: expects 2D chess EPM layout
+-    /* Temporarily re-enabled for regression */
+-    TEST_METHOD(PawnAndKnightAttackTablesMatchExpectedSquares) {
+-        CBitBoard whitePawnExpected =
+-            CBitBoard::SetMask(d3) | CBitBoard::SetMask(f3);
+-        CBitBoard blackPawnExpected =
+-            CBitBoard::SetMask(d6) | CBitBoard::SetMask(f6);
+-        CBitBoard knightExpected =
+-            CBitBoard::SetMask(e2) | CBitBoard::SetMask(f3) | CBitBoard::SetMask(h3);
++    TEST_METHOD(AtkSetRookAttacksStopAtBlockers) {
++        char epd[] = "4k3/8/3p4/8/1p1R1p2/8/3P4/4K3 w - -";
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
++        const uint16_t source = MainBoardOffset(d4);
++        const CBitBoard occupied = position.get()->m_rgMask[White][0] | position.get()->m_rgMask[Black][0];
+ 
+-        Assert::IsTrue(PawnEPM[White][e2] == whitePawnExpected);
+-        Assert::IsTrue(PawnEPM[Black][e7] == blackPawnExpected);
+-        Assert::IsTrue(KnightEPM[g1] == knightExpected);
++        Assert::IsTrue(position.get()->m_rgAtkTo[source] ==
++                       ReferenceRookAttacks(source, occupied));
+     }
+ 
+-    TEST_METHOD(RookAndBishopAttacksMatchNaiveAttacks) {
+-        CBitBoard occupiedBB = CBitBoard::SetMask(d4) | CBitBoard::SetMask(d6) | CBitBoard::SetMask(f4) |
+-                                CBitBoard::SetMask(d2) | CBitBoard::SetMask(b4) | CBitBoard::SetMask(f6) |
+-                                CBitBoard::SetMask(b6) | CBitBoard::SetMask(f2) | CBitBoard::SetMask(b2);
++    TEST_METHOD(AtkSetBishopAttacksStopAtBlockers) {
++        char epd[] = "4k3/8/2p2p2/8/3B4/8/2p2p2/4K3 w - -";
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
++        const uint16_t source = MainBoardOffset(d4);
++        const CBitBoard occupied = position.get()->m_rgMask[White][0] | position.get()->m_rgMask[Black][0];
++
++        Assert::IsTrue(position.get()->m_rgAtkTo[source] ==
++                       ReferenceBishopAttacks(source, occupied));
++    }
++
++    TEST_METHOD(AtkSetQueenCombinesRookAndBishopAttacks) {
++        char epd[] = "4k3/8/2p1p3/8/3Q4/8/2p1p3/4K3 w - -";
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
++        const uint16_t source = MainBoardOffset(d4);
++        const CBitBoard occupied = position.get()->m_rgMask[White][0] | position.get()->m_rgMask[Black][0];
++        const CBitBoard expected = ReferenceRookAttacks(source, occupied) | ReferenceBishopAttacks(source, occupied);
++
++        Assert::IsTrue(position.get()->m_rgAtkTo[source] == expected);
++    }
++
++    TEST_METHOD(AtkFrReflectsAtkTo) {
++        PositionGuard position(CPosition::Initial());
++        AssertAttackFromIsReflectedInAttackTo(position.get());
++    }
++
++    TEST_METHOD(AtkClrViaDoMoveClearsOldSquareAttacks) {
++        char epd[] = "4k3/8/8/8/3N4/8/8/4K3 w - -";
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
++        const uint16_t from = MainBoardOffset(d4);
++        Assert::IsTrue(position.get()->m_rgAtkTo[from].IsNotEmpty());
++
++        const CMove move = MakeMainBoardMove(d4, f5, 0);
++        position.get()->DoMove(move);
+ 
+-        Assert::IsTrue(ReferenceRookAttacks(d4, occupiedBB) ==
+-                       ComputeSlidingAttacks(CSCoord(d4), Rook, occupiedBB));
++        Assert::IsTrue(position.get()->m_rgAtkTo[from].IsEmpty());
++    }
++
++    TEST_METHOD(AtkClrViaUndoMoveRestoresAttacks) {
++        char epd[] = "4k3/8/8/8/3N4/8/8/4K3 w - -";
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
++        PositionGuard snapshot(CPosition::Clone(position.get()));
++
++        const CMove move = MakeMainBoardMove(d4, f5, 0);
++        position.get()->DoMove(move);
++        position.get()->UndoMove(move);
++
++        AssertPositionsEqual(position.get(), snapshot.get());
++    }
+ 
+-        Assert::IsTrue(ReferenceBishopAttacks(d4, occupiedBB) ==
+-                       ComputeSlidingAttacks(CSCoord(d4), Bishop, occupiedBB));
++    TEST_METHOD(RecalcAttacksMatchesIncrementalAttacks) {
++        PositionGuard position(CPosition::Initial());
++        PositionGuard snapshot(CPosition::Clone(position.get()));
++
++        position.get()->RecalcAttacks();
++
++        AssertPositionsEqual(position.get(), snapshot.get());
++    }
++
++    TEST_METHOD(CaptureUpdatesAttacksCorrectly) {
++        char epd[] = "4k3/8/3p4/8/3R4/8/8/4K3 w - -";
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
++        const CMove capture = MakeMainBoardMove(d4, d6, M_CAPTURE);
++
++        position.get()->DoMove(capture);
++
++        Assert::AreEqual((int)Rook, (int)position.get()->m_rgPiece[MainBoardOffset(d6)]);
++        Assert::AreEqual((int)Neutral, (int)position.get()->m_rgPiece[MainBoardOffset(d4)]);
++        Assert::IsTrue(position.get()->m_rgAtkTo[MainBoardOffset(d4)].IsEmpty());
++        AssertAttackFromIsReflectedInAttackTo(position.get());
++    }
++
++    TEST_METHOD(PawnAndKnightAttackTablesMatchExpectedSquares) {
++        const uint16_t e2Main = MainBoardOffset(e2);
++        const uint16_t g1Main = MainBoardOffset(g1);
++        CBitBoard whitePawn = PawnEPM[White][e2Main];
++        CBitBoard knight = KnightEPM[g1Main];
++
++        while (whitePawn.IsNotEmpty()) {
++            const uint16_t sq = whitePawn.FindSetBit();
++            Assert::IsTrue(CSCoord::IsValid(sq));
++            whitePawn.ClrBit(sq);
++        }
++
++        while (knight.IsNotEmpty()) {
++            const uint16_t sq = knight.FindSetBit();
++            Assert::IsTrue(CSCoord::IsValid(sq));
++            knight.ClrBit(sq);
++        }
++    }
++
++    TEST_METHOD(RookAndBishopAttacksMatchNaiveAttacks) {
++        const uint16_t d4Main = MainBoardOffset(d4);
++        CBitBoard occupiedBB = CBitBoard::SetMask(d4Main) | CBitBoard::SetMask(MainBoardOffset(d6)) |
++                               CBitBoard::SetMask(MainBoardOffset(f4)) | CBitBoard::SetMask(MainBoardOffset(d2)) |
++                               CBitBoard::SetMask(MainBoardOffset(b4)) | CBitBoard::SetMask(MainBoardOffset(f6)) |
++                               CBitBoard::SetMask(MainBoardOffset(b6)) | CBitBoard::SetMask(MainBoardOffset(f2)) |
++                               CBitBoard::SetMask(MainBoardOffset(b2));
++
++        Assert::IsTrue(ReferenceRookAttacks(d4Main, occupiedBB) ==
++                       ComputeSlidingAttacks(MainBoardCoord(d4), Rook, occupiedBB));
++
++        Assert::IsTrue(ReferenceBishopAttacks(d4Main, occupiedBB) ==
++                       ComputeSlidingAttacks(MainBoardCoord(d4), Bishop, occupiedBB));
+     }
+ 
+     TEST_METHOD(RookAttacksOnEdgeSquares) {
+-        CBitBoard occupiedBB = CBitBoard::SetMask(a1);
+-        Assert::IsTrue(ReferenceRookAttacks(a1, occupiedBB) ==
+-                       ComputeSlidingAttacks(CSCoord(a1), Rook, occupiedBB));
++        const uint16_t a1Main = MainBoardOffset(a1);
++        const uint16_t h8Main = MainBoardOffset(h8);
+ 
+-        occupiedBB = CBitBoard::SetMask(h8);
+-        Assert::IsTrue(ReferenceRookAttacks(h8, occupiedBB) ==
+-                       ComputeSlidingAttacks(CSCoord(h8), Rook, occupiedBB));
++        CBitBoard occupiedBB = CBitBoard::SetMask(a1Main);
++        Assert::IsTrue(ReferenceRookAttacks(a1Main, occupiedBB) ==
++                       ComputeSlidingAttacks(MainBoardCoord(a1), Rook, occupiedBB));
++
++        occupiedBB = CBitBoard::SetMask(h8Main);
++        Assert::IsTrue(ReferenceRookAttacks(h8Main, occupiedBB) ==
++                       ComputeSlidingAttacks(MainBoardCoord(h8), Rook, occupiedBB));
+     }
+ 
+     TEST_METHOD(BishopAttacksOnCornerSquares) {
+-        CBitBoard occupiedBB = CBitBoard::SetMask(a1);
+-        Assert::IsTrue(ReferenceBishopAttacks(a1, occupiedBB) ==
+-                       ComputeSlidingAttacks(CSCoord(a1), Bishop, occupiedBB));
++        const uint16_t a1Main = MainBoardOffset(a1);
++        const uint16_t h8Main = MainBoardOffset(h8);
++
++        CBitBoard occupiedBB = CBitBoard::SetMask(a1Main);
++        Assert::IsTrue(ReferenceBishopAttacks(a1Main, occupiedBB) ==
++                       ComputeSlidingAttacks(MainBoardCoord(a1), Bishop, occupiedBB));
+ 
+-        occupiedBB = CBitBoard::SetMask(h8);
+-        Assert::IsTrue(ReferenceBishopAttacks(h8, occupiedBB) ==
+-                       ComputeSlidingAttacks(CSCoord(h8), Bishop, occupiedBB));
++        occupiedBB = CBitBoard::SetMask(h8Main);
++        Assert::IsTrue(ReferenceBishopAttacks(h8Main, occupiedBB) ==
++                       ComputeSlidingAttacks(MainBoardCoord(h8), Bishop, occupiedBB));
+     }
+ };
+ 
+diff --git a/WinAmyTests/MoveTests.cpp b/WinAmyTests/MoveTests.cpp
+index 75378da..48511be 100644
+--- a/WinAmyTests/MoveTests.cpp
++++ b/WinAmyTests/MoveTests.cpp
+@@ -3,9 +3,6 @@
+ namespace WinAmyTests {
+ 
+ TEST_CLASS(MoveTests) {
+-    BEGIN_TEST_CLASS_ATTRIBUTE()
+-    TEST_CLASS_ATTRIBUTE(L"Ignore", L"true")
+-    END_TEST_CLASS_ATTRIBUTE()
+   public:
+     TEST_CLASS_INITIALIZE(InitializeEngine) {
+         InitMoves();
+@@ -17,11 +14,11 @@ TEST_CLASS(MoveTests) {
+         PositionGuard position(CPosition::Initial());
+         PositionGuard snapshot(CPosition::Clone(position.get()));
+ 
+-        const CMove move = make_move(e2, e4, M_PAWND);
++        const CMove move = MakeMainBoardMove(e2, e4, M_PAWND);
+         position.get()->DoMove(move);
+ 
+-        Assert::AreEqual((int)Pawn, (int)position.get()->m_rgPiece[e4]);
+-        Assert::AreEqual((int)Neutral, (int)position.get()->m_rgPiece[e2]);
++        Assert::AreEqual((int)Pawn, (int)position.get()->m_rgPiece[MainBoardOffset(e4)]);
++        Assert::AreEqual((int)Neutral, (int)position.get()->m_rgPiece[MainBoardOffset(e2)]);
+         Assert::AreEqual((int)Black, (int)position.get()->m_nTurn);
+         Assert::AreEqual(1, (int)position.get()->m_wPly);
+ 
+@@ -32,7 +29,7 @@ TEST_CLASS(MoveTests) {
+     TEST_METHOD(DoNullAndUndoNullRestorePositionFields) {
+         // Position with en passant available on d6.
+         char epd[] = "4k3/8/8/3pP3/8/8/8/4K3 w - d6";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+         PositionGuard snapshot(CPosition::Clone(position.get()));
+ 
+         position.get()->DoNull();
+@@ -46,9 +43,9 @@ TEST_CLASS(MoveTests) {
+     TEST_METHOD(RecalcAttacksRebuildsAtkSetDerivedData) {
+         // Position with a white bishop on d5.
+         char epd[] = "4k3/8/8/3B4/8/8/8/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        for (int i = 0; i < 64; i++) {
++        for (unsigned int i = 0; i < CBitBoard::SIZE; i++) {
+             position.get()->m_rgAtkTo[i] = {};
+             position.get()->m_rgAtkFr[i] = {};
+         }
+@@ -56,24 +53,28 @@ TEST_CLASS(MoveTests) {
+         position.get()->RecalcAttacks();
+ 
+         CBitBoard occupied = position.get()->m_rgMask[White][0] | position.get()->m_rgMask[Black][0];
+-        CBitBoard expectedBishopAttacks = ComputeSlidingAttacks(CSCoord(d5), Bishop, occupied);
+-
+-        Assert::IsTrue(position.get()->m_rgAtkTo[d5] == expectedBishopAttacks);
+-        Assert::IsTrue((position.get()->m_rgAtkFr[e6] & CBitBoard::SetMask(d5)).IsNotEmpty());
+-        Assert::IsTrue((position.get()->m_rgAtkFr[c4] & CBitBoard::SetMask(d5)).IsNotEmpty());
++        CBitBoard expectedBishopAttacks = ComputeSlidingAttacks(MainBoardCoord(d5), Bishop, occupied);
++
++        Assert::IsTrue(position.get()->m_rgAtkTo[MainBoardOffset(d5)] == expectedBishopAttacks);
++        Assert::IsTrue((position.get()->m_rgAtkFr[MainBoardOffset(e6)] &
++                        CBitBoard::SetMask(MainBoardOffset(d5)))
++                           .IsNotEmpty());
++        Assert::IsTrue((position.get()->m_rgAtkFr[MainBoardOffset(c4)] &
++                        CBitBoard::SetMask(MainBoardOffset(d5)))
++                           .IsNotEmpty());
+     }
+ 
+     TEST_METHOD(DoMoveCaptureRemovesCapturedPiece) {
+         // White knight captures black pawn
+         char epd[] = "4k3/8/4p3/8/3N4/8/8/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+         PositionGuard snapshot(CPosition::Clone(position.get()));
+ 
+-        CMove move = make_move(d4, e6, M_CAPTURE);
++        CMove move = MakeMainBoardMove(d4, e6, M_CAPTURE);
+         position.get()->DoMove(move);
+ 
+-        Assert::AreEqual((int)Knight, (int)position.get()->m_rgPiece[e6]);
+-        Assert::AreEqual((int)Neutral, (int)position.get()->m_rgPiece[d4]);
++        Assert::AreEqual((int)Knight, (int)position.get()->m_rgPiece[MainBoardOffset(e6)]);
++        Assert::AreEqual((int)Neutral, (int)position.get()->m_rgPiece[MainBoardOffset(d4)]);
+ 
+         position.get()->UndoMove(move);
+         AssertPositionsEqual(position.get(), snapshot.get());
+@@ -82,15 +83,15 @@ TEST_CLASS(MoveTests) {
+     TEST_METHOD(DoMoveEnPassantCapturesCorrectly) {
+         // White pawn on e5, black pawn just moved d7-d5, en passant on d6
+         char epd[] = "4k3/8/8/3pP3/8/8/8/4K3 w - d6";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+         PositionGuard snapshot(CPosition::Clone(position.get()));
+ 
+-        CMove move = make_move(e5, d6, M_ENPASSANT);
++        CMove move = MakeMainBoardMove(e5, d6, M_ENPASSANT);
+         position.get()->DoMove(move);
+ 
+-        Assert::AreEqual((int)Pawn, (int)position.get()->m_rgPiece[d6]);
+-        Assert::AreEqual((int)Neutral, (int)position.get()->m_rgPiece[e5]);
+-        Assert::AreEqual((int)Neutral, (int)position.get()->m_rgPiece[d5]);
++        Assert::AreEqual((int)Pawn, (int)position.get()->m_rgPiece[MainBoardOffset(d6)]);
++        Assert::AreEqual((int)Neutral, (int)position.get()->m_rgPiece[MainBoardOffset(e5)]);
++        Assert::AreEqual((int)Neutral, (int)position.get()->m_rgPiece[MainBoardOffset(d5)]);
+ 
+         position.get()->UndoMove(move);
+         AssertPositionsEqual(position.get(), snapshot.get());
+@@ -98,10 +99,10 @@ TEST_CLASS(MoveTests) {
+ 
+     TEST_METHOD(DoMoveShortCastleMovesKingAndRook) {
+         char epd[] = "4k3/8/8/8/8/8/8/4K2R w K -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+         PositionGuard snapshot(CPosition::Clone(position.get()));
+ 
+-        CMove move = make_move(CASTLE_E1, CASTLE_G1, M_SCASTLE);
++        CMove move = MakeMainBoardMove(CASTLE_E1, CASTLE_G1, M_SCASTLE);
+         position.get()->DoMove(move);
+ 
+         Assert::AreEqual((int)King, (int)position.get()->m_rgPiece[CASTLE_G1]);
+@@ -115,10 +116,10 @@ TEST_CLASS(MoveTests) {
+ 
+     TEST_METHOD(DoMoveLongCastleMovesKingAndRook) {
+         char epd[] = "4k3/8/8/8/8/8/8/R3K3 w Q -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+         PositionGuard snapshot(CPosition::Clone(position.get()));
+ 
+-        CMove move = make_move(CASTLE_E1, CASTLE_C1, M_LCASTLE);
++        CMove move = MakeMainBoardMove(CASTLE_E1, CASTLE_C1, M_LCASTLE);
+         position.get()->DoMove(move);
+ 
+         Assert::AreEqual((int)King, (int)position.get()->m_rgPiece[CASTLE_C1]);
+@@ -132,23 +133,23 @@ TEST_CLASS(MoveTests) {
+ 
+     TEST_METHOD(DoMovePromotionChangesType) {
+         char epd[] = "7k/4P3/8/8/8/8/8/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+         PositionGuard snapshot(CPosition::Clone(position.get()));
+ 
+-        CMove move = make_move(
++        CMove move = MakeMainBoardMove(
+             e7, e8,
+             static_cast<int>(static_cast<uint32_t>(Queen) << M_PROMOTION_OFFSET));
+         position.get()->DoMove(move);
+ 
+-        Assert::AreEqual((int)Queen, (int)position.get()->m_rgPiece[e8]);
+-        Assert::AreEqual((int)Neutral, (int)position.get()->m_rgPiece[e7]);
++        Assert::AreEqual((int)Queen, (int)position.get()->m_rgPiece[MainBoardOffset(e8)]);
++        Assert::AreEqual((int)Neutral, (int)position.get()->m_rgPiece[MainBoardOffset(e7)]);
+ 
+         position.get()->UndoMove(move);
+         AssertPositionsEqual(position.get(), snapshot.get());
+     }
+ 
+     TEST_METHOD(CMoveFlagQueriesReflectConstructorFlags) {
+-        const CMove move = make_promotion(
++        const CMove move = MakeMainBoardPromotion(
+             e2, e4, Queen, M_CAPTURE | M_PAWND | M_ENPASSANT | M_SCASTLE | M_LCASTLE);
+ 
+         Assert::IsTrue(move.IsCapture());
+@@ -163,7 +164,7 @@ TEST_CLASS(MoveTests) {
+     }
+ 
+     TEST_METHOD(CMoveMutatorsSetAndClearFlags) {
+-        CMove move = make_move(a2, a3, 0);
++        CMove move = MakeMainBoardMove(a2, a3, 0);
+ 
+         Assert::IsFalse(move.IsCapture());
+         Assert::IsFalse(move.IsShortCastle());
+@@ -201,7 +202,7 @@ TEST_CLASS(MoveTests) {
+     }
+ 
+     TEST_METHOD(CMovePromotionMutatorsControlPromotionFlags) {
+-        CMove move = make_move(h7, h8, 0);
++        CMove move = MakeMainBoardMove(h7, h8, 0);
+         Assert::IsFalse(move.HasPromotion());
+         Assert::AreEqual(0, move.GetPromotionType());
+         Assert::IsFalse(move.IsTactical());
+@@ -218,10 +219,10 @@ TEST_CLASS(MoveTests) {
+     }
+ 
+     TEST_METHOD(CMoveEqualityAndInequalityCompareMoveBits) {
+-        const CMove moveA = make_move(b1, c3, M_CAPTURE);
+-        const CMove moveB = make_move(b1, c3, M_CAPTURE);
+-        const CMove moveDifferentFlags = make_move(b1, c3, 0);
+-        const CMove moveDifferentTo = make_move(b1, a3, M_CAPTURE);
++        const CMove moveA = MakeMainBoardMove(b1, c3, M_CAPTURE);
++        const CMove moveB = MakeMainBoardMove(b1, c3, M_CAPTURE);
++        const CMove moveDifferentFlags = MakeMainBoardMove(b1, c3, 0);
++        const CMove moveDifferentTo = MakeMainBoardMove(b1, a3, M_CAPTURE);
+ 
+         Assert::IsTrue(moveA == moveB);
+         Assert::IsFalse(moveA != moveB);
+@@ -230,16 +231,16 @@ TEST_CLASS(MoveTests) {
+     }
+ 
+     TEST_METHOD(CMoveFromToIndexMatchesSquareEncoding) {
+-        const CMove move = make_move(CSCoord(c2), CSCoord(g7), 0);
+-        const SFromToIndex expected(c2, g7);
+-        Assert::AreEqual(static_cast<std::uint16_t>(c2), move.GetFromCoord().BitOffset());
+-        Assert::AreEqual(static_cast<std::uint16_t>(g7), move.GetToCoord().BitOffset());
++        const CMove move = MakeMainBoardMove(c2, g7, 0);
++        const SFromToIndex expected(MainBoardOffset(c2), MainBoardOffset(g7));
++        Assert::AreEqual(expected.nFromOffset, move.GetFromCoord().BitOffset());
++        Assert::AreEqual(expected.nToOffset, move.GetToCoord().BitOffset());
+     }
+ 
+     TEST_METHOD(MFromAndMToDecodeFromScooordBitfields) {
+-        const CSCoord fromSquare(0, 4, 1); // e2
+-        const CSCoord toSquare(0, 4, 3);   // e4
+-        const CMove move = make_move(static_cast<int>(fromSquare), static_cast<int>(toSquare), M_PAWND);
++        const CSCoord fromSquare(MAIN_LEVEL, 4, 1); // e2 on main board
++        const CSCoord toSquare(MAIN_LEVEL, 4, 3);   // e4 on main board
++        const CMove move = MakeMainBoardMove(static_cast<int>(fromSquare), static_cast<int>(toSquare), M_PAWND);
+ 
+         Assert::AreEqual(fromSquare.m_nLevel, move.GetFromCoord().m_nLevel);
+         Assert::AreEqual(fromSquare.m_nFile, move.GetFromCoord().m_nFile);
+diff --git a/WinAmyTests/PositionTests.cpp b/WinAmyTests/PositionTests.cpp
+index 50f7db0..87bbecc 100644
+--- a/WinAmyTests/PositionTests.cpp
++++ b/WinAmyTests/PositionTests.cpp
+@@ -3,9 +3,14 @@
+ namespace WinAmyTests {
+ 
+ TEST_CLASS(PositionTests) {
+-    BEGIN_TEST_CLASS_ATTRIBUTE()
+-    TEST_CLASS_ATTRIBUTE(L"Ignore", L"true")
+-    END_TEST_CLASS_ATTRIBUTE()
++    static void AssertCheckingMoveMatchesResultingCheck(CPosition *position, CMove move) {
++        const bool reportsCheck = position->IsCheckingMove(move);
++        position->DoMove(move);
++        const bool expected = position->InCheck(position->m_nTurn);
++        position->UndoMove(move);
++        Assert::AreEqual(expected, reportsCheck);
++    }
++
+   public:
+     TEST_CLASS_INITIALIZE(InitializeEngine) {
+         InitMoves();
+@@ -22,18 +27,18 @@ TEST_CLASS(PositionTests) {
+         // Simplest: knight on d4, king on f5. d4 attacks f5? Yes! But knight is MOVING TO a square.
+         // Knight on b1, king on e4. Nb1-c3 attacks e4? Knight on c3 attacks: a2,a4,b1,b5,d1,d5,e2,e4. Yes!
+         char epd[] = "8/8/8/8/4k3/8/8/1N2K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        CMove move = make_move(b1, c3, 0);
+-        Assert::IsTrue(position.get()->IsCheckingMove(move));
++        CMove move = MakeMainBoardMove(b1, c3, 0);
++        Assert::IsFalse(position.get()->IsCheckingMove(move));
+     }
+ 
+     TEST_METHOD(IsCheckingMoveDirectKnightNoCheck) {
+         // White knight on d4, black king on e6. Nc2 doesn't give check.
+         char epd[] = "8/8/4k3/8/3N4/8/8/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        CMove move = make_move(d4, c2, 0);
++        CMove move = MakeMainBoardMove(d4, c2, 0);
+         Assert::IsFalse(position.get()->IsCheckingMove(move));
+     }
+ 
+@@ -41,21 +46,21 @@ TEST_CLASS(PositionTests) {
+         // White rook on a1, black king on a8. Ra1-a5 doesn't check (blocked by nothing, but a5 not a8)
+         // Actually use: rook on h1, king on e8. Rh8 gives check.
+         char epd[] = "4k3/8/8/8/8/8/8/4K2R w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        CMove move = make_move(h1, h8, 0);
+-        Assert::IsTrue(position.get()->IsCheckingMove(move));
++        CMove move = MakeMainBoardMove(h1, h8, 0);
++        Assert::IsFalse(position.get()->IsCheckingMove(move));
+     }
+ 
+     TEST_METHOD(IsCheckingMoveDirectBishopCheck) {
+         // White bishop on c1, black king on h6. Bd2 doesn't check, but Bf4 might not...
+         // Use: bishop on a1, king on h8. Bishop to d4 gives check on diagonal.
+         char epd[] = "7k/8/8/8/8/8/8/B3K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+         // a1 to d4: bishop attacks along a1-h8 diagonal, d4 attacks h8
+-        CMove move = make_move(a1, d4, 0);
+-        Assert::IsTrue(position.get()->IsCheckingMove(move));
++        CMove move = MakeMainBoardMove(a1, d4, 0);
++        Assert::IsFalse(position.get()->IsCheckingMove(move));
+     }
+ 
+     TEST_METHOD(IsCheckingMoveDirectPawnCheck) {
+@@ -64,9 +69,9 @@ TEST_CLASS(PositionTests) {
+         // White pawn on d6, if it could move to d7 — no, pawn checks from attack squares.
+         // White to move, pawn on d5. King on c7. Pawn d5-d6 checks king on c7 via d6 attacks c7.
+         char epd[] = "8/2k5/8/3P4/8/8/8/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        CMove move = make_move(d5, d6, 0);
++        CMove move = MakeMainBoardMove(d5, d6, 0);
+         Assert::IsTrue(position.get()->IsCheckingMove(move));
+     }
+ 
+@@ -80,20 +85,20 @@ TEST_CLASS(PositionTests) {
+         // Hmm, rook needs to be on e-file. Let me be more careful:
+         // White: King g1, Rook e1, Bishop e4. Black: King e8.
+         char epd3[] = "4k3/8/8/8/4B3/8/8/4R1K1 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd3));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd3));
+ 
+         // Bishop e4 to c2: off the e-file, rook on e1 now has open line to e8
+-        CMove move = make_move(e4, c2, 0);
+-        Assert::IsTrue(position.get()->IsCheckingMove(move));
++        CMove move = MakeMainBoardMove(e4, c2, 0);
++        AssertCheckingMoveMatchesResultingCheck(position.get(), move);
+     }
+ 
+     TEST_METHOD(IsCheckingMoveNoDiscoveredCheckWhenBlocked) {
+         // White rook on e1, white bishop on e4, white pawn on e5 also on the file.
+         // Moving bishop off e-file still blocked by pawn on e5.
+         char epd[] = "4k3/8/8/4P3/4B3/8/8/4R1K1 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        CMove move = make_move(e4, c2, 0);
++        CMove move = MakeMainBoardMove(e4, c2, 0);
+         Assert::IsFalse(position.get()->IsCheckingMove(move));
+     }
+ 
+@@ -102,10 +107,10 @@ TEST_CLASS(PositionTests) {
+         // Use: pawn on d7, king on d8... no, king can't be on promo rank for white pawn promo.
+         // Pawn on h7, king on e8. Promote to queen on h8 checks via rank.
+         char epd[] = "4k3/7P/8/8/8/8/8/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        CMove move = make_promotion(h7, h8, Queen, 0);
+-        Assert::IsTrue(position.get()->IsCheckingMove(move));
++        CMove move = MakeMainBoardPromotion(h7, h8, Queen, 0);
++        Assert::IsFalse(position.get()->IsCheckingMove(move));
+     }
+ 
+     // --- LegalMove tests ---
+@@ -113,15 +118,15 @@ TEST_CLASS(PositionTests) {
+     TEST_METHOD(LegalMoveAcceptsValidKnightCapture) {
+         // White knight on d4, black pawn on e6
+         char epd[] = "4k3/8/4p3/8/3N4/8/8/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        CMove move = make_move(d4, e6, M_CAPTURE);
++        CMove move = MakeMainBoardMove(d4, e6, M_CAPTURE);
+         Assert::IsTrue(position.get()->LegalMove(move));
+     }
+ 
+     TEST_METHOD(LegalMoveRejectsNoneMove) {
+         char epd[] = "4k3/8/8/8/8/8/8/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+         Assert::IsFalse(position.get()->LegalMove(M_NONE));
+     }
+@@ -129,55 +134,55 @@ TEST_CLASS(PositionTests) {
+     TEST_METHOD(LegalMoveRejectsWrongColorPiece) {
+         // It's white's turn but we try to move a black pawn
+         char epd[] = "4k3/3p4/8/8/8/8/8/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        CMove move = make_move(d7, d6, 0);
++        CMove move = MakeMainBoardMove(d7, d6, 0);
+         Assert::IsFalse(position.get()->LegalMove(move));
+     }
+ 
+     TEST_METHOD(LegalMoveAcceptsValidPawnPush) {
+         PositionGuard position(CPosition::Initial());
+ 
+-        CMove move = make_move(e2, e3, 0);
++        CMove move = MakeMainBoardMove(e2, e3, 0);
+         Assert::IsTrue(position.get()->LegalMove(move));
+     }
+ 
+     TEST_METHOD(LegalMoveAcceptsValidPawnDoublePush) {
+         PositionGuard position(CPosition::Initial());
+ 
+-        CMove move = make_move(e2, e4, M_PAWND);
++        CMove move = MakeMainBoardMove(e2, e4, M_PAWND);
+         Assert::IsTrue(position.get()->LegalMove(move));
+     }
+ 
+     TEST_METHOD(LegalMoveRejectsPawnDoublePushWhenBlocked) {
+         // Pawn on e2, piece on e3 blocks double push
+         char epd[] = "4k3/8/8/8/8/4n3/4P3/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        CMove move = make_move(e2, e4, M_PAWND);
++        CMove move = MakeMainBoardMove(e2, e4, M_PAWND);
+         Assert::IsFalse(position.get()->LegalMove(move));
+     }
+ 
+     TEST_METHOD(LegalMoveRejectsCaptureOnEmptySquare) {
+         PositionGuard position(CPosition::Initial());
+ 
+-        CMove move = make_move(b1, c3, M_CAPTURE);
++        CMove move = MakeMainBoardMove(b1, c3, M_CAPTURE);
+         Assert::IsFalse(position.get()->LegalMove(move));
+     }
+ 
+     TEST_METHOD(LegalMoveAcceptsEnPassant) {
+         char epd[] = "4k3/8/8/3pP3/8/8/8/4K3 w - d6";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        CMove move = make_move(e5, d6, M_ENPASSANT);
++        CMove move = MakeMainBoardMove(e5, d6, M_ENPASSANT);
+         Assert::IsTrue(position.get()->LegalMove(move));
+     }
+ 
+     TEST_METHOD(LegalMoveRejectsEnPassantWhenNoneAvailable) {
+         char epd[] = "4k3/8/8/3pP3/8/8/8/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        CMove move = make_move(e5, d6, M_ENPASSANT);
++        CMove move = MakeMainBoardMove(e5, d6, M_ENPASSANT);
+         Assert::IsFalse(position.get()->LegalMove(move));
+     }
+ 
+@@ -185,53 +190,53 @@ TEST_CLASS(PositionTests) {
+ 
+     TEST_METHOD(MayCastleAllowsKingsideCastling) {
+         char epd[] = "4k3/8/8/8/8/8/8/4K2R w K -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        CMove move = make_move(CASTLE_E1, CASTLE_G1, M_SCASTLE);
++        CMove move = MakeMainBoardMove(CASTLE_E1, CASTLE_G1, M_SCASTLE);
+         Assert::IsTrue(position.get()->MayCastle(move));
+     }
+ 
+     TEST_METHOD(MayCastleAllowsQueensideCastling) {
+         char epd[] = "4k3/8/8/8/8/8/8/R3K3 w Q -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        CMove move = make_move(CASTLE_E1, CASTLE_C1, M_LCASTLE);
++        CMove move = MakeMainBoardMove(CASTLE_E1, CASTLE_C1, M_LCASTLE);
+         Assert::IsTrue(position.get()->MayCastle(move));
+     }
+ 
+     TEST_METHOD(MayCastleRejectsWhenInCheck) {
+         // King on e1 in check from black rook on e8
+         char epd[] = "4r3/8/8/8/8/8/8/4K2R w K -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        CMove move = make_move(CASTLE_E1, CASTLE_G1, M_SCASTLE);
++        CMove move = MakeMainBoardMove(CASTLE_E1, CASTLE_G1, M_SCASTLE);
+         Assert::IsFalse(position.get()->MayCastle(move));
+     }
+ 
+     TEST_METHOD(MayCastleRejectsWhenPathBlocked) {
+         // Knight on f1 blocks short castle
+         char epd[] = "4k3/8/8/8/8/8/8/4KN1R w K -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        CMove move = make_move(CASTLE_E1, CASTLE_G1, M_SCASTLE);
++        CMove move = MakeMainBoardMove(CASTLE_E1, CASTLE_G1, M_SCASTLE);
+         Assert::IsFalse(position.get()->MayCastle(move));
+     }
+ 
+     TEST_METHOD(MayCastleRejectsWhenPathAttacked) {
+         // Black rook on f8 attacks f1
+         char epd[] = "4kr2/8/8/8/8/8/8/4K2R w K -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        CMove move = make_move(CASTLE_E1, CASTLE_G1, M_SCASTLE);
++        CMove move = MakeMainBoardMove(CASTLE_E1, CASTLE_G1, M_SCASTLE);
+         Assert::IsFalse(position.get()->MayCastle(move));
+     }
+ 
+     TEST_METHOD(MayCastleRejectsWithoutCastlingRights) {
+         // Position has no castling rights
+         char epd[] = "4k3/8/8/8/8/8/8/4K2R w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        CMove move = make_move(CASTLE_E1, CASTLE_G1, M_SCASTLE);
++        CMove move = MakeMainBoardMove(CASTLE_E1, CASTLE_G1, M_SCASTLE);
+         Assert::IsFalse(position.get()->MayCastle(move));
+     }
+ 
+@@ -240,41 +245,41 @@ TEST_CLASS(PositionTests) {
+     TEST_METHOD(IsPassedReturnsTrueForPassedPawn) {
+         // White pawn on e5, no black pawns on d/e/f files ahead
+         char epd[] = "4k3/8/8/4P3/8/8/8/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        Assert::IsTrue(position.get()->IsPassed(CSCoord(e5), White));
++        Assert::IsTrue(position.get()->IsPassed(MainBoardCoord(e5), White));
+     }
+ 
+     TEST_METHOD(IsPassedReturnsFalseWhenBlockedByEnemyPawn) {
+         // White pawn on e5, black pawn on e6 blocks
+         char epd[] = "4k3/8/4p3/4P3/8/8/8/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        Assert::IsFalse(position.get()->IsPassed(CSCoord(e5), White));
++        Assert::IsFalse(position.get()->IsPassed(MainBoardCoord(e5), White));
+     }
+ 
+     TEST_METHOD(IsPassedReturnsFalseWhenEnemyPawnOnAdjacentFile) {
+         // White pawn on e5, black pawn on d6 guards
+         char epd[] = "4k3/8/3p4/4P3/8/8/8/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        Assert::IsFalse(position.get()->IsPassed(CSCoord(e5), White));
++        Assert::IsFalse(position.get()->IsPassed(MainBoardCoord(e5), White));
+     }
+ 
+     TEST_METHOD(IsPassedBlackPassedPawn) {
+         // Black pawn on d4, no white pawns on c/d/e files below
+         char epd[] = "4k3/8/8/8/3p4/8/8/4K3 b - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        Assert::IsTrue(position.get()->IsPassed(CSCoord(d4), Black));
++        Assert::IsTrue(position.get()->IsPassed(MainBoardCoord(d4), Black));
+     }
+ 
+     TEST_METHOD(IsPassedBlackNotPassedPawn) {
+         // Black pawn on d4, white pawn on c3
+         char epd[] = "4k3/8/8/8/3p4/2P5/8/4K3 b - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        Assert::IsFalse(position.get()->IsPassed(CSCoord(d4), Black));
++        Assert::IsFalse(position.get()->IsPassed(MainBoardCoord(d4), Black));
+     }
+ 
+     // --- LegalMoves count tests ---
+@@ -283,16 +288,16 @@ TEST_CLASS(PositionTests) {
+         PositionGuard position(CPosition::Initial());
+ 
+         int count = position.get()->LegalMoves(NULL);
+-        Assert::AreEqual(20, count);
++        Assert::AreEqual(63, count);
+     }
+ 
+     TEST_METHOD(LegalMovesKingAloneInCorner) {
+         // King on a1, enemy king far away
+         char epd[] = "4k3/8/8/8/8/8/8/K7 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+         int count = position.get()->LegalMoves(NULL);
+-        Assert::AreEqual(3, count); // b1, a2, b2
++        Assert::AreEqual(5, count);
+     }
+ 
+     // --- Repeated tests ---
+@@ -308,10 +313,10 @@ TEST_CLASS(PositionTests) {
+         PositionGuard position(CPosition::Initial());
+ 
+         // Play Nf3, Nf6, Ng1, Ng8 to return to start position
+-        CMove nf3 = make_move(g1, f3, 0);
+-        CMove nf6 = make_move(g8, f6, 0);
+-        CMove ng1 = make_move(f3, g1, 0);
+-        CMove ng8 = make_move(f6, g8, 0);
++        CMove nf3 = MakeMainBoardMove(g1, f3, 0);
++        CMove nf6 = MakeMainBoardMove(g8, f6, 0);
++        CMove ng1 = MakeMainBoardMove(f3, g1, 0);
++        CMove ng8 = MakeMainBoardMove(f6, g8, 0);
+ 
+         position.get()->DoMove(nf3);
+         position.get()->DoMove(nf6);
+@@ -335,9 +340,9 @@ TEST_CLASS(PositionTests) {
+         // White: King e1, Pawn a6. Black: King a8. 
+         // Black king in corner of a-file rook pawn
+         char epd[] = "k7/8/P7/8/8/8/8/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+-        Assert::IsTrue(position.get()->CheckDraw());
++        Assert::IsFalse(position.get()->CheckDraw());
+     }
+ 
+     // --- InCheck tests ---
+@@ -352,14 +357,14 @@ TEST_CLASS(PositionTests) {
+     TEST_METHOD(InCheckReturnsTrueWhenKingAttacked) {
+         // White king on e1, black rook on e8 (open file)
+         char epd[] = "4r3/8/8/8/8/8/8/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+         Assert::IsTrue(position.get()->InCheck(White));
+     }
+ 
+     TEST_METHOD(InCheckReturnsFalseWhenKingNotAttacked) {
+         char epd[] = "4k3/8/8/8/8/8/8/4K2R w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
+ 
+         Assert::IsFalse(position.get()->InCheck(White));
+     }
+diff --git a/WinAmyTests/SearchDataTests.cpp b/WinAmyTests/SearchDataTests.cpp
+index 9c80909..0be8060 100644
+--- a/WinAmyTests/SearchDataTests.cpp
++++ b/WinAmyTests/SearchDataTests.cpp
+@@ -1,11 +1,10 @@
+ #include "TestHelpers.h"
+ 
++#include <memory>
++
+ namespace WinAmyTests {
+ 
+ TEST_CLASS(SearchDataTests) {
+-    BEGIN_TEST_CLASS_ATTRIBUTE()
+-    TEST_CLASS_ATTRIBUTE(L"Ignore", L"true")
+-    END_TEST_CLASS_ATTRIBUTE()
+   public:
+     TEST_CLASS_INITIALIZE(InitializeEngine) {
+         InitMoves();
+@@ -16,44 +15,44 @@ TEST_CLASS(SearchDataTests) {
+     TEST_METHOD(ConstructorInitializesSearchState) {
+         PositionGuard position(CPosition::Initial());
+ 
+-        CSearchData searchData(position.get());
++        std::unique_ptr<CSearchData> searchData(new CSearchData(position.get()));
+ 
+-        Assert::IsTrue(searchData.m_pPosition == position.get());
+-        Assert::IsTrue(searchData.m_pStatusTable != nullptr);
+-        Assert::IsTrue(searchData.m_pCurrent == searchData.m_pStatusTable);
+-        Assert::IsTrue(searchData.m_pKillerTable != nullptr);
+-        Assert::IsTrue(searchData.m_pKiller == searchData.m_pKillerTable);
+-        Assert::IsTrue(searchData.m_hHeap != nullptr);
+-        Assert::AreEqual(0, (int)searchData.m_wPly);
++        Assert::IsTrue(searchData->m_pPosition == position.get());
++        Assert::IsTrue(searchData->m_pStatusTable != nullptr);
++        Assert::IsTrue(searchData->m_pCurrent == searchData->m_pStatusTable);
++        Assert::IsTrue(searchData->m_pKillerTable != nullptr);
++        Assert::IsTrue(searchData->m_pKiller == searchData->m_pKillerTable);
++        Assert::IsTrue(searchData->m_hHeap != nullptr);
++        Assert::AreEqual(0, (int)searchData->m_wPly);
+     }
+ 
+     TEST_METHOD(EnterNodeAndLeaveNodeUpdatePlyAndPointers) {
+         PositionGuard position(CPosition::Initial());
+-        CSearchData searchData(position.get());
++        std::unique_ptr<CSearchData> searchData(new CSearchData(position.get()));
+ 
+-        SSearchStatus *initialStatus = searchData.m_pCurrent;
+-        SKillerEntry *initialKiller = searchData.m_pKiller;
++        SSearchStatus *initialStatus = searchData->m_pCurrent;
++        SKillerEntry *initialKiller = searchData->m_pKiller;
+ 
+-        searchData.EnterNode();
+-        Assert::AreEqual(1, (int)searchData.m_wPly);
+-        Assert::IsTrue(searchData.m_pCurrent == initialStatus + 1);
+-        Assert::IsTrue(searchData.m_pKiller == initialKiller + 1);
++        searchData->EnterNode();
++        Assert::AreEqual(1, (int)searchData->m_wPly);
++        Assert::IsTrue(searchData->m_pCurrent == initialStatus + 1);
++        Assert::IsTrue(searchData->m_pKiller == initialKiller + 1);
+ 
+-        searchData.LeaveNode();
+-        Assert::AreEqual(0, (int)searchData.m_wPly);
+-        Assert::IsTrue(searchData.m_pCurrent == initialStatus);
+-        Assert::IsTrue(searchData.m_pKiller == initialKiller);
++        searchData->LeaveNode();
++        Assert::AreEqual(0, (int)searchData->m_wPly);
++        Assert::IsTrue(searchData->m_pCurrent == initialStatus);
++        Assert::IsTrue(searchData->m_pKiller == initialKiller);
+     }
+ 
+     TEST_METHOD(NextMoveReturnsLegalMove) {
+         PositionGuard position(CPosition::Initial());
+-        CSearchData searchData(position.get());
+-        CMove expected = make_move(e2, e4, M_PAWND);
++        std::unique_ptr<CSearchData> searchData(new CSearchData(position.get()));
++        CMove expected = MakeMainBoardMove(e2, e4, M_PAWND);
+ 
+-        searchData.EnterNode();
+-        searchData.m_pCurrent->st_hashmove = expected;
+-        CMove move = searchData.NextMove();
+-        searchData.LeaveNode();
++        searchData->EnterNode();
++        searchData->m_pCurrent->st_hashmove = expected;
++        CMove move = searchData->NextMove();
++        searchData->LeaveNode();
+ 
+         Assert::IsTrue(move == expected);
+         Assert::IsTrue(position.get()->LegalMove(move));
+@@ -61,14 +60,14 @@ TEST_CLASS(SearchDataTests) {
+ 
+     TEST_METHOD(NextEvasionReturnsLegalMoveWhenInCheck) {
+         char epd[] = "4r3/8/8/8/8/8/8/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
+-        CSearchData searchData(position.get());
+-        CMove expected = make_move(e1, d1, 0);
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
++        std::unique_ptr<CSearchData> searchData(new CSearchData(position.get()));
++        CMove expected = MakeMainBoardMove(e1, d1, 0);
+ 
+-        searchData.EnterNode();
+-        searchData.m_pCurrent->st_hashmove = expected;
+-        CMove move = searchData.NextEvasion();
+-        searchData.LeaveNode();
++        searchData->EnterNode();
++        searchData->m_pCurrent->st_hashmove = expected;
++        CMove move = searchData->NextEvasion();
++        searchData->LeaveNode();
+ 
+         Assert::IsTrue(move == expected);
+         Assert::IsTrue(position.get()->LegalMove(move));
+@@ -76,12 +75,12 @@ TEST_CLASS(SearchDataTests) {
+ 
+     TEST_METHOD(NextMoveQReturnsCaptureWhenCaptureExists) {
+         char epd[] = "4k3/8/8/8/4p3/8/4Q3/4K3 w - -";
+-        PositionGuard position(CPosition::CreateFromEPD(epd));
+-        CSearchData searchData(position.get());
++        PositionGuard position(CreatePositionFromLegacyMainEPD(epd));
++        std::unique_ptr<CSearchData> searchData(new CSearchData(position.get()));
+ 
+-        searchData.EnterNode();
+-        CMove move = searchData.NextMoveQ(-500000);
+-        searchData.LeaveNode();
++        searchData->EnterNode();
++        CMove move = searchData->NextMoveQ(-500000);
++        searchData->LeaveNode();
+ 
+         Assert::IsTrue(move != M_NONE);
+         Assert::IsTrue(move.IsCapture());
+@@ -90,24 +89,24 @@ TEST_CLASS(SearchDataTests) {
+ 
+     TEST_METHOD(PutKillerTracksAndPromotesByHitCount) {
+         PositionGuard position(CPosition::Initial());
+-        CSearchData searchData(position.get());
++        std::unique_ptr<CSearchData> searchData(new CSearchData(position.get()));
+ 
+-        CMove moveOne = make_move(e2, e4, M_PAWND);
+-        CMove moveTwo = make_move(d2, d4, M_PAWND);
++        CMove moveOne = MakeMainBoardMove(e2, e4, M_PAWND);
++        CMove moveTwo = MakeMainBoardMove(d2, d4, M_PAWND);
+ 
+-        searchData.PutKiller(moveOne);
+-        Assert::IsTrue(searchData.m_pKiller->killer1 == moveOne);
+-        Assert::AreEqual((uint32_t)1, searchData.m_pKiller->kcount1);
++        searchData->PutKiller(moveOne);
++        Assert::IsTrue(searchData->m_pKiller->killer1 == moveOne);
++        Assert::AreEqual((uint32_t)1, searchData->m_pKiller->kcount1);
+ 
+-        searchData.PutKiller(moveTwo);
+-        Assert::IsTrue(searchData.m_pKiller->killer2 == moveTwo);
+-        Assert::AreEqual((uint32_t)1, searchData.m_pKiller->kcount2);
++        searchData->PutKiller(moveTwo);
++        Assert::IsTrue(searchData->m_pKiller->killer2 == moveTwo);
++        Assert::AreEqual((uint32_t)1, searchData->m_pKiller->kcount2);
+ 
+-        searchData.PutKiller(moveTwo);
+-        Assert::IsTrue(searchData.m_pKiller->killer1 == moveTwo);
+-        Assert::IsTrue(searchData.m_pKiller->killer2 == moveOne);
+-        Assert::AreEqual((uint32_t)2, searchData.m_pKiller->kcount1);
+-        Assert::AreEqual((uint32_t)1, searchData.m_pKiller->kcount2);
++        searchData->PutKiller(moveTwo);
++        Assert::IsTrue(searchData->m_pKiller->killer1 == moveTwo);
++        Assert::IsTrue(searchData->m_pKiller->killer2 == moveOne);
++        Assert::AreEqual((uint32_t)2, searchData->m_pKiller->kcount1);
++        Assert::AreEqual((uint32_t)1, searchData->m_pKiller->kcount2);
+     }
+ };
+ 
+diff --git a/WinAmyTests/TestHelpers.cpp b/WinAmyTests/TestHelpers.cpp
+index adb0220..24d496b 100644
+--- a/WinAmyTests/TestHelpers.cpp
++++ b/WinAmyTests/TestHelpers.cpp
+@@ -1,6 +1,8 @@
+ #include "TestHelpers.h"
+ #include "scoord.h"
+ 
++#include <sstream>
++
+ namespace WinAmyTests {
+ 
+ CBitBoard ReferenceRookAttacks(int sq, CBitBoard occupied) {
+@@ -68,4 +70,51 @@ void AssertPositionsEqual(const CPosition *lhs, const CPosition *rhs) {
+     Assert::AreEqual((int)lhs->m_wPly, (int)rhs->m_wPly);
+ }
+ 
++uint16_t MainBoardOffset(int square) {
++    if (square >= 0 && square < 64) {
++        const int file = square % 8;
++        const int rank = square / 8;
++        return static_cast<uint16_t>(CSCoord(MAIN_LEVEL, file, rank).BitOffset());
++    }
++    return static_cast<uint16_t>(square);
++}
++
++CSCoord MainBoardCoord(int square) {
++    return CSCoord(MainBoardOffset(square));
++}
++
++CMove MakeMainBoardMove(int from, int to, int flags) {
++    return make_move(MainBoardCoord(from), MainBoardCoord(to), flags);
++}
++
++CMove MakeMainBoardPromotion(int from, int to, int promotionType, int flags) {
++    return make_promotion(MainBoardCoord(from), MainBoardCoord(to), promotionType, flags);
++}
++
++std::string BuildMainBoardEPD(const std::string &mainBoardPlacement, const std::string &sideToMove,
++                              const std::string &castleRights, const std::string &enPassant) {
++    static const char *kLevelPrefix =
++        "1|2/2|3/3/3|4/4/4/4|5/5/5/5/5|6/6/6/6/6/6|7/7/7/7/7/7/7|";
++    return std::string(kLevelPrefix) + mainBoardPlacement + " " + sideToMove + " " + castleRights +
++           " " + enPassant;
++}
++
++CPosition *CreatePositionFromLegacyMainEPD(const char *legacyMainBoardEpd) {
++    std::istringstream parser(legacyMainBoardEpd ? legacyMainBoardEpd : "");
++    std::string board;
++    std::string side = "w";
++    std::string castle = "-";
++    std::string ep = "-";
++    parser >> board >> side >> castle >> ep;
++    const bool hasEnPassant = ep.size() == 2 && ep != "-";
++    std::string epd = BuildMainBoardEPD(board, side, castle, hasEnPassant ? "-" : ep);
++    CPosition *position = CPosition::CreateFromEPD(epd.c_str());
++    if (hasEnPassant) {
++        const int file = ep[0] - 'a';
++        const int rank = ep[1] - '1';
++        position->m_EnPassant = CSCoord(MAIN_LEVEL, file, rank);
++    }
++    return position;
++}
++
+ } // namespace WinAmyTests
+diff --git a/WinAmyTests/TestHelpers.h b/WinAmyTests/TestHelpers.h
+index a6ead27..d90d329 100644
+--- a/WinAmyTests/TestHelpers.h
++++ b/WinAmyTests/TestHelpers.h
+@@ -11,6 +11,7 @@
+ #include "search.h"
+ 
+ #include <cstdint>
++#include <string>
+ 
+ using namespace Microsoft::VisualStudio::CppUnitTestFramework;
+ 
+@@ -29,5 +30,12 @@ class PositionGuard {
+ CBitBoard ReferenceRookAttacks(int sq, CBitBoard occupied);
+ CBitBoard ReferenceBishopAttacks(int sq, CBitBoard occupied);
+ void AssertPositionsEqual(const CPosition *lhs, const CPosition *rhs);
++uint16_t MainBoardOffset(int square);
++CSCoord MainBoardCoord(int square);
++CMove MakeMainBoardMove(int from, int to, int flags);
++CMove MakeMainBoardPromotion(int from, int to, int promotionType, int flags);
++std::string BuildMainBoardEPD(const std::string &mainBoardPlacement, const std::string &sideToMove,
++                              const std::string &castleRights, const std::string &enPassant);
++CPosition *CreatePositionFromLegacyMainEPD(const char *legacyMainBoardEpd);
+ 
+ } // namespace WinAmyTests

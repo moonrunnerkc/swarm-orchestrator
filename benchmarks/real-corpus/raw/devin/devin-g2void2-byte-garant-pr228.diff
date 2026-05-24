@@ -1,0 +1,373 @@
+diff --git a/frontend/src/components/domain/UserPicker.tsx b/frontend/src/components/domain/UserPicker.tsx
+index 9d1f4ed..5939606 100644
+--- a/frontend/src/components/domain/UserPicker.tsx
++++ b/frontend/src/components/domain/UserPicker.tsx
+@@ -16,6 +16,16 @@ interface UserPickerProps {
+   value: string;
+   /** Fired with the username (without ``@``) on every change. */
+   onChange: (username: string) => void;
++  /**
++   * Optional callback fired with the full ``UserCardDto`` whenever a
++   * row is picked from the dropdown, and with ``null`` when the
++   * selection is cleared. Callers that need the picked user's ``id``
++   * (e.g. the admin "Новый отзыв" sheet) use this to avoid a
++   * secondary lookup-by-username round trip. Backwards-compatible —
++   * ``CreateDealPage`` does not pass this prop and continues to drive
++   * itself off ``value``/``onChange``.
++   */
++  onPick?: (user: UserCardDto | null) => void;
+   /**
+    * Optional "Start deal" callback. When provided, the selected-card
+    * footer renders a primary "Начать сделку" button; when omitted the
+@@ -44,6 +54,7 @@ interface UserPickerProps {
+ export function UserPicker({
+   value,
+   onChange,
++  onPick,
+   onStartDeal,
+   label = "Контрагент",
+   placeholder = "@username или ID",
+@@ -102,6 +113,7 @@ export function UserPicker({
+     setSelected(u);
+     setInput(u.username);
+     onChange(u.username);
++    onPick?.(u);
+     setFocused(false);
+   }
+ 
+@@ -110,6 +122,7 @@ export function UserPicker({
+     setInput("");
+     setDebounced("");
+     onChange("");
++    onPick?.(null);
+     setFocused(true);
+   }
+ 
+@@ -142,7 +155,10 @@ export function UserPicker({
+             value={input}
+             onChange={(e) => {
+               setInput(e.target.value);
+-              if (selected) setSelected(null);
++              if (selected) {
++                setSelected(null);
++                onPick?.(null);
++              }
+               onChange(e.target.value.replace(/^@+/, "").trim());
+             }}
+             onFocus={() => setFocused(true)}
+diff --git a/frontend/src/pages/admin/UserContentSections.test.tsx b/frontend/src/pages/admin/UserContentSections.test.tsx
+new file mode 100644
+index 0000000..8f497db
+--- /dev/null
++++ b/frontend/src/pages/admin/UserContentSections.test.tsx
+@@ -0,0 +1,222 @@
++import { beforeEach, describe, expect, it, vi } from "vitest";
++import { render, screen, waitFor } from "@testing-library/react";
++import userEvent from "@testing-library/user-event";
++import { MemoryRouter } from "react-router-dom";
++import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
++import type { UserCardDto } from "@/api/types";
++
++/**
++ * Tests for the admin "edit on behalf of user" content sections.
++ *
++ * Currently focuses on ``ReviewsSection`` → "Новый отзыв" sheet,
++ * which switched from a free-text "@username" input + secondary
++ * ``GET /api/admin/users?q=…`` lookup to the live-search ``UserPicker``.
++ * The picker resolves the author into a full ``UserCardDto`` up-front,
++ * so the submitted payload carries the picked ``author_id`` directly
++ * (no fallback handle resolution).
++ */
++
++const mockState = vi.hoisted(() => ({
++  reviews: [] as unknown[],
++  reviewsLoading: false,
++  services: [] as unknown[],
++  servicesLoading: false,
++  comments: [] as unknown[],
++  commentsLoading: false,
++  users: [] as UserCardDto[],
++  usersLoading: false,
++  createReview: {
++    mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
++    isPending: false,
++  },
++  updateReview: {
++    mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
++    isPending: false,
++  },
++  deleteReview: {
++    mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
++    isPending: false,
++  },
++  deleteService: {
++    mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
++    isPending: false,
++  },
++  updateService: {
++    mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
++    isPending: false,
++  },
++  updateComment: {
++    mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
++    isPending: false,
++  },
++  deleteComment: {
++    mutateAsync: vi.fn() as ReturnType<typeof vi.fn>,
++    isPending: false,
++  },
++}));
++
++vi.mock("@/api/admin/hooks", () => ({
++  useAdminUserReviews: () => ({
++    data: mockState.reviews,
++    isLoading: mockState.reviewsLoading,
++  }),
++  useAdminUserServices: () => ({
++    data: mockState.services,
++    isLoading: mockState.servicesLoading,
++  }),
++  useAdminUserComments: () => ({
++    data: mockState.comments,
++    isLoading: mockState.commentsLoading,
++  }),
++  useAdminCreateReview: () => mockState.createReview,
++  useAdminUpdateReview: () => mockState.updateReview,
++  useAdminDeleteReview: () => mockState.deleteReview,
++  useAdminDeleteService: () => mockState.deleteService,
++  useAdminUpdateService: () => mockState.updateService,
++  useAdminUpdateComment: () => mockState.updateComment,
++  useAdminDeleteComment: () => mockState.deleteComment,
++}));
++
++vi.mock("@/api/hooks", () => ({
++  useUsers: () => ({ data: mockState.users, isLoading: mockState.usersLoading }),
++}));
++
++const toastSpy = vi.hoisted(() => vi.fn());
++vi.mock("@/components/ui/Toast", () => ({
++  useToast: () => ({ show: toastSpy }),
++  ToastProvider: ({ children }: { children: React.ReactNode }) => children,
++}));
++
++import { ReviewsSection } from "./UserContentSections";
++
++function makeUser(overrides: Partial<UserCardDto> = {}): UserCardDto {
++  return {
++    id: 1,
++    user_id: 1,
++    username: "buyer1",
++    display_name: "Buyer One",
++    photo_url: null,
++    admin: 0,
++    prefix: null,
++    good: 0,
++    bad: 0,
++    deposit: 0,
++    rating: 4.5,
++    reviews_count: 8,
++    deals_count: 12,
++    deals_success: 12,
++    deals_failed: 0,
++    deals_arbitrage: 0,
++    deals_sum: 100,
++    online: true,
++    description: "",
++    forums: [],
++    ...overrides,
++  };
++}
++
++function renderSection(userId = 42) {
++  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
++  return render(
++    <QueryClientProvider client={qc}>
++      <MemoryRouter>
++        <ReviewsSection userId={userId} />
++      </MemoryRouter>
++    </QueryClientProvider>,
++  );
++}
++
++beforeEach(() => {
++  mockState.reviews = [];
++  mockState.reviewsLoading = false;
++  mockState.users = [];
++  mockState.usersLoading = false;
++  mockState.createReview.mutateAsync.mockReset().mockResolvedValue({});
++  toastSpy.mockReset();
++});
++
++describe("<ReviewsSection /> · Новый отзыв sheet", () => {
++  it("opens the sheet with a UserPicker for the author", async () => {
++    const user = userEvent.setup();
++    renderSection();
++
++    await user.click(screen.getByRole("button", { name: /Добавить отзыв/i }));
++
++    // The new sheet uses the live-search UserPicker labelled "Автор",
++    // not the legacy "Автор (@username)" plain input.
++    expect(
++      screen.getByRole("textbox", { name: /^Автор$/ }),
++    ).toBeInTheDocument();
++    expect(
++      screen.queryByLabelText("Автор (@username)"),
++    ).not.toBeInTheDocument();
++  });
++
++  it("blocks submit and toasts when no author is picked", async () => {
++    const user = userEvent.setup();
++    renderSection(42);
++
++    await user.click(screen.getByRole("button", { name: /Добавить отзыв/i }));
++
++    // Type into the search input but never tap a suggestion — the
++    // submit MUST refuse because no UserCardDto was resolved.
++    await user.type(
++      screen.getByRole("textbox", { name: /^Автор$/ }),
++      "buyer1",
++    );
++
++    await user.click(screen.getByRole("button", { name: "Создать" }));
++
++    expect(mockState.createReview.mutateAsync).not.toHaveBeenCalled();
++    await waitFor(() => {
++      expect(toastSpy).toHaveBeenCalledWith(
++        expect.objectContaining({ title: "Выберите автора" }),
++      );
++    });
++  });
++
++  it(
++    "submits with the picked author_id (no secondary username lookup)",
++    async () => {
++      const user = userEvent.setup();
++      mockState.users = [makeUser({ id: 7, username: "buyer1" })];
++      renderSection(42);
++
++      await user.click(
++        screen.getByRole("button", { name: /Добавить отзыв/i }),
++      );
++
++      // Type → pick the matching row in the dropdown.
++      await user.type(
++        screen.getByRole("textbox", { name: /^Автор$/ }),
++        "buyer1",
++      );
++      const option = await screen.findByRole("option", {
++        name: /buyer1/i,
++      });
++      await user.click(option);
++
++      // Fill the remaining fields and submit.
++      const ratingInput = screen.getByRole("spinbutton", {
++        name: /Рейтинг 0\.\.5/i,
++      });
++      await user.clear(ratingInput);
++      await user.type(ratingInput, "4");
++
++      const textArea = screen.getByRole("textbox", { name: /^Текст$/ });
++      await user.type(textArea, "Хороший контрагент");
++
++      await user.click(screen.getByRole("button", { name: "Создать" }));
++
++      await waitFor(() => {
++        expect(mockState.createReview.mutateAsync).toHaveBeenCalledTimes(1);
++      });
++      expect(mockState.createReview.mutateAsync).toHaveBeenCalledWith({
++        author_id: 7,
++        target_id: 42,
++        rating: 4,
++        text: "Хороший контрагент",
++      });
++    },
++  );
++});
+diff --git a/frontend/src/pages/admin/UserContentSections.tsx b/frontend/src/pages/admin/UserContentSections.tsx
+index c53b6b5..9fabc32 100644
+--- a/frontend/src/pages/admin/UserContentSections.tsx
++++ b/frontend/src/pages/admin/UserContentSections.tsx
+@@ -27,7 +27,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
+ import { Skeleton } from "@/components/ui/Skeleton";
+ import { useToast } from "@/components/ui/Toast";
+ import { confirmDialog } from "@/lib/dialog";
+-import { api } from "@/api/client";
++import { UserPicker } from "@/components/domain/UserPicker";
+ import {
+   useAdminCreateReview,
+   useAdminDeleteComment,
+@@ -44,6 +44,7 @@ import type {
+   AdminCommentItemDto,
+   AdminReviewItemDto,
+   AdminServiceItemDto,
++  UserCardDto,
+ } from "@/api/types";
+ 
+ interface SectionProps {
+@@ -370,12 +371,12 @@ function ReviewCreateSheet({
+ }) {
+   const toast = useToast();
+   const create = useAdminCreateReview(userId);
+-  const [authorUsername, setAuthorUsername] = useState("");
++  const [author, setAuthor] = useState<UserCardDto | null>(null);
+   const [rating, setRating] = useState("5");
+   const [text, setText] = useState("");
+ 
+   const close = () => {
+-    setAuthorUsername("");
++    setAuthor(null);
+     setRating("5");
+     setText("");
+     onClose();
+@@ -387,26 +388,13 @@ function ReviewCreateSheet({
+       toast.show({ kind: "error", title: "Рейтинг 0..5" });
+       return;
+     }
+-    const handle = authorUsername.trim().replace(/^@/, "");
+-    if (!handle) {
+-      toast.show({ kind: "error", title: "Введите @username" });
++    if (!author) {
++      toast.show({ kind: "error", title: "Выберите автора" });
+       return;
+     }
+     try {
+-      // Lookup the author via the admin search endpoint (authenticated).
+-      const list = await api
+-        .get(`api/admin/users`, { searchParams: { q: handle } })
+-        .json<{ items: Array<{ id: number; username: string | null }> }>();
+-      const candidate = list.items.find(
+-        (x) => (x.username ?? "").toLowerCase() === handle.toLowerCase(),
+-      );
+-      if (!candidate) {
+-        toast.show({ kind: "error", title: "Автор не найден" });
+-        return;
+-      }
+-      const author_id = candidate.id;
+       await create.mutateAsync({
+-        author_id,
++        author_id: author.id,
+         target_id: userId,
+         rating: r,
+         text,
+@@ -421,11 +409,17 @@ function ReviewCreateSheet({
+   return (
+     <Sheet open={open} onClose={close} title="Новый отзыв">
+       <div className="space-y-3">
+-        <Input
+-          label="Автор (@username)"
++        <UserPicker
++          label="Автор"
+           placeholder="@buyer1"
+-          value={authorUsername}
+-          onChange={(e) => setAuthorUsername(e.target.value)}
++          value={author?.username ?? ""}
++          onChange={() => {
++            /* selection is driven by onPick — the bare username text
++             * isn't enough to submit the review (we need the picked
++             * user's numeric id), so we intentionally ignore raw
++             * keystrokes here. */
++          }}
++          onPick={setAuthor}
+         />
+         <Input
+           label="Рейтинг 0..5"

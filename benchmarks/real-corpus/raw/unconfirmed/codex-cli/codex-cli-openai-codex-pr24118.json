@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24118",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24118,
+    "headSha": "2a0eef2528e481834d67fae9ed6bd41b00119a53",
+    "baseSha": "4bcabbfbec668de26bdb2b1c39f4748c419962ff",
+    "title": "feat: support oneOf and allOf in tool input schemas",
+    "body": "## Why\r\n\r\nSome connector golden schemas use JSON Schema composition keywords beyond `anyOf`, specifically top-level or nested `oneOf` and `allOf`. Codex currently needs to preserve those shapes when parsing MCP tool input schemas so connector tools do not lose valid schema structure during normalization.\r\n\r\nTo prevent an increased Responses API error rate, this PR will be merged after the Responses API supports top-level `oneOf`/`allOf`.\r\n\r\n## What Changed\r\n\r\n- Adds `oneOf` and `allOf` support to `JsonSchema`, matching the existing `anyOf` handling.\r\n- Traverses `oneOf` and `allOf` anywhere schema children are visited, including sanitization, definition reachability, description stripping, and deep schema compaction.\r\n- Adds a final large-schema compaction pass that prunes schema objects containing `anyOf`, `oneOf`, or `allOf` to `{}` if earlier compaction passes still leave the schema over budget.\r\n\r\n## Validation\r\nGolden schema token validation over `2,025` schemas under `golden_schemas`, all parsed successfully. Token count is `o200k_base` over compact JSON from `parse_tool_input_schema`.\r\n\r\n| Percentile | Before PR | After oneOf/allOf | After pruning |\r\n|---|---:|---:|---:|\r\n| p0 | 9 | 9 | 9 |\r\n| p10 | 63 | 64 | 64 |\r\n| p25 | 86 | 87 | 87 |\r\n| p50 | 125 | 128 | 128 |\r\n| p75 | 203 | 206 | 206 |\r\n| p90 | 327 | 333 | 333 |\r\n| p95 | 460 | 473 | 473 |\r\n| p99 | 763 | 779 | 779 |\r\n| max | 891 | 955 | 955 |\r\n\r\nTotals:\r\n\r\n| Parser state | Total tokens |\r\n|---|---:|\r\n| Before PR | 345,713 |\r\n| After oneOf/allOf | 352,686 |\r\n| After pruning | 352,686 |\r\n\r\nThe pruning column matches the oneOf/allOf column for this corpus because no parsed compact golden schema remains over the `4,000` compact-byte budget after the earlier compaction passes.\r\n",
+    "author": "celia-oai",
+    "headRef": "dev/cc/support-allof",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "2a0eef2528e481834d67fae9ed6bd41b00119a53",
+    "baseSha": "4bcabbfbec668de26bdb2b1c39f4748c419962ff"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24118.diff",
+  "vendoredAt": "2026-05-24T03:21:09.563Z",
+  "collectedAt": "2026-05-24T03:21:09.563Z"
+}

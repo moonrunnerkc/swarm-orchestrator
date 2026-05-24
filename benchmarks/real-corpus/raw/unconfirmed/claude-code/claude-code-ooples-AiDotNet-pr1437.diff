@@ -1,0 +1,231 @@
+diff --git a/src/AiModelBuilder.cs b/src/AiModelBuilder.cs
+index fd2a9302df..7163076ade 100644
+--- a/src/AiModelBuilder.cs
++++ b/src/AiModelBuilder.cs
+@@ -170,6 +170,10 @@ private readonly AiDotNet.Configuration.IAiModelCompliance<T, TInput, TOutput> _
+     // the validator any time the key changes.
+     private AiDotNet.Configuration.IAiModelLicensing? _licensing;
+ 
++    // audit-2026-05 phase 2a slice 9 — storage / artifact-management concern.
++    private readonly AiDotNet.Configuration.IAiModelStorage<T, TInput, TOutput> _storage
++        = new AiDotNet.Configuration.AiModelStorage<T, TInput, TOutput>();
++
+     private PreprocessingPipeline<T, TInput, TInput>? _preprocessingPipeline;
+     private PostprocessingPipeline<T, TOutput, TOutput>? _postprocessingPipeline;
+ 
+@@ -6226,19 +6230,22 @@ public IAiModelBuilder<T, TInput, TOutput> ConfigureCompression(CompressionConfi
+ 
+     public IAiModelBuilder<T, TInput, TOutput> ConfigureCaching(CacheConfig? config = null)
+     {
+-        _cacheConfig = config;
++        _storage.ConfigureCaching(config);
++        _cacheConfig = _storage.CacheConfig;
+         return this;
+     }
+ 
+     public IAiModelBuilder<T, TInput, TOutput> ConfigureVersioning(VersioningConfig? config = null)
+     {
+-        _versioningConfig = config;
++        _storage.ConfigureVersioning(config);
++        _versioningConfig = _storage.VersioningConfig;
+         return this;
+     }
+ 
+     public IAiModelBuilder<T, TInput, TOutput> ConfigureABTesting(ABTestingConfig? config = null)
+     {
+-        _abTestingConfig = config;
++        _storage.ConfigureABTesting(config);
++        _abTestingConfig = _storage.ABTestingConfig;
+         return this;
+     }
+ 
+@@ -6633,7 +6640,8 @@ public IAiModelBuilder<T, TInput, TOutput> ConfigureExport(ExportConfig? config
+     /// </remarks>
+     public IAiModelBuilder<T, TInput, TOutput> ConfigureExperimentTracker(IExperimentTracker<T> tracker)
+     {
+-        _experimentTracker = tracker;
++        _storage.ConfigureExperimentTracker(tracker);
++        _experimentTracker = _storage.ExperimentTracker;
+         return this;
+     }
+ 
+@@ -6734,7 +6742,8 @@ public IAiModelBuilder<T, TInput, TOutput> ConfigureTrainingMonitor(ITrainingMon
+     /// </remarks>
+     public IAiModelBuilder<T, TInput, TOutput> ConfigureModelRegistry(IModelRegistry<T, TInput, TOutput> registry)
+     {
+-        _modelRegistry = registry;
++        _storage.ConfigureModelRegistry(registry);
++        _modelRegistry = _storage.ModelRegistry;
+         return this;
+     }
+ 
+@@ -6749,7 +6758,8 @@ public IAiModelBuilder<T, TInput, TOutput> ConfigureModelRegistry(IModelRegistry
+     /// </remarks>
+     public IAiModelBuilder<T, TInput, TOutput> ConfigureDataVersionControl(IDataVersionControl<T> dataVersionControl)
+     {
+-        _dataVersionControl = dataVersionControl;
++        _storage.ConfigureDataVersionControl(dataVersionControl);
++        _dataVersionControl = _storage.DataVersionControl;
+         return this;
+     }
+ 
+diff --git a/src/Configuration/AiModelStorage.cs b/src/Configuration/AiModelStorage.cs
+new file mode 100644
+index 0000000000..6cf1470e5b
+--- /dev/null
++++ b/src/Configuration/AiModelStorage.cs
+@@ -0,0 +1,21 @@
++using AiDotNet.Deployment.Configuration;
++
++namespace AiDotNet.Configuration;
++
++/// <summary>Default implementation of <see cref="IAiModelStorage{T,TInput,TOutput}"/>. Audit-2026-05 phase-2a slice 9.</summary>
++public class AiModelStorage<T, TInput, TOutput> : IAiModelStorage<T, TInput, TOutput>
++{
++    public CacheConfig? CacheConfig { get; private set; }
++    public VersioningConfig? VersioningConfig { get; private set; }
++    public ABTestingConfig? ABTestingConfig { get; private set; }
++    public IExperimentTracker<T>? ExperimentTracker { get; private set; }
++    public IModelRegistry<T, TInput, TOutput>? ModelRegistry { get; private set; }
++    public IDataVersionControl<T>? DataVersionControl { get; private set; }
++
++    public void ConfigureCaching(CacheConfig? config) => CacheConfig = config;
++    public void ConfigureVersioning(VersioningConfig? config) => VersioningConfig = config;
++    public void ConfigureABTesting(ABTestingConfig? config) => ABTestingConfig = config;
++    public void ConfigureExperimentTracker(IExperimentTracker<T> tracker) => ExperimentTracker = tracker;
++    public void ConfigureModelRegistry(IModelRegistry<T, TInput, TOutput> registry) => ModelRegistry = registry;
++    public void ConfigureDataVersionControl(IDataVersionControl<T> dataVersionControl) => DataVersionControl = dataVersionControl;
++}
+diff --git a/src/Configuration/IAiModelStorage.cs b/src/Configuration/IAiModelStorage.cs
+new file mode 100644
+index 0000000000..47135138c8
+--- /dev/null
++++ b/src/Configuration/IAiModelStorage.cs
+@@ -0,0 +1,26 @@
++using AiDotNet.Deployment.Configuration;
++
++namespace AiDotNet.Configuration;
++
++/// <summary>
++/// Component that owns the storage / artifact-management configuration for an AI model build:
++/// caching, versioning, A/B testing, experiment tracking, model registry, and data version
++/// control. Extracted from <c>AiModelBuilder</c> as slice 9 of the audit-2026-05 phase-2a DI
++/// refactor.
++/// </summary>
++public interface IAiModelStorage<T, TInput, TOutput>
++{
++    CacheConfig? CacheConfig { get; }
++    VersioningConfig? VersioningConfig { get; }
++    ABTestingConfig? ABTestingConfig { get; }
++    IExperimentTracker<T>? ExperimentTracker { get; }
++    IModelRegistry<T, TInput, TOutput>? ModelRegistry { get; }
++    IDataVersionControl<T>? DataVersionControl { get; }
++
++    void ConfigureCaching(CacheConfig? config);
++    void ConfigureVersioning(VersioningConfig? config);
++    void ConfigureABTesting(ABTestingConfig? config);
++    void ConfigureExperimentTracker(IExperimentTracker<T> tracker);
++    void ConfigureModelRegistry(IModelRegistry<T, TInput, TOutput> registry);
++    void ConfigureDataVersionControl(IDataVersionControl<T> dataVersionControl);
++}
+diff --git a/tests/AiDotNet.Tests/UnitTests/Configuration/AiModelStorageTests.cs b/tests/AiDotNet.Tests/UnitTests/Configuration/AiModelStorageTests.cs
+new file mode 100644
+index 0000000000..5b93e278f8
+--- /dev/null
++++ b/tests/AiDotNet.Tests/UnitTests/Configuration/AiModelStorageTests.cs
+@@ -0,0 +1,95 @@
++using System.Threading.Tasks;
++using AiDotNet.Configuration;
++using AiDotNet.Deployment.Configuration;
++using AiDotNet.Interfaces;
++using AiDotNet.Tensors.LinearAlgebra;
++using Moq;
++using Xunit;
++
++namespace AiDotNet.Tests.UnitTests.Configuration;
++
++/// <summary>Audit-2026-05 phase-2a slice 9 — storage component isolation tests.</summary>
++public class AiModelStorageTests
++{
++    [Fact(Timeout = 30000)]
++    public async Task InitialState_AllSlotsAreNull()
++    {
++        await Task.Yield();
++        var s = new AiModelStorage<double, Matrix<double>, Vector<double>>();
++        Assert.Null(s.CacheConfig);
++        Assert.Null(s.VersioningConfig);
++        Assert.Null(s.ABTestingConfig);
++        Assert.Null(s.ExperimentTracker);
++        Assert.Null(s.ModelRegistry);
++        Assert.Null(s.DataVersionControl);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task ConfigureCaching_NullIsValid()
++    {
++        await Task.Yield();
++        var s = new AiModelStorage<double, Matrix<double>, Vector<double>>();
++        s.ConfigureCaching(null);
++        Assert.Null(s.CacheConfig);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task ConfigureCaching_ExplicitStored()
++    {
++        await Task.Yield();
++        var s = new AiModelStorage<double, Matrix<double>, Vector<double>>();
++        var cfg = new CacheConfig();
++        s.ConfigureCaching(cfg);
++        Assert.Same(cfg, s.CacheConfig);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task ConfigureVersioning_ExplicitStored()
++    {
++        await Task.Yield();
++        var s = new AiModelStorage<double, Matrix<double>, Vector<double>>();
++        var cfg = new VersioningConfig();
++        s.ConfigureVersioning(cfg);
++        Assert.Same(cfg, s.VersioningConfig);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task ConfigureABTesting_ExplicitStored()
++    {
++        await Task.Yield();
++        var s = new AiModelStorage<double, Matrix<double>, Vector<double>>();
++        var cfg = new ABTestingConfig();
++        s.ConfigureABTesting(cfg);
++        Assert.Same(cfg, s.ABTestingConfig);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task ConfigureExperimentTracker_Stores()
++    {
++        await Task.Yield();
++        var s = new AiModelStorage<double, Matrix<double>, Vector<double>>();
++        var tracker = Mock.Of<IExperimentTracker<double>>();
++        s.ConfigureExperimentTracker(tracker);
++        Assert.Same(tracker, s.ExperimentTracker);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task ConfigureModelRegistry_Stores()
++    {
++        await Task.Yield();
++        var s = new AiModelStorage<double, Matrix<double>, Vector<double>>();
++        var registry = Mock.Of<IModelRegistry<double, Matrix<double>, Vector<double>>>();
++        s.ConfigureModelRegistry(registry);
++        Assert.Same(registry, s.ModelRegistry);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task ConfigureDataVersionControl_Stores()
++    {
++        await Task.Yield();
++        var s = new AiModelStorage<double, Matrix<double>, Vector<double>>();
++        var dvc = Mock.Of<IDataVersionControl<double>>();
++        s.ConfigureDataVersionControl(dvc);
++        Assert.Same(dvc, s.DataVersionControl);
++    }
++}

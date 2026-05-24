@@ -1,0 +1,981 @@
+diff --git a/README.md b/README.md
+index 458c39fb..924c42e9 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ they already have.
+ 
+ - `/codex:review` for a normal read-only Codex review
+ - `/codex:adversarial-review` for a steerable challenge review
++- `/codex:cli` for direct Codex CLI task execution without the rescue subagent
++- `/codex:goal` to set a persistent goal Codex can continue over time
+ - `/codex:rescue`, `/codex:status`, `/codex:result`, and `/codex:cancel` to delegate work and manage background jobs
+ 
+ ## Requirements
+@@ -162,6 +164,45 @@ Ask Codex to redesign the database connection to be more resilient.
+ - if you say `spark`, the plugin maps that to `gpt-5.3-codex-spark`
+ - follow-up rescue requests can continue the latest Codex task in the repo
+ 
++### `/codex:cli`
++
++Runs a direct Codex CLI task through the companion runtime, without routing through the rescue subagent.
++
++Use it when you want exact control over a Codex task from Claude Code.
++
++Examples:
++
++```bash
++/codex:cli investigate why the build fails
++/codex:cli --write fix the failing parser test
++/codex:cli --resume continue the current goal
++/codex:cli --background --write implement the migration
++```
++
++It supports `--background`, `--write`, `--resume`, `--fresh`, `--model`, and `--effort`. By default it is read-only; pass `--write` when Codex should edit files.
++
++### `/codex:goal`
++
++Sets or manages a persistent goal Codex can continue over time.
++
++Use it when a task is larger than one turn and you want Codex to keep a durable objective attached to the Codex thread.
++
++Examples:
++
++```bash
++/codex:goal --fresh --budget 80000 finish the auth migration with tests passing
++/codex:goal --show
++/codex:goal --status paused
++/codex:goal --status complete
++/codex:goal --clear
++```
++
++After setting a goal, continue it from Claude Code with:
++
++```bash
++/codex:cli --resume
++```
++
+ ### `/codex:status`
+ 
+ Shows running and recent Codex jobs for the current repository.
+diff --git a/plugins/codex/commands/cli.md b/plugins/codex/commands/cli.md
+new file mode 100644
+index 00000000..9a9a1a01
+--- /dev/null
++++ b/plugins/codex/commands/cli.md
+@@ -0,0 +1,16 @@
++---
++description: Run a direct Codex CLI task through the shared Codex runtime
++argument-hint: "[--background] [--write] [--resume|--fresh] [--model <model|spark>] [--effort <none|minimal|low|medium|high|xhigh>] [what Codex should do]"
++disable-model-invocation: true
++allowed-tools: Bash(node:*)
++---
++
++!`node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" cli "$ARGUMENTS"`
++
++Present the full command output to the user. Do not summarize or condense it.
++
++This is a direct Codex CLI task entrypoint:
++- use `--write` when Codex may edit files
++- use `--resume` to continue the latest Codex task or goal thread
++- use `--fresh` to start a new thread
++- use `--background` for long-running work, then check `/codex:status`
+diff --git a/plugins/codex/commands/goal.md b/plugins/codex/commands/goal.md
+new file mode 100644
+index 00000000..1c7f5d48
+--- /dev/null
++++ b/plugins/codex/commands/goal.md
+@@ -0,0 +1,18 @@
++---
++description: Manage a persistent Codex goal for this repository
++argument-hint: "[--show|--clear] [--fresh|--resume|--thread-id <id>] [--budget <tokens>] [--status <active|paused|budgetLimited|complete>] [goal objective]"
++disable-model-invocation: true
++allowed-tools: Bash(node:*)
++---
++
++!`node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" goal "$ARGUMENTS"`
++
++Present the full command output to the user. Do not summarize or condense it.
++
++This command manages the persistent goal Codex can continue over time:
++- pass an objective to create or update the goal
++- use `--budget <tokens>` to set a token budget
++- use `--status <active|paused|budgetLimited|complete>` to update progress state
++- use `--show` to inspect the current goal
++- use `--clear` to remove the current goal
++- continue the goal work with `/codex:cli --resume`
+diff --git a/plugins/codex/scripts/app-server-broker.mjs b/plugins/codex/scripts/app-server-broker.mjs
+index 1954274f..11854f73 100644
+--- a/plugins/codex/scripts/app-server-broker.mjs
++++ b/plugins/codex/scripts/app-server-broker.mjs
+@@ -6,7 +6,7 @@ import path from "node:path";
+ import process from "node:process";
+ 
+ import { parseArgs } from "./lib/args.mjs";
+-import { BROKER_BUSY_RPC_CODE, CodexAppServerClient } from "./lib/app-server.mjs";
++import { BROKER_BUSY_RPC_CODE, CodexAppServerClient, EXPERIMENTAL_CAPABILITIES } from "./lib/app-server.mjs";
+ import { parseBrokerEndpoint } from "./lib/broker-endpoint.mjs";
+ 
+ const STREAMING_METHODS = new Set(["turn/start", "review/start", "thread/compact/start"]);
+@@ -65,7 +65,10 @@ async function main() {
+   const pidFile = options["pid-file"] ? path.resolve(options["pid-file"]) : null;
+   writePidFile(pidFile);
+ 
+-  const appClient = await CodexAppServerClient.connect(cwd, { disableBroker: true });
++  const appClient = await CodexAppServerClient.connect(cwd, {
++    disableBroker: true,
++    capabilities: EXPERIMENTAL_CAPABILITIES
++  });
+   let activeRequestSocket = null;
+   let activeStreamSocket = null;
+   let activeStreamThreadIds = null;
+diff --git a/plugins/codex/scripts/codex-companion.mjs b/plugins/codex/scripts/codex-companion.mjs
+index 35222fd5..ab5a63ce 100644
+--- a/plugins/codex/scripts/codex-companion.mjs
++++ b/plugins/codex/scripts/codex-companion.mjs
+@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
+ import { parseArgs, splitRawArgumentString } from "./lib/args.mjs";
+ import {
+     buildPersistentTaskThreadName,
++    clearThreadGoal,
+     DEFAULT_CONTINUE_PROMPT,
+     findLatestTaskThread,
+     getCodexAuthStatus,
+@@ -16,9 +17,12 @@ import {
+     getSessionRuntimeStatus,
+     interruptAppServerTurn,
+     parseStructuredOutput,
++    readThreadGoal,
+     readOutputSchema,
+     runAppServerReview,
+-    runAppServerTurn
++    runAppServerTurn,
++    setThreadGoal,
++    startPersistentGoalThread
+   } from "./lib/codex.mjs";
+ import { readStdinIfPiped } from "./lib/fs.mjs";
+ import { collectReviewContext, ensureGitRepository, resolveReviewTarget } from "./lib/git.mjs";
+@@ -56,6 +60,7 @@ import {
+   renderReviewResult,
+   renderStoredJobResult,
+   renderCancelReport,
++  renderGoalReport,
+   renderJobStatusReport,
+   renderSetupReport,
+   renderStatusReport,
+@@ -67,8 +72,10 @@ const REVIEW_SCHEMA = path.join(ROOT_DIR, "schemas", "review-output.schema.json"
+ const DEFAULT_STATUS_WAIT_TIMEOUT_MS = 240000;
+ const DEFAULT_STATUS_POLL_INTERVAL_MS = 2000;
+ const VALID_REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
++const VALID_GOAL_STATUSES = new Set(["active", "paused", "budgetLimited", "complete"]);
+ const MODEL_ALIASES = new Map([["spark", "gpt-5.3-codex-spark"]]);
+ const STOP_REVIEW_TASK_MARKER = "Run a stop-gate review of the previous Claude turn.";
++const GOAL_THREAD_CONFIG_KEY = "goalThreadId";
+ 
+ function printUsage() {
+   console.log(
+@@ -78,6 +85,8 @@ function printUsage() {
+       "  node scripts/codex-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>]",
+       "  node scripts/codex-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [focus text]",
+       "  node scripts/codex-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model|spark>] [--effort <none|minimal|low|medium|high|xhigh>] [prompt]",
++      "  node scripts/codex-companion.mjs cli [--background] [--write] [--resume-last|--resume|--fresh] [--model <model|spark>] [--effort <none|minimal|low|medium|high|xhigh>] [prompt]",
++      "  node scripts/codex-companion.mjs goal [--show|--clear] [--fresh|--resume|--thread-id <id>] [--budget <tokens>] [--status <active|paused|budgetLimited|complete>] [objective]",
+       "  node scripts/codex-companion.mjs status [job-id] [--all] [--json]",
+       "  node scripts/codex-companion.mjs result [job-id] [--json]",
+       "  node scripts/codex-companion.mjs cancel [job-id] [--json]"
+@@ -124,6 +133,39 @@ function normalizeReasoningEffort(effort) {
+   return normalized;
+ }
+ 
++function normalizeGoalStatus(status) {
++  if (status == null) {
++    return null;
++  }
++  const normalized = String(status).trim();
++  if (!normalized) {
++    return null;
++  }
++  const canonical = normalized === "budget-limited" ? "budgetLimited" : normalized;
++  if (!VALID_GOAL_STATUSES.has(canonical)) {
++    throw new Error("Unsupported goal status. Use one of: active, paused, budgetLimited, complete.");
++  }
++  return canonical;
++}
++
++function normalizeGoalBudget(value) {
++  if (value == null) {
++    return undefined;
++  }
++  const raw = String(value).trim().toLowerCase();
++  if (!raw) {
++    return undefined;
++  }
++  if (raw === "none" || raw === "unlimited" || raw === "null") {
++    return null;
++  }
++  const parsed = Number(raw);
++  if (!Number.isInteger(parsed) || parsed <= 0) {
++    throw new Error("Goal budget must be a positive integer token count, or `none`.");
++  }
++  return parsed;
++}
++
+ function normalizeArgv(argv) {
+   if (argv.length === 1) {
+     const [raw] = argv;
+@@ -340,6 +382,11 @@ async function resolveLatestTrackedTaskThread(cwd, options = {}) {
+     throw new Error(`Task ${activeTask.id} is still running. Use /codex:status before continuing it.`);
+   }
+ 
++  const config = getConfig(workspaceRoot);
++  if (typeof config[GOAL_THREAD_CONFIG_KEY] === "string" && config[GOAL_THREAD_CONFIG_KEY].trim()) {
++    return { id: config[GOAL_THREAD_CONFIG_KEY].trim() };
++  }
++
+   const trackedTask = findLatestResumableTaskJob(visibleJobs);
+   if (trackedTask) {
+     return { id: trackedTask.threadId };
+@@ -619,6 +666,62 @@ function readTaskPrompt(cwd, options, positionals) {
+   return positionalPrompt || readStdinIfPiped();
+ }
+ 
++function readGoalObjective(cwd, options, positionals) {
++  if (options["objective-file"]) {
++    return fs.readFileSync(path.resolve(cwd, options["objective-file"]), "utf8").trim();
++  }
++  return positionals.join(" ").trim();
++}
++
++function getStoredGoalThreadId(workspaceRoot) {
++  const config = getConfig(workspaceRoot);
++  const threadId = config[GOAL_THREAD_CONFIG_KEY];
++  return typeof threadId === "string" && threadId.trim() ? threadId.trim() : null;
++}
++
++function storeGoalThreadId(workspaceRoot, threadId) {
++  setConfig(workspaceRoot, GOAL_THREAD_CONFIG_KEY, threadId);
++}
++
++async function resolveGoalThread(cwd, workspaceRoot, options, objective) {
++  if (options["thread-id"]) {
++    return { id: String(options["thread-id"]).trim(), created: false };
++  }
++
++  if (options.fresh) {
++    const thread = await startPersistentGoalThread(cwd, { objective });
++    storeGoalThreadId(workspaceRoot, thread.id);
++    return { id: thread.id, created: true };
++  }
++
++  const storedThreadId = getStoredGoalThreadId(workspaceRoot);
++  if (storedThreadId) {
++    return { id: storedThreadId, created: false };
++  }
++
++  if (!objective) {
++    return { id: null, created: false };
++  }
++
++  const thread = await startPersistentGoalThread(cwd, { objective });
++  storeGoalThreadId(workspaceRoot, thread.id);
++  return { id: thread.id, created: true };
++}
++
++function buildGoalSetParams({ objective, status, tokenBudget }) {
++  const params = {};
++  if (objective) {
++    params.objective = objective;
++  }
++  if (status) {
++    params.status = status;
++  }
++  if (tokenBudget !== undefined) {
++    params.tokenBudget = tokenBudget;
++  }
++  return params;
++}
++
+ function requireTaskRequest(prompt, resumeLast) {
+   if (!prompt && !resumeLast) {
+     throw new Error("Provide a prompt, a prompt file, piped stdin, or use --resume-last.");
+@@ -792,6 +895,81 @@ async function handleTask(argv) {
+   );
+ }
+ 
++async function handleGoal(argv) {
++  const { options, positionals } = parseCommandInput(argv, {
++    valueOptions: ["cwd", "thread-id", "budget", "status", "objective-file"],
++    booleanOptions: ["json", "show", "clear", "fresh", "resume"]
++  });
++
++  const cwd = resolveCommandCwd(options);
++  const workspaceRoot = resolveCommandWorkspace(options);
++  const objective = readGoalObjective(cwd, options, positionals);
++  const status = normalizeGoalStatus(options.status);
++  const tokenBudget = normalizeGoalBudget(options.budget);
++
++  if (options.clear && (objective || status || tokenBudget !== undefined)) {
++    throw new Error("Use `--clear` by itself, optionally with `--thread-id`.");
++  }
++  if (options.fresh && options["thread-id"]) {
++    throw new Error("Choose either --fresh or --thread-id.");
++  }
++  if (options.resume && options.fresh) {
++    throw new Error("Choose either --resume or --fresh.");
++  }
++
++  const shouldCreate = Boolean(objective && !options.clear && !options.show);
++  const thread = await resolveGoalThread(cwd, workspaceRoot, options, shouldCreate ? objective : "");
++
++  if (!thread.id) {
++    outputCommandResult(
++      { action: "show", threadId: null, goal: null },
++      renderGoalReport({ action: "show", threadId: null, goal: null }),
++      options.json
++    );
++    return;
++  }
++
++  if (options.clear) {
++    const result = await clearThreadGoal(cwd, thread.id);
++    if (!options["thread-id"]) {
++      storeGoalThreadId(workspaceRoot, null);
++    }
++    outputCommandResult(
++      { action: "clear", threadId: thread.id, cleared: Boolean(result.cleared) },
++      renderGoalReport({ action: "clear", threadId: thread.id, cleared: Boolean(result.cleared) }),
++      options.json
++    );
++    return;
++  }
++
++  if (options.show || (!objective && !status && tokenBudget === undefined)) {
++    const goal = await readThreadGoal(cwd, thread.id);
++    outputCommandResult(
++      { action: "show", threadId: thread.id, goal },
++      renderGoalReport({ action: "show", threadId: thread.id, goal }),
++      options.json
++    );
++    return;
++  }
++
++  const goal = await setThreadGoal(
++    cwd,
++    thread.id,
++    buildGoalSetParams({
++      objective,
++      status,
++      tokenBudget
++    })
++  );
++  storeGoalThreadId(workspaceRoot, thread.id);
++
++  outputCommandResult(
++    { action: thread.created ? "create" : "update", threadId: thread.id, goal },
++    renderGoalReport({ action: thread.created ? "create" : "update", threadId: thread.id, goal }),
++    options.json
++  );
++}
++
+ async function handleTaskWorker(argv) {
+   const { options } = parseCommandInput(argv, {
+     valueOptions: ["cwd", "job-id"]
+@@ -1000,6 +1178,12 @@ async function main() {
+     case "task":
+       await handleTask(argv);
+       break;
++    case "cli":
++      await handleTask(argv);
++      break;
++    case "goal":
++      await handleGoal(argv);
++      break;
+     case "task-worker":
+       await handleTaskWorker(argv);
+       break;
+diff --git a/plugins/codex/scripts/lib/app-server-protocol.d.ts b/plugins/codex/scripts/lib/app-server-protocol.d.ts
+index cc6446d0..8eca4418 100644
+--- a/plugins/codex/scripts/lib/app-server-protocol.d.ts
++++ b/plugins/codex/scripts/lib/app-server-protocol.d.ts
+@@ -8,6 +8,7 @@ import type {
+ import type {
+   ReviewStartParams,
+   ReviewStartResponse,
++  ThreadGoal,
+   ReviewTarget,
+   Thread,
+   ThreadItem,
+@@ -33,6 +34,7 @@ export type {
+   InitializeParams,
+   InitializeResponse,
+   ReviewTarget,
++  ThreadGoal,
+   Thread,
+   ThreadItem,
+   ThreadListParams,
+@@ -42,6 +44,33 @@ export type {
+   UserInput
+ };
+ 
++export interface ThreadGoalGetParams {
++  threadId: string;
++}
++
++export interface ThreadGoalSetParams {
++  threadId: string;
++  objective?: string;
++  status?: "active" | "paused" | "budgetLimited" | "complete";
++  tokenBudget?: number | null;
++}
++
++export interface ThreadGoalClearParams {
++  threadId: string;
++}
++
++export interface ThreadGoalGetResponse {
++  goal: ThreadGoal | null;
++}
++
++export interface ThreadGoalSetResponse {
++  goal: ThreadGoal;
++}
++
++export interface ThreadGoalClearResponse {
++  cleared: boolean;
++}
++
+ export type ThreadStartParams = Omit<RawThreadStartParams, "persistExtendedHistory">;
+ export type ThreadResumeParams = Omit<RawThreadResumeParams, "persistExtendedHistory">;
+ 
+@@ -60,6 +89,9 @@ export interface AppServerMethodMap {
+   "thread/resume": { params: ThreadResumeParams; result: ThreadResumeResponse };
+   "thread/name/set": { params: ThreadSetNameParams; result: ThreadSetNameResponse };
+   "thread/list": { params: ThreadListParams; result: ThreadListResponse };
++  "thread/goal/get": { params: ThreadGoalGetParams; result: ThreadGoalGetResponse };
++  "thread/goal/set": { params: ThreadGoalSetParams; result: ThreadGoalSetResponse };
++  "thread/goal/clear": { params: ThreadGoalClearParams; result: ThreadGoalClearResponse };
+   "review/start": { params: ReviewStartParams; result: ReviewStartResponse };
+   "turn/start": { params: TurnStartParams; result: TurnStartResponse };
+   "turn/interrupt": { params: TurnInterruptParams; result: TurnInterruptResponse };
+diff --git a/plugins/codex/scripts/lib/app-server.mjs b/plugins/codex/scripts/lib/app-server.mjs
+index 127c8376..4eb83ab3 100644
+--- a/plugins/codex/scripts/lib/app-server.mjs
++++ b/plugins/codex/scripts/lib/app-server.mjs
+@@ -30,7 +30,7 @@ const DEFAULT_CLIENT_INFO = {
+ };
+ 
+ /** @type {InitializeCapabilities} */
+-const DEFAULT_CAPABILITIES = {
++export const DEFAULT_CAPABILITIES = {
+   experimentalApi: false,
+   optOutNotificationMethods: [
+     "item/agentMessage/delta",
+@@ -40,6 +40,11 @@ const DEFAULT_CAPABILITIES = {
+   ]
+ };
+ 
++export const EXPERIMENTAL_CAPABILITIES = {
++  ...DEFAULT_CAPABILITIES,
++  experimentalApi: true
++};
++
+ function buildJsonRpcError(code, message, data) {
+   return data === undefined ? { code, message } : { code, message, data };
+ }
+diff --git a/plugins/codex/scripts/lib/codex.mjs b/plugins/codex/scripts/lib/codex.mjs
+index f2fe88bd..13e4c31a 100644
+--- a/plugins/codex/scripts/lib/codex.mjs
++++ b/plugins/codex/scripts/lib/codex.mjs
+@@ -35,12 +35,13 @@
+  * }} TurnCaptureState
+  */
+ import { readJsonFile } from "./fs.mjs";
+-import { BROKER_BUSY_RPC_CODE, BROKER_ENDPOINT_ENV, CodexAppServerClient } from "./app-server.mjs";
++import { BROKER_BUSY_RPC_CODE, BROKER_ENDPOINT_ENV, CodexAppServerClient, EXPERIMENTAL_CAPABILITIES } from "./app-server.mjs";
+ import { loadBrokerSession } from "./broker-lifecycle.mjs";
+ import { binaryAvailable } from "./process.mjs";
+ 
+ const SERVICE_NAME = "claude_code_codex_plugin";
+ const TASK_THREAD_PREFIX = "Codex Companion Task";
++const GOAL_THREAD_PREFIX = "Codex Companion Goal";
+ const DEFAULT_CONTINUE_PROMPT =
+   "Continue from the current thread state. Pick the next highest-value step and follow through until the task is resolved.";
+ 
+@@ -60,8 +61,7 @@ function buildThreadParams(cwd, options = {}) {
+     approvalPolicy: options.approvalPolicy ?? "never",
+     sandbox: options.sandbox ?? "read-only",
+     serviceName: SERVICE_NAME,
+-    ephemeral: options.ephemeral ?? true,
+-    experimentalRawEvents: false
++    ephemeral: options.ephemeral ?? true
+   };
+ }
+ 
+@@ -103,6 +103,11 @@ function buildTaskThreadName(prompt) {
+   return excerpt ? `${TASK_THREAD_PREFIX}: ${excerpt}` : TASK_THREAD_PREFIX;
+ }
+ 
++function buildGoalThreadName(objective) {
++  const excerpt = shorten(objective, 56);
++  return excerpt ? `${GOAL_THREAD_PREFIX}: ${excerpt}` : GOAL_THREAD_PREFIX;
++}
++
+ function extractThreadId(message) {
+   return message?.params?.threadId ?? null;
+ }
+@@ -604,10 +609,10 @@ async function captureTurn(client, threadId, startRequest, options = {}) {
+   }
+ }
+ 
+-async function withAppServer(cwd, fn) {
++async function withAppServer(cwd, fn, options = {}) {
+   let client = null;
+   try {
+-    client = await CodexAppServerClient.connect(cwd);
++    client = await CodexAppServerClient.connect(cwd, options);
+     const result = await fn(client);
+     await client.close();
+     return result;
+@@ -626,7 +631,7 @@ async function withAppServer(cwd, fn) {
+       throw error;
+     }
+ 
+-    const directClient = await CodexAppServerClient.connect(cwd, { disableBroker: true });
++    const directClient = await CodexAppServerClient.connect(cwd, { ...options, disableBroker: true });
+     try {
+       return await fn(directClient);
+     } finally {
+@@ -843,23 +848,44 @@ export async function getCodexAuthStatus(cwd, options = {}) {
+     };
+   }
+ 
+-  let client = null;
++  async function readAuthStatus(connectOptions) {
++    let client = null;
++    try {
++      client = await CodexAppServerClient.connect(cwd, connectOptions);
++      return await getCodexAuthStatusFromClient(client, cwd);
++    } finally {
++      if (client) {
++        await client.close().catch(() => {});
++      }
++    }
++  }
++
+   try {
+-    client = await CodexAppServerClient.connect(cwd, {
++    return await readAuthStatus({
+       env: options.env,
+       reuseExistingBroker: true
+     });
+-    return await getCodexAuthStatusFromClient(client, cwd);
+   } catch (error) {
++    const shouldRetryDirect = error?.code === "ENOENT" || error?.code === "ECONNREFUSED";
++    if (shouldRetryDirect) {
++      try {
++        return await readAuthStatus({
++          env: options.env,
++          disableBroker: true
++        });
++      } catch (directError) {
++        return buildAuthStatus({
++          loggedIn: false,
++          detail: directError instanceof Error ? directError.message : String(directError),
++          source: "app-server"
++        });
++      }
++    }
+     return buildAuthStatus({
+       loggedIn: false,
+       detail: error instanceof Error ? error.message : String(error),
+       source: "app-server"
+     });
+-  } finally {
+-    if (client) {
+-      await client.close().catch(() => {});
+-    }
+   }
+ }
+ 
+@@ -1050,6 +1076,87 @@ export async function findLatestTaskThread(cwd) {
+   });
+ }
+ 
++export async function startPersistentGoalThread(cwd, options = {}) {
++  const availability = getCodexAvailability(cwd);
++  if (!availability.available) {
++    throw new Error("Codex CLI is not installed or is missing required runtime support. Install it with `npm install -g @openai/codex`, then rerun `/codex:setup`.");
++  }
++
++  return withAppServer(
++    cwd,
++    async (client) => {
++      const response = await startThread(client, cwd, {
++        model: options.model,
++        sandbox: "read-only",
++        ephemeral: false,
++        threadName: buildGoalThreadName(options.objective ?? "")
++      });
++      return response.thread;
++    },
++    {
++      disableBroker: true,
++      capabilities: EXPERIMENTAL_CAPABILITIES
++    }
++  );
++}
++
++export async function readThreadGoal(cwd, threadId) {
++  const availability = getCodexAvailability(cwd);
++  if (!availability.available) {
++    throw new Error("Codex CLI is not installed or is missing required runtime support. Install it with `npm install -g @openai/codex`, then rerun `/codex:setup`.");
++  }
++
++  return withAppServer(
++    cwd,
++    async (client) => {
++      const response = await client.request("thread/goal/get", { threadId });
++      return response.goal ?? null;
++    },
++    {
++      disableBroker: true,
++      capabilities: EXPERIMENTAL_CAPABILITIES
++    }
++  );
++}
++
++export async function setThreadGoal(cwd, threadId, params = {}) {
++  const availability = getCodexAvailability(cwd);
++  if (!availability.available) {
++    throw new Error("Codex CLI is not installed or is missing required runtime support. Install it with `npm install -g @openai/codex`, then rerun `/codex:setup`.");
++  }
++
++  return withAppServer(
++    cwd,
++    async (client) => {
++      const response = await client.request("thread/goal/set", {
++        threadId,
++        ...params
++      });
++      return response.goal;
++    },
++    {
++      disableBroker: true,
++      capabilities: EXPERIMENTAL_CAPABILITIES
++    }
++  );
++}
++
++export async function clearThreadGoal(cwd, threadId) {
++  const availability = getCodexAvailability(cwd);
++  if (!availability.available) {
++    throw new Error("Codex CLI is not installed or is missing required runtime support. Install it with `npm install -g @openai/codex`, then rerun `/codex:setup`.");
++  }
++
++  return withAppServer(
++    cwd,
++    async (client) => client.request("thread/goal/clear", { threadId }),
++    {
++      disableBroker: true,
++      capabilities: EXPERIMENTAL_CAPABILITIES
++    }
++  );
++}
++
+ export function buildPersistentTaskThreadName(prompt) {
+   return buildTaskThreadName(prompt);
+ }
+diff --git a/plugins/codex/scripts/lib/render.mjs b/plugins/codex/scripts/lib/render.mjs
+index 2ec18523..67414557 100644
+--- a/plugins/codex/scripts/lib/render.mjs
++++ b/plugins/codex/scripts/lib/render.mjs
+@@ -322,6 +322,38 @@ export function renderTaskResult(parsedResult, meta) {
+   return `${message}\n`;
+ }
+ 
++export function renderGoalReport(report) {
++  const lines = ["# Codex Goal", ""];
++  const action = report?.action ?? "show";
++
++  if (action === "clear") {
++    lines.push(`Goal cleared for thread ${report.threadId}.`);
++    return `${lines.join("\n").trimEnd()}\n`;
++  }
++
++  const goal = report?.goal ?? null;
++  const threadId = goal?.threadId ?? report?.threadId ?? null;
++  if (!goal) {
++    lines.push("No Codex goal is set for this repository.");
++    if (threadId) {
++      lines.push(`Thread: ${threadId}`);
++    }
++    return `${lines.join("\n").trimEnd()}\n`;
++  }
++
++  const tokenBudget = goal.tokenBudget == null ? "unlimited" : String(goal.tokenBudget);
++  lines.push(`Thread: ${goal.threadId}`);
++  lines.push(`Objective: ${goal.objective}`);
++  lines.push(`Status: ${goal.status}`);
++  lines.push(`Token budget: ${tokenBudget}`);
++  lines.push(`Tokens used: ${goal.tokensUsed}`);
++  lines.push(`Time used: ${goal.timeUsedSeconds}s`);
++  lines.push(`Resume in Codex: codex resume ${goal.threadId}`);
++  lines.push("Continue from Claude Code: /codex:cli --resume");
++
++  return `${lines.join("\n").trimEnd()}\n`;
++}
++
+ export function renderStatusReport(report) {
+   const lines = [
+     "# Codex Status",
+diff --git a/tests/commands.test.mjs b/tests/commands.test.mjs
+index 3724ffa4..0d006721 100644
+--- a/tests/commands.test.mjs
++++ b/tests/commands.test.mjs
+@@ -75,6 +75,8 @@ test("continue is not exposed as a user-facing command", () => {
+   assert.deepEqual(commandFiles, [
+     "adversarial-review.md",
+     "cancel.md",
++    "cli.md",
++    "goal.md",
+     "rescue.md",
+     "result.md",
+     "review.md",
+@@ -83,6 +85,35 @@ test("continue is not exposed as a user-facing command", () => {
+   ]);
+ });
+ 
++test("cli command exposes direct Codex task execution without the rescue subagent", () => {
++  const source = read("commands/cli.md");
++  const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
++
++  assert.match(source, /disable-model-invocation:\s*true/);
++  assert.match(source, /codex-companion\.mjs" cli "\$ARGUMENTS"/);
++  assert.match(source, /direct Codex CLI task/i);
++  assert.match(source, /--write/);
++  assert.match(source, /--resume/);
++  assert.match(source, /--background/);
++  assert.doesNotMatch(source, /subagent_type/i);
++  assert.match(readme, /### `\/codex:cli`/);
++  assert.match(readme, /direct Codex CLI task/i);
++});
++
++test("goal command exposes Codex thread goal management", () => {
++  const source = read("commands/goal.md");
++  const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
++
++  assert.match(source, /disable-model-invocation:\s*true/);
++  assert.match(source, /codex-companion\.mjs" goal "\$ARGUMENTS"/);
++  assert.match(source, /--budget <tokens>/);
++  assert.match(source, /--status <active\|paused\|budgetLimited\|complete>/);
++  assert.match(source, /--clear/);
++  assert.match(source, /persistent goal/i);
++  assert.match(readme, /### `\/codex:goal`/);
++  assert.match(readme, /persistent goal Codex can continue over time/i);
++});
++
+ test("rescue command absorbs continue semantics", () => {
+   const rescue = read("commands/rescue.md");
+   const agent = read("agents/codex-rescue.md");
+diff --git a/tests/fake-codex-fixture.mjs b/tests/fake-codex-fixture.mjs
+index debcadce..3102bb0c 100644
+--- a/tests/fake-codex-fixture.mjs
++++ b/tests/fake-codex-fixture.mjs
+@@ -34,6 +34,10 @@ function requiresExperimental(field, message, state) {
+   return !state.capabilities || state.capabilities.experimentalApi !== true;
+ }
+ 
++function requiresExperimentalApi(state) {
++  return !state.capabilities || state.capabilities.experimentalApi !== true;
++}
++
+ function now() {
+   return Math.floor(Date.now() / 1000);
+ }
+@@ -59,6 +63,28 @@ function buildThread(thread) {
+   };
+ }
+ 
++function buildGoal(thread, params) {
++  const existing = thread.goal || null;
++  if (!existing && !params.objective) {
++    throw new Error("cannot update goal for thread " + thread.id + ": no goal exists");
++  }
++  const nowSeconds = now();
++  return {
++    threadId: thread.id,
++    objective: params.objective || existing.objective,
++    status: params.status || (existing ? existing.status : "active"),
++    tokenBudget: Object.prototype.hasOwnProperty.call(params, "tokenBudget")
++      ? params.tokenBudget
++      : existing
++        ? existing.tokenBudget
++        : null,
++    tokensUsed: existing ? existing.tokensUsed : 0,
++    timeUsedSeconds: existing ? existing.timeUsedSeconds : 0,
++    createdAt: existing ? existing.createdAt : nowSeconds,
++    updatedAt: nowSeconds
++  };
++}
++
+ function buildTurn(id, status = "inProgress", error = null) {
+   return { id, status, items: [], error };
+ }
+@@ -335,6 +361,41 @@ rl.on("line", (line) => {
+         break;
+       }
+ 
++      case "thread/goal/get": {
++        if (requiresExperimentalApi(state)) {
++          throw new Error("thread/goal/get requires experimentalApi capability");
++        }
++        const thread = ensureThread(state, message.params.threadId);
++        send({ id: message.id, result: { goal: thread.goal || null } });
++        break;
++      }
++
++      case "thread/goal/set": {
++        if (requiresExperimentalApi(state)) {
++          throw new Error("thread/goal/set requires experimentalApi capability");
++        }
++        const thread = ensureThread(state, message.params.threadId);
++        thread.goal = buildGoal(thread, message.params);
++        thread.updatedAt = now();
++        saveState(state);
++        send({ id: message.id, result: { goal: thread.goal } });
++        send({ method: "thread/goal/updated", params: { threadId: thread.id, turnId: null, goal: thread.goal } });
++        break;
++      }
++
++      case "thread/goal/clear": {
++        if (requiresExperimentalApi(state)) {
++          throw new Error("thread/goal/clear requires experimentalApi capability");
++        }
++        const thread = ensureThread(state, message.params.threadId);
++        thread.goal = null;
++        thread.updatedAt = now();
++        saveState(state);
++        send({ id: message.id, result: { cleared: true } });
++        send({ method: "thread/goal/cleared", params: { threadId: thread.id } });
++        break;
++      }
++
+       case "review/start": {
+         const thread = ensureThread(state, message.params.threadId);
+         let reviewThread = thread;
+@@ -385,9 +446,12 @@ rl.on("line", (line) => {
+ 	        saveState(state);
+ 	        send({ id: message.id, result: { turn: buildTurn(turnId) } });
+ 
++        const isPersistentCompanionThread =
++          thread.name &&
++          (thread.name.startsWith("Codex Companion Task") || thread.name.startsWith("Codex Companion Goal"));
+         const payload = message.params.outputSchema && message.params.outputSchema.properties && message.params.outputSchema.properties.verdict
+           ? structuredReviewPayload(prompt)
+-          : taskPayload(prompt, thread.name && thread.name.startsWith("Codex Companion Task") && prompt.includes("Continue from the current thread state"));
++          : taskPayload(prompt, isPersistentCompanionThread && prompt.includes("Continue from the current thread state"));
+ 
+         if (
+           BEHAVIOR === "with-subagent" ||
+diff --git a/tests/runtime.test.mjs b/tests/runtime.test.mjs
+index 90408372..315acabf 100644
+--- a/tests/runtime.test.mjs
++++ b/tests/runtime.test.mjs
+@@ -34,7 +34,10 @@ test("setup reports ready when fake codex is installed and authenticated", () =>
+ 
+   const result = run("node", [SCRIPT, "setup", "--json"], {
+     cwd: ROOT,
+-    env: buildEnv(binDir)
++    env: {
++      ...buildEnv(binDir),
++      CLAUDE_PLUGIN_DATA: makeTempDir()
++    }
+   });
+ 
+   assert.equal(result.status, 0);
+@@ -193,6 +196,86 @@ test("task runs without auth preflight so Codex can refresh an expired session",
+   assert.match(result.stdout, /Handled the requested task/);
+ });
+ 
++test("cli runs a direct Codex task through the companion runtime", () => {
++  const repo = makeTempDir();
++  const binDir = makeTempDir();
++  installFakeCodex(binDir);
++  initGitRepo(repo);
++  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
++  run("git", ["add", "README.md"], { cwd: repo });
++  run("git", ["commit", "-m", "init"], { cwd: repo });
++
++  const result = run("node", [SCRIPT, "cli", "check direct CLI access"], {
++    cwd: repo,
++    env: buildEnv(binDir)
++  });
++
++  assert.equal(result.status, 0, result.stderr);
++  assert.match(result.stdout, /Handled the requested task/);
++});
++
++test("goal creates, shows, updates, and clears a persistent Codex goal", () => {
++  const repo = makeTempDir();
++  const binDir = makeTempDir();
++  installFakeCodex(binDir);
++  initGitRepo(repo);
++  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
++  run("git", ["add", "README.md"], { cwd: repo });
++  run("git", ["commit", "-m", "init"], { cwd: repo });
++
++  const createResult = run("node", [SCRIPT, "goal", "--fresh", "--budget", "1234", "Ship the integration"], {
++    cwd: repo,
++    env: buildEnv(binDir)
++  });
++
++  assert.equal(createResult.status, 0, createResult.stderr);
++  assert.match(createResult.stdout, /# Codex Goal/);
++  assert.match(createResult.stdout, /Objective: Ship the integration/);
++  assert.match(createResult.stdout, /Status: active/);
++  assert.match(createResult.stdout, /Token budget: 1234/);
++  assert.match(createResult.stdout, /Resume in Codex: codex resume thr_/);
++
++  const showResult = run("node", [SCRIPT, "goal", "--show"], {
++    cwd: repo,
++    env: buildEnv(binDir)
++  });
++
++  assert.equal(showResult.status, 0, showResult.stderr);
++  assert.match(showResult.stdout, /Objective: Ship the integration/);
++
++  const continueResult = run("node", [SCRIPT, "cli", "--resume"], {
++    cwd: repo,
++    env: buildEnv(binDir)
++  });
++
++  assert.equal(continueResult.status, 0, continueResult.stderr);
++  assert.match(continueResult.stdout, /Resumed the prior run/);
++
++  const statusResult = run("node", [SCRIPT, "goal", "--status", "complete"], {
++    cwd: repo,
++    env: buildEnv(binDir)
++  });
++
++  assert.equal(statusResult.status, 0, statusResult.stderr);
++  assert.match(statusResult.stdout, /Status: complete/);
++
++  const clearResult = run("node", [SCRIPT, "goal", "--clear"], {
++    cwd: repo,
++    env: buildEnv(binDir)
++  });
++
++  assert.equal(clearResult.status, 0, clearResult.stderr);
++  assert.match(clearResult.stdout, /Goal cleared/);
++
++  const showAfterClear = run("node", [SCRIPT, "goal", "--show"], {
++    cwd: repo,
++    env: buildEnv(binDir)
++  });
++
++  assert.equal(showAfterClear.status, 0, showAfterClear.stderr);
++  assert.match(showAfterClear.stdout, /No Codex goal is set/);
++});
++
+ test("task reports the actual Codex auth error when the run is rejected", () => {
+   const repo = makeTempDir();
+   const binDir = makeTempDir();

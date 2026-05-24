@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1042",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1042,
+    "headSha": "e9b877fbe3a950fac9a0ad0065b29da37cc4c073",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02",
+    "title": "fix(vertex): throw clear error when document blocks use URL sources",
+    "body": "Fixes #1038\n\nWhen Vertex AI rejects a document block with a URL source, the error it returns references `image.source.base64.data`, a field that has nothing to do with document blocks. I spent a while chasing that before realizing the issue was the source type, not the data format. Not a fun detour.\n\nThis adds a pre-flight check in `buildRequest()` that catches URL sources before the request goes out and throws a clear `AnthropicError` with the base64 workaround in the message. I also covered the nested case: a document URL source inside `tool_result.content[]` hits the same misleading error path, so anyone who fixed the top-level issue would run straight into it next.\n\nWhat changed:\n- `packages/vertex-sdk/src/client.ts`: `validateNoDocumentUrlSources()` called in the `MODEL_ENDPOINTS` block, with a `checkBlock()` helper that handles both the top-level and nested cases.\n- `packages/vertex-sdk/tests/client.test.ts`: Three new tests covering URL source at top level (throws), URL source inside a tool result (throws), and base64/text sources (pass).\n\nPrettier and ESLint pass. All 11 tests pass.\n\nGood codebase to dig through. The `buildRequest()` override made the right place to add the check immediately obvious. Thanks for keeping it so clean.",
+    "author": "Zelys-DFKH",
+    "headRef": "fix/vertex-document-url-source",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "e9b877fbe3a950fac9a0ad0065b29da37cc4c073",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1042.diff",
+  "vendoredAt": "2026-05-24T03:16:29.972Z",
+  "collectedAt": "2026-05-24T03:16:29.972Z"
+}

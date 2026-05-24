@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1046",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1046,
+    "headSha": "08977c428fd1578475dac3d1f9ff7c54f5e7e303",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02",
+    "title": "fix(vertex): throw clear error when document blocks use URL sources",
+    "body": "Fixes #1038\n\nWhen Vertex AI rejects a document block with a URL source, the error it\nreturns references `image.source.base64.data`, a field that has nothing\nto do with document blocks. This is confusing for users debugging.\n\nThis adds a pre-flight check in `buildRequest()` that catches URL sources\nbefore the request goes out and throws a clear `AnthropicError` with the\nbase64 workaround in the message. It also covers the nested case: a document\nURL source inside `tool_result.content[]` hits the same misleading error\npath, so anyone who fixed the top-level issue would run straight into it next.\n\nWhat changed:\n- `packages/vertex-sdk/src/client.ts`: `validateNoDocumentUrlSources()` called\n  in the `MODEL_ENDPOINTS` block, with a `checkBlock()` helper that handles\n  both the top-level and nested cases.\n- `packages/vertex-sdk/tests/client.test.ts`: Four new tests covering URL\n  source at top level (throws), URL source inside a tool result (throws),\n  and base64/text sources (pass).\n",
+    "author": "blut-agent",
+    "headRef": "fix/vertex-document-error",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "08977c428fd1578475dac3d1f9ff7c54f5e7e303",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1046.diff",
+  "vendoredAt": "2026-05-24T03:16:26.634Z",
+  "collectedAt": "2026-05-24T03:16:26.634Z"
+}

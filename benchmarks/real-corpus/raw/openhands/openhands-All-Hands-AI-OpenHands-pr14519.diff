@@ -1,0 +1,1144 @@
+diff --git a/enterprise/saas_server.py b/enterprise/saas_server.py
+index 385f83827d0c..469494999f92 100644
+--- a/enterprise/saas_server.py
++++ b/enterprise/saas_server.py
+@@ -30,6 +30,7 @@
+     SetAuthCookieMiddleware,
+ )
+ from server.rate_limit import setup_rate_limit_handler  # noqa: E402
++from server.routes.analytics_events import analytics_events_router  # noqa: E402
+ from server.routes.api_keys import api_router as api_keys_router  # noqa: E402
+ from server.routes.auth import api_router, oauth_router  # noqa: E402
+ from server.routes.billing import billing_router  # noqa: E402
+@@ -166,6 +167,9 @@ def is_saas():
+ 
+     base_app.include_router(bitbucket_dc_integration_router)
+ base_app.include_router(email_router)  # Add routes for email management
++base_app.include_router(
++    analytics_events_router
++)  # Add routes for client-initiated analytics events
+ 
+ 
+ base_app.add_middleware(
+diff --git a/enterprise/server/routes/analytics_events.py b/enterprise/server/routes/analytics_events.py
+new file mode 100644
+index 000000000000..7f3e5c578662
+--- /dev/null
++++ b/enterprise/server/routes/analytics_events.py
+@@ -0,0 +1,71 @@
++"""Client-initiated analytics events.
++
++Endpoints in this module exist because the corresponding user actions happen
++purely in the browser (no other backend endpoint is hit), so the frontend has
++to explicitly notify the server in order for the event to be captured by the
++server-side PostHog SDK.
++
++Each endpoint:
++- Authenticates via the standard ``get_user_id`` dependency.
++- Validates a small typed body so we never forward arbitrary client-controlled
++  property names into PostHog.
++- Swallows analytics exceptions to ensure telemetry failures never bubble up
++  to the user.
++"""
++
++import logging
++from typing import Literal
++
++from fastapi import APIRouter, Depends
++from pydantic import BaseModel
++
++from openhands.analytics import get_analytics_service, resolve_analytics_context
++from openhands.app_server.user_auth import get_user_id
++
++analytics_events_router = APIRouter(prefix='/api/analytics/events', tags=['Analytics'])
++
++logger = logging.getLogger(__name__)
++
++
++class CreatePrButtonClickedPayload(BaseModel):
++    """Payload for the ``create pr button clicked`` event.
++
++    ``git_provider`` is restricted to the provider names used elsewhere in the
++    frontend's ``Provider`` union so we never forward arbitrary strings to
++    PostHog as property values.
++    """
++
++    git_provider: Literal['github', 'gitlab', 'bitbucket', 'bitbucket-dc'] | None = None
++
++
++class AnalyticsEventResponse(BaseModel):
++    status: str
++
++
++@analytics_events_router.post(
++    '/create-pr-button-clicked', response_model=AnalyticsEventResponse
++)
++async def create_pr_button_clicked(
++    body: CreatePrButtonClickedPayload,
++    user_id: str | None = Depends(get_user_id),
++) -> AnalyticsEventResponse:
++    """Fire the ``create pr button clicked`` PostHog event.
++
++    The frontend hits this endpoint when a user clicks the Pull Request button
++    in the conversation UI. Returning success is independent of whether
++    analytics actually captured (unauthenticated callers and analytics outages
++    both yield a 200 ``status=ok``); we never want the click handler to be
++    blocked by telemetry.
++    """
++    try:
++        analytics = get_analytics_service()
++        if analytics and user_id:
++            ctx = await resolve_analytics_context(user_id)
++            analytics.track_create_pr_button_clicked(
++                ctx=ctx,
++                git_provider=body.git_provider,
++            )
++    except Exception:
++        logger.exception('analytics:create_pr_button_clicked:failed')
++
++    return AnalyticsEventResponse(status='ok')
+diff --git a/enterprise/server/routes/auth.py b/enterprise/server/routes/auth.py
+index 205094e6336f..dc3347eb1efb 100644
+--- a/enterprise/server/routes/auth.py
++++ b/enterprise/server/routes/auth.py
+@@ -18,7 +18,7 @@
+     status,
+ )
+ from fastapi.responses import JSONResponse, RedirectResponse
+-from pydantic import SecretStr
++from pydantic import BaseModel, SecretStr
+ from server.auth.constants import (
+     KEYCLOAK_CLIENT_ID,
+     KEYCLOAK_REALM_NAME,
+@@ -58,7 +58,7 @@
+ from storage.user import User
+ from storage.user_store import UserStore
+ 
+-from openhands.analytics import get_analytics_service
++from openhands.analytics import get_analytics_service, resolve_analytics_context
+ from openhands.app_server.integrations.provider import (
+     PROVIDER_TOKEN_TYPE,
+     ProviderHandler,
+@@ -879,9 +879,32 @@ async def onboarding_status(request: Request):
+     )
+ 
+ 
++class OnboardingSubmission(BaseModel):
++    """Payload posted from the onboarding form.
++
++    ``selections`` maps onboarding question_id -> selected option(s), e.g.
++    ``{"role": "software_engineer", "org_size": "solo",
++       "use_case": ["new_features", "fixing_bugs"]}``.
++
++    The field is optional so the endpoint stays backwards-compatible with any
++    client that previously called it with an empty body, but the current
++    frontend always submits a populated mapping.
++    """
++
++    selections: dict[str, str | list[str]] = {}
++
++
+ @api_router.post('/complete_onboarding')
+-async def complete_onboarding(request: Request):
+-    """Mark onboarding as completed for the current user."""
++async def complete_onboarding(
++    request: Request, body: OnboardingSubmission | None = None
++):
++    """Mark onboarding as completed for the current user and fire analytics.
++
++    Persists ``user.onboarding_completed = True`` and emits the
++    ``onboarding completed`` PostHog event (plus an org ``group_identify`` to
++    stamp ``onboarding_completed_at``). Analytics failures are swallowed so
++    they never block the user from leaving the onboarding flow.
++    """
+     user_auth = cast(SaasUserAuth, await get_user_auth(request))
+     user_id = await user_auth.get_user_id()
+ 
+@@ -903,6 +926,31 @@ async def complete_onboarding(request: Request):
+         extra={'user_id': user_id},
+     )
+ 
++    # Analytics: 'onboarding completed' event + org group_identify.
++    # Best-effort: never let a tracking failure break the onboarding flow.
++    selections = body.selections if body is not None else {}
++    try:
++        analytics = get_analytics_service()
++        if analytics:
++            ctx = await resolve_analytics_context(user_id)
++            analytics.track_onboarding_completed(
++                ctx=ctx,
++                selections=selections,
++            )
++            if ctx.org_id:
++                analytics.group_identify(
++                    ctx=ctx,
++                    group_type='org',
++                    group_key=ctx.org_id,
++                    properties={
++                        'onboarding_completed_at': datetime.now(
++                            timezone.utc
++                        ).isoformat(),
++                    },
++                )
++    except Exception:
++        logger.exception('analytics:onboarding_completed:failed')
++
+     return JSONResponse(
+         status_code=status.HTTP_200_OK,
+         content={'message': 'Onboarding completed'},
+diff --git a/enterprise/server/routes/onboarding.py b/enterprise/server/routes/onboarding.py
+deleted file mode 100644
+index 91c7370c7065..000000000000
+--- a/enterprise/server/routes/onboarding.py
++++ /dev/null
+@@ -1,64 +0,0 @@
+-"""Onboarding submission endpoint.
+-
+-Receives user onboarding selections and fires analytics event.
+-"""
+-
+-from datetime import datetime, timezone
+-from typing import Union
+-
+-from fastapi import APIRouter, Depends
+-from pydantic import BaseModel
+-
+-from openhands.app_server.user_auth import get_user_id
+-
+-onboarding_router = APIRouter(prefix='/api', tags=['Onboarding'])
+-
+-
+-class OnboardingSubmission(BaseModel):
+-    selections: dict[str, Union[str, list[str]]]
+-    # question_id -> selected option(s)
+-    # e.g., {"role": "software_engineer", "org_size": "solo", "use_case": ["new_features", "fixing_bugs"]}
+-
+-
+-class OnboardingResponse(BaseModel):
+-    status: str
+-    redirect_url: str
+-
+-
+-@onboarding_router.post('/onboarding', response_model=OnboardingResponse)
+-async def submit_onboarding(
+-    body: OnboardingSubmission,
+-    user_id: str | None = Depends(get_user_id),
+-) -> OnboardingResponse:
+-    """Submit onboarding form selections and fire analytics event."""
+-    # ACTV-03: onboarding completed
+-    try:
+-        from openhands.analytics import get_analytics_service, resolve_analytics_context
+-
+-        analytics = get_analytics_service()
+-        if analytics and user_id:
+-            ctx = await resolve_analytics_context(user_id)
+-
+-            analytics.track_onboarding_completed(
+-                ctx=ctx,
+-                selections=body.selections,
+-            )
+-
+-            # Associate onboarding timestamp with org group
+-            if ctx.org_id:
+-                analytics.group_identify(
+-                    ctx=ctx,
+-                    group_type='org',
+-                    group_key=ctx.org_id,
+-                    properties={
+-                        'onboarding_completed_at': datetime.now(
+-                            timezone.utc
+-                        ).isoformat(),
+-                    },
+-                )
+-    except Exception:
+-        import logging
+-
+-        logging.getLogger(__name__).exception('analytics:onboarding_completed:failed')
+-
+-    return OnboardingResponse(status='ok', redirect_url='/')
+diff --git a/enterprise/tests/unit/server/routes/test_analytics_events.py b/enterprise/tests/unit/server/routes/test_analytics_events.py
+new file mode 100644
+index 000000000000..b23575f64b62
+--- /dev/null
++++ b/enterprise/tests/unit/server/routes/test_analytics_events.py
+@@ -0,0 +1,156 @@
++"""Tests for client-initiated analytics events router.
++
++Covers ``POST /api/analytics/events/create-pr-button-clicked``:
++- Returns 200 OK and ``status='ok'`` on the happy path
++- Fires ``track_create_pr_button_clicked`` with the supplied git provider
++- Silently no-ops when there is no authenticated user
++- Silently no-ops when analytics is disabled (``get_analytics_service`` returns
++  ``None``)
++- Swallows analytics exceptions so a telemetry outage never breaks the click
++"""
++
++from unittest.mock import AsyncMock, MagicMock, patch
++
++import pytest
++from server.routes.analytics_events import (
++    CreatePrButtonClickedPayload,
++    create_pr_button_clicked,
++)
++
++
++@pytest.mark.asyncio
++async def test_returns_ok_on_happy_path():
++    """Endpoint returns status='ok' when analytics is wired and fires."""
++    mock_analytics = MagicMock()
++    mock_ctx = MagicMock(org_id='org-123')
++
++    with (
++        patch(
++            'server.routes.analytics_events.get_analytics_service',
++            return_value=mock_analytics,
++        ),
++        patch(
++            'server.routes.analytics_events.resolve_analytics_context',
++            new_callable=AsyncMock,
++            return_value=mock_ctx,
++        ),
++    ):
++        result = await create_pr_button_clicked(
++            body=CreatePrButtonClickedPayload(git_provider='github'),
++            user_id='user-123',
++        )
++
++    assert result.status == 'ok'
++    mock_analytics.track_create_pr_button_clicked.assert_called_once_with(
++        ctx=mock_ctx,
++        git_provider='github',
++    )
++
++
++@pytest.mark.asyncio
++async def test_skips_tracking_when_unauthenticated():
++    """No user_id means no tracking - but endpoint still returns ok."""
++    mock_analytics = MagicMock()
++
++    with (
++        patch(
++            'server.routes.analytics_events.get_analytics_service',
++            return_value=mock_analytics,
++        ),
++        patch(
++            'server.routes.analytics_events.resolve_analytics_context',
++            new_callable=AsyncMock,
++        ) as mock_resolve,
++    ):
++        result = await create_pr_button_clicked(
++            body=CreatePrButtonClickedPayload(git_provider='gitlab'),
++            user_id=None,
++        )
++
++    assert result.status == 'ok'
++    mock_analytics.track_create_pr_button_clicked.assert_not_called()
++    mock_resolve.assert_not_called()
++
++
++@pytest.mark.asyncio
++async def test_skips_tracking_when_analytics_disabled():
++    """When get_analytics_service returns None, endpoint still returns ok."""
++    with (
++        patch(
++            'server.routes.analytics_events.get_analytics_service',
++            return_value=None,
++        ),
++        patch(
++            'server.routes.analytics_events.resolve_analytics_context',
++            new_callable=AsyncMock,
++        ) as mock_resolve,
++    ):
++        result = await create_pr_button_clicked(
++            body=CreatePrButtonClickedPayload(git_provider='github'),
++            user_id='user-123',
++        )
++
++    assert result.status == 'ok'
++    mock_resolve.assert_not_called()
++
++
++@pytest.mark.asyncio
++async def test_swallows_analytics_exceptions():
++    """Telemetry failures must not bubble up to the user."""
++    mock_analytics = MagicMock()
++    mock_analytics.track_create_pr_button_clicked.side_effect = RuntimeError(
++        'posthog down'
++    )
++
++    with (
++        patch(
++            'server.routes.analytics_events.get_analytics_service',
++            return_value=mock_analytics,
++        ),
++        patch(
++            'server.routes.analytics_events.resolve_analytics_context',
++            new_callable=AsyncMock,
++            return_value=MagicMock(org_id=None),
++        ),
++    ):
++        result = await create_pr_button_clicked(
++            body=CreatePrButtonClickedPayload(git_provider='github'),
++            user_id='user-123',
++        )
++
++    assert result.status == 'ok'
++
++
++@pytest.mark.asyncio
++async def test_accepts_missing_git_provider():
++    """git_provider is optional; null payloads still fire the event."""
++    mock_analytics = MagicMock()
++
++    with (
++        patch(
++            'server.routes.analytics_events.get_analytics_service',
++            return_value=mock_analytics,
++        ),
++        patch(
++            'server.routes.analytics_events.resolve_analytics_context',
++            new_callable=AsyncMock,
++            return_value=MagicMock(org_id=None),
++        ),
++    ):
++        result = await create_pr_button_clicked(
++            body=CreatePrButtonClickedPayload(),
++            user_id='user-123',
++        )
++
++    assert result.status == 'ok'
++    mock_analytics.track_create_pr_button_clicked.assert_called_once_with(
++        ctx=mock_analytics.track_create_pr_button_clicked.call_args.kwargs['ctx'],
++        git_provider=None,
++    )
++
++
++def test_payload_rejects_unknown_git_provider():
++    """The pydantic model must reject git providers we don't recognise so
++    arbitrary client-controlled strings never become PostHog properties."""
++    with pytest.raises(ValueError):
++        CreatePrButtonClickedPayload(git_provider='attacker-provided')
+diff --git a/enterprise/tests/unit/server/routes/test_auth_onboarding.py b/enterprise/tests/unit/server/routes/test_auth_onboarding.py
+index 28d77f94d30b..d3464bd8dc3c 100644
+--- a/enterprise/tests/unit/server/routes/test_auth_onboarding.py
++++ b/enterprise/tests/unit/server/routes/test_auth_onboarding.py
+@@ -16,6 +16,7 @@
+ from fastapi.responses import JSONResponse
+ from server.auth.saas_user_auth import SaasUserAuth
+ from server.routes.auth import (
++    OnboardingSubmission,
+     _get_post_auth_redirect,
+     _should_redirect_to_onboarding,
+     complete_onboarding,
+@@ -332,6 +333,182 @@ async def test_calls_mark_onboarding_completed_with_user_id(
+ 
+         mock_mark_completed.assert_called_once_with(user_id)
+ 
++    @pytest.mark.asyncio
++    async def test_fires_onboarding_analytics_with_selections(
++        self, mock_request, mock_user
++    ):
++        """On success, the endpoint fires `track_onboarding_completed`
++        with the selections from the request body and a group_identify on
++        the user's current org."""
++        user_id = str(uuid.uuid4())
++        org_id = str(uuid.uuid4())
++        selections = {
++            'role': 'software_engineer',
++            'org_size': 'solo',
++            'use_case': ['new_features', 'fixing_bugs'],
++        }
++
++        mock_user_auth = MagicMock(spec=SaasUserAuth)
++        mock_user_auth.get_user_id = AsyncMock(return_value=user_id)
++
++        mock_analytics = MagicMock()
++        mock_ctx = MagicMock(org_id=org_id)
++
++        with (
++            patch(
++                'server.routes.auth.get_user_auth',
++                new_callable=AsyncMock,
++                return_value=mock_user_auth,
++            ),
++            patch(
++                'server.routes.auth.UserStore.mark_onboarding_completed',
++                new_callable=AsyncMock,
++                return_value=mock_user,
++            ),
++            patch(
++                'server.routes.auth.get_analytics_service',
++                return_value=mock_analytics,
++            ),
++            patch(
++                'server.routes.auth.resolve_analytics_context',
++                new_callable=AsyncMock,
++                return_value=mock_ctx,
++            ),
++        ):
++            result = await complete_onboarding(
++                mock_request, body=OnboardingSubmission(selections=selections)
++            )
++
++        assert isinstance(result, JSONResponse)
++        assert result.status_code == status.HTTP_200_OK
++        mock_analytics.track_onboarding_completed.assert_called_once_with(
++            ctx=mock_ctx,
++            selections=selections,
++        )
++        mock_analytics.group_identify.assert_called_once()
++        gi_kwargs = mock_analytics.group_identify.call_args.kwargs
++        assert gi_kwargs['group_type'] == 'org'
++        assert gi_kwargs['group_key'] == org_id
++        assert 'onboarding_completed_at' in gi_kwargs['properties']
++
++    @pytest.mark.asyncio
++    async def test_skips_group_identify_when_no_org_id(self, mock_request, mock_user):
++        """group_identify must not fire when the user has no current org."""
++        user_id = str(uuid.uuid4())
++        mock_user_auth = MagicMock(spec=SaasUserAuth)
++        mock_user_auth.get_user_id = AsyncMock(return_value=user_id)
++
++        mock_analytics = MagicMock()
++        mock_ctx = MagicMock(org_id=None)
++
++        with (
++            patch(
++                'server.routes.auth.get_user_auth',
++                new_callable=AsyncMock,
++                return_value=mock_user_auth,
++            ),
++            patch(
++                'server.routes.auth.UserStore.mark_onboarding_completed',
++                new_callable=AsyncMock,
++                return_value=mock_user,
++            ),
++            patch(
++                'server.routes.auth.get_analytics_service',
++                return_value=mock_analytics,
++            ),
++            patch(
++                'server.routes.auth.resolve_analytics_context',
++                new_callable=AsyncMock,
++                return_value=mock_ctx,
++            ),
++        ):
++            await complete_onboarding(
++                mock_request, body=OnboardingSubmission(selections={})
++            )
++
++        mock_analytics.track_onboarding_completed.assert_called_once()
++        mock_analytics.group_identify.assert_not_called()
++
++    @pytest.mark.asyncio
++    async def test_analytics_exception_does_not_break_endpoint(
++        self, mock_request, mock_user
++    ):
++        """Telemetry failures must never block the user from finishing
++        onboarding - the endpoint should still return 200."""
++        user_id = str(uuid.uuid4())
++        mock_user_auth = MagicMock(spec=SaasUserAuth)
++        mock_user_auth.get_user_id = AsyncMock(return_value=user_id)
++
++        mock_analytics = MagicMock()
++        mock_analytics.track_onboarding_completed.side_effect = RuntimeError(
++            'posthog down'
++        )
++
++        with (
++            patch(
++                'server.routes.auth.get_user_auth',
++                new_callable=AsyncMock,
++                return_value=mock_user_auth,
++            ),
++            patch(
++                'server.routes.auth.UserStore.mark_onboarding_completed',
++                new_callable=AsyncMock,
++                return_value=mock_user,
++            ),
++            patch(
++                'server.routes.auth.get_analytics_service',
++                return_value=mock_analytics,
++            ),
++            patch(
++                'server.routes.auth.resolve_analytics_context',
++                new_callable=AsyncMock,
++                return_value=MagicMock(org_id=None),
++            ),
++        ):
++            result = await complete_onboarding(
++                mock_request, body=OnboardingSubmission(selections={})
++            )
++
++        assert isinstance(result, JSONResponse)
++        assert result.status_code == status.HTTP_200_OK
++
++    @pytest.mark.asyncio
++    async def test_no_body_defaults_to_empty_selections(self, mock_request, mock_user):
++        """When called with no body (backwards compat), analytics still
++        fires with an empty selections dict."""
++        user_id = str(uuid.uuid4())
++        mock_user_auth = MagicMock(spec=SaasUserAuth)
++        mock_user_auth.get_user_id = AsyncMock(return_value=user_id)
++
++        mock_analytics = MagicMock()
++
++        with (
++            patch(
++                'server.routes.auth.get_user_auth',
++                new_callable=AsyncMock,
++                return_value=mock_user_auth,
++            ),
++            patch(
++                'server.routes.auth.UserStore.mark_onboarding_completed',
++                new_callable=AsyncMock,
++                return_value=mock_user,
++            ),
++            patch(
++                'server.routes.auth.get_analytics_service',
++                return_value=mock_analytics,
++            ),
++            patch(
++                'server.routes.auth.resolve_analytics_context',
++                new_callable=AsyncMock,
++                return_value=MagicMock(org_id=None),
++            ),
++        ):
++            await complete_onboarding(mock_request)
++
++        mock_analytics.track_onboarding_completed.assert_called_once()
++        kwargs = mock_analytics.track_onboarding_completed.call_args.kwargs
++        assert kwargs['selections'] == {}
++
+ 
+ class TestOnboardingStatusEndpoint:
+     """Tests for the /onboarding_status API endpoint."""
+diff --git a/enterprise/tests/unit/server/routes/test_onboarding.py b/enterprise/tests/unit/server/routes/test_onboarding.py
+deleted file mode 100644
+index f8020a7f7fab..000000000000
+--- a/enterprise/tests/unit/server/routes/test_onboarding.py
++++ /dev/null
+@@ -1,255 +0,0 @@
+-"""Tests for the onboarding route.
+-
+-Covers:
+-- Successful onboarding submission with analytics tracking
+-- Analytics tracking with org_id and group_identify
+-- Handling when analytics service is not available
+-- Handling when user_id is not available
+-- Error handling when analytics fails
+-"""
+-
+-from unittest.mock import AsyncMock, MagicMock, patch
+-
+-import pytest
+-from server.routes.onboarding import (
+-    OnboardingResponse,
+-    OnboardingSubmission,
+-    submit_onboarding,
+-)
+-
+-from openhands.analytics.analytics_context import AnalyticsContext
+-
+-
+-@pytest.fixture
+-def mock_analytics_service():
+-    """Create a mock analytics service."""
+-    service = MagicMock()
+-    service.track_onboarding_completed = MagicMock()
+-    service.group_identify = MagicMock()
+-    return service
+-
+-
+-@pytest.fixture
+-def mock_analytics_context():
+-    """Create a mock analytics context with consent and org_id."""
+-    return AnalyticsContext(
+-        user_id='test-user-123',
+-        consented=True,
+-        org_id='org-abc-456',
+-        user=None,
+-    )
+-
+-
+-@pytest.fixture
+-def mock_analytics_context_no_org():
+-    """Create a mock analytics context without org_id."""
+-    return AnalyticsContext(
+-        user_id='test-user-123',
+-        consented=True,
+-        org_id=None,
+-        user=None,
+-    )
+-
+-
+-@pytest.fixture
+-def mock_analytics_context_no_consent():
+-    """Create a mock analytics context without consent."""
+-    return AnalyticsContext(
+-        user_id='test-user-123',
+-        consented=False,
+-        org_id='org-abc-456',
+-        user=None,
+-    )
+-
+-
+-@pytest.mark.asyncio
+-async def test_submit_onboarding_returns_ok_response():
+-    """submit_onboarding returns OnboardingResponse with status ok and redirect_url /."""
+-    body = OnboardingSubmission(selections={'role': 'developer', 'org_size': '11-50'})
+-
+-    with patch('openhands.analytics.get_analytics_service', return_value=None):
+-        result = await submit_onboarding(body=body, user_id='test-user')
+-
+-    assert isinstance(result, OnboardingResponse)
+-    assert result.status == 'ok'
+-    assert result.redirect_url == '/'
+-
+-
+-@pytest.mark.asyncio
+-async def test_submit_onboarding_tracks_analytics_event(
+-    mock_analytics_service, mock_analytics_context
+-):
+-    """submit_onboarding calls track_onboarding_completed with correct parameters."""
+-    body = OnboardingSubmission(
+-        selections={
+-            'role': 'software_engineer',
+-            'org_size': 'solo',
+-            'use_case': ['new_features', 'fixing_bugs'],
+-        }
+-    )
+-
+-    with (
+-        patch(
+-            'openhands.analytics.get_analytics_service',
+-            return_value=mock_analytics_service,
+-        ),
+-        patch(
+-            'openhands.analytics.resolve_analytics_context',
+-            new_callable=AsyncMock,
+-            return_value=mock_analytics_context,
+-        ),
+-    ):
+-        await submit_onboarding(body=body, user_id='test-user-123')
+-
+-    mock_analytics_service.track_onboarding_completed.assert_called_once()
+-    call_kwargs = mock_analytics_service.track_onboarding_completed.call_args.kwargs
+-    assert call_kwargs['ctx'].user_id == 'test-user-123'
+-    assert call_kwargs['ctx'].org_id == 'org-abc-456'
+-    assert call_kwargs['ctx'].consented is True
+-    assert call_kwargs['selections'] == {
+-        'role': 'software_engineer',
+-        'org_size': 'solo',
+-        'use_case': ['new_features', 'fixing_bugs'],
+-    }
+-
+-
+-@pytest.mark.asyncio
+-async def test_submit_onboarding_calls_group_identify_when_org_id_present(
+-    mock_analytics_service, mock_analytics_context
+-):
+-    """submit_onboarding calls group_identify when org_id is present."""
+-    body = OnboardingSubmission(selections={'role': 'developer'})
+-
+-    with (
+-        patch(
+-            'openhands.analytics.get_analytics_service',
+-            return_value=mock_analytics_service,
+-        ),
+-        patch(
+-            'openhands.analytics.resolve_analytics_context',
+-            new_callable=AsyncMock,
+-            return_value=mock_analytics_context,
+-        ),
+-    ):
+-        await submit_onboarding(body=body, user_id='test-user-123')
+-
+-    mock_analytics_service.group_identify.assert_called_once()
+-    call_kwargs = mock_analytics_service.group_identify.call_args.kwargs
+-    assert call_kwargs['ctx'].user_id == 'test-user-123'
+-    assert call_kwargs['ctx'].consented is True
+-    assert call_kwargs['group_type'] == 'org'
+-    assert call_kwargs['group_key'] == 'org-abc-456'
+-    assert 'onboarding_completed_at' in call_kwargs['properties']
+-
+-
+-@pytest.mark.asyncio
+-async def test_submit_onboarding_skips_group_identify_when_no_org_id(
+-    mock_analytics_service, mock_analytics_context_no_org
+-):
+-    """submit_onboarding skips group_identify when org_id is None."""
+-    body = OnboardingSubmission(selections={'role': 'developer'})
+-
+-    with (
+-        patch(
+-            'openhands.analytics.get_analytics_service',
+-            return_value=mock_analytics_service,
+-        ),
+-        patch(
+-            'openhands.analytics.resolve_analytics_context',
+-            new_callable=AsyncMock,
+-            return_value=mock_analytics_context_no_org,
+-        ),
+-    ):
+-        await submit_onboarding(body=body, user_id='test-user-123')
+-
+-    mock_analytics_service.track_onboarding_completed.assert_called_once()
+-    mock_analytics_service.group_identify.assert_not_called()
+-
+-
+-@pytest.mark.asyncio
+-async def test_submit_onboarding_skips_analytics_when_service_is_none():
+-    """submit_onboarding skips analytics when get_analytics_service returns None."""
+-    body = OnboardingSubmission(selections={'role': 'developer'})
+-
+-    with patch('openhands.analytics.get_analytics_service', return_value=None):
+-        result = await submit_onboarding(body=body, user_id='test-user-123')
+-
+-    # Should still return success even without analytics
+-    assert result.status == 'ok'
+-
+-
+-@pytest.mark.asyncio
+-async def test_submit_onboarding_skips_analytics_when_user_id_is_none(
+-    mock_analytics_service,
+-):
+-    """submit_onboarding skips analytics when user_id is None."""
+-    body = OnboardingSubmission(selections={'role': 'developer'})
+-
+-    with patch(
+-        'openhands.analytics.get_analytics_service',
+-        return_value=mock_analytics_service,
+-    ):
+-        result = await submit_onboarding(body=body, user_id=None)
+-
+-    # Should still return success
+-    assert result.status == 'ok'
+-    # Analytics should not be called
+-    mock_analytics_service.track_onboarding_completed.assert_not_called()
+-
+-
+-@pytest.mark.asyncio
+-async def test_submit_onboarding_handles_analytics_exception_gracefully(
+-    mock_analytics_service,
+-):
+-    """submit_onboarding catches analytics exceptions and still returns success."""
+-    body = OnboardingSubmission(selections={'role': 'developer'})
+-    mock_analytics_service.track_onboarding_completed.side_effect = RuntimeError(
+-        'PostHog error'
+-    )
+-
+-    mock_context = AnalyticsContext(
+-        user_id='test-user-123',
+-        consented=True,
+-        org_id=None,
+-        user=None,
+-    )
+-
+-    with (
+-        patch(
+-            'openhands.analytics.get_analytics_service',
+-            return_value=mock_analytics_service,
+-        ),
+-        patch(
+-            'openhands.analytics.resolve_analytics_context',
+-            new_callable=AsyncMock,
+-            return_value=mock_context,
+-        ),
+-    ):
+-        # Should not raise, should return success
+-        result = await submit_onboarding(body=body, user_id='test-user-123')
+-
+-    assert result.status == 'ok'
+-
+-
+-@pytest.mark.asyncio
+-async def test_submit_onboarding_passes_consent_false_to_analytics(
+-    mock_analytics_service, mock_analytics_context_no_consent
+-):
+-    """submit_onboarding passes consented=False when user has not consented."""
+-    body = OnboardingSubmission(selections={'role': 'developer'})
+-
+-    with (
+-        patch(
+-            'openhands.analytics.get_analytics_service',
+-            return_value=mock_analytics_service,
+-        ),
+-        patch(
+-            'openhands.analytics.resolve_analytics_context',
+-            new_callable=AsyncMock,
+-            return_value=mock_analytics_context_no_consent,
+-        ),
+-    ):
+-        await submit_onboarding(body=body, user_id='test-user-123')
+-
+-    call_kwargs = mock_analytics_service.track_onboarding_completed.call_args.kwargs
+-    assert call_kwargs['ctx'].consented is False
+diff --git a/frontend/__tests__/hooks/mutation/use-track-create-pr-button-clicked.test.tsx b/frontend/__tests__/hooks/mutation/use-track-create-pr-button-clicked.test.tsx
+new file mode 100644
+index 000000000000..9029021474cb
+--- /dev/null
++++ b/frontend/__tests__/hooks/mutation/use-track-create-pr-button-clicked.test.tsx
+@@ -0,0 +1,59 @@
++import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
++import { renderHook, waitFor } from "@testing-library/react";
++import React from "react";
++import { beforeEach, describe, expect, it, vi } from "vitest";
++import { analyticsEventsService } from "#/api/analytics-service/analytics-events.api";
++import { useTrackCreatePrButtonClicked } from "#/hooks/mutation/use-track-create-pr-button-clicked";
++
++describe("useTrackCreatePrButtonClicked", () => {
++  let queryClient: QueryClient;
++
++  beforeEach(() => {
++    vi.restoreAllMocks();
++    queryClient = new QueryClient({
++      defaultOptions: {
++        queries: { retry: false },
++        mutations: { retry: false },
++      },
++    });
++  });
++
++  const wrapper = ({ children }: { children: React.ReactNode }) => (
++    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
++  );
++
++  it("calls trackCreatePrButtonClicked with the given provider", async () => {
++    const spy = vi
++      .spyOn(analyticsEventsService, "trackCreatePrButtonClicked")
++      .mockResolvedValue({ status: "ok" });
++
++    const { result } = renderHook(() => useTrackCreatePrButtonClicked(), {
++      wrapper,
++    });
++
++    result.current.mutate("github");
++
++    await waitFor(() => {
++      expect(spy).toHaveBeenCalledWith("github");
++    });
++  });
++
++  it("swallows errors so they never bubble up to the click handler", async () => {
++    vi.spyOn(
++      analyticsEventsService,
++      "trackCreatePrButtonClicked",
++    ).mockRejectedValue(new Error("network down"));
++
++    const { result } = renderHook(() => useTrackCreatePrButtonClicked(), {
++      wrapper,
++    });
++
++    result.current.mutate("github");
++
++    // The mutation must eventually settle into an error state without
++    // throwing - the consumer never awaits this and doesn't pass an onError.
++    await waitFor(() => {
++      expect(result.current.isError).toBe(true);
++    });
++  });
++});
+diff --git a/frontend/src/api/analytics-service/analytics-events.api.ts b/frontend/src/api/analytics-service/analytics-events.api.ts
+new file mode 100644
+index 000000000000..66207ce15169
+--- /dev/null
++++ b/frontend/src/api/analytics-service/analytics-events.api.ts
+@@ -0,0 +1,23 @@
++import { openHands } from "../open-hands-axios";
++import { Provider } from "#/types/settings";
++
++export type AnalyticsEventResponse = {
++  status: string;
++};
++
++export const analyticsEventsService = {
++  /**
++   * Notify the server that the user clicked the "Pull Request" button in the
++   * conversation UI. The server-side handler fires the PostHog
++   * `create pr button clicked` event (analytics moved server-side in #14006).
++   */
++  trackCreatePrButtonClicked: async (
++    gitProvider: Provider | null,
++  ): Promise<AnalyticsEventResponse> => {
++    const { data } = await openHands.post<AnalyticsEventResponse>(
++      "/api/analytics/events/create-pr-button-clicked",
++      { git_provider: gitProvider },
++    );
++    return data;
++  },
++};
+diff --git a/frontend/src/components/features/chat/git-control-bar-pr-button.tsx b/frontend/src/components/features/chat/git-control-bar-pr-button.tsx
+index 498af84cabf5..fd88de7c3d96 100644
+--- a/frontend/src/components/features/chat/git-control-bar-pr-button.tsx
++++ b/frontend/src/components/features/chat/git-control-bar-pr-button.tsx
+@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
+ import PRIcon from "#/icons/u-pr.svg?react";
+ import { cn, getCreatePRPrompt } from "#/utils/utils";
+ import { useUserProviders } from "#/hooks/use-user-providers";
++import { useTrackCreatePrButtonClicked } from "#/hooks/mutation/use-track-create-pr-button-clicked";
+ import { I18nKey } from "#/i18n/declaration";
+ import { Provider } from "#/types/settings";
+ 
+@@ -20,12 +21,15 @@ export function GitControlBarPrButton({
+ }: GitControlBarPrButtonProps) {
+   const { t } = useTranslation();
+   const { providers } = useUserProviders();
++  const { mutate: trackCreatePrButtonClicked } =
++    useTrackCreatePrButtonClicked();
+ 
+   const providersAreSet = providers.length > 0;
+   const isButtonEnabled =
+     providersAreSet && hasRepository && isConversationReady;
+ 
+   const handlePrClick = () => {
++    trackCreatePrButtonClicked(currentGitProvider);
+     onSuggestionsClick(getCreatePRPrompt(currentGitProvider));
+   };
+ 
+diff --git a/frontend/src/components/features/controls/git-tools-submenu.tsx b/frontend/src/components/features/controls/git-tools-submenu.tsx
+index 97db554aba0d..f8570505732d 100644
+--- a/frontend/src/components/features/controls/git-tools-submenu.tsx
++++ b/frontend/src/components/features/controls/git-tools-submenu.tsx
+@@ -3,6 +3,7 @@ import { ContextMenu } from "#/ui/context-menu";
+ import { ContextMenuListItem } from "../context-menu/context-menu-list-item";
+ import { ToolsContextMenuIconText } from "./tools-context-menu-icon-text";
+ import { useActiveConversation } from "#/hooks/query/use-active-conversation";
++import { useTrackCreatePrButtonClicked } from "#/hooks/mutation/use-track-create-pr-button-clicked";
+ import { Provider } from "#/types/settings";
+ import {
+   getGitPullPrompt,
+@@ -29,6 +30,8 @@ export function GitToolsSubmenu({ onClose }: GitToolsSubmenuProps) {
+   const { t } = useTranslation();
+   const { setMessageToSend } = useConversationStore();
+   const { data: conversation } = useActiveConversation();
++  const { mutate: trackCreatePrButtonClicked } =
++    useTrackCreatePrButtonClicked();
+ 
+   const currentGitProvider = conversation?.git_provider as Provider;
+ 
+@@ -43,6 +46,7 @@ export function GitToolsSubmenu({ onClose }: GitToolsSubmenuProps) {
+   };
+ 
+   const onCreatePR = () => {
++    trackCreatePrButtonClicked(currentGitProvider ?? null);
+     setMessageToSend(getCreatePRPrompt(currentGitProvider));
+     onClose();
+   };
+diff --git a/frontend/src/hooks/mutation/use-track-create-pr-button-clicked.ts b/frontend/src/hooks/mutation/use-track-create-pr-button-clicked.ts
+new file mode 100644
+index 000000000000..095ba1d90d5a
+--- /dev/null
++++ b/frontend/src/hooks/mutation/use-track-create-pr-button-clicked.ts
+@@ -0,0 +1,19 @@
++import { useMutation } from "@tanstack/react-query";
++import { analyticsEventsService } from "#/api/analytics-service/analytics-events.api";
++import { Provider } from "#/types/settings";
++
++/**
++ * Mutation hook that notifies the server when the user clicks the
++ * "Pull Request" button. The server fires the PostHog
++ * `create pr button clicked` event (analytics moved server-side in #14006).
++ *
++ * Tracking is fire-and-forget: errors are swallowed so a telemetry outage
++ * never blocks the user's primary action of submitting the prompt.
++ */
++export const useTrackCreatePrButtonClicked = () =>
++  useMutation({
++    mutationFn: (gitProvider: Provider | null) =>
++      analyticsEventsService.trackCreatePrButtonClicked(gitProvider),
++    // Intentionally swallow errors - analytics must not block the UX.
++    onError: () => {},
++  });
+diff --git a/openhands/analytics/analytics_constants.py b/openhands/analytics/analytics_constants.py
+index 1dfb15a4ccab..2c19282c8266 100644
+--- a/openhands/analytics/analytics_constants.py
++++ b/openhands/analytics/analytics_constants.py
+@@ -21,3 +21,4 @@
+ SETTINGS_SAVED = 'settings saved'
+ TRAJECTORY_DOWNLOADED = 'trajectory downloaded'
+ TEAM_MEMBERS_INVITED = 'team members invited'
++CREATE_PR_BUTTON_CLICKED = 'create pr button clicked'
+diff --git a/openhands/analytics/analytics_service.py b/openhands/analytics/analytics_service.py
+index 25cba9c659a6..efea4c5179bb 100644
+--- a/openhands/analytics/analytics_service.py
++++ b/openhands/analytics/analytics_service.py
+@@ -22,6 +22,7 @@
+     CONVERSATION_DELETED,
+     CONVERSATION_ERRORED,
+     CONVERSATION_FINISHED,
++    CREATE_PR_BUTTON_CLICKED,
+     CREDIT_LIMIT_REACHED,
+     CREDIT_PURCHASED,
+     GIT_PROVIDER_CONNECTED,
+@@ -460,6 +461,28 @@ def track_team_members_invited(
+             session_id=session_id,
+         )
+ 
++    def track_create_pr_button_clicked(
++        self,
++        ctx: AnalyticsContext,
++        *,
++        git_provider: str | None = None,
++        session_id: str | None = None,
++    ) -> None:
++        """Track 'create pr button clicked' event.
++
++        Fired when a user clicks the "Pull Request" button in the conversation
++        UI to ask the agent to push their changes and open a pull request.
++        Drives downstream PostHog surveys (e.g. NPS) that key off this action.
++        """
++        self.capture(
++            ctx=ctx,
++            event=CREATE_PR_BUTTON_CLICKED,
++            properties={
++                'git_provider': git_provider,
++            },
++            session_id=session_id,
++        )
++
+     def identify_user(
+         self,
+         ctx: AnalyticsContext,
+diff --git a/tests/unit/test_analytics_service.py b/tests/unit/test_analytics_service.py
+index b0c82e24a9a9..1830ded5d6cb 100644
+--- a/tests/unit/test_analytics_service.py
++++ b/tests/unit/test_analytics_service.py
+@@ -15,6 +15,7 @@
+     CONVERSATION_DELETED,
+     CONVERSATION_ERRORED,
+     CONVERSATION_FINISHED,
++    CREATE_PR_BUTTON_CLICKED,
+     CREDIT_LIMIT_REACHED,
+     CREDIT_PURCHASED,
+     GIT_PROVIDER_CONNECTED,
+@@ -850,6 +851,29 @@ def test_track_team_members_invited(self, saas_service):
+         assert props['failed_count'] == 1
+         assert props['role'] == 'member'
+ 
++    def test_track_create_pr_button_clicked(self, saas_service):
++        """track_create_pr_button_clicked calls capture with CREATE_PR_BUTTON_CLICKED and correct properties."""
++        service, mock_client = saas_service
++        ctx = make_ctx(user_id='user-1', org_id='org-123')
++        service.track_create_pr_button_clicked(
++            ctx=ctx,
++            git_provider='github',
++        )
++        mock_client.capture.assert_called_once()
++        _, kwargs = mock_client.capture.call_args
++        assert kwargs['event'] == CREATE_PR_BUTTON_CLICKED
++        assert kwargs['properties']['git_provider'] == 'github'
++
++    def test_track_create_pr_button_clicked_without_provider(self, saas_service):
++        """git_provider may be omitted (e.g. user not connected to a provider)."""
++        service, mock_client = saas_service
++        ctx = make_ctx(user_id='user-1')
++        service.track_create_pr_button_clicked(ctx=ctx)
++        mock_client.capture.assert_called_once()
++        _, kwargs = mock_client.capture.call_args
++        assert kwargs['event'] == CREATE_PR_BUTTON_CLICKED
++        assert kwargs['properties']['git_provider'] is None
++
+     def test_typed_method_consent_false_is_noop(self, saas_service):
+         """A typed method with consented=False results in no capture call."""
+         service, mock_client = saas_service

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-Soul-Brews-Studio-arra-oracle-v3-pr1133",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer"
+  },
+  "pr": {
+    "number": 1133,
+    "headSha": "e75dd1584f4c04ddc6d300a1364e86248af64ef5",
+    "baseSha": "f27ed43b5bd7bbedde7f097b22c3dc73d0009693",
+    "title": "fix(mcp): route LanceDB + learn logs to stderr",
+    "body": "## Summary\n- LanceDB adapter logged to stdout via `console.log`/`console.warn`, corrupting MCP JSON-RPC responses for strict clients (Codex CLI)\n- Changed all `console.log`/`console.warn` to `console.error` in `lancedb.ts` (7 sites) and `learn.ts` (3 sites)\n- MCP stdio entry (`index.ts`) already used `console.error` correctly\n\n## Root cause\nCodex CLI MCP client enforces clean stdout (JSON-RPC only). The `[LanceDB] Connected at ...` log line mixed into stdout before the initialize response, causing handshake failure: `connection closed: initialize response`.\n\n## Test plan\n- [x] Manual MCP handshake test: stdout now contains only JSON-RPC response\n- [x] Codex CLI connects successfully and calls `arra_search` via MCP\n- [x] Claude MCP connections unaffected (7 instances running)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "TTT3P",
+    "headRef": "fix/mcp-stdout-logs",
+    "repository": "Soul-Brews-Studio/arra-oracle-v3"
+  },
+  "diffRef": {
+    "repository": "Soul-Brews-Studio/arra-oracle-v3",
+    "headSha": "e75dd1584f4c04ddc6d300a1364e86248af64ef5",
+    "baseSha": "f27ed43b5bd7bbedde7f097b22c3dc73d0009693"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-Soul-Brews-Studio-arra-oracle-v3-pr1133.diff",
+  "vendoredAt": "2026-05-24T03:13:16.260Z",
+  "collectedAt": "2026-05-24T03:13:16.260Z"
+}

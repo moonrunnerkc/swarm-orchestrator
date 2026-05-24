@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24169",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24169,
+    "headSha": "b5cfe3cb884ebd24de19437215adc2ddbb78d7c1",
+    "baseSha": "c7bcb90f9b705f556ed0fb1bde13d836cbf71924",
+    "title": "[codex] reject empty base64 image inputs",
+    "body": "## Summary\n\n- Map Responses API `.image_url` `invalid_value` 400s into `InvalidImageRequest` so existing invalid-image recovery can run for empty/invalid base64 image URL failures.\n- Replace empty `data:image/*;base64,` user images with model-visible text instead of emitting an `input_image` item.\n- Replace empty base64 image outputs from MCP and dynamic tool paths with text feedback before they are serialized as tool output images.\n\n## Why\n\nEmpty base64 image URLs are a known low-level poisoned-thread shape. They are always invalid for the Responses API, and letting them through causes later turns or resumes to replay the same bad `image_url` and fail before the model can recover.\n\nThis keeps the scope intentionally narrow: it does not add a broad image validator, durable history patching, or all-image replacement semantics.\n\n## Validation\n\n- `just fmt`\n- `cargo test -p codex-api`\n- `cargo test -p codex-protocol`\n- `git diff --check`\n\nNot run: full workspace test suite.",
+    "author": "rhan-oai",
+    "headRef": "codex/reject-empty-base64-images",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "b5cfe3cb884ebd24de19437215adc2ddbb78d7c1",
+    "baseSha": "c7bcb90f9b705f556ed0fb1bde13d836cbf71924"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24169.diff",
+  "vendoredAt": "2026-05-24T03:20:42.703Z",
+  "collectedAt": "2026-05-24T03:20:42.703Z"
+}

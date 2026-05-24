@@ -1,0 +1,39 @@
+diff --git a/.gitignore b/.gitignore
+index 4be3323..696cd7f 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -42,3 +42,13 @@ Thumbs.db
+ # / `memory show` / `memory accept`. They are runtime artifacts; only
+ # accepted suggestions land under .ai-cockpit/memory/ and get tracked.
+ .ai-cockpit/suggestions/
++
++# Aider runtime artifacts (v0.3 step 2 / A.8). These files are written
++# by the `aider` CLI itself when `--worker aider --apply` runs; they are
++# aider's chat/input history and tag cache, NOT ai-cockpit output. The
++# generic `.aider*` glob is the safety net for any future filename aider
++# adds. Documented under README "Coder worker (v0.3 step 2)".
++.aider.chat.history.md
++.aider.input.history
++.aider.tags.cache.v4/
++.aider*
+diff --git a/README.md b/README.md
+index 7150779..5887e59 100644
+--- a/README.md
++++ b/README.md
+@@ -174,6 +174,16 @@ ai-cockpit "fix the failing test" --worker aider --apply --llm auto
+ > never loaded). If you need both, install aider into a separate
+ > virtualenv.
+ 
++**Aider runtime artifacts are gitignored (A.8).** When aider runs it
++writes `.aider.chat.history.md`, `.aider.input.history`, and a
++`.aider.tags.cache.v4/` directory next to your project. These are
++aider's own session state — chat transcript, input history, and source
++tag cache — not ai-cockpit output, so the repo `.gitignore` excludes
++them (plus a generic `.aider*` glob as a safety net for any future
++filename aider adds). After a `--worker aider --apply` run,
++`git status --short` should not list any `.aider.*` paths; if it does,
++that's a regression in this allow-list, not normal output.
++
+ **Pre-run dirty-tree pre-check (A.7).** Before spawning aider, the
+ CLI inspects `git status --porcelain` and refuses to proceed if
+ there are uncommitted modifications to paths outside the aider

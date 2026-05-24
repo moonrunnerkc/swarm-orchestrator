@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24144",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24144,
+    "headSha": "2edafef1532bd2df6e687592d7b3b1972b2d7d94",
+    "baseSha": "5c78d1caa85542500600fc9901ba0b835c7b3880",
+    "title": "Track turn timing in ChatGPT telemetry",
+    "body": "## Why\nThis is the turn-specific slice of the ChatGPT telemetry stack. We want per-turn timing that breaks total turn time into request-start delay, sampling time, and blocking tool critical path, while keeping approval wait attributable to the turn without mixing in app-server or thread startup costs.\n\n## What changed\n- extend `TurnTimingState` in `codex-rs/core` to accumulate request-start delay, sampling duration, and blocking-tool critical-path duration across a turn\n- emit a `TurnTimingBreakdownFact` at turn completion and attach it to `codex_turn_event`\n- roll review durations into `approval_wait_duration_ms` and derive `finalize_duration_ms` as the remainder after request start, sampling, and blocking tool time\n- add reducer and timing-state coverage for the new turn timing fields and approval roll-up\n\n## Verification\n- `cargo check -p codex-analytics -p codex-app-server -p codex-core`\n- `just fix -p codex-analytics -p codex-core`\n",
+    "author": "aibrahim-oai",
+    "headRef": "aibrahim/telemetry-turn-timing",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "2edafef1532bd2df6e687592d7b3b1972b2d7d94",
+    "baseSha": "5c78d1caa85542500600fc9901ba0b835c7b3880"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24144.diff",
+  "vendoredAt": "2026-05-24T03:20:55.843Z",
+  "collectedAt": "2026-05-24T03:20:55.843Z"
+}

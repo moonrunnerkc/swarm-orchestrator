@@ -1,0 +1,26 @@
+{
+  "id": "devin-Juan-Lucas-memoire-master-rl-logistique-pr2",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "3db4c85eed66dabe17da892128c37cb91517bf50",
+    "baseSha": "63584554a154be3d7aa8895b55bf9ff535c9a7db",
+    "title": "feat: Implémentation complète Sprint B→E (Gymnasium, Baselines, PPO, Expérimentation)",
+    "body": "## Summary\n\nImplémentation complète des Sprints B à E du plan de codage aligné sur le mémoire (`rl_thesis.tex`). Ajoute l'environnement Gymnasium, les baselines de comparaison, l'agent PPO et le framework d'expérimentation.\n\n### Sprint B — Environnement Gymnasium (`env/`)\n- **`mine_env.py`** : Environnement `MineEnv` conforme à l'interface Gymnasium (`reset()`/`step()`). Passe `gymnasium.utils.env_checker.check_env()`.\n  - `observation_space` : `Box([0,1])` — vecteur normalisé encodant l'état s_t (files d'attente, statuts camions, disponibilité ressources, temps courant)\n  - `action_space` : `Discrete(num_shovels + 1)` — choix de pelle + ATTENDRE\n  - Récompense pondérée R_t = w1·R_rendement + w2·R_équité + w3·R_coût (Eq. 3.8 du mémoire)\n- **`observation_builder.py`** : Construction du vecteur d'observation normalisé (Eq. 3.3)\n- **`action_mask.py`** : Masquage des actions invalides\n\n### Sprint C — Baselines (`baselines/`)\n- **`fixed_policy.py`** : Assignation fixe round-robin (niveau zéro, Section 4.5)\n- **`nearest_policy.py`** : Pelle la plus proche géographiquement (greedy, Section 4.5)\n- **`queue_aware_policy.py`** : Temps d'attente estimé minimal (baseline avancée)\n\n### Sprint D — Agent PPO (`rl/`)\n- **`train_ppo.py`** : Entraînement PPO via Stable-Baselines3 avec hyperparamètres du Tableau 4.3 (lr=3e-4, gamma=0.99, batch=64, MLP 128×128)\n- **`evaluate_agent.py`** : Évaluation comparative baselines + PPO avec KPIs (productivité, attente, utilisation, consommation)\n- **`callbacks.py`** : Logging des KPIs d'entraînement en CSV\n\n### Sprint E — Expérimentation (`experiments/`)\n- **`scenarios.py`** : 6 scénarios paramétriques (nominal, high_load, low_load, high_breakdown, single_shovel, short_shift)\n- **`run_benchmark.py`** : Benchmark comparatif multi-seeds avec export CSV\n- **`stats_report.py`** : Génération de figures (barplots KPIs, learning curves) et tableaux de synthèse\n\n### Autre\n- `.gitignore` : Corrigé `env/` → `/env/` pour ne pas ignorer le module `memoire_master_rl_logistique/env/`\n\n## Review & Testing Checklist for Human\n- [ ] Vérifier que l'environnement Gymnasium fonctionne : `python -c \"from memoire_master_rl_logistique.env import MineEnv; env = MineEnv(); obs, info = env.reset(); print(obs.shape)\"`\n- [ ] Tester un entraînement court PPO : `python -m memoire_master_rl_logistique.rl.train_ppo` (modifiez `total_timesteps` si besoin)\n- [ ] Vérifier que les baselines s'évaluent : `python -m memoire_master_rl_logistique.rl.evaluate_agent`\n- [ ] Exécuter le benchmark nominal : `python -m memoire_master_rl_logistique.experiments.run_benchmark`\n- [ ] Vérifier que `ruff check memoire_master_rl_logistique/` passe sans erreur\n\n### Notes\n- L'entraînement PPO par défaut est de 50 000 steps (~2 min sur CPU). Pour un entraînement plus long et de meilleurs résultats, augmentez `total_timesteps` dans `train_ppo.py`.\n- Les résultats du benchmark sont exportés en CSV dans `data/results/`.\n- Les figures pour le Chapitre 6 sont générées par `stats_report.py` après le benchmark.\n- Dépendances requises : `gymnasium`, `stable-baselines3`, `torch`, `tensorboard`, `matplotlib`, `pandas`, `scipy`, `tqdm`, `rich`.\n\n\nLink to Devin session: https://app.devin.ai/sessions/f64d4823601e47a6830aa405d6d73ba0\nRequested by: @Juan-Lucas",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779572822-sprint-b-to-e",
+    "repository": "Juan-Lucas/memoire-master-rl-logistique"
+  },
+  "diffRef": {
+    "repository": "Juan-Lucas/memoire-master-rl-logistique",
+    "headSha": "3db4c85eed66dabe17da892128c37cb91517bf50",
+    "baseSha": "63584554a154be3d7aa8895b55bf9ff535c9a7db"
+  },
+  "vendoredDiffPath": "devin/devin-Juan-Lucas-memoire-master-rl-logistique-pr2.diff",
+  "vendoredAt": "2026-05-24T03:05:19.167Z",
+  "collectedAt": "2026-05-24T03:05:19.167Z"
+}

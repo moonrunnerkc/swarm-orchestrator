@@ -1,0 +1,280 @@
+diff --git a/.github/workflows/daily-security-report.yml b/.github/workflows/daily-security-report.yml
+new file mode 100644
+index 0000000..e6fea7b
+--- /dev/null
++++ b/.github/workflows/daily-security-report.yml
+@@ -0,0 +1,274 @@
++name: Daily Security Report
++
++on:
++  schedule:
++    - cron: '17 3 * * *'
++  workflow_dispatch:
++
++permissions:
++  contents: write
++  issues: write
++  pull-requests: write
++  security-events: write
++
++jobs:
++  triage-security-alerts:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++
++      - name: Collect and assess alerts
++        id: assess
++        uses: actions/github-script@v7
++        with:
++          script: |
++            const owner = context.repo.owner;
++            const repo = context.repo.repo;
++            const sinceTs = Date.now() - (24 * 60 * 60 * 1000);
++
++            const severityRank = { critical: 4, high: 3, medium: 2, low: 1, unknown: 0, error: 3, warning: 2, note: 1 };
++
++            const normalizeSeverity = (value) => {
++              if (!value) return 'unknown';
++              const normalized = String(value).toLowerCase();
++              if (normalized.includes('critical')) return 'critical';
++              if (normalized.includes('high') || normalized === 'error') return 'high';
++              if (normalized.includes('medium') || normalized === 'warning') return 'medium';
++              if (normalized.includes('low') || normalized === 'note') return 'low';
++              return 'unknown';
++            };
++
++            const isRecent = (alert) => {
++              const candidate = alert.created_at || alert.updated_at || alert.fixed_at;
++              if (!candidate) return false;
++              return Date.parse(candidate) >= sinceTs;
++            };
++
++            const isProductionPath = (filePath) => {
++              if (!filePath) return false;
++              if (filePath.startsWith('examples/')) return false;
++              if (filePath.includes('/test') || filePath.includes('/tests') || filePath.includes('.stories.')) return false;
++              return filePath.startsWith('lexio/') || filePath.startsWith('python/lexio/');
++            };
++
++            const toBlast = (severity, reachable) => {
++              if (!reachable) return 'low';
++              if (severity === 'critical' || severity === 'high') return 'high';
++              if (severity === 'medium') return 'medium';
++              return 'low';
++            };
++
++            const fetchDependabotAlerts = async () => {
++              try {
++                return await github.paginate(github.rest.request, 'GET /repos/{owner}/{repo}/dependabot/alerts', {
++                  owner,
++                  repo,
++                  state: 'open',
++                  per_page: 100,
++                  headers: {
++                    'X-GitHub-Api-Version': '2022-11-28'
++                  }
++                });
++              } catch (error) {
++                core.warning(`Dependabot alerts could not be fetched: ${error.message}`);
++                return [];
++              }
++            };
++
++            const fetchCodeScanningAlerts = async () => {
++              try {
++                return await github.paginate(github.rest.codeScanning.listAlertsForRepo, {
++                  owner,
++                  repo,
++                  state: 'open',
++                  per_page: 100
++                });
++              } catch (error) {
++                core.warning(`Code scanning alerts could not be fetched: ${error.message}`);
++                return [];
++              }
++            };
++
++            const [dependabotAlerts, codeScanningAlerts] = await Promise.all([
++              fetchDependabotAlerts(),
++              fetchCodeScanningAlerts()
++            ]);
++
++            const recentDependabot = dependabotAlerts.filter(isRecent);
++            const recentCodeScanning = codeScanningAlerts.filter(isRecent);
++
++            const findings = [];
++            const updateCandidates = [];
++
++            for (const alert of recentDependabot) {
++              const severity = normalizeSeverity(alert.security_advisory?.severity);
++              const pkg = alert.dependency?.package?.name || 'unknown-package';
++              const ecosystem = alert.dependency?.package?.ecosystem || 'unknown';
++              const manifestPath = alert.dependency?.manifest_path || '';
++              const scope = String(alert.dependency?.scope || '').toLowerCase();
++              const runtimeScope = scope !== 'development';
++              let codePaths = [];
++              try {
++                const searchResult = await github.rest.search.code({
++                  q: `repo:${owner}/${repo} ${pkg} in:file`,
++                  per_page: 5
++                });
++                codePaths = (searchResult.data.items || []).map((item) => item.path);
++              } catch (error) {
++                core.warning(`Code search for ${pkg} failed: ${error.message}`);
++              }
++              const reachable = runtimeScope && (isProductionPath(manifestPath) || codePaths.some(isProductionPath));
++              const blast = toBlast(severity, reachable);
++
++              const affected = [...new Set([manifestPath, ...codePaths].filter(Boolean))];
++
++              findings.push({
++                source: 'dependabot',
++                number: alert.number,
++                url: alert.html_url,
++                packageOrRule: pkg,
++                severity,
++                affected,
++                blast,
++                blastLine: runtimeScope
++                  ? `Runtime dependency in ${manifestPath || 'unknown manifest'}${reachable ? '' : ' but not used in production paths'}`
++                  : `Development-only dependency in ${manifestPath || 'unknown manifest'}`,
++                action: alert.security_vulnerability?.first_patched_version?.identifier
++                  ? `upgrade to ${alert.security_vulnerability.first_patched_version.identifier}`
++                  : 'no fix',
++                fixVersion: alert.security_vulnerability?.first_patched_version?.identifier || null,
++                manifestPath,
++                ecosystem,
++                alertType: 'dependabot'
++              });
++
++              if (blast !== 'low' && ecosystem.toLowerCase() === 'npm' && alert.security_vulnerability?.first_patched_version?.identifier && manifestPath.endsWith('package.json')) {
++                updateCandidates.push({
++                  package: pkg,
++                  version: alert.security_vulnerability.first_patched_version.identifier,
++                  manifestPath,
++                  alertNumber: alert.number,
++                  severity
++                });
++              }
++            }
++
++            for (const alert of recentCodeScanning) {
++              const severity = normalizeSeverity(alert.rule?.severity || alert.rule?.security_severity_level);
++              const path = alert.most_recent_instance?.location?.path || '';
++              const reachable = isProductionPath(path);
++              const blast = toBlast(severity, reachable);
++
++              findings.push({
++                source: 'code-scanning',
++                number: alert.number,
++                url: alert.html_url,
++                packageOrRule: alert.rule?.id || alert.rule?.name || 'unknown-rule',
++                severity,
++                affected: [path].filter(Boolean),
++                blast,
++                blastLine: reachable
++                  ? `Potentially reachable production code path: ${path}`
++                  : `Non-production or test/example path: ${path || 'unknown path'}`,
++                action: 'review and patch code path',
++                fixVersion: null,
++                manifestPath: path,
++                ecosystem: null,
++                alertType: 'code-scanning'
++              });
++            }
++
++            findings.sort((a, b) => (severityRank[b.severity] || 0) - (severityRank[a.severity] || 0));
++
++            const relevant = findings.filter((item) => item.blast !== 'low');
++            const icons = { high: '🔴', medium: '🟠', low: '🟡' };
++
++            const reportBody = relevant
++              .map((item) => {
++                const affectedLine = item.affected.length > 0 ? item.affected.join(', ') : 'not determined';
++                return [
++                  `${icons[item.blast] || '🟡'} **[${item.blast}] ${item.packageOrRule}**`,
++                  `  - Affected: ${affectedLine}`,
++                  `  - Blast radius: ${item.blastLine}`,
++                  `  - Action: ${item.action}`
++                ].join('\n');
++              })
++              .join('\n\n');
++
++            core.setOutput('update_candidates', JSON.stringify(updateCandidates));
++            core.setOutput('report_body', reportBody);
++            core.setOutput('relevant_count', String(relevant.length));
++
++      - name: Apply npm security updates
++        id: update_deps
++        if: steps.assess.outputs.update_candidates != '[]'
++        run: |
++          set -euo pipefail
++          candidates='${{ steps.assess.outputs.update_candidates }}'
++          echo "$candidates" > /tmp/security-candidates.json
++          jq -c '.[]' /tmp/security-candidates.json | while read -r item; do
++            package=$(echo "$item" | jq -r '.package')
++            version=$(echo "$item" | jq -r '.version')
++            manifest=$(echo "$item" | jq -r '.manifestPath')
++            dir=$(dirname "$manifest")
++
++            if [ -d "$dir" ] && [ -f "$manifest" ] && [ -f "$dir/package-lock.json" ]; then
++              echo "Updating $package@$version in $manifest"
++              (cd "$dir" && npm install "$package@$version" --package-lock-only)
++            else
++              echo "Skipping $package in $manifest (unsupported manifest layout)"
++            fi
++          done
++
++      - name: Create pull request for dependency updates
++        if: steps.assess.outputs.update_candidates != '[]'
++        uses: peter-evans/create-pull-request@v7
++        with:
++          branch: security/daily-alert-remediation
++          title: 'chore: remediate reachable security alerts'
++          commit-message: 'chore: remediate reachable security alerts'
++          body: |
++            Automated dependency updates for reachable alerts from the last 24 hours.
++            
++            Updated from security triage workflow.
++          labels: |
++            security
++            dependencies
++
++      - name: Create Daily Security Report issue
++        if: steps.assess.outputs.relevant_count != '0'
++        uses: actions/github-script@v7
++        env:
++          REPORT_BODY: ${{ steps.assess.outputs.report_body }}
++        with:
++          script: |
++            const owner = context.repo.owner;
++            const repo = context.repo.repo;
++            const title = 'Daily Security Report';
++            const body = process.env.REPORT_BODY;
++
++            const openIssues = await github.paginate(github.rest.issues.listForRepo, {
++              owner,
++              repo,
++              state: 'open',
++              per_page: 100
++            });
++
++            const existing = openIssues.find((issue) => issue.title === title);
++            if (existing) {
++              await github.rest.issues.createComment({
++                owner,
++                repo,
++                issue_number: existing.number,
++                body
++              });
++              return;
++            }
++
++            await github.rest.issues.create({
++              owner,
++              repo,
++              title,
++              body,
++              labels: ['security']
++            });

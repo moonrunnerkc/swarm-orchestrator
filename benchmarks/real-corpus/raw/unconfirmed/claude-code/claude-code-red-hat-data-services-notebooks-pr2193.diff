@@ -1,0 +1,57 @@
+diff --git a/.github/workflows/gemini-pr-review.yml b/.github/workflows/gemini-pr-review.yml
+index 1b7847fef2..ff5207f7b0 100644
+--- a/.github/workflows/gemini-pr-review.yml
++++ b/.github/workflows/gemini-pr-review.yml
+@@ -158,7 +158,7 @@ jobs:
+           } >> "${GITHUB_OUTPUT}"
+ 
+       - name: 'Run Gemini PR Review'
+-        uses: 'google-github-actions/run-gemini-cli@v0'
++        uses: 'google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489'  # v0.1.22
+         id: 'gemini_pr_review'
+         env:
+           GITHUB_TOKEN: '${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}'
+diff --git a/.github/workflows/notebook-digest-updater.yaml b/.github/workflows/notebook-digest-updater.yaml
+index a194f64159..cb1eb9551b 100644
+--- a/.github/workflows/notebook-digest-updater.yaml
++++ b/.github/workflows/notebook-digest-updater.yaml
+@@ -29,7 +29,7 @@ jobs:
+ 
+       # Checkout the branch
+       - name: Checkout branch
+-        uses: actions/checkout@v4
++        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+         with:
+           ref: ${{ env.BRANCH_NAME }}
+ 
+@@ -61,7 +61,7 @@ jobs:
+ 
+       # Checkout the release branch to apply the updates
+       - name: Checkout release branch
+-        uses: actions/checkout@v4
++        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+         with:
+           ref: ${{ env.DIGEST_UPDATER_BRANCH }}
+ 
+@@ -156,7 +156,7 @@ jobs:
+ 
+       # Checkout the release branch to apply the updates
+       - name: Checkout release branch
+-        uses: actions/checkout@v4
++        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+         with:
+           ref: ${{ env.DIGEST_UPDATER_BRANCH }}
+ 
+@@ -233,10 +233,10 @@ jobs:
+       pull-requests: write
+     steps:
+       - name: Checkout repo
+-        uses: actions/checkout@v4
++        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+ 
+       - name: pull-request
+-        uses: repo-sync/pull-request@v2
++        uses: repo-sync/pull-request@7e79a9f5dc3ad0ce53138f01df2fad14a04831c5  # v2.12.1
+         with:
+           source_branch: ${{ env.DIGEST_UPDATER_BRANCH }}
+           destination_branch: ${{ env.BRANCH_NAME }}

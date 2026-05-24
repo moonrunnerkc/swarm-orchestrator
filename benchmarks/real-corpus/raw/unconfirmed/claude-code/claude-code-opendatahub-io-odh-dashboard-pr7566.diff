@@ -1,0 +1,56 @@
+diff --git a/packages/automl/frontend/src/app/components/run-results/StopRunModal.tsx b/packages/automl/frontend/src/app/components/run-results/StopRunModal.tsx
+index ae19bf87c5..7604dc7cdc 100644
+--- a/packages/automl/frontend/src/app/components/run-results/StopRunModal.tsx
++++ b/packages/automl/frontend/src/app/components/run-results/StopRunModal.tsx
+@@ -20,7 +20,7 @@ const StopRunModal: React.FC<StopRunModalProps> = ({
+     <ModalHeader title="Stop pipeline run?" />
+     <ModalBody>
+       Are you sure you want to stop {runName ? `"${runName}"` : 'this run'}? All running tasks will
+-      be canceled and the run will be marked as canceled. This action cannot be undone.
++      be canceled and the run will be marked as failed. This action cannot be undone.
+     </ModalBody>
+     <ModalFooter>
+       <Button
+diff --git a/packages/automl/frontend/src/app/components/run-results/__tests__/StopRunModal.spec.tsx b/packages/automl/frontend/src/app/components/run-results/__tests__/StopRunModal.spec.tsx
+index 953153eea1..09963664dd 100644
+--- a/packages/automl/frontend/src/app/components/run-results/__tests__/StopRunModal.spec.tsx
++++ b/packages/automl/frontend/src/app/components/run-results/__tests__/StopRunModal.spec.tsx
+@@ -78,4 +78,10 @@ describe('StopRunModal', () => {
+ 
+     expect(screen.getByText(/Are you sure you want to stop this run\?/)).toBeInTheDocument();
+   });
++
++  it('should indicate the run will be marked as failed', () => {
++    render(<StopRunModal {...defaultProps} />);
++
++    expect(screen.getByText(/the run will be marked as failed/)).toBeInTheDocument();
++  });
+ });
+diff --git a/packages/autorag/frontend/src/app/components/run-results/StopRunModal.tsx b/packages/autorag/frontend/src/app/components/run-results/StopRunModal.tsx
+index ae19bf87c5..7604dc7cdc 100644
+--- a/packages/autorag/frontend/src/app/components/run-results/StopRunModal.tsx
++++ b/packages/autorag/frontend/src/app/components/run-results/StopRunModal.tsx
+@@ -20,7 +20,7 @@ const StopRunModal: React.FC<StopRunModalProps> = ({
+     <ModalHeader title="Stop pipeline run?" />
+     <ModalBody>
+       Are you sure you want to stop {runName ? `"${runName}"` : 'this run'}? All running tasks will
+-      be canceled and the run will be marked as canceled. This action cannot be undone.
++      be canceled and the run will be marked as failed. This action cannot be undone.
+     </ModalBody>
+     <ModalFooter>
+       <Button
+diff --git a/packages/autorag/frontend/src/app/components/run-results/__tests__/StopRunModal.spec.tsx b/packages/autorag/frontend/src/app/components/run-results/__tests__/StopRunModal.spec.tsx
+index e49d85f0ef..2582c70025 100644
+--- a/packages/autorag/frontend/src/app/components/run-results/__tests__/StopRunModal.spec.tsx
++++ b/packages/autorag/frontend/src/app/components/run-results/__tests__/StopRunModal.spec.tsx
+@@ -77,4 +77,10 @@ describe('StopRunModal', () => {
+ 
+     expect(screen.getByText(/Are you sure you want to stop this run\?/)).toBeInTheDocument();
+   });
++
++  it('should indicate the run will be marked as failed', () => {
++    render(<StopRunModal {...defaultProps} />);
++
++    expect(screen.getByText(/the run will be marked as failed/)).toBeInTheDocument();
++  });
+ });

@@ -1,0 +1,845 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index d101f4d..9c60a04 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -8,6 +8,7 @@
+ - Add a beta Devin for Terminal PreToolUse hook integration.
+ - Add a beta Kimi Code CLI PostToolUse hook integration.
+ - Add a beta Mistral Vibe instruction integration.
++- Add a beta Replit Agent instruction integration.
+ - Add a beta Trae project-rule integration.
+ - Add a beta Warp project-rules integration.
+ 
+diff --git a/README.md b/README.md
+index 0aef2bd..7e657ba 100644
+--- a/README.md
++++ b/README.md
+@@ -57,6 +57,7 @@ beta integrations:
+ | <img width="48px" src="docs/client-plandex.svg" alt="Plandex" /> | [Plandex](https://docs.plandex.ai/) | `tokenjuice install plandex` | `PLANDEX.tokenjuice.md` |
+ | <img width="48px" src="docs/client-qoder.svg" alt="Qoder" /> | [Qoder CLI](https://docs.qoder.com/cli/using-cli) | `tokenjuice install qoder` | `AGENTS.md` |
+ | <img width="48px" src="docs/client-qwen-code.svg" alt="Qwen Code" /> | [Qwen Code](https://qwenlm.github.io/qwen-code-docs/) | `tokenjuice install qwen-code` | `.qwen/settings.json` |
++| <img width="48px" src="docs/client-replit.svg" alt="Replit" /> | [Replit Agent](https://docs.replit.com/references/project-setup/replit-dot-md) | `tokenjuice install replit` | `replit.md` |
+ | <img width="48px" src="docs/client-roo.svg" alt="Roo Code" /> | [Roo Code](https://roocode.com/) | `tokenjuice install roo` | `.roo/rules/tokenjuice.md` |
+ | <img width="48px" src="docs/client-ruler.svg" alt="Ruler" /> | [Ruler](https://github.com/intellectronica/ruler) | `tokenjuice install ruler` | `.ruler/tokenjuice.md` |
+ | <img width="48px" src="docs/client-trae.svg" alt="Trae" /> | [Trae](https://traeide.com/) | `tokenjuice install trae` | `.trae/project_rules.md` |
+@@ -82,8 +83,8 @@ then:
+ ```bash
+ tokenjuice --help
+ tokenjuice --version
+-tokenjuice install [aider|amazon-q|amp|antigravity|augment|avante|codex|claude-code|cline|codebuddy|continue|copilot-agent|crush|cursor|devin|droid|gemini-cli|goose|grok-build|grok-cli|junie|kimi|kiro|kilo|mistral-vibe|openhands|open-interpreter|openwebui|pi|opencode|plandex|qoder|qwen-code|roo|ruler|trae|vscode-copilot|warp|windsurf|copilot-cli|zed]
+-tokenjuice uninstall [aider|amazon-q|amp|antigravity|augment|avante|codex|cline|continue|copilot-agent|crush|devin|droid|gemini-cli|goose|grok-build|grok-cli|junie|kimi|kiro|kilo|mistral-vibe|openhands|open-interpreter|openwebui|opencode|plandex|qoder|qwen-code|roo|ruler|trae|vscode-copilot|warp|windsurf|copilot-cli|zed]
++tokenjuice install [aider|amazon-q|amp|antigravity|augment|avante|codex|claude-code|cline|codebuddy|continue|copilot-agent|crush|cursor|devin|droid|gemini-cli|goose|grok-build|grok-cli|junie|kimi|kiro|kilo|mistral-vibe|openhands|open-interpreter|openwebui|pi|opencode|plandex|qoder|qwen-code|replit|roo|ruler|trae|vscode-copilot|warp|windsurf|copilot-cli|zed]
++tokenjuice uninstall [aider|amazon-q|amp|antigravity|augment|avante|codex|cline|continue|copilot-agent|crush|devin|droid|gemini-cli|goose|grok-build|grok-cli|junie|kimi|kiro|kilo|mistral-vibe|openhands|open-interpreter|openwebui|opencode|plandex|qoder|qwen-code|replit|roo|ruler|trae|vscode-copilot|warp|windsurf|copilot-cli|zed]
+ ```
+ 
+ OpenClaw support is bundled on the OpenClaw side. Do not run
+@@ -105,9 +106,9 @@ tokenjuice reduce-json [file]
+ tokenjuice wrap -- <command> [args...]
+ tokenjuice wrap --raw -- <command> [args...]
+ tokenjuice wrap --store -- <command> [args...]
+-tokenjuice install [aider|amazon-q|amp|antigravity|augment|avante|codex|claude-code|cline|codebuddy|continue|copilot-agent|crush|cursor|devin|droid|gemini-cli|goose|grok-build|grok-cli|junie|kimi|kiro|kilo|mistral-vibe|openhands|open-interpreter|openwebui|pi|opencode|plandex|qoder|qwen-code|roo|ruler|trae|vscode-copilot|warp|windsurf|copilot-cli|zed]
+-tokenjuice install [aider|amazon-q|amp|antigravity|augment|avante|codex|claude-code|cline|codebuddy|continue|copilot-agent|crush|cursor|devin|droid|gemini-cli|goose|grok-build|grok-cli|junie|kimi|kiro|kilo|mistral-vibe|openhands|open-interpreter|openwebui|pi|opencode|plandex|qoder|qwen-code|roo|ruler|trae|vscode-copilot|warp|windsurf|copilot-cli|zed] --local
+-tokenjuice uninstall [aider|amazon-q|amp|antigravity|augment|avante|codex|cline|continue|copilot-agent|crush|devin|droid|gemini-cli|goose|grok-build|grok-cli|junie|kimi|kiro|kilo|mistral-vibe|openhands|open-interpreter|openwebui|opencode|plandex|qoder|qwen-code|roo|ruler|trae|vscode-copilot|warp|windsurf|copilot-cli|zed]
++tokenjuice install [aider|amazon-q|amp|antigravity|augment|avante|codex|claude-code|cline|codebuddy|continue|copilot-agent|crush|cursor|devin|droid|gemini-cli|goose|grok-build|grok-cli|junie|kimi|kiro|kilo|mistral-vibe|openhands|open-interpreter|openwebui|pi|opencode|plandex|qoder|qwen-code|replit|roo|ruler|trae|vscode-copilot|warp|windsurf|copilot-cli|zed]
++tokenjuice install [aider|amazon-q|amp|antigravity|augment|avante|codex|claude-code|cline|codebuddy|continue|copilot-agent|crush|cursor|devin|droid|gemini-cli|goose|grok-build|grok-cli|junie|kimi|kiro|kilo|mistral-vibe|openhands|open-interpreter|openwebui|pi|opencode|plandex|qoder|qwen-code|replit|roo|ruler|trae|vscode-copilot|warp|windsurf|copilot-cli|zed] --local
++tokenjuice uninstall [aider|amazon-q|amp|antigravity|augment|avante|codex|cline|continue|copilot-agent|crush|devin|droid|gemini-cli|goose|grok-build|grok-cli|junie|kimi|kiro|kilo|mistral-vibe|openhands|open-interpreter|openwebui|opencode|plandex|qoder|qwen-code|replit|roo|ruler|trae|vscode-copilot|warp|windsurf|copilot-cli|zed]
+ tokenjuice ls
+ tokenjuice cat <artifact-id>
+ tokenjuice verify
+@@ -184,6 +185,7 @@ direct payload:
+ - [Plandex integration](docs/plandex-integration.md)
+ - [Qoder integration](docs/qoder-integration.md)
+ - [Qwen Code integration](docs/qwen-code-integration.md)
++- [Replit integration](docs/replit-integration.md)
+ - [Roo Code integration](docs/roo-integration.md)
+ - [Ruler integration](docs/ruler-integration.md)
+ - [Trae integration](docs/trae-integration.md)
+diff --git a/docs/client-replit.svg b/docs/client-replit.svg
+new file mode 100644
+index 0000000..4a263e8
+--- /dev/null
++++ b/docs/client-replit.svg
+@@ -0,0 +1,4 @@
++<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Replit">
++  <rect width="64" height="64" rx="14" fill="#f26207"/>
++  <path fill="#fff" d="M16 14h18v13H16V14Zm21 0h11v36H37V14ZM16 30h18v20H16V30Z"/>
++</svg>
+diff --git a/docs/replit-integration.md b/docs/replit-integration.md
+new file mode 100644
+index 0000000..0a08b76
+--- /dev/null
++++ b/docs/replit-integration.md
+@@ -0,0 +1,40 @@
++# Replit integration
++
++`tokenjuice install replit` inserts a marker-delimited instruction block into
++the current git/project root `replit.md`. Replit documents `replit.md` as a
++root-level file that Agent reads automatically for project preferences,
++architecture, conventions, and coding style.
++
++```bash
++tokenjuice install replit
++tokenjuice doctor replit
++tokenjuice uninstall replit
++```
++
++By default tokenjuice resolves the nearest git root and writes `replit.md`.
++Set `REPLIT_PROJECT_DIR=/path/to/workspace` to target a specific workspace in
++scripts or tests.
++
++The installed block tells Replit Agent to use:
++
++```bash
++tokenjuice wrap -- <command>
++```
++
++for noisy terminal commands, and to reserve:
++
++```bash
++tokenjuice wrap --raw -- <command>
++```
++
++for commands where exact output bytes are required.
++
++This is guidance-only. Replit Agent still owns command execution and approval;
++tokenjuice does not intercept or rewrite Agent tool output. Replit also
++documents that Agent can update `replit.md` as it learns more about the project,
++so rerun `tokenjuice doctor replit` after substantial Agent-authored changes.
++
++`doctor replit` reports `ok` when the root `replit.md` block exists, contains
++the `tokenjuice wrap` guidance, and does not advertise the older `--full`
++escape hatch. Malformed tokenjuice markers are reported as `broken` so project
++instructions are not rewritten unsafely.
+diff --git a/docs/spec.md b/docs/spec.md
+index 10809ac..515e78c 100644
+--- a/docs/spec.md
++++ b/docs/spec.md
+@@ -191,6 +191,7 @@ tokenjuice install qoder
+ tokenjuice install pi
+ tokenjuice install opencode
+ tokenjuice install qwen-code
++tokenjuice install replit
+ tokenjuice install ruler
+ tokenjuice install trae
+ tokenjuice install warp
+@@ -212,6 +213,7 @@ tokenjuice doctor openwebui
+ tokenjuice doctor plandex
+ tokenjuice doctor qoder
+ tokenjuice doctor qwen-code
++tokenjuice doctor replit
+ tokenjuice doctor ruler
+ tokenjuice doctor trae
+ tokenjuice doctor warp
+@@ -266,6 +268,7 @@ supported host hooks:
+ | Qoder CLI | `tokenjuice install qoder` | `AGENTS.md` | ✴️ Beta. Inserts a marker-delimited instruction block into the current git/project root that tells Qoder CLI to use `tokenjuice wrap` for noisy terminal commands and `tokenjuice wrap --raw -- <command>` only when raw bytes are needed; guidance-only, because Qoder `AGENTS.md` memory does not intercept command output; see `docs/qoder-integration.md` |
+ | pi | `tokenjuice install pi` | `~/.pi/agent/extensions/tokenjuice.js` | `tokenjuice install pi --local` forces the extension bundle to be rebuilt from the current repo source and adds `/tj` controls inside pi |
+ | Qwen Code | `tokenjuice install qwen-code` | `.qwen/settings.json` | ✴️ Beta. Uses a project-local `PostToolUse` hook for shell tools; compacted context is injected alongside the original output; `tokenjuice install qwen-code --local` is available for repo-local verification; see `docs/qwen-code-integration.md` |
++| Replit Agent | `tokenjuice install replit` | `replit.md` | ✴️ Beta. Inserts a marker-delimited instruction block into the current git/project root that tells Replit Agent to use `tokenjuice wrap` for noisy terminal commands and `tokenjuice wrap --raw -- <command>` only when raw bytes are needed; guidance-only, because Replit `replit.md` project context does not intercept command output and Agent may update the file as project knowledge changes; see `docs/replit-integration.md` |
+ | Roo Code | `tokenjuice install roo` | `.roo/rules/tokenjuice.md` | ✴️ Beta. Inserts a marker-delimited workspace rule that tells Roo to use `tokenjuice wrap` for noisy `execute_command` terminal commands and `tokenjuice wrap --raw -- <command>` only when raw bytes are needed; guidance-only, because Roo workspace rules do not intercept tool output; see `docs/roo-integration.md` |
+ | Ruler | `tokenjuice install ruler` | `.ruler/tokenjuice.md` | ✴️ Beta. Installs a Ruler source rule that tells configured coding agents to use `tokenjuice wrap` for noisy terminal commands and `tokenjuice wrap --raw -- <command>` only when raw bytes are needed; guidance-only, because Ruler propagates rules rather than intercepting command output; run `ruler apply` after install; see `docs/ruler-integration.md` |
+ | Trae | `tokenjuice install trae` | `.trae/project_rules.md` | ✴️ Beta. Inserts a marker-delimited project rule block that tells Trae to use `tokenjuice wrap` for noisy terminal commands and `tokenjuice wrap --raw -- <command>` only when raw bytes are needed; guidance-only, because Trae `.rules` files do not intercept command output; see `docs/trae-integration.md` |
+@@ -274,7 +277,7 @@ supported host hooks:
+ | Windsurf | `tokenjuice install windsurf` | `.windsurf/rules/tokenjuice.md` | ✴️ Beta. Installs an always-on workspace rule that tells Cascade to use `tokenjuice wrap` for noisy terminal commands and `tokenjuice wrap --raw -- <command>` only when raw bytes are needed; guidance-only, because Cascade Hooks do not replace terminal command output; see `docs/windsurf-integration.md` |
+ | Zed | `tokenjuice install zed` | `.rules` | ✴️ Beta. Inserts a marker-delimited rule block that tells Zed Agent to use `tokenjuice wrap` for noisy terminal commands and `tokenjuice wrap --raw -- <command>` only when raw bytes are needed; guidance-only, because Zed rules do not intercept tool output; see `docs/zed-integration.md` |
+ 
+-`tokenjuice doctor hooks` inspects installed host hooks together, including the Pi extension, spots stale Cellar-pinned Homebrew commands, and points back to the right install command for repair. `tokenjuice doctor droid`, `tokenjuice doctor pi`, `tokenjuice doctor opencode`, `tokenjuice doctor openhands`, `tokenjuice doctor open-interpreter`, `tokenjuice doctor openwebui`, `tokenjuice doctor mistral-vibe`, `tokenjuice doctor plandex`, `tokenjuice doctor qoder`, `tokenjuice doctor trae`, `tokenjuice doctor warp`, `tokenjuice doctor grok-build`, `tokenjuice doctor grok-cli`, `tokenjuice doctor kimi`, `tokenjuice doctor qwen-code`, `tokenjuice doctor continue`, `tokenjuice doctor aider`, `tokenjuice doctor amazon-q`, `tokenjuice doctor amp`, `tokenjuice doctor antigravity`, `tokenjuice doctor augment`, `tokenjuice doctor avante`, `tokenjuice doctor junie`, `tokenjuice doctor kiro`, `tokenjuice doctor kilo`, `tokenjuice doctor roo`, `tokenjuice doctor windsurf`, `tokenjuice doctor zed`, `tokenjuice doctor cline`, `tokenjuice doctor crush`, `tokenjuice doctor devin`, `tokenjuice doctor vscode-copilot`, and `tokenjuice doctor copilot-cli` are the direct per-host checks. the `--local` variant expects Codex, Claude Code, Cline, CodeBuddy, Crush, Cursor, Devin, Droid, Gemini CLI, Grok CLI, Kimi, OpenHands, Qwen Code, VS Code Copilot, and Copilot CLI hooks to point at the current repo build instead of the installed launcher on `PATH`.
++`tokenjuice doctor hooks` inspects installed host hooks together, including the Pi extension, spots stale Cellar-pinned Homebrew commands, and points back to the right install command for repair. `tokenjuice doctor droid`, `tokenjuice doctor pi`, `tokenjuice doctor opencode`, `tokenjuice doctor openhands`, `tokenjuice doctor open-interpreter`, `tokenjuice doctor openwebui`, `tokenjuice doctor mistral-vibe`, `tokenjuice doctor plandex`, `tokenjuice doctor qoder`, `tokenjuice doctor replit`, `tokenjuice doctor trae`, `tokenjuice doctor warp`, `tokenjuice doctor grok-build`, `tokenjuice doctor grok-cli`, `tokenjuice doctor kimi`, `tokenjuice doctor qwen-code`, `tokenjuice doctor continue`, `tokenjuice doctor aider`, `tokenjuice doctor amazon-q`, `tokenjuice doctor amp`, `tokenjuice doctor antigravity`, `tokenjuice doctor augment`, `tokenjuice doctor avante`, `tokenjuice doctor junie`, `tokenjuice doctor kiro`, `tokenjuice doctor kilo`, `tokenjuice doctor roo`, `tokenjuice doctor windsurf`, `tokenjuice doctor zed`, `tokenjuice doctor cline`, `tokenjuice doctor crush`, `tokenjuice doctor devin`, `tokenjuice doctor vscode-copilot`, and `tokenjuice doctor copilot-cli` are the direct per-host checks. the `--local` variant expects Codex, Claude Code, Cline, CodeBuddy, Crush, Cursor, Devin, Droid, Gemini CLI, Grok CLI, Kimi, OpenHands, Qwen Code, VS Code Copilot, and Copilot CLI hooks to point at the current repo build instead of the installed launcher on `PATH`.
+ 
+ `tokenjuice uninstall codex` removes the tokenjuice Codex PostToolUse hook from `~/.codex/hooks.json`. once removed, `tokenjuice doctor codex` and `tokenjuice doctor hooks` report that state as `disabled` instead of treating it like a broken install. `tokenjuice uninstall opencode` removes the OpenCode plugin from `~/.config/opencode/plugins/tokenjuice.js`.
+ 
+diff --git a/src/cli/main.ts b/src/cli/main.ts
+index 7835470..f2eca3d 100644
+--- a/src/cli/main.ts
++++ b/src/cli/main.ts
+@@ -57,6 +57,7 @@ import { doctorPiExtension, installPiExtension } from "../hosts/pi/index.js";
+ import { doctorPlandexConvention, installPlandexConvention, uninstallPlandexConvention } from "../hosts/plandex/index.js";
+ import { doctorQoderInstructions, installQoderInstructions, uninstallQoderInstructions } from "../hosts/qoder/index.js";
+ import { doctorQwenCodeHook, installQwenCodeHook, runQwenCodePostToolUseHook, uninstallQwenCodeHook } from "../hosts/qwen-code/index.js";
++import { doctorReplitInstructions, installReplitInstructions, uninstallReplitInstructions } from "../hosts/replit/index.js";
+ import { doctorRooInstructions, installRooInstructions, uninstallRooInstructions } from "../hosts/roo/index.js";
+ import { doctorRulerRule, installRulerRule, uninstallRulerRule } from "../hosts/ruler/index.js";
+ import { doctorTraeRule, installTraeRule, uninstallTraeRule } from "../hosts/trae/index.js";
+@@ -150,6 +151,7 @@ function printUsage(): void {
+       "  tokenjuice install pi [--local]",
+       "  tokenjuice install plandex",
+       "  tokenjuice install qoder",
++      "  tokenjuice install replit",
+       "  tokenjuice install opencode [--local]",
+       "  tokenjuice install qwen-code [--local]",
+       "  tokenjuice install roo",
+@@ -188,6 +190,7 @@ function printUsage(): void {
+       "  tokenjuice uninstall opencode",
+       "  tokenjuice uninstall plandex",
+       "  tokenjuice uninstall qoder",
++      "  tokenjuice uninstall replit",
+       "  tokenjuice uninstall qwen-code",
+       "  tokenjuice uninstall roo",
+       "  tokenjuice uninstall ruler",
+@@ -201,7 +204,7 @@ function printUsage(): void {
+       "  tokenjuice cat <artifact-id>",
+       "  tokenjuice verify [--fixtures]",
+       "  tokenjuice discover [file] [--source-command <cmd>] [--tool-name <name>] [--exit-code <n>] [--source <name>] [--by-source]",
+-      "  tokenjuice doctor [file|hooks|aider|amazon-q|amp|antigravity|augment|avante|codex|claude-code|cline|codebuddy|continue|copilot-agent|crush|cursor|devin|droid|gemini-cli|goose|grok-build|grok-cli|junie|kimi|kiro|kilo|mistral-vibe|openhands|open-interpreter|openwebui|pi|opencode|plandex|qoder|qwen-code|roo|ruler|trae|vscode-copilot|warp|windsurf|zed|copilot-cli] [--local] [--print-instructions] [--source-command <cmd>] [--tool-name <name>] [--exit-code <n>]",
++      "  tokenjuice doctor [file|hooks|aider|amazon-q|amp|antigravity|augment|avante|codex|claude-code|cline|codebuddy|continue|copilot-agent|crush|cursor|devin|droid|gemini-cli|goose|grok-build|grok-cli|junie|kimi|kiro|kilo|mistral-vibe|openhands|open-interpreter|openwebui|pi|opencode|plandex|qoder|qwen-code|replit|roo|ruler|trae|vscode-copilot|warp|windsurf|zed|copilot-cli] [--local] [--print-instructions] [--source-command <cmd>] [--tool-name <name>] [--exit-code <n>]",
+       "  tokenjuice stats [--timezone local|utc|<iana-timezone>] [--source <name>] [--by-source]",
+     ].join("\n"),
+   );
+@@ -1146,6 +1149,26 @@ async function runInstall(args: ParsedArgs): Promise<number> {
+     return 0;
+   }
+ 
++  if (target === "replit" || target === "replit-agent") {
++    const result = await installReplitInstructions();
++    if (args.format === "json") {
++      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
++      return 0;
++    }
++
++    const details = [
++      { label: "Instructions", value: result.instructionsPath },
++      { label: "Beta", value: "instruction-based guidance; Replit Agent still owns command execution" },
++      { label: "Verify", value: "tokenjuice doctor replit" },
++      { label: "Escape hatch", value: "tokenjuice wrap --raw -- <command>" },
++    ];
++    if (result.backupPath) {
++      details.push({ label: "Backup", value: result.backupPath });
++    }
++    process.stdout.write(formatInstallSuccess("replit", "instructions", details));
++    return 0;
++  }
++
+   if (target === "qwen-code") {
+     const result = await installQwenCodeHook(undefined, { local: args.local });
+     if (args.format === "json") {
+@@ -1372,7 +1395,7 @@ async function runInstall(args: ParsedArgs): Promise<number> {
+     return 0;
+   }
+ 
+-  throw new Error("install currently supports: aider, amazon-q, amp, antigravity, augment, avante, codex, claude-code, cline, codebuddy, continue, copilot-agent, crush, cursor, devin, droid, gemini-cli, goose, grok-build, grok-cli, junie, kimi, kiro, kilo, mistral-vibe, openhands, open-interpreter, openwebui, pi, opencode, plandex, qoder, qwen-code, roo, ruler, trae, vscode-copilot, warp, windsurf, copilot-cli, zed");
++  throw new Error("install currently supports: aider, amazon-q, amp, antigravity, augment, avante, codex, claude-code, cline, codebuddy, continue, copilot-agent, crush, cursor, devin, droid, gemini-cli, goose, grok-build, grok-cli, junie, kimi, kiro, kilo, mistral-vibe, openhands, open-interpreter, openwebui, pi, opencode, plandex, qoder, replit, qwen-code, roo, ruler, trae, vscode-copilot, warp, windsurf, copilot-cli, zed");
+ }
+ 
+ async function runUninstall(args: ParsedArgs): Promise<number> {
+@@ -1742,6 +1765,19 @@ async function runUninstall(args: ParsedArgs): Promise<number> {
+     return 0;
+   }
+ 
++  if (target === "replit" || target === "replit-agent") {
++    const result = await uninstallReplitInstructions();
++    if (args.format === "json") {
++      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
++      return 0;
++    }
++
++    process.stdout.write(`removed replit instructions: ${result.removed ? "yes" : "no"}\n`);
++    process.stdout.write(`instructions path: ${result.instructionsPath}\n`);
++    process.stdout.write("enable: tokenjuice install replit\n");
++    return 0;
++  }
++
+   if (target === "qwen-code") {
+     const result = await uninstallQwenCodeHook();
+     if (args.format === "json") {
+@@ -1872,7 +1908,7 @@ async function runUninstall(args: ParsedArgs): Promise<number> {
+     return 0;
+   }
+ 
+-  throw new Error("uninstall currently supports: aider, amazon-q, amp, antigravity, augment, avante, codex, cline, continue, copilot-agent, crush, devin, droid, gemini-cli, goose, grok-build, grok-cli, junie, kimi, kiro, kilo, mistral-vibe, openhands, open-interpreter, openwebui, opencode, plandex, qoder, qwen-code, roo, ruler, trae, vscode-copilot, warp, windsurf, copilot-cli, zed");
++  throw new Error("uninstall currently supports: aider, amazon-q, amp, antigravity, augment, avante, codex, cline, continue, copilot-agent, crush, devin, droid, gemini-cli, goose, grok-build, grok-cli, junie, kimi, kiro, kilo, mistral-vibe, openhands, open-interpreter, openwebui, opencode, plandex, qoder, replit, qwen-code, roo, ruler, trae, vscode-copilot, warp, windsurf, copilot-cli, zed");
+ }
+ 
+ async function runList(args: ParsedArgs): Promise<number> {
+@@ -2365,6 +2401,38 @@ async function runDoctor(args: ParsedArgs): Promise<number> {
+     return report.status === "broken" ? 1 : 0;
+   }
+ 
++  if (args.positionals[0] === "replit" || args.positionals[0] === "replit-agent") {
++    const report = await doctorReplitInstructions();
++
++    if (args.format === "json") {
++      process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
++      return report.status === "broken" ? 1 : 0;
++    }
++
++    process.stdout.write(`instructions path: ${report.instructionsPath}\n`);
++    process.stdout.write(`health: ${report.status}\n`);
++    if (report.issues.length > 0) {
++      process.stdout.write("issues:\n");
++      for (const issue of report.issues) {
++        process.stdout.write(`- ${issue}\n`);
++      }
++    }
++    if (report.missingPaths.length > 0) {
++      process.stdout.write("missing paths:\n");
++      for (const path of report.missingPaths) {
++        process.stdout.write(`- ${path}\n`);
++      }
++    }
++    if (report.advisories.length > 0) {
++      process.stdout.write("advisories:\n");
++      for (const advisory of report.advisories) {
++        process.stdout.write(`- ${advisory}\n`);
++      }
++    }
++    process.stdout.write(`repair: ${report.fixCommand}\n`);
++    return report.status === "broken" ? 1 : 0;
++  }
++
+   if (args.positionals[0] === "qwen-code") {
+     const report = await doctorQwenCodeHook(undefined, { local: args.local });
+ 
+diff --git a/src/hosts/replit/index.ts b/src/hosts/replit/index.ts
+new file mode 100644
+index 0000000..a5e3f20
+--- /dev/null
++++ b/src/hosts/replit/index.ts
+@@ -0,0 +1,224 @@
++import { stat } from "node:fs/promises";
++import { dirname, join, resolve } from "node:path";
++
++import {
++  collectMarkerDelimitedBlockIssues,
++  inspectMarkerDelimitedBlock,
++  installMarkerDelimitedBlock,
++  uninstallMarkerDelimitedBlock,
++} from "../shared/marker-instructions.js";
++import {
++  buildTokenjuiceGuidanceBullets,
++  TOKENJUICE_FULL_COMMAND,
++  TOKENJUICE_RAW_COMMAND,
++  TOKENJUICE_WRAP_COMMAND,
++} from "../shared/instruction-guidance.js";
++import {
++  buildInstructionDoctorReportFields,
++  instructionDoctorStatusFromIssues,
++} from "../shared/instruction-doctor.js";
++import { collectGuidanceIssues, readInstructionFile } from "../shared/instruction-file.js";
++
++export type ReplitInstructionsOptions = {
++  projectDir?: string;
++};
++
++export type InstallReplitInstructionsResult = {
++  instructionsPath: string;
++  backupPath?: string;
++};
++
++export type UninstallReplitInstructionsResult = {
++  instructionsPath: string;
++  removed: boolean;
++};
++
++export type ReplitDoctorReport = {
++  instructionsPath: string;
++  status: "ok" | "warn" | "broken" | "disabled";
++  issues: string[];
++  advisories: string[];
++  fixCommand: string;
++  checkedPaths: string[];
++  missingPaths: string[];
++};
++
++const TOKENJUICE_REPLIT_FIX_COMMAND = "tokenjuice install replit";
++const TOKENJUICE_REPLIT_BEGIN = "<!-- tokenjuice:replit begin -->";
++const TOKENJUICE_REPLIT_END = "<!-- tokenjuice:replit end -->";
++const TOKENJUICE_REPLIT_ADVISORY = "Replit support is beta and instruction-based; Agent reads root replit.md for project context, but still owns command execution and may update that file as project knowledge changes.";
++
++function getExplicitProjectDir(options: ReplitInstructionsOptions = {}): string | undefined {
++  return options.projectDir || process.env.REPLIT_PROJECT_DIR;
++}
++
++async function hasGitMetadata(dir: string): Promise<boolean> {
++  try {
++    await stat(join(dir, ".git"));
++    return true;
++  } catch {
++    return false;
++  }
++}
++
++async function findGitRoot(startDir: string): Promise<string | undefined> {
++  let current = resolve(startDir);
++  while (true) {
++    if (await hasGitMetadata(current)) {
++      return current;
++    }
++    const parent = dirname(current);
++    if (parent === current) {
++      return undefined;
++    }
++    current = parent;
++  }
++}
++
++async function resolveProjectDir(options: ReplitInstructionsOptions = {}): Promise<string> {
++  const explicitProjectDir = getExplicitProjectDir(options);
++  if (explicitProjectDir) {
++    return resolve(explicitProjectDir);
++  }
++
++  return (await findGitRoot(process.cwd())) ?? process.cwd();
++}
++
++async function getDefaultInstructionsPath(options: ReplitInstructionsOptions = {}): Promise<string> {
++  return join(await resolveProjectDir(options), "replit.md");
++}
++
++const TOKENJUICE_REPLIT_BLOCK = [
++  TOKENJUICE_REPLIT_BEGIN,
++  "## tokenjuice terminal output compaction",
++  "",
++  ...buildTokenjuiceGuidanceBullets({
++    wrapBullet: "- When running terminal commands through Replit Agent, prefer `tokenjuice wrap -- <command>` for commands likely to produce long output.",
++  }),
++  TOKENJUICE_REPLIT_END,
++].join("\n");
++
++const TOKENJUICE_REPLIT_BLOCK_CONFIG = {
++  beginMarker: TOKENJUICE_REPLIT_BEGIN,
++  endMarker: TOKENJUICE_REPLIT_END,
++  block: TOKENJUICE_REPLIT_BLOCK,
++};
++
++function getTokenjuiceBlockText(text: string): string {
++  const beginIndex = text.indexOf(TOKENJUICE_REPLIT_BEGIN);
++  if (beginIndex === -1) {
++    return "";
++  }
++  const endIndex = text.indexOf(TOKENJUICE_REPLIT_END, beginIndex + TOKENJUICE_REPLIT_BEGIN.length);
++  if (endIndex === -1) {
++    return text.slice(beginIndex);
++  }
++  return text.slice(beginIndex, endIndex + TOKENJUICE_REPLIT_END.length);
++}
++
++function countMarker(text: string, marker: string): number {
++  return text.split(marker).length - 1;
++}
++
++function hasMalformedMarkerStructure(text: string, completeBlockCount: number): boolean {
++  const beginCount = countMarker(text, TOKENJUICE_REPLIT_BEGIN);
++  const endCount = countMarker(text, TOKENJUICE_REPLIT_END);
++  return beginCount !== endCount || beginCount !== completeBlockCount || endCount !== completeBlockCount;
++}
++
++export async function installReplitInstructions(
++  instructionsPath?: string,
++  options: ReplitInstructionsOptions = {},
++): Promise<InstallReplitInstructionsResult> {
++  const resolvedInstructionsPath = instructionsPath ?? (await getDefaultInstructionsPath(options));
++  const existing = await readInstructionFile(resolvedInstructionsPath);
++  const markerState = inspectMarkerDelimitedBlock(existing.text, TOKENJUICE_REPLIT_BLOCK_CONFIG);
++  if (existing.exists && hasMalformedMarkerStructure(existing.text, markerState.completeBlockCount)) {
++    throw new Error(
++      `cannot safely repair malformed tokenjuice markers in ${resolvedInstructionsPath}; remove the dangling marker manually, then rerun tokenjuice install replit`,
++    );
++  }
++
++  const result = await installMarkerDelimitedBlock(resolvedInstructionsPath, TOKENJUICE_REPLIT_BLOCK_CONFIG);
++  return {
++    instructionsPath: result.filePath,
++    ...(result.backupPath ? { backupPath: result.backupPath } : {}),
++  };
++}
++
++export async function uninstallReplitInstructions(
++  instructionsPath?: string,
++  options: ReplitInstructionsOptions = {},
++): Promise<UninstallReplitInstructionsResult> {
++  const resolvedInstructionsPath = instructionsPath ?? (await getDefaultInstructionsPath(options));
++  const existing = await readInstructionFile(resolvedInstructionsPath);
++  const markerState = inspectMarkerDelimitedBlock(existing.text, TOKENJUICE_REPLIT_BLOCK_CONFIG);
++  if (existing.exists && hasMalformedMarkerStructure(existing.text, markerState.completeBlockCount)) {
++    throw new Error(
++      `cannot safely uninstall malformed tokenjuice markers in ${resolvedInstructionsPath}; remove the dangling marker manually, then rerun tokenjuice uninstall replit`,
++    );
++  }
++
++  const result = await uninstallMarkerDelimitedBlock(resolvedInstructionsPath, TOKENJUICE_REPLIT_BLOCK_CONFIG);
++  return { instructionsPath: result.filePath, removed: result.removed };
++}
++
++export async function doctorReplitInstructions(
++  instructionsPath?: string,
++  options: ReplitInstructionsOptions = {},
++): Promise<ReplitDoctorReport> {
++  const resolvedInstructionsPath = instructionsPath ?? (await getDefaultInstructionsPath(options));
++  const existing = await readInstructionFile(resolvedInstructionsPath);
++  const markerState = inspectMarkerDelimitedBlock(existing.text, TOKENJUICE_REPLIT_BLOCK_CONFIG);
++  if (!existing.exists || (!markerState.hasBegin && !markerState.hasEnd)) {
++    return {
++      instructionsPath: resolvedInstructionsPath,
++      ...buildInstructionDoctorReportFields({
++        status: "disabled",
++        issues: ["tokenjuice Replit instructions are not installed"],
++        advisory: TOKENJUICE_REPLIT_ADVISORY,
++        fixCommand: TOKENJUICE_REPLIT_FIX_COMMAND,
++      }),
++    };
++  }
++
++  const markerIssues = collectMarkerDelimitedBlockIssues(markerState, {
++    configuredLabel: "Replit instructions",
++    repairCommand: TOKENJUICE_REPLIT_FIX_COMMAND,
++  });
++  const hasMalformedMarkers = hasMalformedMarkerStructure(existing.text, markerState.completeBlockCount);
++  const issues = [
++    ...markerIssues,
++    ...(hasMalformedMarkers ? ["configured Replit instructions have malformed tokenjuice markers"] : []),
++    ...collectGuidanceIssues(getTokenjuiceBlockText(existing.text), {
++      required: [
++        {
++          requiredText: TOKENJUICE_WRAP_COMMAND,
++          missingIssue: "configured Replit instructions are missing tokenjuice wrap guidance",
++        },
++        {
++          requiredText: TOKENJUICE_RAW_COMMAND,
++          missingIssue: "configured Replit instructions are missing the raw escape hatch",
++        },
++      ],
++      forbidden: [
++        {
++          forbiddenText: TOKENJUICE_FULL_COMMAND,
++          presentIssue: "configured Replit instructions still suggest the full escape hatch",
++        },
++      ],
++    }),
++  ];
++
++  return {
++    instructionsPath: resolvedInstructionsPath,
++    ...buildInstructionDoctorReportFields({
++      status: instructionDoctorStatusFromIssues(issues),
++      issues,
++      advisory: TOKENJUICE_REPLIT_ADVISORY,
++      fixCommand: hasMalformedMarkers
++        ? "remove unmatched tokenjuice markers from replit.md, then run tokenjuice install replit"
++        : TOKENJUICE_REPLIT_FIX_COMMAND,
++    }),
++  };
++}
+diff --git a/src/hosts/shared/hook-doctor.ts b/src/hosts/shared/hook-doctor.ts
+index 65eb592..76a0eb1 100644
+--- a/src/hosts/shared/hook-doctor.ts
++++ b/src/hosts/shared/hook-doctor.ts
+@@ -31,6 +31,7 @@ import { doctorPiExtension } from "../pi/index.js";
+ import { doctorPlandexConvention } from "../plandex/index.js";
+ import { doctorQoderInstructions } from "../qoder/index.js";
+ import { doctorQwenCodeHook } from "../qwen-code/index.js";
++import { doctorReplitInstructions } from "../replit/index.js";
+ import { doctorRooInstructions } from "../roo/index.js";
+ import { doctorRulerRule } from "../ruler/index.js";
+ import { doctorTraeRule } from "../trae/index.js";
+@@ -72,6 +73,7 @@ import type { PiDoctorReport } from "../pi/index.js";
+ import type { PlandexConventionOptions, PlandexDoctorReport } from "../plandex/index.js";
+ import type { QoderDoctorReport, QoderInstructionsOptions } from "../qoder/index.js";
+ import type { QwenCodeDoctorReport, QwenCodeHookCommandOptions } from "../qwen-code/index.js";
++import type { ReplitDoctorReport, ReplitInstructionsOptions } from "../replit/index.js";
+ import type { RooDoctorReport } from "../roo/index.js";
+ import type { RulerDoctorReport, RulerRuleOptions } from "../ruler/index.js";
+ import type { TraeDoctorReport, TraeRuleOptions } from "../trae/index.js";
+@@ -115,6 +117,7 @@ export type HookIntegrationDoctorReport = {
+   plandex: PlandexDoctorReport;
+   qoder: QoderDoctorReport;
+   "qwen-code": QwenCodeDoctorReport;
++  replit: ReplitDoctorReport;
+   roo: RooDoctorReport;
+   ruler: RulerDoctorReport;
+   trae: TraeDoctorReport;
+@@ -130,7 +133,7 @@ export type HookDoctorReport = {
+   integrations: HookIntegrationDoctorReport;
+ };
+ 
+-export type HookDoctorCommandOptions = AmazonQRuleOptions & AmpInstructionsOptions & AntigravityRuleOptions & AugmentRuleOptions & CodexHookCommandOptions & ClaudeCodeHookCommandOptions & CodeBuddyHookCommandOptions & CopilotAgentHookCommandOptions & CrushHookCommandOptions & DevinHookCommandOptions & DroidHookCommandOptions & GooseHintsOptions & GrokBuildInstructionsOptions & GrokCliHookCommandOptions & KimiHookCommandOptions & MistralVibeInstructionsOptions & OpenInterpreterInstructionsOptions & OpenWebUIToolOptions & PlandexConventionOptions & QoderInstructionsOptions & QwenCodeHookCommandOptions & RulerRuleOptions & TraeRuleOptions & WarpInstructionsOptions;
++export type HookDoctorCommandOptions = AmazonQRuleOptions & AmpInstructionsOptions & AntigravityRuleOptions & AugmentRuleOptions & CodexHookCommandOptions & ClaudeCodeHookCommandOptions & CodeBuddyHookCommandOptions & CopilotAgentHookCommandOptions & CrushHookCommandOptions & DevinHookCommandOptions & DroidHookCommandOptions & GooseHintsOptions & GrokBuildInstructionsOptions & GrokCliHookCommandOptions & KimiHookCommandOptions & MistralVibeInstructionsOptions & OpenInterpreterInstructionsOptions & OpenWebUIToolOptions & PlandexConventionOptions & QoderInstructionsOptions & QwenCodeHookCommandOptions & ReplitInstructionsOptions & RulerRuleOptions & TraeRuleOptions & WarpInstructionsOptions;
+ export type HookIntegrationDoctorEntry = [
+   keyof HookIntegrationDoctorReport,
+   HookIntegrationDoctorReport[keyof HookIntegrationDoctorReport],
+@@ -174,6 +177,7 @@ const hookDoctorIntegrationDoctors = {
+   plandex: (options) => doctorPlandexConvention(undefined, getHookCommandOptions(options)),
+   qoder: (options) => doctorQoderInstructions(undefined, getHookCommandOptions(options)),
+   "qwen-code": (options) => doctorQwenCodeHook(undefined, options),
++  replit: (options) => doctorReplitInstructions(undefined, getHookCommandOptions(options)),
+   roo: () => doctorRooInstructions(),
+   ruler: (options) => doctorRulerRule(undefined, getHookCommandOptions(options)),
+   trae: (options) => doctorTraeRule(undefined, getHookCommandOptions(options)),
+diff --git a/src/index.ts b/src/index.ts
+index db5be70..069a3f6 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -52,6 +52,7 @@ export { doctorOpenInterpreterInstructions, installOpenInterpreterInstructions,
+ export { doctorOpenWebUITool, installOpenWebUITool, uninstallOpenWebUITool } from "./hosts/openwebui/index.js";
+ export { doctorPlandexConvention, installPlandexConvention, uninstallPlandexConvention } from "./hosts/plandex/index.js";
+ export { doctorQoderInstructions, installQoderInstructions, uninstallQoderInstructions } from "./hosts/qoder/index.js";
++export { doctorReplitInstructions, installReplitInstructions, uninstallReplitInstructions } from "./hosts/replit/index.js";
+ export { doctorRooInstructions, installRooInstructions, uninstallRooInstructions } from "./hosts/roo/index.js";
+ export { doctorTraeRule, installTraeRule, uninstallTraeRule } from "./hosts/trae/index.js";
+ export {
+@@ -252,6 +253,12 @@ export type {
+   QwenCodeHookCommandOptions,
+   UninstallQwenCodeHookResult,
+ } from "./hosts/qwen-code/index.js";
++export type {
++  InstallReplitInstructionsResult,
++  ReplitDoctorReport,
++  ReplitInstructionsOptions,
++  UninstallReplitInstructionsResult,
++} from "./hosts/replit/index.js";
+ export type {
+   InstallRooInstructionsResult,
+   RooDoctorReport,
+diff --git a/test/cli/doctor-output.test.ts b/test/cli/doctor-output.test.ts
+index ced10f0..c7f9fa0 100644
+--- a/test/cli/doctor-output.test.ts
++++ b/test/cli/doctor-output.test.ts
+@@ -46,7 +46,7 @@ describe("formatHookDoctorReport", () => {
+       "- configured command: tokenjuice claude-code-pre-tool-use --wrap-launcher tokenjuice",
+       "- repair: tokenjuice install claude-code",
+       "",
+-      "available integrations: aider, amazon-q, amp, antigravity, augment, avante, codex, claude-code, cline, codebuddy, continue, copilot-agent, crush, cursor, devin, droid, gemini-cli, goose, grok-build, grok-cli, junie, kimi, kiro, kilo, mistral-vibe, openhands, open-interpreter, openwebui, pi, plandex, qoder, qwen-code, roo, ruler, trae, vscode-copilot, warp, windsurf, zed, copilot-cli",
++      "available integrations: aider, amazon-q, amp, antigravity, augment, avante, codex, claude-code, cline, codebuddy, continue, copilot-agent, crush, cursor, devin, droid, gemini-cli, goose, grok-build, grok-cli, junie, kimi, kiro, kilo, mistral-vibe, openhands, open-interpreter, openwebui, pi, plandex, qoder, qwen-code, replit, roo, ruler, trae, vscode-copilot, warp, windsurf, zed, copilot-cli",
+       "enable another integration: tokenjuice install <host>",
+       "",
+     ].join("\n"));
+@@ -71,7 +71,7 @@ describe("formatHookDoctorReport", () => {
+       "hook health: disabled",
+       "no tokenjuice hooks installed",
+       "",
+-      "available integrations: aider, amazon-q, amp, antigravity, augment, avante, codex, claude-code, cline, codebuddy, continue, copilot-agent, crush, cursor, devin, droid, gemini-cli, goose, grok-build, grok-cli, junie, kimi, kiro, kilo, mistral-vibe, openhands, open-interpreter, openwebui, pi, plandex, qoder, qwen-code, roo, ruler, trae, vscode-copilot, warp, windsurf, zed, copilot-cli",
++      "available integrations: aider, amazon-q, amp, antigravity, augment, avante, codex, claude-code, cline, codebuddy, continue, copilot-agent, crush, cursor, devin, droid, gemini-cli, goose, grok-build, grok-cli, junie, kimi, kiro, kilo, mistral-vibe, openhands, open-interpreter, openwebui, pi, plandex, qoder, qwen-code, replit, roo, ruler, trae, vscode-copilot, warp, windsurf, zed, copilot-cli",
+       "enable another integration: tokenjuice install <host>",
+       "",
+     ].join("\n"));
+diff --git a/test/hosts/replit.test.ts b/test/hosts/replit.test.ts
+new file mode 100644
+index 0000000..e6395f1
+--- /dev/null
++++ b/test/hosts/replit.test.ts
+@@ -0,0 +1,227 @@
++import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++
++import { afterEach, describe, expect, it } from "vitest";
++
++import {
++  doctorInstalledHooks,
++  doctorReplitInstructions,
++  installReplitInstructions,
++  uninstallReplitInstructions,
++} from "../../src/index.js";
++
++const tempDirs: string[] = [];
++const envKeys = [
++  "AIDER_PROJECT_DIR",
++  "AMAZON_Q_PROJECT_DIR",
++  "AMP_PROJECT_DIR",
++  "ANTIGRAVITY_PROJECT_DIR",
++  "AUGMENT_PROJECT_DIR",
++  "AVANTE_PROJECT_DIR",
++  "CLINE_HOOKS_DIR",
++  "CLAUDE_CONFIG_DIR",
++  "CODEBUDDY_CONFIG_DIR",
++  "CODEX_HOME",
++  "CONTINUE_PROJECT_DIR",
++  "COPILOT_AGENT_PROJECT_DIR",
++  "COPILOT_HOME",
++  "CURSOR_HOME",
++  "FACTORY_HOME",
++  "GEMINI_HOME",
++  "GROK_BUILD_PROJECT_DIR",
++  "HOME",
++  "JUNIE_PROJECT_DIR",
++  "KIMI_HOME",
++  "KIMI_SHARE_DIR",
++  "KILO_PROJECT_DIR",
++  "KIRO_PROJECT_DIR",
++  "MISTRAL_VIBE_PROJECT_DIR",
++  "OPENCODE_CONFIG_DIR",
++  "OPENHANDS_PROJECT_DIR",
++  "OPEN_INTERPRETER_PROJECT_DIR",
++  "PI_CODING_AGENT_DIR",
++  "PLANDEX_PROJECT_DIR",
++  "QODER_PROJECT_DIR",
++  "QWEN_PROJECT_DIR",
++  "REPLIT_PROJECT_DIR",
++  "ROO_PROJECT_DIR",
++  "RULER_PROJECT_DIR",
++  "TRAE_PROJECT_DIR",
++  "WARP_PROJECT_DIR",
++  "WINDSURF_PROJECT_DIR",
++  "ZED_PROJECT_DIR",
++] as const;
++const originalEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
++const originalCwd = process.cwd();
++
++afterEach(async () => {
++  process.chdir(originalCwd);
++  for (const key of envKeys) {
++    const value = originalEnv[key];
++    if (value === undefined) {
++      delete process.env[key];
++    } else {
++      process.env[key] = value;
++    }
++  }
++  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
++});
++
++async function createTempDir(): Promise<string> {
++  const dir = await mkdtemp(join(tmpdir(), "tokenjuice-replit-test-"));
++  tempDirs.push(dir);
++  return dir;
++}
++
++describe("replit instructions", () => {
++  it("installs a host-specific marker-delimited replit.md instruction block", async () => {
++    const home = await createTempDir();
++    const instructionsPath = join(home, "replit.md");
++
++    const result = await installReplitInstructions(instructionsPath);
++    const instructions = await readFile(instructionsPath, "utf8");
++
++    expect(result.instructionsPath).toBe(instructionsPath);
++    expect(result.backupPath).toBeUndefined();
++    expect(instructions).toContain("<!-- tokenjuice:replit begin -->");
++    expect(instructions).toContain("tokenjuice terminal output compaction");
++    expect(instructions).toContain("When running terminal commands through Replit Agent");
++    expect(instructions).toContain("tokenjuice wrap -- <command>");
++    expect(instructions).toContain("tokenjuice wrap --raw -- <command>");
++    expect(instructions).not.toContain("wrap --full");
++  });
++
++  it("coexists with user-managed Replit project context", async () => {
++    const home = await createTempDir();
++    const instructionsPath = join(home, "replit.md");
++    await writeFile(
++      instructionsPath,
++      [
++        "# Project overview",
++        "",
++        "- Use pnpm.",
++        "- Run the web app with `pnpm dev`.",
++      ].join("\n"),
++      "utf8",
++    );
++
++    await installReplitInstructions(instructionsPath);
++    const instructions = await readFile(instructionsPath, "utf8");
++
++    expect(instructions).toContain("# Project overview");
++    expect(instructions).toContain("- Use pnpm.");
++    expect(instructions).toContain("<!-- tokenjuice:replit begin -->");
++    expect(instructions).toContain("When running terminal commands through Replit Agent");
++  });
++
++  it("backs up existing project instructions before replacing its own block", async () => {
++    const home = await createTempDir();
++    const instructionsPath = join(home, "replit.md");
++    await installReplitInstructions(instructionsPath);
++    await writeFile(instructionsPath, "# project instructions\n\n- keep this\n", "utf8");
++
++    const result = await installReplitInstructions(instructionsPath);
++
++    expect(result.backupPath).toBe(`${instructionsPath}.bak`);
++    await expect(readFile(`${instructionsPath}.bak`, "utf8")).resolves.toContain("keep this");
++    await expect(readFile(instructionsPath, "utf8")).resolves.toContain("<!-- tokenjuice:replit begin -->");
++  });
++
++  it("reports installed and uninstalled instruction health", async () => {
++    const home = await createTempDir();
++    const instructionsPath = join(home, "replit.md");
++
++    await installReplitInstructions(instructionsPath);
++    const installed = await doctorReplitInstructions(instructionsPath);
++
++    expect(installed.status).toBe("ok");
++    expect(installed.advisories[0]).toContain("instruction-based");
++
++    const removed = await uninstallReplitInstructions(instructionsPath);
++    const disabled = await doctorReplitInstructions(instructionsPath);
++
++    expect(removed.removed).toBe(true);
++    expect(disabled.status).toBe("disabled");
++    await expect(access(instructionsPath)).rejects.toMatchObject({ code: "ENOENT" });
++  });
++
++  it("reports broken instructions with unmatched Replit tokenjuice markers", async () => {
++    const home = await createTempDir();
++    const instructionsPath = join(home, "replit.md");
++    await writeFile(instructionsPath, "<!-- tokenjuice:replit begin -->\nmissing end marker\n", "utf8");
++
++    const doctor = await doctorReplitInstructions(instructionsPath);
++
++    expect(doctor.status).toBe("broken");
++    expect(doctor.issues[0]).toContain("without an end marker");
++    expect(doctor.fixCommand).toContain("remove unmatched tokenjuice markers");
++  });
++
++  it("reports broken instructions with nested Replit tokenjuice markers", async () => {
++    const home = await createTempDir();
++    const instructionsPath = join(home, "replit.md");
++    await writeFile(
++      instructionsPath,
++      [
++        "<!-- tokenjuice:replit begin -->",
++        "<!-- tokenjuice:replit begin -->",
++        "## tokenjuice terminal output compaction",
++        "",
++        "- When running terminal commands through Replit Agent, prefer `tokenjuice wrap -- <command>`.",
++        "- Use `tokenjuice wrap --raw -- <command>` only when exact raw output bytes are required.",
++        "<!-- tokenjuice:replit end -->",
++        "<!-- tokenjuice:replit end -->",
++      ].join("\n"),
++      "utf8",
++    );
++
++    const doctor = await doctorReplitInstructions(instructionsPath);
++
++    expect(doctor.status).toBe("broken");
++    expect(doctor.issues).toContain("configured Replit instructions have malformed tokenjuice markers");
++    expect(doctor.fixCommand).toContain("remove unmatched tokenjuice markers");
++    await expect(installReplitInstructions(instructionsPath)).rejects.toThrow("cannot safely repair malformed tokenjuice markers");
++    await expect(uninstallReplitInstructions(instructionsPath)).rejects.toThrow("cannot safely uninstall malformed tokenjuice markers");
++  });
++
++  it("uses REPLIT_PROJECT_DIR for the default replit.md path", async () => {
++    const home = await createTempDir();
++    process.env.REPLIT_PROJECT_DIR = home;
++
++    const installed = await installReplitInstructions();
++    const expectedInstructionsPath = join(home, "replit.md");
++    const doctor = await doctorReplitInstructions();
++
++    expect(installed.instructionsPath).toBe(expectedInstructionsPath);
++    expect(doctor.instructionsPath).toBe(expectedInstructionsPath);
++    expect(doctor.status).toBe("ok");
++  });
++
++  it("defaults to the git root replit.md from nested directories", async () => {
++    const home = await createTempDir();
++    await mkdir(join(home, ".git"));
++    const nestedDir = join(home, "packages", "app");
++    await mkdir(nestedDir, { recursive: true });
++    process.chdir(nestedDir);
++
++    const installed = await installReplitInstructions();
++    const root = await realpath(home);
++
++    expect(installed.instructionsPath).toBe(join(root, "replit.md"));
++    await expect(readFile(join(root, "replit.md"), "utf8")).resolves.toContain("Replit Agent");
++  });
++
++  it("is included in aggregate hook doctor output", async () => {
++    const home = await createTempDir();
++    for (const key of envKeys) {
++      process.env[key] = home;
++    }
++    await installReplitInstructions(undefined, { projectDir: home });
++
++    const report = await doctorInstalledHooks({ projectDir: home });
++
++    expect(report.integrations.replit.instructionsPath).toBe(join(home, "replit.md"));
++    expect(report.integrations.replit.status).toBe("ok");
++  });
++});

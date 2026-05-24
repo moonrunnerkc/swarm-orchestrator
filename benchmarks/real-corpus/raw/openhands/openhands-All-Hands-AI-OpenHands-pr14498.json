@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14498",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "author=openhands-agent+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14498,
+    "headSha": "20cc90445f82f8a485bb537b16dc86a361b7d1b2",
+    "baseSha": "e069646a9a5a9b7abcbf85bd2af348c6f2b64a6f",
+    "title": "Automate good first issue labeling in issue triage",
+    "body": "- [ ] A human has tested these changes.\n\n---\n\n## Why\n\nWe already had a `good first issue` label and a workflow that reacts to it, but we did not have automation that could apply the label conservatively. We also wanted to avoid coupling newcomer-suitability decisions to duplicate detection while still using duplicate triage as a guardrail.\n\n## Summary\n\n- keep duplicate checking as a veto / guardrail for newcomer labeling\n- add an OpenHands-based `good first issue` classifier that runs automatically on new issues and auto-applies the label only at high confidence\n- add a manual `workflow_dispatch` mode for rerunning the `good first issue` check on an issue number\n- update `ISSUE_TRIAGE.md` to describe the automated labeling flow and its conservative rules\n- add focused unit tests for the new classifier script\n\n## Issue Number\n\nN/A\n\n## How to Test\n\n1. Open `.github/workflows/issue-duplicate-checker.yml`.\n2. Confirm the duplicate check job now exposes outputs and a follow-up `issue-good-first-issue-check` job runs after it.\n3. Confirm the new job skips auto-labeling when the issue is already `good first issue`, is `duplicate-candidate`, or the duplicate check reported duplicate / overlapping-scope results.\n4. Open `scripts/issue_good_first_issue_check_openhands.py` and confirm it only returns `should_apply_label: true` when the issue meets the explicit newcomer criteria with high confidence.\n5. Run `poetry run pytest tests/unit/test_issue_good_first_issue_check_openhands.py`.\n6. Run `poetry run pre-commit run --files .github/workflows/issue-duplicate-checker.yml ISSUE_TRIAGE.md scripts/issue_good_first_issue_check_openhands.py tests/unit/test_issue_good_first_issue_check_openhands.py --config ./dev_config/python/.pre-commit-config.yaml`.\n\n## Video/Screenshots\n\nN/A\n\n## Type\n\n- [ ] Bug fix\n- [x] Feature\n- [ ] Refactor\n- [ ] Breaking change\n- [ ] Docs / chore\n\n## Notes\n\nThis keeps the actual `good first issue` decision separate from duplicate detection:\n- duplicate / overlapping-scope results block auto-labeling\n- “not a duplicate” is not treated as positive evidence\n- the label is only auto-applied when the classifier returns high confidence\n\n_This PR description was created by an AI agent (OpenHands) on behalf of the user._\n\n---\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-20cc904   docker.openhands.dev/openhands/openhands:20cc904\n```",
+    "author": "enyst",
+    "headRef": "clarify-good-first-issue-triage-criteria",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "20cc90445f82f8a485bb537b16dc86a361b7d1b2",
+    "baseSha": "e069646a9a5a9b7abcbf85bd2af348c6f2b64a6f"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14498.diff",
+  "vendoredAt": "2026-05-24T03:18:27.801Z",
+  "collectedAt": "2026-05-24T03:18:27.801Z"
+}

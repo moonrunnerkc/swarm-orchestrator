@@ -1,0 +1,389 @@
+diff --git a/dev_config/python/.pre-commit-config.yaml b/dev_config/python/.pre-commit-config.yaml
+index 0e09696f7d1b..ee38e556c12f 100644
+--- a/dev_config/python/.pre-commit-config.yaml
++++ b/dev_config/python/.pre-commit-config.yaml
+@@ -31,17 +31,15 @@ repos:
+ 
+   - repo: https://github.com/astral-sh/ruff-pre-commit
+     # Ruff version.
+-    rev: v0.11.8
++    rev: v0.12.5
+     hooks:
+-      # Run the linter.
++      # Run the linter. Config is auto-discovered from pyproject.toml.
+       - id: ruff
+-        entry: ruff check --config dev_config/python/ruff.toml
+         types_or: [python, pyi, jupyter]
+         args: [--fix, --unsafe-fixes]
+         exclude: ^(enterprise/)
+-      # Run the formatter.
++      # Run the formatter. Config is auto-discovered from pyproject.toml.
+       - id: ruff-format
+-        entry: ruff format --config dev_config/python/ruff.toml
+         types_or: [python, pyi, jupyter]
+         exclude: ^(enterprise/)
+ 
+diff --git a/dev_config/python/ruff.toml b/dev_config/python/ruff.toml
+deleted file mode 100644
+index a27b0d6ef95b..000000000000
+--- a/dev_config/python/ruff.toml
++++ /dev/null
+@@ -1,42 +0,0 @@
+-# Exclude third-party runtime directory from linting
+-exclude = ["enterprise/"]
+-
+-[lint]
+-select = [
+-    "E",
+-    "W",
+-    "F",
+-    "I",
+-    "Q",
+-    "B",
+-    "ASYNC",
+-    "UP006",  # Use `list` instead of `List` for annotations
+-    "UP007",  # Use `X | Y` instead of `Union[X, Y]`
+-    "UP008",  # Use `X | None` instead of `Optional[X]`
+-]
+-
+-ignore = [
+-    "E501",
+-    "B003",
+-    "B007",
+-    "B009",
+-    "B010",
+-    "B904",
+-    "B018",
+-    # Temporarily ignore ASYNC rules until they can be properly fixed in a separate PR
+-    "ASYNC110",
+-    "ASYNC220",
+-    "ASYNC221",
+-    "ASYNC230",
+-    "ASYNC251",
+-]
+-
+-[lint.flake8-quotes]
+-docstring-quotes = "double"
+-inline-quotes = "single"
+-
+-[format]
+-quote-style = "single"
+-
+-[lint.flake8-bugbear]
+-extend-immutable-calls = ["Depends", "fastapi.Depends", "fastapi.params.Depends"]
+diff --git a/openhands/app_server/app_lifespan/alembic/versions/001.py b/openhands/app_server/app_lifespan/alembic/versions/001.py
+index 4a21068ec6ed..472f2ea4b59c 100644
+--- a/openhands/app_server/app_lifespan/alembic/versions/001.py
++++ b/openhands/app_server/app_lifespan/alembic/versions/001.py
+@@ -6,7 +6,7 @@
+ 
+ """
+ 
+-from typing import Sequence, Union
++from typing import Sequence
+ 
+ import sqlalchemy as sa
+ from alembic import op
+@@ -20,9 +20,9 @@
+ 
+ # revision identifiers, used by Alembic.
+ revision: str = '001'
+-down_revision: Union[str, Sequence[str], None] = None
+-branch_labels: Union[str, Sequence[str], None] = None
+-depends_on: Union[str, Sequence[str], None] = None
++down_revision: str | Sequence[str] | None = None
++branch_labels: str | Sequence[str] | None = None
++depends_on: str | Sequence[str] | None = None
+ 
+ 
+ def upgrade() -> None:
+diff --git a/openhands/app_server/app_lifespan/alembic/versions/002.py b/openhands/app_server/app_lifespan/alembic/versions/002.py
+index cb3ec72db681..290651c8dd3e 100644
+--- a/openhands/app_server/app_lifespan/alembic/versions/002.py
++++ b/openhands/app_server/app_lifespan/alembic/versions/002.py
+@@ -7,16 +7,16 @@
+ """
+ 
+ from enum import Enum
+-from typing import Sequence, Union
++from typing import Sequence
+ 
+ import sqlalchemy as sa
+ from alembic import op
+ 
+ # revision identifiers, used by Alembic.
+ revision: str = '002'
+-down_revision: Union[str, None] = '001'
+-branch_labels: Union[str, Sequence[str], None] = None
+-depends_on: Union[str, Sequence[str], None] = None
++down_revision: str | None = '001'
++branch_labels: str | Sequence[str] | None = None
++depends_on: str | Sequence[str] | None = None
+ 
+ 
+ class EventCallbackStatus(Enum):
+diff --git a/openhands/app_server/app_lifespan/alembic/versions/003.py b/openhands/app_server/app_lifespan/alembic/versions/003.py
+index 6879b4358f7b..86aed54850cd 100644
+--- a/openhands/app_server/app_lifespan/alembic/versions/003.py
++++ b/openhands/app_server/app_lifespan/alembic/versions/003.py
+@@ -6,16 +6,16 @@
+ 
+ """
+ 
+-from typing import Sequence, Union
++from typing import Sequence
+ 
+ import sqlalchemy as sa
+ from alembic import op
+ 
+ # revision identifiers, used by Alembic.
+ revision: str = '003'
+-down_revision: Union[str, None] = '002'
+-branch_labels: Union[str, Sequence[str], None] = None
+-depends_on: Union[str, Sequence[str], None] = None
++down_revision: str | None = '002'
++branch_labels: str | Sequence[str] | None = None
++depends_on: str | Sequence[str] | None = None
+ 
+ 
+ def upgrade() -> None:
+diff --git a/openhands/app_server/app_lifespan/alembic/versions/004.py b/openhands/app_server/app_lifespan/alembic/versions/004.py
+index 2d5ef07f41d0..d2887b799e27 100644
+--- a/openhands/app_server/app_lifespan/alembic/versions/004.py
++++ b/openhands/app_server/app_lifespan/alembic/versions/004.py
+@@ -6,16 +6,16 @@
+ 
+ """
+ 
+-from typing import Sequence, Union
++from typing import Sequence
+ 
+ import sqlalchemy as sa
+ from alembic import op
+ 
+ # revision identifiers, used by Alembic.
+ revision: str = '004'
+-down_revision: Union[str, None] = '003'
+-branch_labels: Union[str, Sequence[str], None] = None
+-depends_on: Union[str, Sequence[str], None] = None
++down_revision: str | None = '003'
++branch_labels: str | Sequence[str] | None = None
++depends_on: str | Sequence[str] | None = None
+ 
+ 
+ def upgrade() -> None:
+diff --git a/openhands/app_server/app_lifespan/alembic/versions/005.py b/openhands/app_server/app_lifespan/alembic/versions/005.py
+index 9894991a771e..a732c452fcba 100644
+--- a/openhands/app_server/app_lifespan/alembic/versions/005.py
++++ b/openhands/app_server/app_lifespan/alembic/versions/005.py
+@@ -6,16 +6,16 @@
+ 
+ """
+ 
+-from typing import Sequence, Union
++from typing import Sequence
+ 
+ import sqlalchemy as sa
+ from alembic import op
+ 
+ # revision identifiers, used by Alembic.
+ revision: str = '005'
+-down_revision: Union[str, Sequence[str], None] = '004'
+-branch_labels: Union[str, Sequence[str], None] = None
+-depends_on: Union[str, Sequence[str], None] = None
++down_revision: str | Sequence[str] | None = '004'
++branch_labels: str | Sequence[str] | None = None
++depends_on: str | Sequence[str] | None = None
+ 
+ 
+ def upgrade() -> None:
+diff --git a/openhands/app_server/app_lifespan/alembic/versions/006.py b/openhands/app_server/app_lifespan/alembic/versions/006.py
+index a0e3f5debdff..3df4e01226db 100644
+--- a/openhands/app_server/app_lifespan/alembic/versions/006.py
++++ b/openhands/app_server/app_lifespan/alembic/versions/006.py
+@@ -6,16 +6,16 @@
+ 
+ """
+ 
+-from typing import Sequence, Union
++from typing import Sequence
+ 
+ import sqlalchemy as sa
+ from alembic import op
+ 
+ # revision identifiers, used by Alembic.
+ revision: str = '006'
+-down_revision: Union[str, None] = '005'
+-branch_labels: Union[str, Sequence[str], None] = None
+-depends_on: Union[str, Sequence[str], None] = None
++down_revision: str | None = '005'
++branch_labels: str | Sequence[str] | None = None
++depends_on: str | Sequence[str] | None = None
+ 
+ 
+ def upgrade() -> None:
+diff --git a/openhands/app_server/app_lifespan/alembic/versions/007.py b/openhands/app_server/app_lifespan/alembic/versions/007.py
+index ef0b34b2eb33..b00df4513028 100644
+--- a/openhands/app_server/app_lifespan/alembic/versions/007.py
++++ b/openhands/app_server/app_lifespan/alembic/versions/007.py
+@@ -6,16 +6,16 @@
+ 
+ """
+ 
+-from typing import Sequence, Union
++from typing import Sequence
+ 
+ import sqlalchemy as sa
+ from alembic import op
+ 
+ # revision identifiers, used by Alembic.
+ revision: str = '007'
+-down_revision: Union[str, None] = '006'
+-branch_labels: Union[str, Sequence[str], None] = None
+-depends_on: Union[str, Sequence[str], None] = None
++down_revision: str | None = '006'
++branch_labels: str | Sequence[str] | None = None
++depends_on: str | Sequence[str] | None = None
+ 
+ 
+ def upgrade() -> None:
+diff --git a/openhands/app_server/app_lifespan/alembic/versions/008.py b/openhands/app_server/app_lifespan/alembic/versions/008.py
+index a5de3d85f386..ab8925886423 100644
+--- a/openhands/app_server/app_lifespan/alembic/versions/008.py
++++ b/openhands/app_server/app_lifespan/alembic/versions/008.py
+@@ -6,16 +6,16 @@
+ 
+ """
+ 
+-from typing import Sequence, Union
++from typing import Sequence
+ 
+ import sqlalchemy as sa
+ from alembic import op
+ 
+ # revision identifiers, used by Alembic.
+ revision: str = '008'
+-down_revision: Union[str, None] = '007'
+-branch_labels: Union[str, Sequence[str], None] = None
+-depends_on: Union[str, Sequence[str], None] = None
++down_revision: str | None = '007'
++branch_labels: str | Sequence[str] | None = None
++depends_on: str | Sequence[str] | None = None
+ 
+ 
+ def upgrade() -> None:
+diff --git a/openhands/app_server/app_lifespan/alembic/versions/009.py b/openhands/app_server/app_lifespan/alembic/versions/009.py
+index c1307e8c85a8..7488b671b751 100644
+--- a/openhands/app_server/app_lifespan/alembic/versions/009.py
++++ b/openhands/app_server/app_lifespan/alembic/versions/009.py
+@@ -5,15 +5,15 @@
+ Create Date: 2026-04-27 00:00:00.000000
+ """
+ 
+-from typing import Sequence, Union
++from typing import Sequence
+ 
+ import sqlalchemy as sa
+ from alembic import op
+ 
+ revision: str = '009'
+-down_revision: Union[str, None] = '008'
+-branch_labels: Union[str, Sequence[str], None] = None
+-depends_on: Union[str, Sequence[str], None] = None
++down_revision: str | None = '008'
++branch_labels: str | Sequence[str] | None = None
++depends_on: str | Sequence[str] | None = None
+ 
+ 
+ def upgrade() -> None:
+diff --git a/openhands/app_server/sandbox/remote_sandbox_service.py b/openhands/app_server/sandbox/remote_sandbox_service.py
+index 1e11dc4054a7..7a1bb6722994 100644
+--- a/openhands/app_server/sandbox/remote_sandbox_service.py
++++ b/openhands/app_server/sandbox/remote_sandbox_service.py
+@@ -4,7 +4,7 @@
+ import os
+ from dataclasses import dataclass
+ from datetime import datetime
+-from typing import Any, AsyncGenerator, Union
++from typing import Any, AsyncGenerator
+ from urllib.parse import urlparse
+ from uuid import UUID
+ 
+@@ -336,7 +336,7 @@ async def search_sandboxes(
+ 
+         return SandboxPage(items=items, next_page_id=next_page_id)
+ 
+-    async def get_sandbox(self, sandbox_id: str) -> Union[SandboxInfo, None]:
++    async def get_sandbox(self, sandbox_id: str) -> SandboxInfo | None:
+         """Get a single sandbox by checking its corresponding runtime."""
+         stored_sandbox = await self._get_stored_sandbox(sandbox_id)
+         if stored_sandbox is None:
+@@ -354,7 +354,7 @@ async def get_sandbox(self, sandbox_id: str) -> Union[SandboxInfo, None]:
+ 
+     async def _get_sandbox_by_session_api_key_legacy(
+         self, session_api_key: str
+-    ) -> Union[SandboxInfo, None]:
++    ) -> SandboxInfo | None:
+         """Legacy method to get sandbox by session API key via runtime API.
+ 
+         This is the fallback for sandboxes created before the session_api_key_hash
+@@ -410,7 +410,7 @@ async def _get_sandbox_by_session_api_key_legacy(
+ 
+     async def get_sandbox_by_session_api_key(
+         self, session_api_key: str
+-    ) -> Union[SandboxInfo, None]:
++    ) -> SandboxInfo | None:
+         """Get a single sandbox by session API key.
+ 
+         Uses the stored session_api_key_hash for efficient database lookup instead
+diff --git a/pyproject.toml b/pyproject.toml
+index a6c331af47a7..18cb8ffd1ff3 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -304,10 +304,42 @@ ignore = [ "E501" ]
+ skip-string-normalization = true
+ 
+ [tool.ruff]
+-lint.select = [ "D" ]
+-# ignore warnings for missing docstrings
+-lint.ignore = [ "D1" ]
+-lint.pydocstyle.convention = "google"
++exclude = [ "enterprise/" ]
++format.quote-style = "single"
++lint.select = [
++  "ASYNC",
++  "B",
++  "E",
++  "F",
++  "I",
++  "Q",
++  "UP006",
++  "UP007",
++  "UP008",
++  "W",
++]
++lint.ignore = [
++  "ASYNC109",
++  "ASYNC110",
++  "ASYNC220",
++  "ASYNC221",
++  "ASYNC230",
++  "ASYNC251",
++  "B003",
++  "B007",
++  "B009",
++  "B010",
++  "B018",
++  "B904",
++  "E501",
++]
++lint.flake8-bugbear.extend-immutable-calls = [
++  "Depends",
++  "fastapi.Depends",
++  "fastapi.params.Depends",
++]
++lint.flake8-quotes.docstring-quotes = "double"
++lint.flake8-quotes.inline-quotes = "single"
+ 
+ [tool.coverage.run]
+ concurrency = [ "gevent" ]

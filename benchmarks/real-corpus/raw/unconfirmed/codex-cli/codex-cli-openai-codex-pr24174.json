@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24174",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24174,
+    "headSha": "1a3f6444e3c8f9affa2005d21c350f80952c5614",
+    "baseSha": "f94157a4b23ed5e90da583aca26a1e551a2219b0",
+    "title": "Add prompt hooks",
+    "body": "# Why\r\n\r\nPrompt hooks let hook authors express review criteria as model-evaluated prompts while preserving Codex hook semantics. Codex should default these checks to the active thread model instead of a fixed hook model.\r\n\r\n# What\r\n\r\n- Add `type = \"prompt\"` hook handler config, app-server API, generated schemas, and hook list support with optional `model`, `timeout`, and `continueOnBlock`.\r\n- Wire prompt hooks into the hook engine for PreToolUse, PermissionRequest, PostToolUse, UserPromptSubmit, and Stop while skipping unsupported events with warnings.\r\n- Add a core prompt-hook runner that calls the model with no tools, defaults to the thread model, and expects `{ \"ok\": boolean, \"reason\": string }`.\r\n- Map `ok: false` to Codex event-specific outcomes: deny pre-tool-use, block/continue post-tool-use according to `continueOnBlock`, block user prompt and stop hooks, and no-op permission requests.\r\n- Add a Stop integration test in the style of Claude multi-criteria hooks, requiring the assistant to revise once before the prompt hook returns ok.\r\n",
+    "author": "abhinav-oai",
+    "headRef": "abhinav/prompt-type-hooks",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "1a3f6444e3c8f9affa2005d21c350f80952c5614",
+    "baseSha": "f94157a4b23ed5e90da583aca26a1e551a2219b0"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24174.diff",
+  "vendoredAt": "2026-05-24T03:20:40.956Z",
+  "collectedAt": "2026-05-24T03:20:40.956Z"
+}

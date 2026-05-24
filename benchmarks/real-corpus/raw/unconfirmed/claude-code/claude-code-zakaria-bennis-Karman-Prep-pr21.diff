@@ -1,0 +1,147 @@
+diff --git a/.replit b/.replit
+new file mode 100644
+index 0000000..7f2c8e1
+--- /dev/null
++++ b/.replit
+@@ -0,0 +1,28 @@
++# Replit workspace config. See replit.md for the full agent context.
++# This file is just enough to make "Run" boot the dev server.
++
++run = "npm run dev:next"
++entrypoint = "src/app/layout.tsx"
++
++modules = ["nodejs-22:v0"]
++
++hidden = [".next", ".open-next", "node_modules", "out", ".wrangler"]
++
++[nix]
++channel = "stable-24_05"
++
++[env]
++NEXT_TELEMETRY_DISABLED = "1"
++
++[deployment]
++# Production deploy is via Cloudflare Workers (npm run cf:deploy), NOT
++# Replit Deployments. This block is here so the Deploy button in the
++# Replit UI surfaces a sane build command rather than a default that
++# would conflict with our OpenNext output.
++deploymentTarget = "cloudrun"
++build = ["npm", "run", "build"]
++run = ["npm", "run", "start"]
++
++[[ports]]
++localPort = 3000
++externalPort = 80
+diff --git a/CLAUDE.md b/CLAUDE.md
+new file mode 100644
+index 0000000..a44fc7b
+--- /dev/null
++++ b/CLAUDE.md
+@@ -0,0 +1,30 @@
++# Karman Prep — Claude Code quick-start
++
++Pre-launch SAT prep platform. Adaptive practice + live tutoring. Live deploy
++target Nov 2026. Code is in prod (Cloudflare Workers via OpenNext), no
++paying users yet.
++
++## Read these first (5 min)
++
++1. [`CONTRIBUTING.md`](./CONTRIBUTING.md) — branch model, dev commands,
++   lint/test/format gates, gotchas.
++2. [`docs/handoff.md`](./docs/handoff.md) — what this product is, who uses
++   it, current status.
++3. [`docs/architecture.md`](./docs/architecture.md) — system map +
++   Mermaid diagram of the data flows.
++4. [`docs/adr/`](./docs/adr/) — why core decisions exist (per-session pay,
++   Stripe Connect Express, ChatGPT-based imports).
++
++## Repo defaults you must respect
++
++- Default branch `main`. Feature branches `zakaria/<short-kebab-description>`.
++- Lint rules `@typescript-eslint/no-unused-vars` and `react/no-unescaped-entities`
++  are **error**, not warn — CI fails on either.
++- 5 required CI checks: TypeScript, ESLint, Prettier, Vitest, Cloudflare build.
++- Migrations: `supabase/migrations/<YYYYMMDDHHMMSS>_name.sql`, applied via
++  `npm run db:push` or on `main` merges via `.github/workflows/db-deploy.yml`.
++- Dev server: `npm run dev:next`. Deploy: `npm run cf:deploy` (Cloudflare, not
++  Vercel).
++- No file should exceed ~700 lines — split by concern instead.
++- Server actions validate inputs with Zod schemas; add a schema when adding
++  an action.
+diff --git a/GEMINI.md b/GEMINI.md
+new file mode 100644
+index 0000000..57fa0de
+--- /dev/null
++++ b/GEMINI.md
+@@ -0,0 +1,30 @@
++# Karman Prep — Gemini quick-start
++
++Pre-launch SAT prep platform. Adaptive practice + live tutoring. Live deploy
++target Nov 2026. Code is in prod (Cloudflare Workers via OpenNext), no
++paying users yet.
++
++## Read these first (5 min)
++
++1. [`CONTRIBUTING.md`](./CONTRIBUTING.md) — branch model, dev commands,
++   lint/test/format gates, gotchas.
++2. [`docs/handoff.md`](./docs/handoff.md) — what this product is, who uses
++   it, current status.
++3. [`docs/architecture.md`](./docs/architecture.md) — system map +
++   Mermaid diagram of the data flows.
++4. [`docs/adr/`](./docs/adr/) — why core decisions exist (per-session pay,
++   Stripe Connect Express, ChatGPT-based imports).
++
++## Repo defaults you must respect
++
++- Default branch `main`. Feature branches `zakaria/<short-kebab-description>`.
++- Lint rules `@typescript-eslint/no-unused-vars` and `react/no-unescaped-entities`
++  are **error**, not warn — CI fails on either.
++- 5 required CI checks: TypeScript, ESLint, Prettier, Vitest, Cloudflare build.
++- Migrations: `supabase/migrations/<YYYYMMDDHHMMSS>_name.sql`, applied via
++  `npm run db:push` or on `main` merges via `.github/workflows/db-deploy.yml`.
++- Dev server: `npm run dev:next`. Deploy: `npm run cf:deploy` (Cloudflare, not
++  Vercel).
++- No file should exceed ~700 lines — split by concern instead.
++- Server actions validate inputs with Zod schemas; add a schema when adding
++  an action.
+diff --git a/replit.md b/replit.md
+new file mode 100644
+index 0000000..d45ba8a
+--- /dev/null
++++ b/replit.md
+@@ -0,0 +1,35 @@
++# Karman Prep — Replit Agent quick-start
++
++Pre-launch SAT prep platform. Adaptive practice + live tutoring. Live deploy
++target Nov 2026. Code is in prod (Cloudflare Workers via OpenNext), no
++paying users yet.
++
++## Read these first (5 min)
++
++1. [`CONTRIBUTING.md`](./CONTRIBUTING.md) — branch model, dev commands,
++   lint/test/format gates, gotchas.
++2. [`docs/handoff.md`](./docs/handoff.md) — what this product is, who uses
++   it, current status.
++3. [`docs/architecture.md`](./docs/architecture.md) — system map +
++   Mermaid diagram of the data flows.
++4. [`docs/adr/`](./docs/adr/) — why core decisions exist.
++
++## Running this on Replit
++
++- Click **Run** — wired to `npm run dev:next` via `.replit`.
++- Node 22 is pinned (see `.nvmrc`). Replit's Nix toolchain handles it.
++- Secrets: copy `.env.example` → set the same keys in Replit's **Secrets**
++  panel. `OPENAI_API_KEY`, `SUPABASE_*`, `CLERK_*`, `STRIPE_*`, `RESEND_*`
++  are the load-bearing ones.
++
++## Repo defaults you must respect
++
++- Default branch `main`. Feature branches `zakaria/<short-kebab-description>`.
++- Lint rules are at **error** (no unused vars, no naked apostrophes in JSX).
++- 5 CI checks required before merge: TypeScript, ESLint, Prettier, Vitest,
++  Cloudflare build.
++- Migrations live in `supabase/migrations/<YYYYMMDDHHMMSS>_name.sql`. CI
++  applies them on `main` merges; locally use `npm run db:push`.
++- Deploy target is Cloudflare Workers (not Replit Deployments) — production
++  is at karmanprep.com. Replit is a dev environment only.
++- No file should exceed ~700 lines.

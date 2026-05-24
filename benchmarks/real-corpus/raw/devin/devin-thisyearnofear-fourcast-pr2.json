@@ -1,0 +1,26 @@
+{
+  "id": "devin-thisyearnofear-fourcast-pr2",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "420931345a3a9e1f208c14b9cb22efc451e9e1e9",
+    "baseSha": "d124aaa56ee39487b73c729f1dd428f281482938",
+    "title": "refactor: UX improvements from design review — extract components, fix loading, declutter UI",
+    "body": "## Summary\n\nImplements the highest-priority fixes from a comprehensive UI/UX, product design, and architecture review of the Fourcast app. Key changes:\n\n**Component extraction (maintenance)**\n- `app/markets/page.js` reduced from **2,923 → 911 lines** by extracting `SportsTabContent`, `DiscoveryTabContent`, `MarketCard`, `ChainRecommendationBadge`, `ChainActionWidget`, and `LoadingAnalysisState` into `app/markets/components.js`\n- Fixed a latent bug: `handlePublishSignal` was a closure reference that would've broken if the original file was ever split — now correctly uses `onPublishSignal` prop\n\n**Remove weather-as-loading-gate**\n- Agent, Positions, Labs, and Markets pages no longer show a full-screen spinner while weather data loads\n- Pages render immediately using `Date.getHours()` for initial `isNight` theming; weather updates the theme asynchronously when it arrives\n\n**Simplify Markets page above-the-fold**\n- Removed `SynthShowcase` (marketing copy, not functional UI), `PortfolioCard`, and `UnifiedConnect` from the main Markets content area\n- Users now see the MarketEdgeScanner and market list immediately without scrolling past promotional content\n\n**Fix broken onboarding tour**\n- Updated tour step targets from stale `[data-onboard=\"crypto\"]` / `[data-onboard=\"sports\"]` selectors to match current PageNav attributes: `markets`, `publish`, `agent`, `positions`\n\n**Disable pricing overlay when unconfigured**\n- `PricingOverlay` now returns `null` when `NEXT_PUBLIC_USDC_TOKEN` and `NEXT_PUBLIC_SUBSCRIPTION_CONTRACT` aren't set, preventing the broken \"Payment not configured\" state from showing\n\n**Mobile nav labels**\n- Added tiny text labels below emoji icons in mobile navigation (was icon-only, ambiguous)\n\n**Naming consistency**\n- Renamed \"You\" → \"Positions\" across PageNav, footer links, and the positions page header\n- Fixed duplicate comment in `SearchLanding.js`\n- Corrected model name in `ReasoningVisualizer`: DeepSeek-R1 → Llama 3.3\n\n## Review & Testing Checklist for Human\n\n- [ ] **Markets page rendering**: Navigate to `/markets` — verify markets load, analysis works, and the extracted SportsTab/DiscoveryTab render correctly. This is the highest-risk change (component extraction from a 2.9K line file)\n- [ ] **Mobile nav**: Check on a mobile viewport that icons now show labels (Markets, Signals, Agent, Positions, Labs)\n- [ ] **No more loading spinners**: Visit `/agent`, `/positions`, `/labs` — pages should render immediately instead of showing a spinner while weather loads\n- [ ] **Pricing overlay**: Verify the pricing overlay does NOT appear when payment contracts aren't configured (try using 3+ free analyses)\n- [ ] **Onboarding tour**: Reset localStorage key `fourcast_onboarding_complete` and verify the tour targets the correct nav items\n\n**Recommended test plan**: Start on the landing page `/`, search for a market (e.g., \"BTC $100k\"), verify the analysis flow works end-to-end through Markets → analysis → publish signal. Check mobile responsiveness at 375px viewport width.\n\n### Notes\n\n- Build passes cleanly (`next build` completes without errors)\n- Lint shows 0 errors, only pre-existing warnings (unused vars in positions/page.js, etc.)\n- The `freeAnalysesUsed` state variable in markets/page.js is set but never read — left as-is since it may be needed for a future usage counter display\n- `showArbitrage` state was moved from the parent page into `DiscoveryTabContent` as local state since it's only used there\n\nLink to Devin session: https://app.devin.ai/sessions/16cd249492b146fba445d357f075405c\nRequested by: @thisyearnofear",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779580829-ux-improvements",
+    "repository": "thisyearnofear/fourcast"
+  },
+  "diffRef": {
+    "repository": "thisyearnofear/fourcast",
+    "headSha": "420931345a3a9e1f208c14b9cb22efc451e9e1e9",
+    "baseSha": "d124aaa56ee39487b73c729f1dd428f281482938"
+  },
+  "vendoredDiffPath": "devin/devin-thisyearnofear-fourcast-pr2.diff",
+  "vendoredAt": "2026-05-24T03:04:34.492Z",
+  "collectedAt": "2026-05-24T03:04:34.492Z"
+}

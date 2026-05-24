@@ -1,0 +1,111 @@
+diff --git a/.claude-plugin/marketplace.json b/.claude-plugin/marketplace.json
+index 6058eb7..73ccdef 100644
+--- a/.claude-plugin/marketplace.json
++++ b/.claude-plugin/marketplace.json
+@@ -8,7 +8,7 @@
+     {
+       "name": "bettercallclaude-italia",
+       "description": "Italian Legal Intelligence -- Cassazione precedent research, case strategy, legal drafting, and citation verification across all 20 Italian regions with attorney-client privilege (segreto professionale) privacy protection.",
+-      "version": "1.0.2",
++      "version": "1.0.3",
+       "source": "./bettercallclaude_italia",
+       "author": {
+         "name": "Federico Cesconi"
+diff --git a/bettercallclaude_italia/.claude-plugin/plugin.json b/bettercallclaude_italia/.claude-plugin/plugin.json
+index 3e3f51e..1abfccc 100644
+--- a/bettercallclaude_italia/.claude-plugin/plugin.json
++++ b/bettercallclaude_italia/.claude-plugin/plugin.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "bettercallclaude-italia",
+-  "version": "1.0.2",
++  "version": "1.0.3",
+   "description": "Intelligenza Legale Italiana -- Ricerca sui precedenti della Cassazione, strategia di causa, redazione legale e verifica delle citazioni in tutte le 20 regioni italiane con protezione privacy GDPR e segreto professionale.",
+   "author": { "name": "Federico Cesconi" },
+   "userConfig": {
+diff --git a/bettercallclaude_italia/README.md b/bettercallclaude_italia/README.md
+index 3caee01..96db779 100644
+--- a/bettercallclaude_italia/README.md
++++ b/bettercallclaude_italia/README.md
+@@ -1,4 +1,4 @@
+-[![Version](https://img.shields.io/badge/version-1.0.2-blue)](https://github.com/fedec65/bettercallclaude_italia/releases)
++[![Version](https://img.shields.io/badge/version-1.0.3-blue)](https://github.com/fedec65/bettercallclaude_italia/releases)
+ [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-green)](LICENSE)
+ [![Platform](https://img.shields.io/badge/platform-Cowork%20Desktop-orange)](https://claude.ai)
+ 
+diff --git a/bettercallclaude_italia/agents/prompt-engineer.md b/bettercallclaude_italia/agents/prompt-engineer.md
+index 80e928b..ba7684c 100644
+--- a/bettercallclaude_italia/agents/prompt-engineer.md
++++ b/bettercallclaude_italia/agents/prompt-engineer.md
+@@ -190,7 +190,7 @@ Quando invocato con flag:
+ 
+ ## Punti di Integrazione
+ 
+-### Come Comando Standalone (`/refine`)
++### Come Comando Standalone (`/raffina`)
+ Accesso diretto per affinamento prompt senza indirizzo ad altri agenti.
+ 
+ ### Come Membro Panel Briefing
+diff --git a/bettercallclaude_italia/commands/aiuto.md b/bettercallclaude_italia/commands/aiuto.md
+index b1d0279..a360a51 100644
+--- a/bettercallclaude_italia/commands/aiuto.md
++++ b/bettercallclaude_italia/commands/aiuto.md
+@@ -111,7 +111,7 @@ BetterCallClaude Italia include conformità integrata al segreto professionale (
+ 
+ | Modalità | Comportamento |
+ |------|----------|
+-| `strict` | Tutte le chiamate esterne richiedono conferma. Preferisci elaborazione locale via Ollama. |
++| `strict` | Tutte le chiamate esterne richiedono conferma. Preferisci elaborazione locale. |
+ | `balanced` | Contenuto privilegiato attiva conferma. Contenuto non privilegiato elaborato normalmente. |
+ | `cloud` | Elaborazione cloud standard con hook privacy attivo solo per marcatori espliciti di privilegio. |
+ 
+diff --git a/bettercallclaude_italia/commands/versione.md b/bettercallclaude_italia/commands/versione.md
+index e1ce943..d65c218 100644
+--- a/bettercallclaude_italia/commands/versione.md
++++ b/bettercallclaude_italia/commands/versione.md
+@@ -9,7 +9,7 @@ Sei invocato tramite `/bettercallclaude-italia:versione`. Visualizza la versione
+ ## Output
+ 
+ ```
+-BetterCallClaude Italia v1.0.2
++BetterCallClaude Italia v1.0.3
+ 
+ Componenti:
+ - Agenti: 20
+diff --git a/bettercallclaude_italia/package.json b/bettercallclaude_italia/package.json
+index 685d39b..da96e6e 100644
+--- a/bettercallclaude_italia/package.json
++++ b/bettercallclaude_italia/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "bettercallclaude_italia",
+-  "version": "1.0.2",
++  "version": "1.0.3",
+   "private": true,
+   "description": "Plugin di Intelligenza Legale Italiana per Claude",
+   "scripts": {
+diff --git a/bettercallclaude_italia/skills/privacy-routing/SKILL.md b/bettercallclaude_italia/skills/privacy-routing/SKILL.md
+index 4459c54..d050059 100644
+--- a/bettercallclaude_italia/skills/privacy-routing/SKILL.md
++++ b/bettercallclaude_italia/skills/privacy-routing/SKILL.md
+@@ -65,7 +65,7 @@ Sei uno specialista di privacy legale italiano. Rilevi e proteggi contenuti sogg
+ - Preferisci elaborazione locale quando disponibile
+ 
+ ### PRIVILEGIATO
+-- **Solo elaborazione locale** (Ollama o equivalente)
++- **Solo elaborazione locale**
+ - Nessuna API cloud. Fallire piuttosto che inviare esternamente.
+ 
+ ## Regole di Routing
+diff --git a/package.json b/package.json
+index 94a0139..51d05bc 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "bettercallclaude-italia",
+-  "version": "1.0.2",
++  "version": "1.0.3",
+   "private": true,
+   "description": "Italian Legal Intelligence Plugin for Claude",
+   "scripts": {

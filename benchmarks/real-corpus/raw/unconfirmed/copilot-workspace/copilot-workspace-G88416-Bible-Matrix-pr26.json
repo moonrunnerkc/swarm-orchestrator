@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-G88416-Bible-Matrix-pr26",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 26,
+    "headSha": "6266437f17d5217d20d8d9782c0b4bc425659534",
+    "baseSha": "9452a0de7daf6abeaaedbaaccee1a1b08015ec25",
+    "title": "Harden and relax Firebase upload rules for real-world media MIME compatibility",
+    "body": "Uploads were being rejected by Firebase rules in valid client scenarios, especially when devices/browsers emitted MIME variants not covered by current allowlists. This update aligns Firestore metadata validation and Storage object validation so legitimate uploads pass consistently.\n\n- **Rule alignment across Firestore + Storage**\n  - Normalized MIME checks to be case-insensitive (`.lower()`) in both `firestore.rules` and `storage.rules`.\n  - Kept document payload validation and storage object validation in sync to avoid “uploaded file accepted but document write rejected” mismatches.\n\n- **Expanded accepted media MIME variants**\n  - Added support for common mobile/image/video variants:\n    - `image/heic`, `image/heif`\n    - `video/x-m4v`\n  - Applied to announcement media, Sunday service photos, and status/attachment validation paths where relevant.\n\n- **Trusted Storage URL validation update**\n  - Updated Firestore trusted URL regex to accept project-scoped Bible Matrix bucket variants (including suffixed environments) while still restricting to Firebase Storage hosts and project bucket naming.\n\n```rules\n&& request.resource.contentType is string\n&& request.resource.contentType.lower() in [\n  'image/jpeg',\n  'image/png',\n  'image/webp',\n  'image/gif',\n  'image/heic',\n  'image/heif'\n];\n```",
+    "author": "Copilot",
+    "headRef": "copilot/enhance-storage-firestore-rules",
+    "repository": "G88416/Bible-Matrix"
+  },
+  "diffRef": {
+    "repository": "G88416/Bible-Matrix",
+    "headSha": "6266437f17d5217d20d8d9782c0b4bc425659534",
+    "baseSha": "9452a0de7daf6abeaaedbaaccee1a1b08015ec25"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-G88416-Bible-Matrix-pr26.diff",
+  "vendoredAt": "2026-05-24T03:35:50.540Z",
+  "collectedAt": "2026-05-24T03:35:50.540Z"
+}

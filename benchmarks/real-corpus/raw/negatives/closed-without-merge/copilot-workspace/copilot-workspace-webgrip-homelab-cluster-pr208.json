@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-webgrip-homelab-cluster-pr208",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 208,
+    "headSha": "507e101c5a5a8dcf62370c78d1c1227438aea7bb",
+    "baseSha": "988c30760ef642a4c74d7af9cab0e21022c64cba",
+    "title": "chore(review): automated dependency review for spegel 0.6.0 → 0.7.1 (PR #205)",
+    "body": "Automated Renovate review for the spegel Helm chart minor bump (`0.6.0 → 0.7.1`) targeting the bootstrap helmfile.\n\n## What was assessed\n\n- **Scope**: Single-line change in `bootstrap/helmfile.d/01-apps.yaml` — bootstrap path only; the Flux GitOps path (`ocirepository.yaml`) already pins `0.7.1` with a digest, so the workload is likely already reconciled\n- **v0.7.0 notable changes**: new default hostPath persistence (`/var/lib/spegel`), QUIC in P2P router, peer metadata protocol change (rolling upgrade caveat), Containerd 1.7/2.0 support dropped (≥2.1 required)\n- **v0.7.1**: data race fix in blob request handling\n\n## Verdict\n\n**Yellow — Caution / Merge after checks**\n\nExisting HelmRelease values are compatible (explicit `containerdRegistryConfigPath` override survives the upstream default change). Main pre-merge gates: confirm Spegel pods are healthy at 0.7.1 on-cluster, verify node Containerd version ≥ 2.1, and confirm `/var/lib/spegel` hostPath is provisioning cleanly.\n\nFull findings in `.copilot-review/result.md`.",
+    "author": "Copilot",
+    "headRef": "copilot/review-dependency-update-205",
+    "repository": "webgrip/homelab-cluster"
+  },
+  "diffRef": {
+    "repository": "webgrip/homelab-cluster",
+    "headSha": "507e101c5a5a8dcf62370c78d1c1227438aea7bb",
+    "baseSha": "988c30760ef642a4c74d7af9cab0e21022c64cba"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/copilot-workspace/copilot-workspace-webgrip-homelab-cluster-pr208.diff",
+  "vendoredAt": "2026-05-24T04:28:43.101Z",
+  "collectedAt": "2026-05-24T04:28:43.101Z"
+}

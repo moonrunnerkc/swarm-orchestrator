@@ -1,0 +1,2236 @@
+diff --git a/pyproject.toml b/pyproject.toml
+index e42c86c..a842459 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -55,4 +55,8 @@ where = ["./src"]
+ include = ["aircraft_data_hierarchy*"]
+ 
+ [tool.pytest.ini_options]
+-testpaths = "tests"
+\ No newline at end of file
++testpaths = "tests"
++filterwarnings = [
++    "ignore::DeprecationWarning:pydantic.*",
++    "ignore::pydantic.PydanticDeprecatedSince20",
++]
+\ No newline at end of file
+diff --git a/tests/test_aircraft_data_hierarchy/test_behavior.py b/tests/test_aircraft_data_hierarchy/test_behavior.py
+new file mode 100644
+index 0000000..737b3fc
+--- /dev/null
++++ b/tests/test_aircraft_data_hierarchy/test_behavior.py
+@@ -0,0 +1,190 @@
++"""Tests for behavior.py — covering validators on uncovered branches (lines 266-268, 513-516, 636-647, 955-957, 962-966, 1006, 1022-1024)."""
++import pytest
++from pydantic import ValidationError
++
++from aircraft_data_hierarchy.behavior import (
++    Uncertainty, UncertaintyEffect, NormalPDF, UniformPDF, Bounds,
++    Function, IndependentVarPts, DependentVarPts, IndependentVarRef, DependentVarRef, FunctionDefn,
++    GriddedTableRef, GriddedTableDef, GriddedTable, UngriddedTableRef,
++    Activity, ActivityState, Behavior,
++)
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# Uncertainty.validate_pdf (lines 266-268)
++# Only one of normal_pdf or uniform_pdf can be specified.
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestUncertaintyPDFValidator:
++    def test_normal_pdf_alone_accepted(self):
++        u = Uncertainty(
++            effect=UncertaintyEffect.ADDITIVE,
++            normal_pdf=NormalPDF(num_sigmas=2.0),
++        )
++        assert u.normal_pdf is not None
++        assert u.uniform_pdf is None
++
++    def test_uniform_pdf_alone_accepted(self):
++        u = Uncertainty(
++            effect=UncertaintyEffect.MULTIPLICATIVE,
++            uniform_pdf=UniformPDF(bounds=[Bounds(value="0.5")]),
++        )
++        assert u.uniform_pdf is not None
++        assert u.normal_pdf is None
++
++    def test_both_pdfs_not_caught_by_field_validator(self):
++        """Demonstrates that the validate_pdf field_validator (lines 266-268) is unreachable:
++        info.data never contains the field currently being validated in Pydantic v2,
++        so the 'both specified' branch can never fire. This is a latent bug."""
++        u = Uncertainty(
++            effect=UncertaintyEffect.ADDITIVE,
++            normal_pdf=NormalPDF(num_sigmas=2.0),
++            uniform_pdf=UniformPDF(bounds=[Bounds(value="0.5")]),
++        )
++        # Both PDFs coexist because the validator logic is unreachable
++        assert u.normal_pdf is not None
++        assert u.uniform_pdf is not None
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# Function.validate_function_type (lines 513-516)
++# Can't have both simple (independent_var_pts) and complex (independent_var_ref) representations.
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestFunctionValidator:
++    def test_simple_representation_accepted(self):
++        f = Function(
++            name="simple_func",
++            independent_var_pts=[IndependentVarPts(var_id="x", value="1 2 3")],
++            dependent_var_pts=DependentVarPts(var_id="y", value="4 5 6"),
++        )
++        assert f.independent_var_pts is not None
++        assert f.dependent_var_pts is not None
++
++    def test_complex_representation_accepted(self):
++        f = Function(
++            name="complex_func",
++            independent_var_ref=[IndependentVarRef(var_id="x", min=0.0, max=10.0)],
++            dependent_var_ref=[DependentVarRef(var_id="y")],
++            function_defn=FunctionDefn(name="lookup", gridded_table_ref=GriddedTableRef(gt_id="gt1")),
++        )
++        assert f.independent_var_ref is not None
++        assert f.function_defn is not None
++
++    def test_both_simple_and_complex_rejected_via_dependent_var_ref(self):
++        """dependent_var_ref is declared after independent_var_ref, so the validator fires."""
++        with pytest.raises(ValidationError, match="both simple and complex"):
++            Function(
++                name="invalid_func",
++                independent_var_pts=[IndependentVarPts(var_id="x", value="1 2 3")],
++                independent_var_ref=[IndependentVarRef(var_id="x", min=0.0, max=10.0)],
++                dependent_var_ref=[DependentVarRef(var_id="y")],
++            )
++
++    def test_both_simple_and_complex_rejected_via_function_defn(self):
++        with pytest.raises(ValidationError, match="both simple and complex"):
++            Function(
++                name="invalid_func",
++                independent_var_pts=[IndependentVarPts(var_id="x", value="1 2 3")],
++                independent_var_ref=[IndependentVarRef(var_id="x", min=0.0, max=10.0)],
++                function_defn=FunctionDefn(name="f", gridded_table_ref=GriddedTableRef(gt_id="gt1")),
++            )
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# FunctionDefn.validate_table_type (lines 636-647)
++# Only one table type can be specified in a function definition.
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestFunctionDefnValidator:
++    def test_single_table_type_accepted(self):
++        fd = FunctionDefn(name="lookup", gridded_table_ref=GriddedTableRef(gt_id="gt1"))
++        assert fd.gridded_table_ref is not None
++
++    def test_three_table_types_rejected(self):
++        """With 3 table fields set, the third field's validator sees 2 already in info.data → fires."""
++        with pytest.raises(ValidationError, match="Only one table type"):
++            FunctionDefn(
++                name="invalid",
++                gridded_table_ref=GriddedTableRef(gt_id="gt1"),
++                gridded_table_def=GriddedTableDef(name="def1"),
++                ungridded_table_ref=UngriddedTableRef(ut_id="ut1"),
++            )
++
++    def test_two_table_types_not_caught(self):
++        """With only 2 table fields, the second field's validator sees only 1 prior → sum=1, not >1.
++        This documents the validator's limitation with only 2 table types."""
++        fd = FunctionDefn(
++            name="two_tables",
++            gridded_table_ref=GriddedTableRef(gt_id="gt1"),
++            ungridded_table_ref=UngriddedTableRef(ut_id="ut1"),
++        )
++        # Both coexist because the validator threshold is > 1 (not >= 1)
++        assert fd.gridded_table_ref is not None
++        assert fd.ungridded_table_ref is not None
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# Activity validators (lines 955-957, 962-966)
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestActivityValidators:
++    def test_valid_activity(self):
++        a = Activity(name="Design Review", description="Review design docs", state=ActivityState.PENDING)
++        assert a.name == "Design Review"
++        assert a.state == ActivityState.PENDING
++
++    @pytest.mark.parametrize("field", ["name", "description"])
++    def test_empty_string_rejected(self, field):
++        with pytest.raises(ValidationError, match="must not be empty"):
++            Activity(**{field: ""})
++
++    @pytest.mark.parametrize("field", ["name", "description"])
++    def test_whitespace_only_rejected(self, field):
++        with pytest.raises(ValidationError, match="must not be empty"):
++            Activity(**{field: "   "})
++
++    def test_valid_dependencies(self):
++        a = Activity(name="Build", dependencies=["Design", "Prototype"])
++        assert a.dependencies == ["Design", "Prototype"]
++
++    def test_empty_dependency_name_rejected(self):
++        with pytest.raises(ValidationError, match="must not be empty"):
++            Activity(name="Build", dependencies=["Design", ""])
++
++    def test_whitespace_dependency_name_rejected(self):
++        with pytest.raises(ValidationError, match="must not be empty"):
++            Activity(name="Build", dependencies=["  "])
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# Behavior validators (lines 1006, 1022-1024)
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestBehaviorValidators:
++    def test_valid_behavior(self):
++        b = Behavior(
++            name="Flight Test",
++            description="Execute flight test sequence",
++            sequence=[{"name": "Preflight"}],
++        )
++        assert b.name == "Flight Test"
++        assert len(b.sequence) == 1
++
++    @pytest.mark.parametrize("field", ["name", "description"])
++    def test_empty_string_rejected(self, field):
++        with pytest.raises(ValidationError, match="must not be empty"):
++            Behavior(**{field: ""})
++
++    @pytest.mark.parametrize("field", ["name", "description"])
++    def test_whitespace_only_rejected(self, field):
++        with pytest.raises(ValidationError, match="must not be empty"):
++            Behavior(**{field: "   "})
++
++    def test_empty_sequence_rejected(self):
++        with pytest.raises(ValidationError, match="must contain at least one activity"):
++            Behavior(name="Test", sequence=[])
++
++    def test_none_sequence_accepted(self):
++        b = Behavior(name="Test")
++        assert b.sequence is None
+diff --git a/tests/test_aircraft_data_hierarchy/test_work_breakdown_structure/test_airframe/test_airframe_geometry.py b/tests/test_aircraft_data_hierarchy/test_work_breakdown_structure/test_airframe/test_airframe_geometry.py
+index 0460a6a..75eeb40 100644
+--- a/tests/test_aircraft_data_hierarchy/test_work_breakdown_structure/test_airframe/test_airframe_geometry.py
++++ b/tests/test_aircraft_data_hierarchy/test_work_breakdown_structure/test_airframe/test_airframe_geometry.py
+@@ -231,3 +231,338 @@ def test_integer_validation(self):
+ 
+ if __name__ == "__main__":
+     unittest.main(argv=['first-arg-is-ignored'], exit=False)
++
++
++# ---------------------------------------------------------------------------
++# Pytest-style boundary, error-path, and cross-field tests
++# ---------------------------------------------------------------------------
++import pytest
++import math
++
++from aircraft_data_hierarchy.work_breakdown_structure.airframe.airframe_geometry import (
++    Boolean, Float, Integer, String, Point, Polyline, Spline, Mesh,
++    Loft, Airfoil, ReferenceAxis, CrossSection, Body, LiftingSurface,
++)
++
++
++def _pts(n: int) -> List[Point]:
++    """Return *n* distinct points along the line x=y=z."""
++    return [Point(x=float(i), y=float(i), z=float(i)) for i in range(n)]
++
++
++def _spline(n: int = 4, degree: int = 3) -> Spline:
++    return Spline(points=_pts(n), degree=degree)
++
++
++def _polyline(n: int = 3) -> Polyline:
++    return Polyline(points=_pts(n))
++
++
++# ── Boolean.validate_default  (lines 94-100) ─────────────────────────────
++
++class TestBooleanDefaultConversion:
++
++    @pytest.mark.parametrize("raw,expected", [
++        ("true", True), ("True", True), ("TRUE", True),
++        ("1", True), ("t", True), ("y", True), ("yes", True),
++        ("false", False), ("False", False), ("FALSE", False),
++        ("0", False), ("f", False), ("n", False), ("no", False),
++    ])
++    def test_string_to_bool_accepted(self, raw, expected):
++        b = Boolean(value=True, default=raw)
++        assert b.default is expected
++
++    @pytest.mark.parametrize("bad", ["maybe", "2", "nope", "yep", "oui"])
++    def test_string_to_bool_rejected(self, bad):
++        with pytest.raises(ValidationError, match="Invalid string value for a boolean conversion"):
++            Boolean(value=True, default=bad)
++
++
++# ── Float.validate_default  (lines 145-148) ──────────────────────────────
++
++class TestFloatDefaultConversion:
++
++    @pytest.mark.parametrize("raw,expected", [
++        ("3.14", 3.14), ("-1.5", -1.5), ("0", 0.0), ("1e2", 100.0),
++    ])
++    def test_string_to_float_accepted(self, raw, expected):
++        f = Float(value=0.0, default=raw)
++        assert f.default == pytest.approx(expected)
++
++    @pytest.mark.parametrize("bad", ["abc", "one-point-five"])
++    def test_string_to_float_rejected(self, bad):
++        with pytest.raises(ValidationError, match="Invalid string value for a float conversion"):
++            Float(value=0.0, default=bad)
++
++
++# ── Integer.validate_default  (lines 193-196) ────────────────────────────
++
++class TestIntegerDefaultConversion:
++
++    @pytest.mark.parametrize("raw,expected", [
++        ("42", 42), ("-7", -7), ("0", 0),
++    ])
++    def test_string_to_int_accepted(self, raw, expected):
++        i = Integer(value=0, default=raw)
++        assert i.default == expected
++
++    @pytest.mark.parametrize("bad", ["abc", "3.14", "one"])
++    def test_string_to_int_rejected(self, bad):
++        with pytest.raises(ValidationError, match="Invalid string value for an integer conversion"):
++            Integer(value=0, default=bad)
++
++
++# ── Point.validate_coordinate  (line 239) ────────────────────────────────
++
++class TestPointCoordinateValidation:
++
++    @pytest.mark.parametrize("kwargs", [
++        {"x": float("inf"), "y": 0.0, "z": 0.0},
++        {"x": 0.0, "y": float("-inf"), "z": 0.0},
++        {"x": 0.0, "y": 0.0, "z": float("nan")},
++    ])
++    def test_non_finite_coordinate_rejected(self, kwargs):
++        with pytest.raises(ValidationError, match="Coordinate values must be finite"):
++            Point(**kwargs)
++
++    def test_distance_to_known_geometry(self):
++        """3-4-5 right triangle in 3D."""
++        a = Point(x=0.0, y=0.0, z=0.0)
++        b = Point(x=3.0, y=4.0, z=0.0)
++        assert a.distance_to(b) == pytest.approx(5.0)
++
++
++# ── Point.__hash__  (line 257) ───────────────────────────────────────────
++
++class TestPointHash:
++
++    def test_equal_points_hash_equally(self):
++        p1 = Point(x=1.0, y=2.0, z=3.0)
++        p2 = Point(x=1.0, y=2.0, z=3.0)
++        assert hash(p1) == hash(p2)
++
++    def test_set_deduplication(self):
++        p1 = Point(x=1.0, y=2.0, z=3.0)
++        p2 = Point(x=1.0, y=2.0, z=3.0)
++        p3 = Point(x=9.0, y=8.0, z=7.0)
++        assert len({p1, p2, p3}) == 2
++
++
++# ── Polyline validators / methods  (lines 292, 301, 328, 345) ────────────
++
++class TestPolylineBoundary:
++
++    @pytest.mark.parametrize("n", [0, 1])
++    def test_fewer_than_two_points_rejected(self, n):
++        with pytest.raises(ValidationError, match="at least two points"):
++            Polyline(points=_pts(n))
++
++    def test_add_point_extends_path(self):
++        poly = _polyline(2)
++        poly.add_point(Point(x=10.0, y=10.0, z=10.0))
++        assert len(poly.points) == 3
++
++    def test_simplify_two_points_unchanged(self):
++        poly = Polyline(points=_pts(2))
++        result = poly.simplify(tolerance=0.01)
++        assert len(result.points) == 2
++
++    def test_simplify_retains_deviating_point(self):
++        pts = [
++            Point(x=0.0, y=0.0, z=0.0),
++            Point(x=0.5, y=5.0, z=0.0),
++            Point(x=1.0, y=0.0, z=0.0),
++        ]
++        result = Polyline(points=pts).simplify(tolerance=0.01)
++        assert len(result.points) == 3
++
++    def test_simplify_removes_collinear_point(self):
++        pts = [
++            Point(x=0.0, y=0.0, z=0.0),
++            Point(x=0.5, y=0.0, z=0.0),
++            Point(x=1.0, y=0.0, z=0.0),
++        ]
++        result = Polyline(points=pts).simplify(tolerance=0.01)
++        assert len(result.points) == 2
++
++    def test_length_multi_segment(self):
++        pts = [
++            Point(x=0.0, y=0.0, z=0.0),
++            Point(x=3.0, y=4.0, z=0.0),
++            Point(x=3.0, y=4.0, z=12.0),
++        ]
++        assert Polyline(points=pts).length() == pytest.approx(17.0)
++
++
++# ── Spline.validate_degree  (line 411) ───────────────────────────────────
++
++class TestSplineBoundary:
++
++    @pytest.mark.parametrize("deg", [0, -1, -100])
++    def test_non_positive_degree_rejected(self, deg):
++        with pytest.raises(ValidationError, match="positive integer|greater than 0"):
++            Spline(points=_pts(10), degree=deg)
++
++    def test_insufficient_points_for_degree(self):
++        with pytest.raises(ValidationError, match="At least 4 points are required"):
++            Spline(points=_pts(3), degree=3)
++
++    def test_exact_minimum_points_accepted(self):
++        s = Spline(points=_pts(4), degree=3)
++        assert len(s.points) == 4
++
++
++# ── Mesh validators / methods  (lines 448, 457, 468-470) ─────────────────
++
++class TestMeshBoundary:
++
++    def test_empty_polylines_rejected(self):
++        with pytest.raises(ValidationError, match="at least one polyline"):
++            Mesh(polylines=[])
++
++    def test_add_polyline(self):
++        mesh = Mesh(polylines=[_polyline()])
++        mesh.add_polyline(_polyline(4))
++        assert len(mesh.polylines) == 2
++
++    @pytest.mark.parametrize("idx", [-1, 1, 99])
++    def test_remove_polyline_bad_index(self, idx):
++        mesh = Mesh(polylines=[_polyline()])
++        with pytest.raises(IndexError, match="Invalid index"):
++            mesh.remove_polyline(idx)
++
++    def test_remove_polyline_valid(self):
++        mesh = Mesh(polylines=[_polyline(), _polyline(4)])
++        mesh.remove_polyline(0)
++        assert len(mesh.polylines) == 1
++
++    def test_calculate_volume_unit_tetrahedron(self):
++        """Four triangular faces forming a tetrahedron with known volume = 1/6."""
++        a, b, c, d = (
++            Point(x=0, y=0, z=0),
++            Point(x=1, y=0, z=0),
++            Point(x=0, y=1, z=0),
++            Point(x=0, y=0, z=1),
++        )
++        face1 = Polyline(points=[a, b, c])
++        face2 = Polyline(points=[a, b, d])
++        face3 = Polyline(points=[a, c, d])
++        face4 = Polyline(points=[b, c, d])
++        mesh = Mesh(polylines=[face1, face2, face3, face4])
++        assert mesh.calculate_volume() == pytest.approx(1.0 / 6.0, abs=1e-9)
++
++
++# ── Loft validators / methods  (lines 593, 597, 615, 624) ────────────────
++
++class TestLoftBoundary:
++
++    def test_single_spline_rejected(self):
++        with pytest.raises(ValidationError, match="at least two splines"):
++            Loft(splines=[_spline()])
++
++    def test_mismatched_degrees_rejected(self):
++        s1 = Spline(points=_pts(4), degree=3)
++        s2 = Spline(points=_pts(4), degree=1)
++        with pytest.raises(ValidationError, match="same degree"):
++            Loft(splines=[s1, s2])
++
++    @pytest.mark.parametrize("n", [0, -1, -100])
++    def test_non_positive_num_samples_rejected(self, n):
++        with pytest.raises(ValidationError, match="positive integer"):
++            Loft(splines=[_spline(), _spline()], num_samples=n)
++
++    def test_add_spline(self):
++        loft = Loft(splines=[_spline(), _spline()], num_samples=5)
++        loft.add_spline(_spline())
++        assert len(loft.splines) == 3
++
++    def test_calculate_surface_interpolation(self):
++        """Two axis-aligned splines separated in z; verify midpoint interpolation."""
++        pa = [Point(x=float(i), y=0, z=0) for i in range(4)]
++        pb = [Point(x=float(i), y=0, z=1) for i in range(4)]
++        loft = Loft(
++            splines=[Spline(points=pa), Spline(points=pb)],
++            num_samples=3,
++        )
++        surface = loft.calculate_surface()
++        assert len(surface) == 12  # 3 samples × 4 pts
++        mid_row = surface[4:8]  # t=0.5
++        for pt in mid_row:
++            assert pt[2] == pytest.approx(0.5)
++
++
++# ── Airfoil.validate_spline  (line 713) ──────────────────────────────────
++
++class TestAirfoilBoundary:
++
++    def test_none_spline_rejected(self):
++        with pytest.raises(ValidationError, match="spline defining the airfoil contour must be provided"):
++            Airfoil(spline=None)
++
++
++# ── LiftingSurface.validate_airfoil_sections ─────────────────────────────
++
++class TestLiftingSurfaceBoundary:
++
++    def test_empty_airfoil_sections_rejected(self):
++        with pytest.raises(ValidationError, match="At least one Airfoil must be provided"):
++            LiftingSurface(airfoil_sections=[])
++
++
++# ── CrossSection.validate_curves  ────────────────────────────────────────
++
++class TestCrossSectionBoundary:
++
++    def test_no_curves_rejected(self):
++        with pytest.raises(ValidationError, match="(?i)at least one of the upper or lower curve"):
++            CrossSection(station=0.5)
++
++    def test_station_out_of_range(self):
++        with pytest.raises(ValidationError):
++            CrossSection(station=1.5, upper_curve=_spline())
++
++    def test_only_upper_accepted(self):
++        cs = CrossSection(station=0.0, upper_curve=_spline())
++        assert cs.lower_curve is None
++
++    def test_only_lower_accepted(self):
++        cs = CrossSection(station=1.0, lower_curve=_spline())
++        assert cs.upper_curve is None
++
++
++# ── Body.validate_cross_sections  ────────────────────────────────────────
++
++class TestBodyBoundary:
++
++    def test_empty_cross_sections_rejected(self):
++        with pytest.raises(ValidationError, match="At least one CrossSection must be provided"):
++            Body(cross_sections=[])
++
++
++# ── String.validate_value_not_empty  ─────────────────────────────────────
++
++class TestStringBoundary:
++
++    @pytest.mark.parametrize("bad", ["   ", "\t", "\n"])
++    def test_whitespace_only_rejected(self, bad):
++        with pytest.raises(ValidationError, match="cannot be empty"):
++            String(value=bad)
++
++
++# ── ReferenceAxis — broken _registry (Pydantic v2 bug) ──────────────────
++# _registry is declared as a plain class attribute with underscore prefix,
++# but Pydantic v2 treats it as a ModelPrivateAttr.  This means:
++#   • validate_and_register (mode="before") hits `name in cls._registry`
++#     where cls._registry is a ModelPrivateAttr, raising TypeError.
++#   • All downstream validators and __init__ registration are unreachable.
++# The tests below document this behaviour; the ~15 uncovered lines inside
++# ReferenceAxis are blocked by this bug and cannot be reached without a
++# source-code fix.
++
++class TestReferenceAxisBrokenRegistry:
++
++    def test_construction_fails_due_to_private_attr_registry(self):
++        """Creating ANY ReferenceAxis raises TypeError because
++        `name in cls._registry` fails on a ModelPrivateAttr descriptor."""
++        with pytest.raises(TypeError, match="not iterable"):
++            ReferenceAxis(name="axis", points=_pts(2))
+diff --git a/tests/test_aircraft_data_hierarchy/test_work_breakdown_structure/test_airframe/test_airframe_parameters.py b/tests/test_aircraft_data_hierarchy/test_work_breakdown_structure/test_airframe/test_airframe_parameters.py
+index 99ace2f..74b2909 100644
+--- a/tests/test_aircraft_data_hierarchy/test_work_breakdown_structure/test_airframe/test_airframe_parameters.py
++++ b/tests/test_aircraft_data_hierarchy/test_work_breakdown_structure/test_airframe/test_airframe_parameters.py
+@@ -1,9 +1,7 @@
+-import unittest
++"""Tests for airframe_parameters models — focused on validator behavior, boundaries, and cross-field consistency."""
++import pytest
+ from pydantic import ValidationError
+-from typing import List, Optional
+-from enum import Enum
+ 
+-# Import the models from the provided code
+ from aircraft_data_hierarchy.work_breakdown_structure.airframe.airframe_parameters import (
+     ReferenceData, FlightConditions, ConfigurationLayout, Airfoil,
+     PlanformType, LiftingSurface, TwinVerticalTail,
+@@ -13,760 +11,506 @@
+     HypersonicFlapControl, EngineType, PropellerPowerProperties, JetEngineType,
+     JetPowerProperties, AerodynamicsData
+ )
+-
+ from aircraft_data_hierarchy.work_breakdown_structure.airframe.airframe_geometry import Point, Spline
+ 
+-class TestPydanticModels(unittest.TestCase):
+-
+-    def test_reference_data(self):
+-        # Test valid data
+-        data = {
+-            "RougHgt": 0.01,
+-            "Sref": 100.0,
+-            "Cbar": 10.0,
+-            "BLref": 5.0
+-        }
+-        model = ReferenceData(**data)
+-        self.assertEqual(model.roughness, 0.01)
+-        self.assertEqual(model.reference_area, 100.0)
+-        self.assertEqual(model.reference_length, 10.0)
+-        self.assertEqual(model.lateral_reference, 5.0)
+-
+-        # Test invalid roughness
+-        data["RougHgt"] = 0.03
+-        with self.assertRaises(ValidationError):
+-            ReferenceData(**data)
+-
+-    def test_flight_conditions(self):
+-        # Test valid data
+-        data = {
+-            "loop_control": 2,
+-            "qty_machs": 2,
+-            "machs": [0.5, 0.8],
+-            "velocities": [300.0, 400.0],
+-            "qty_alphas": 2,
+-            "alphas": [5.0, 10.0],
+-            "reynolds_indicies": [1e6, 2e6],
+-            "qty_altitudes": 2,
+-            "altitudes": [10000.0, 20000.0],
+-            "static_pressures": [101325.0, 90000.0],
+-            "static_temperatures": [288.15, 273.15],
+-            "transonic_mach": 0.7,
+-            "supersonic_mach": 1.2,
+-            "hypersonic_flag": True,
+-            "transition_flag": True,
+-            "weight": 50000.0,
+-            "flight_path_angle": 1.0
+-        }
+-        model = FlightConditions(**data)
+-        self.assertEqual(model.loop_control, 2)
+-        self.assertEqual(model.qty_machs, 2)
+-        self.assertEqual(model.machs, [0.5, 0.8])
+-        self.assertEqual(model.velocities, [300.0, 400.0])
+-        self.assertEqual(model.qty_alphas, 2)
+-        self.assertEqual(model.alphas, [5.0, 10.0])
+-        self.assertEqual(model.reynolds_indicies, [1e6, 2e6])
+-        self.assertEqual(model.qty_altitudes, 2)
+-        self.assertEqual(model.altitudes, [10000.0, 20000.0])
+-        self.assertEqual(model.static_pressures, [101325.0, 90000.0])
+-        self.assertEqual(model.static_temperatures, [288.15, 273.15])
+-        self.assertEqual(model.transonic_mach, 0.7)
+-        self.assertEqual(model.supersonic_mach, 1.2)
+-        self.assertTrue(model.hypersonic_flag)
+-        self.assertTrue(model.transition_flag)
+-        self.assertEqual(model.weight, 50000.0)
+-        self.assertEqual(model.flight_path_angle, 1.0)
+-
+-        # Test invalid machs
+-        data["machs"] = [-0.5, 0.8]
+-        with self.assertRaises(ValidationError):
+-            FlightConditions(**data)
+-
+-    def test_configuration_layout(self):
+-        # Test valid data
+-        data = {
+-            "center_of_gravity_station": 10.0,
+-            "center_of_gravity_waterline": 5.0,
+-            "canard_apex_station": 15.0,
+-            "canard_apex_waterline": 7.0,
+-            "canard_hinge_station": 20.0,
+-            "canard_angle_of_incidence": 2.0,
+-            "wing_apex_station": 25.0,
+-            "wing_apex_waterline": 10.0,
+-            "wing_hinge_station": 30.0,
+-            "wing_angle_of_incidence": 3.0,
+-            "horizontal_apex_station": 35.0,
+-            "horizontal_apex_waterline": 12.0,
+-            "horizontal_hinge_station": 40.0,
+-            "horizontal_angle_of_incidence": 4.0,
+-            "vertical_apex_station": 45.0,
+-            "vertical_apex_waterline": 15.0,
+-            "vertical_cant": 5.0,
+-            "vertical_offset": 2.0,
+-            "vertical_above": True,
+-            "fin_apex_station": 50.0,
+-            "fin_apex_waterline": 20.0,
+-            "fin_cant": 6.0,
+-            "fin_offset": 3.0,
+-            "model_scale": 1.0
+-        }
+-        model = ConfigurationLayout(**data)
+-        self.assertEqual(model.center_of_gravity_station, 10.0)
+-        self.assertEqual(model.center_of_gravity_waterline, 5.0)
+-        self.assertEqual(model.canard_apex_station, 15.0)
+-        self.assertEqual(model.canard_apex_waterline, 7.0)
+-        self.assertEqual(model.canard_hinge_station, 20.0)
+-        self.assertEqual(model.canard_angle_of_incidence, 2.0)
+-        self.assertEqual(model.wing_apex_station, 25.0)
+-        self.assertEqual(model.wing_apex_waterline, 10.0)
+-        self.assertEqual(model.wing_hinge_station, 30.0)
+-        self.assertEqual(model.wing_angle_of_incidence, 3.0)
+-        self.assertEqual(model.horizontal_apex_station, 35.0)
+-        self.assertEqual(model.horizontal_apex_waterline, 12.0)
+-        self.assertEqual(model.horizontal_hinge_station, 40.0)
+-        self.assertEqual(model.horizontal_angle_of_incidence, 4.0)
+-        self.assertEqual(model.vertical_apex_station, 45.0)
+-        self.assertEqual(model.vertical_apex_waterline, 15.0)
+-        self.assertEqual(model.vertical_cant, 5.0)
+-        self.assertEqual(model.vertical_offset, 2.0)
+-        self.assertTrue(model.vertical_above)
+-        self.assertEqual(model.fin_apex_station, 50.0)
+-        self.assertEqual(model.fin_apex_waterline, 20.0)
+-        self.assertEqual(model.fin_cant, 6.0)
+-        self.assertEqual(model.fin_offset, 3.0)
+-        self.assertEqual(model.model_scale, 1.0)
+-
+-        # Test invalid canard_apex_station
+-        data["canard_apex_station"] = -15.0
+-        with self.assertRaises(ValidationError):
+-            ConfigurationLayout(**data)
+-
+-    def test_airfoil_geometry(self):
+-        # Test valid data
+-        points = [
+-            Point(x=0.0, y=0.0, z=0.0),
+-            Point(x=0.1, y=0.1, z=0.1),
+-            Point(x=0.5, y=0.5, z=0.5),
+-            Point(x=0.8, y=0.8, z=0.8),
+-            Point(x=1.0, y=1.0, z=1.0)
+-        ]
+-        spline = Spline(points=points)
+-        data = {
+-            "spline": spline
+-        }
+-        model = Airfoil(**data)
+-        self.assertEqual(model.spline, spline)
+-
+-        # NOTE: Data is optional
+-        # # Test missing spline
+-        # data = {}
+-        # with self.assertRaises(ValidationError):
+-        #     Airfoil(**data)
+-
+-    def test_airfoil_parameters(self):
+-        # Test valid data
+-        data = {
+-            "input_type": 1,
+-            "qty_coordinates": 3,
+-            "x_coordinates": [0.0, 0.5, 1.0],
+-            "z_upper": [0.1, 0.2, 0.3],
+-            "z_lower": [0.0, -0.1, -0.2],
+-            "camber_line": [0.05, 0.1, 0.15],
+-            "thickness_profile": [0.1, 0.2, 0.3],
+-            "inboard_rLEoC": 0.01,
+-            "inboard_ToCmax": 0.1,
+-            "inboard_XoC_for_ToCmax": 0.2,
+-            "inboard_closure_angle": 0.3,
+-            "inboard_TE_ToC": 0.01,
+-            "inboard_LE_droop": 0.02,
+-            "inboard_ZoCmax": 0.03,
+-            "inboard_XoC_for_ZoCmax": 0.04,
+-            "inboard_TE_droop": 0.05,
+-            "outboard_rLEoC": 0.01,
+-            "outboard_ToCmax": 0.1,
+-            "outboard_XoC_for_ToCmax": 0.2,
+-            "outboard_closure_angle": 0.3,
+-            "outboard_TE_ToC": 0.01,
+-            "outboard_LE_droop": 0.02,
+-            "outboard_ZoCmax": 0.03,
+-            "outboard_XoC_for_ZoCmax": 0.04,
+-            "outboard_TE_droop": 0.05
+-        }
+-        model = Airfoil(**data)
+-        self.assertEqual(model.input_type, 1)
+-        self.assertEqual(model.qty_coordinates, 3)
+-        self.assertEqual(model.x_coordinates, [0.0, 0.5, 1.0])
+-        self.assertEqual(model.z_upper, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.z_lower, [0.0, -0.1, -0.2])
+-        self.assertEqual(model.camber_line, [0.05, 0.1, 0.15])
+-        self.assertEqual(model.thickness_profile, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.inboard_rLEoC, 0.01)
+-        self.assertEqual(model.inboard_ToCmax, 0.1)
+-        self.assertEqual(model.inboard_XoC_for_ToCmax, 0.2)
+-        self.assertEqual(model.inboard_closure_angle, 0.3)
+-        self.assertEqual(model.inboard_TE_ToC, 0.01)
+-        self.assertEqual(model.inboard_LE_droop, 0.02)
+-        self.assertEqual(model.inboard_ZoCmax, 0.03)
+-        self.assertEqual(model.inboard_XoC_for_ZoCmax, 0.04)
+-        self.assertEqual(model.inboard_TE_droop, 0.05)
+-        self.assertEqual(model.outboard_rLEoC, 0.01)
+-        self.assertEqual(model.outboard_ToCmax, 0.1)
+-        self.assertEqual(model.outboard_XoC_for_ToCmax, 0.2)
+-        self.assertEqual(model.outboard_closure_angle, 0.3)
+-        self.assertEqual(model.outboard_TE_ToC, 0.01)
+-        self.assertEqual(model.outboard_LE_droop, 0.02)
+-        self.assertEqual(model.outboard_ZoCmax, 0.03)
+-        self.assertEqual(model.outboard_XoC_for_ZoCmax, 0.04)
+-        self.assertEqual(model.outboard_TE_droop, 0.05)
+-
+-        # TODO Need to validate coordinates first
+-        # # Test invalid x_coordinates
+-        # data["x_coordinates"] = [-0.1, 0.5, 1.0]
+-        # with self.assertRaises(ValidationError):
+-        #     Airfoil(**data)
+-
+-
+-
+-    def test_lifting_surface_parameters(self):
+-        # Test valid data
+-        data = {
+-            "tip_chord": 1.0,
+-            "outboard_panel_semi_span": 2.0,
+-            "exposed_panel_semi_span": 3.0,
+-            "total_panel_semi_span": 4.0,
+-            "breakpoint_chord": 5.0,
+-            "root_chord": 6.0,
+-            "inboard_panel_sweep": 7.0,
+-            "outboard_panel_sweep": 8.0,
+-            "reference_chord_fraction": 0.25,
+-            "twist_angle": 9.0,
+-            "inboard_panel_dihedral": 10.0,
+-            "outboard_panel_dihedral": 11.0,
+-            "planform_type": PlanformType.RECTANGULAR,
+-            "shock_impengement_area": 12.0,
+-            "extended_shock_impengement_area": 13.0,
+-            "distance_between_CG_and_centroid": 14.0,
+-            "vertical_panel_exposed_root_chord": 15.0,
+-            "vertical_panel_not_influenced_by_wing": 16.0,
+-            "horizontal_panel_exposed_root_chord": 17.0
+-        }
+-        model = LiftingSurface(**data)
+-        self.assertEqual(model.tip_chord, 1.0)
+-        self.assertEqual(model.outboard_panel_semi_span, 2.0)
+-        self.assertEqual(model.exposed_panel_semi_span, 3.0)
+-        self.assertEqual(model.total_panel_semi_span, 4.0)
+-        self.assertEqual(model.breakpoint_chord, 5.0)
+-        self.assertEqual(model.root_chord, 6.0)
+-        self.assertEqual(model.inboard_panel_sweep, 7.0)
+-        self.assertEqual(model.outboard_panel_sweep, 8.0)
+-        self.assertEqual(model.reference_chord_fraction, 0.25)
+-        self.assertEqual(model.twist_angle, 9.0)
+-        self.assertEqual(model.inboard_panel_dihedral, 10.0)
+-        self.assertEqual(model.outboard_panel_dihedral, 11.0)
+-        self.assertEqual(model.planform_type, PlanformType.RECTANGULAR)
+-        self.assertEqual(model.shock_impengement_area, 12.0)
+-        self.assertEqual(model.extended_shock_impengement_area, 13.0)
+-        self.assertEqual(model.distance_between_CG_and_centroid, 14.0)
+-        self.assertEqual(model.vertical_panel_exposed_root_chord, 15.0)
+-        self.assertEqual(model.vertical_panel_not_influenced_by_wing, 16.0)
+-        self.assertEqual(model.horizontal_panel_exposed_root_chord, 17.0)
+-
+-        # Test invalid reference_chord_fraction
+-        data["reference_chord_fraction"] = 1.5
+-        with self.assertRaises(ValidationError):
+-            LiftingSurface(**data)
+-
+-    def test_twin_vertical_tail(self):
+-        # Test valid data
+-        data = {
+-            "span_above": 1.5,
+-            "total_span": 0.5,
+-            "body_depth": 2.0,
+-            "separation": 0.3,
+-            "planform_area": 1.0,
+-            "closure_angle": 0.8,
+-            "lateral_arm": 0.2,
+-            "vertical_arm": 0.1
+-        }
+-        model = TwinVerticalTail(**data)
+-        self.assertEqual(model.span_above, 1.5)
+-        self.assertEqual(model.total_span, 0.5)
+-        self.assertEqual(model.body_depth, 2.0)
+-        self.assertEqual(model.separation, 0.3)
+-        self.assertEqual(model.planform_area, 1.0)
+-        self.assertEqual(model.closure_angle, 0.8)
+-        self.assertEqual(model.lateral_arm, 0.2)
+-        self.assertEqual(model.vertical_arm, 0.1)
+-
+-        # Test invalid span_above
+-        data["span_above"] = -1.5
+-        with self.assertRaises(ValidationError):
+-            TwinVerticalTail(**data)
+-
+-    def test_ground_effects_definition(self):
+-        # Test valid data
+-        data = {
+-            "qty_heights": 5,
+-            "heights": [100.0, 200.0, 300.0, 400.0, 500.0]
+-        }
+-        model = GroundEffectsDefinition(**data)
+-        self.assertEqual(model.qty_heights, 5)
+-        self.assertEqual(model.heights, [100.0, 200.0, 300.0, 400.0, 500.0])
+-
+-        # Test invalid heights
+-        data["heights"] = [-100.0, 200.0, 300.0, 400.0, 500.0]
+-        with self.assertRaises(ValidationError):
+-            GroundEffectsDefinition(**data)
+-
+-        # Test mismatched qty_heights
+-        data = {
+-            "qty_heights": 4,
+-            "heights": [100.0, 200.0, 300.0, 400.0, 500.0]
+-        }
+-        with self.assertRaises(ValidationError):
+-            GroundEffectsDefinition(**data)
+-
+-    def test_symmetric_flap_geometry(self):
+-        # Test valid data
+-        data = {
+-            "flap_type": FlapType.PLAIN,
+-            "nose_type": NoseType.ROUND,
+-            "blowing_type": BlowingType.NONE,
+-            "balance_chord_ratio": 0.1,
+-            "hinge_thickness_to_chord_ratio": 0.2,
+-            "qty_deflections": 2,
+-            "deflections": [10.0, 20.0],
+-            "inboard_chord_ratio": [0.1, 0.2],
+-            "outboard_chord_ratio": [0.3, 0.4],
+-            "inboard_span_ratio": [0.5, 0.6],
+-            "outboard_span_ratio": [0.7, 0.8],
+-            "inboard_fowler_action": [0.9, 1.0],
+-            "outboard_fowler_action": [1.1, 1.2],
+-            "jet_deflection": [1.3, 1.4],
+-            "EBF_jet_deflection_angles": [1.5, 1.6],
+-            "jet_efflux": 1.7,
+-            "flap_Lift_increment": [1.8, 1.9],
+-            "flap_Pitch_increment": [2.0, 2.1]
+-        }
+-        model = SymmetricFlap(**data)
+-        self.assertEqual(model.flap_type, FlapType.PLAIN)
+-        self.assertEqual(model.nose_type, NoseType.ROUND)
+-        self.assertEqual(model.blowing_type, BlowingType.NONE)
+-        self.assertEqual(model.balance_chord_ratio, 0.1)
+-        self.assertEqual(model.hinge_thickness_to_chord_ratio, 0.2)
+-        self.assertEqual(model.qty_deflections, 2)
+-        self.assertEqual(model.deflections, [10.0, 20.0])
+-        self.assertEqual(model.inboard_chord_ratio, [0.1, 0.2])
+-        self.assertEqual(model.outboard_chord_ratio, [0.3, 0.4])
+-        self.assertEqual(model.inboard_span_ratio, [0.5, 0.6])
+-        self.assertEqual(model.outboard_span_ratio, [0.7, 0.8])
+-        self.assertEqual(model.inboard_fowler_action, [0.9, 1.0])
+-        self.assertEqual(model.outboard_fowler_action, [1.1, 1.2])
+-        self.assertEqual(model.jet_deflection, [1.3, 1.4])
+-        self.assertEqual(model.EBF_jet_deflection_angles, [1.5, 1.6])
+-        self.assertEqual(model.jet_efflux, 1.7)
+-        self.assertEqual(model.flap_Lift_increment, [1.8, 1.9])
+-        self.assertEqual(model.flap_Pitch_increment, [2.0, 2.1])
+-
+-        # Test invalid balance_chord_ratio
+-        data["balance_chord_ratio"] = -0.1
+-        with self.assertRaises(ValidationError):
+-            SymmetricFlap(**data)
+-
+-    def test_asymmetric_control_geometry(self):
+-        # Test valid data
+-        data = {
+-            "control_type": ControlType.AILERON,
+-            "qty_deflections": 2,
+-            "inboard_aileron_chord_ratio": 0.1,
+-            "outboard_aileron_chord_ratio": 0.2,
+-            "inboard_span_ratio": 0.3,
+-            "outboard_span_ratio": 0.4,
+-            "left_deflection": [10.0, 20.0],
+-            "right_deflection": [15.0, 25.0],
+-            "deflector_height_chord_ratio": [0.05, 0.06],
+-            "spoiler_height_ratio": [0.07, 0.08],
+-            "spoiler_chord_ratio": [0.09, 0.1],
+-            "hingeline_chord_ratio": 0.11
+-        }
+-        model = AsymmetricControl(**data)
+-        self.assertEqual(model.control_type, ControlType.AILERON)
+-        self.assertEqual(model.qty_deflections, 2)
+-        self.assertEqual(model.inboard_aileron_chord_ratio, 0.1)
+-        self.assertEqual(model.outboard_aileron_chord_ratio, 0.2)
+-        self.assertEqual(model.inboard_span_ratio, 0.3)
+-        self.assertEqual(model.outboard_span_ratio, 0.4)
+-        self.assertEqual(model.left_deflection, [10.0, 20.0])
+-        self.assertEqual(model.right_deflection, [15.0, 25.0])
+-        self.assertEqual(model.deflector_height_chord_ratio, [0.05, 0.06])
+-        self.assertEqual(model.spoiler_height_ratio, [0.07, 0.08])
+-        self.assertEqual(model.spoiler_chord_ratio, [0.09, 0.1])
+-        self.assertEqual(model.hingeline_chord_ratio, 0.11)
+-
+-        # Test invalid inboard_aileron_chord_ratio
+-        data["inboard_aileron_chord_ratio"] = -0.1
+-        with self.assertRaises(ValidationError):
+-            AsymmetricControl(**data)
+-
+-        # Test mismatched deflection lengths
+-        data["left_deflection"] = [10.0]
+-        with self.assertRaises(ValidationError):
+-            AsymmetricControl(**data)
+-
+-    def test_body_parameters(self):
+-        # Test valid data
+-        data = {
+-            "qty_cross_sections": 3,
+-            "stations": [0.1, 0.5, 0.9],
+-            "cross_sectional_areas": [1.0, 2.0, 3.0],
+-            "cross_sectional_perimeters": [4.0, 5.0, 6.0],
+-            "max_halfbredth": [7.0, 8.0, 9.0],
+-            "crown_line": [10.0, 11.0, 12.0],
+-            "keel_line": [13.0, 14.0, 15.0],
+-            "nose_type": BodyShape.CONICAL,
+-            "aftbody_type": BodyShape.OGIVE,
+-            "nose_length": 16.0,
+-            "aftbody_length": 17.0,
+-            "nose_bluntness": 18.0,
+-            "area_rule": 1
+-        }
+-        model = Body(**data)
+-        self.assertEqual(model.qty_cross_sections, 3)
+-        self.assertEqual(model.stations, [0.1, 0.5, 0.9])
+-        self.assertEqual(model.cross_sectional_areas, [1.0, 2.0, 3.0])
+-        self.assertEqual(model.cross_sectional_perimeters, [4.0, 5.0, 6.0])
+-        self.assertEqual(model.max_halfbredth, [7.0, 8.0, 9.0])
+-        self.assertEqual(model.crown_line, [10.0, 11.0, 12.0])
+-        self.assertEqual(model.keel_line, [13.0, 14.0, 15.0])
+-        self.assertEqual(model.nose_type, BodyShape.CONICAL)
+-        self.assertEqual(model.aftbody_type, BodyShape.OGIVE)
+-        self.assertEqual(model.nose_length, 16.0)
+-        self.assertEqual(model.aftbody_length, 17.0)
+-        self.assertEqual(model.nose_bluntness, 18.0)
+-        self.assertEqual(model.area_rule, 1)
+-
+-        # Test invalid stations
+-        data["stations"] = [-0.1, 0.5, 0.9]
+-        with self.assertRaises(ValidationError):
+-            Body(**data)
+-
+-    def test_low_aspect_ratio_wing_body(self):
+-        # Test valid data
+-        data = {
+-            "body_centroid_height": 0.0,
+-            "reference_area": 1.2,
+-            "sharpness": 0.01,
+-            "frontal_area": 0.3,
+-            "aspect_ratio": 0.5,
+-            "effective_radius": 0.6,
+-            "lower_surface_angle": 0.7,
+-            "reference_length": 0.8,
+-            "wetted_area": 0.9,
+-            "base_perimeter": 1.0,
+-            "base_area": 1.1,
+-            "base_max_height": 1.2,
+-            "base_max_span": 1.3,
+-            "base_aft_of_lifting_surface": True,
+-            "center_of_gravity_station": 1.4,
+-            "semi_apex_angle": 1.5,
+-            "rounded_nose_flag": False,
+-            "total_side_area": 1.6,
+-            "nose_side_area": 1.7,
+-            "distance_to_side_centroid": 1.8,
+-            "distance_to_planform_centroid": 1.9
+-        }
+-        model = LowAspectRatioWingBody(**data)
+-        self.assertEqual(model.body_centroid_height, 0.0)
+-        self.assertEqual(model.reference_area, 1.2)
+-        self.assertEqual(model.sharpness, 0.01)
+-        self.assertEqual(model.frontal_area, 0.3)
+-        self.assertEqual(model.aspect_ratio, 0.5)
+-        self.assertEqual(model.effective_radius, 0.6)
+-        self.assertEqual(model.lower_surface_angle, 0.7)
+-        self.assertEqual(model.reference_length, 0.8)
+-        self.assertEqual(model.wetted_area, 0.9)
+-        self.assertEqual(model.base_perimeter, 1.0)
+-        self.assertEqual(model.base_area, 1.1)
+-        self.assertEqual(model.base_max_height, 1.2)
+-        self.assertEqual(model.base_max_span, 1.3)
+-        self.assertTrue(model.base_aft_of_lifting_surface)
+-        self.assertEqual(model.center_of_gravity_station, 1.4)
+-        self.assertEqual(model.semi_apex_angle, 1.5)
+-        self.assertFalse(model.rounded_nose_flag)
+-        self.assertEqual(model.total_side_area, 1.6)
+-        self.assertEqual(model.nose_side_area, 1.7)
+-        self.assertEqual(model.distance_to_side_centroid, 1.8)
+-        self.assertEqual(model.distance_to_planform_centroid, 1.9)
+-
+-        # Test invalid body_centroid_height
+-        data["body_centroid_height"] = -0.1
+-        with self.assertRaises(ValidationError):
+-            LowAspectRatioWingBody(**data)
+-
+-    def test_transverse_jet_control(self):
+-        # Test valid data
+-        data = {
+-            "qty_time": 3,
+-            "time": [0.1, 0.2, 0.3],
+-            "control_force": [1.0, 1.1, 1.2],
+-            "altitudes": [5.0, 5.1, 5.2],
+-            "boundary_layer_state": [True, False, True],
+-            "nozzle_exit_mach_number": 0.8,
+-            "jet_vacuum_specific_impulse": 300.0,
+-            "nozzle_span": 0.5,
+-            "nozzle_inclination": 15.0,
+-            "propellant_specific_heat": 1.4,
+-            "nozzle_discharge_coefficient": 0.98,
+-            "nozzle_distance_from_leading_edge": 2.0
+-        }
+-        model = TransverseJetControl(**data)
+-        self.assertEqual(model.qty_time, 3)
+-        self.assertEqual(model.time, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.control_force, [1.0, 1.1, 1.2])
+-        self.assertEqual(model.altitudes, [5.0, 5.1, 5.2])
+-        self.assertEqual(model.boundary_layer_state, [True, False, True])
+-        self.assertEqual(model.nozzle_exit_mach_number, 0.8)
+-        self.assertEqual(model.jet_vacuum_specific_impulse, 300.0)
+-        self.assertEqual(model.nozzle_span, 0.5)
+-        self.assertEqual(model.nozzle_inclination, 15.0)
+-        self.assertEqual(model.propellant_specific_heat, 1.4)
+-        self.assertEqual(model.nozzle_discharge_coefficient, 0.98)
+-        self.assertEqual(model.nozzle_distance_from_leading_edge, 2.0)
+-
+-        # Test invalid time length
+-        data["time"] = [0.1, 0.2]
+-        with self.assertRaises(ValidationError):
+-            TransverseJetControl(**data)
+-
+-    def test_hypersonic_flap_control(self):
+-        # Test valid data
+-        data = {
+-            "altitude": 10.0,
+-            "hingeline_chord_ratio": 0.5,
+-            "wall_to_freestream_temperature_ratio": 1.0,
+-            "control_chord_ratio": 0.02,
+-            "qty_deflections": 2,
+-            "deflections": [0.1, 0.2],
+-            "boundary_layer_state": [True, False]
+-        }
+-        model = HypersonicFlapControl(**data)
+-        self.assertEqual(model.altitude, 10.0)
+-        self.assertEqual(model.hingeline_chord_ratio, 0.5)
+-        self.assertEqual(model.wall_to_freestream_temperature_ratio, 1.0)
+-        self.assertEqual(model.control_chord_ratio, 0.02)
+-        self.assertEqual(model.qty_deflections, 2)
+-        self.assertEqual(model.deflections, [0.1, 0.2])
+-        self.assertEqual(model.boundary_layer_state, [True, False])
+-
+-        # Test invalid deflections length
+-        data["deflections"] = [0.1]
+-        with self.assertRaises(ValidationError):
+-            HypersonicFlapControl(**data)
+-
+-    def test_propeller_power_properties(self):
+-        # Test valid data
+-        data = {
+-            "thrust_incidence_angle": 5.0,
+-            "qty_engines": 2,
+-            "qty_blades": 4,
+-            "counter_rotating": True,
+-            "prop_radius": 1.5,
+-            "rotation_direction": True,
+-            "thrust_coefficient": 0.8,
+-            "hub_buttline": 0.5,
+-            "hub_station": 2.0,
+-            "hub_waterline": 1.0,
+-            "blade_chord_ratio": [0.1, 0.2, 0.3],
+-            "blade_angle": [15.0, 20.0, 25.0],
+-            "normal_force_factor": 1.2
+-        }
+-        model = PropellerPowerProperties(**data)
+-        self.assertEqual(model.thrust_incidence_angle, 5.0)
+-        self.assertEqual(model.qty_engines, 2)
+-        self.assertEqual(model.qty_blades, 4)
+-        self.assertTrue(model.counter_rotating)
+-        self.assertEqual(model.prop_radius, 1.5)
+-        self.assertTrue(model.rotation_direction)
+-        self.assertEqual(model.thrust_coefficient, 0.8)
+-        self.assertEqual(model.hub_buttline, 0.5)
+-        self.assertEqual(model.hub_station, 2.0)
+-        self.assertEqual(model.hub_waterline, 1.0)
+-        self.assertEqual(model.blade_chord_ratio, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.blade_angle, [15.0, 20.0, 25.0])
+-        self.assertEqual(model.normal_force_factor, 1.2)
+-
+-        # Test invalid thrust_incidence_angle
+-        data["thrust_incidence_angle"] = -5.0
+-        with self.assertRaises(ValidationError):
+-            PropellerPowerProperties(**data)
+-
+-    def test_jet_power_properties(self):
+-        # Test valid data
+-        data = {
+-            "qty_engines": 2,
+-            "centerline_buttline": 0.5,
+-            "thrust_incidence_angle": 5.0,
+-            "thrust_coefficient": 0.8,
+-            "inlet_area": 1.2,
+-            "inlet_station": 2.0,
+-            "exhaust_diameter": 0.6,
+-            "exhaust_station": 3.0,
+-            "exhaust_waterline": 1.0,
+-            "exhaust_exit_angle": 15.0,
+-            "exhaust_exit_velocity": 300.0,
+-            "exhaust_static_temperature": 1500.0,
+-            "exhaust_total_pressure": 101325.0,
+-            "ambient_temperature": 288.15,
+-            "ambient_static_pressure": 101325.0
+-        }
+-        model = JetPowerProperties(**data)
+-        self.assertEqual(model.qty_engines, 2)
+-        self.assertEqual(model.centerline_buttline, 0.5)
+-        self.assertEqual(model.thrust_incidence_angle, 5.0)
+-        self.assertEqual(model.thrust_coefficient, 0.8)
+-        self.assertEqual(model.inlet_area, 1.2)
+-        self.assertEqual(model.inlet_station, 2.0)
+-        self.assertEqual(model.exhaust_diameter, 0.6)
+-        self.assertEqual(model.exhaust_station, 3.0)
+-        self.assertEqual(model.exhaust_waterline, 1.0)
+-        self.assertEqual(model.exhaust_exit_angle, 15.0)
+-        self.assertEqual(model.exhaust_exit_velocity, 300.0)
+-        self.assertEqual(model.exhaust_static_temperature, 1500.0)
+-        self.assertEqual(model.exhaust_total_pressure, 101325.0)
+-        self.assertEqual(model.ambient_temperature, 288.15)
+-        self.assertEqual(model.ambient_static_pressure, 101325.0)
+-
+-        # Test invalid thrust_incidence_angle
+-        data["thrust_incidence_angle"] = -5.0
+-        with self.assertRaises(ValidationError):
+-            JetPowerProperties(**data)
+-
+-    def test_aerodynamics_data(self):
+-        # Test valid data
+-        data = {
+-            "CLalpha_body": [0.1, 0.2, 0.3],
+-            "CMalpha_body": [0.01, 0.02, 0.03],
+-            "CD_body": [0.001, 0.002, 0.003],
+-            "CL_body": [0.1, 0.2, 0.3],
+-            "CM_body": [0.01, 0.02, 0.03],
+-            "ALPOC": 0.5,
+-            "ALPLC": 1.0,
+-            "ACLMC": 1.5,
+-            "CLMC": 0.8,
+-            "CLAC": [0.1, 0.2, 0.3],
+-            "CMAC": [0.01, 0.02, 0.03],
+-            "CDC": [0.001, 0.002, 0.003],
+-            "CLC": [0.1, 0.2, 0.3],
+-            "CMC": [0.01, 0.02, 0.03],
+-            "ALPOW": 0.5,
+-            "ALPLW": 1.0,
+-            "ACLMW": 1.5,
+-            "CLMW": 0.8,
+-            "CLAW": [0.1, 0.2, 0.3],
+-            "CMAW": [0.01, 0.02, 0.03],
+-            "CDW": [0.001, 0.002, 0.003],
+-            "CLW": [0.1, 0.2, 0.3],
+-            "CMW": [0.01, 0.02, 0.03],
+-            "ALPOH": 0.5,
+-            "ALPLH": 1.0,
+-            "ACLMH": 1.5,
+-            "CLMH": 0.8,
+-            "CLAH": [0.1, 0.2, 0.3],
+-            "CMAH": [0.01, 0.02, 0.03],
+-            "CDH": [0.001, 0.002, 0.003],
+-            "CLH": [0.1, 0.2, 0.3],
+-            "CMH": [0.01, 0.02, 0.03],
+-            "ALPOV": 0.5,
+-            "ALPLV": 1.0,
+-            "ACLMV": 1.5,
+-            "CLMV": 0.8,
+-            "CLAV": [0.1, 0.2, 0.3],
+-            "CMAV": [0.01, 0.02, 0.03],
+-            "CDV": [0.001, 0.002, 0.003],
+-            "CLV": [0.1, 0.2, 0.3],
+-            "CMV": [0.01, 0.02, 0.03],
+-            "ALPOF": 0.5,
+-            "ALPLF": 1.0,
+-            "ACLMF": 1.5,
+-            "CLMF": 0.8,
+-            "CLAF": [0.1, 0.2, 0.3],
+-            "CMAF": [0.01, 0.02, 0.03],
+-            "CDF": [0.001, 0.002, 0.003],
+-            "CLF": [0.1, 0.2, 0.3],
+-            "CMF": [0.01, 0.02, 0.03],
+-            "CLAWB": [0.1, 0.2, 0.3],
+-            "CMAWB": [0.01, 0.02, 0.03],
+-            "CDWB": [0.001, 0.002, 0.003],
+-            "CLWB": [0.1, 0.2, 0.3],
+-            "CMWB": [0.01, 0.02, 0.03],
+-            "DEODA": [0.1, 0.2, 0.3],
+-            "EPSLON": [0.1, 0.2, 0.3],
+-            "QHOQINF": [0.1, 0.2, 0.3]
+-        }
+-        model = AerodynamicsData(**data)
+-        self.assertEqual(model.CLalpha_body, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.CMalpha_body, [0.01, 0.02, 0.03])
+-        self.assertEqual(model.CD_body, [0.001, 0.002, 0.003])
+-        self.assertEqual(model.CL_body, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.CM_body, [0.01, 0.02, 0.03])
+-        self.assertEqual(model.ALPOC, 0.5)
+-        self.assertEqual(model.ALPLC, 1.0)
+-        self.assertEqual(model.ACLMC, 1.5)
+-        self.assertEqual(model.CLMC, 0.8)
+-        self.assertEqual(model.CLAC, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.CMAC, [0.01, 0.02, 0.03])
+-        self.assertEqual(model.CDC, [0.001, 0.002, 0.003])
+-        self.assertEqual(model.CLC, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.CMC, [0.01, 0.02, 0.03])
+-        self.assertEqual(model.ALPOW, 0.5)
+-        self.assertEqual(model.ALPLW, 1.0)
+-        self.assertEqual(model.ACLMW, 1.5)
+-        self.assertEqual(model.CLMW, 0.8)
+-        self.assertEqual(model.CLAW, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.CMAW, [0.01, 0.02, 0.03])
+-        self.assertEqual(model.CDW, [0.001, 0.002, 0.003])
+-        self.assertEqual(model.CLW, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.CMW, [0.01, 0.02, 0.03])
+-        self.assertEqual(model.ALPOH, 0.5)
+-        self.assertEqual(model.ALPLH, 1.0)
+-        self.assertEqual(model.ACLMH, 1.5)
+-        self.assertEqual(model.CLMH, 0.8)
+-        self.assertEqual(model.CLAH, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.CMAH, [0.01, 0.02, 0.03])
+-        self.assertEqual(model.CDH, [0.001, 0.002, 0.003])
+-        self.assertEqual(model.CLH, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.CMH, [0.01, 0.02, 0.03])
+-        self.assertEqual(model.ALPOV, 0.5)
+-        self.assertEqual(model.ALPLV, 1.0)
+-        self.assertEqual(model.ACLMV, 1.5)
+-        self.assertEqual(model.CLMV, 0.8)
+-        self.assertEqual(model.CLAV, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.CMAV, [0.01, 0.02, 0.03])
+-        self.assertEqual(model.CDV, [0.001, 0.002, 0.003])
+-        self.assertEqual(model.CLV, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.CMV, [0.01, 0.02, 0.03])
+-        self.assertEqual(model.ALPOF, 0.5)
+-        self.assertEqual(model.ALPLF, 1.0)
+-        self.assertEqual(model.ACLMF, 1.5)
+-        self.assertEqual(model.CLMF, 0.8)
+-        self.assertEqual(model.CLAF, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.CMAF, [0.01, 0.02, 0.03])
+-        self.assertEqual(model.CDF, [0.001, 0.002, 0.003])
+-        self.assertEqual(model.CLF, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.CMF, [0.01, 0.02, 0.03])
+-        self.assertEqual(model.CLAWB, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.CMAWB, [0.01, 0.02, 0.03])
+-        self.assertEqual(model.CDWB, [0.001, 0.002, 0.003])
+-        self.assertEqual(model.CLWB, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.CMWB, [0.01, 0.02, 0.03])
+-        self.assertEqual(model.DEODA, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.EPSLON, [0.1, 0.2, 0.3])
+-        self.assertEqual(model.QHOQINF, [0.1, 0.2, 0.3])
+-
+-        # Test invalid CLalpha_body
+-        data["CLalpha_body"] = [-0.1, 0.2, 0.3]
+-        with self.assertRaises(ValidationError):
+-            AerodynamicsData(**data)
+-
+-if __name__ == '__main__':
+-    unittest.main(argv=[''], exit=False)
++
++# ──────────────────────────────────────────────────────────────────────────────
++# ReferenceData
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestReferenceData:
++    def test_happy_path(self):
++        model = ReferenceData(RougHgt=0.01, Sref=100.0, Cbar=10.0, BLref=5.0)
++        assert model.roughness == pytest.approx(0.01, abs=1e-6)
++        assert model.reference_area == pytest.approx(100.0, abs=1e-6)
++        assert model.reference_length == pytest.approx(10.0, abs=1e-6)
++
++    @pytest.mark.parametrize("roughness", [0.0, 0.02])
++    def test_roughness_at_boundaries(self, roughness):
++        model = ReferenceData(RougHgt=roughness, Sref=1.0, Cbar=1.0, BLref=1.0)
++        assert model.roughness == pytest.approx(roughness, abs=1e-6)
++
++    @pytest.mark.parametrize("roughness", [-0.01, 0.03, 0.5])
++    def test_roughness_outside_boundaries(self, roughness):
++        with pytest.raises(ValidationError, match="roughness|less than or equal|greater than or equal"):
++            ReferenceData(RougHgt=roughness, Sref=1.0, Cbar=1.0, BLref=1.0)
++
++    @pytest.mark.parametrize("field,alias", [
++        ("reference_area", "Sref"),
++        ("reference_length", "Cbar"),
++        ("lateral_reference", "BLref"),
++    ])
++    def test_positive_fields_reject_zero(self, field, alias):
++        with pytest.raises(ValidationError, match="greater than"):
++            ReferenceData(**{alias: 0.0})
++
++    @pytest.mark.parametrize("field,alias", [
++        ("reference_area", "Sref"),
++        ("reference_length", "Cbar"),
++        ("lateral_reference", "BLref"),
++    ])
++    def test_positive_fields_reject_negative(self, field, alias):
++        with pytest.raises(ValidationError, match="greater than"):
++            ReferenceData(**{alias: -1.0})
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# FlightConditions
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestFlightConditions:
++    def test_happy_path(self):
++        model = FlightConditions(
++            loop_control=2, qty_machs=2, machs=[0.5, 0.8],
++            qty_alphas=2, alphas=[5.0, 10.0],
++            qty_altitudes=2, altitudes=[10000.0, 20000.0],
++        )
++        assert model.loop_control == 2
++        assert model.machs == [0.5, 0.8]
++        assert model.altitudes == [10000.0, 20000.0]
++
++    @pytest.mark.parametrize("value", [0, 4, -1])
++    def test_loop_control_out_of_range(self, value):
++        with pytest.raises(ValidationError, match="greater than|less than"):
++            FlightConditions(loop_control=value)
++
++    def test_negative_mach_rejected(self):
++        with pytest.raises(ValidationError, match="non-negative"):
++            FlightConditions(machs=[-0.5, 0.8])
++
++    def test_negative_altitude_rejected(self):
++        with pytest.raises(ValidationError, match="non-negative"):
++            FlightConditions(altitudes=[-100.0])
++
++    def test_list_length_mismatch_raises(self):
++        with pytest.raises(ValidationError, match="must match"):
++            FlightConditions(qty_machs=3, machs=[0.5, 0.8])
++
++    def test_list_length_mismatch_alphas(self):
++        with pytest.raises(ValidationError, match="must match"):
++            FlightConditions(qty_alphas=1, alphas=[5.0, 10.0])
++
++    def test_list_length_mismatch_altitudes(self):
++        with pytest.raises(ValidationError, match="must match"):
++            FlightConditions(qty_altitudes=5, altitudes=[10000.0])
++
++    @pytest.mark.parametrize("mach", [0.6, 0.98])
++    def test_transonic_mach_boundaries(self, mach):
++        model = FlightConditions(transonic_mach=mach)
++        assert model.transonic_mach == pytest.approx(mach, abs=1e-6)
++
++    @pytest.mark.parametrize("mach", [0.59, 0.99, 1.0])
++    def test_transonic_mach_out_of_range(self, mach):
++        with pytest.raises(ValidationError, match="greater than or equal|less than"):
++            FlightConditions(transonic_mach=mach)
++
++    @pytest.mark.parametrize("mach", [1.01, 1.39])
++    def test_supersonic_mach_boundaries(self, mach):
++        model = FlightConditions(supersonic_mach=mach)
++        assert model.supersonic_mach == pytest.approx(mach, abs=1e-6)
++
++    @pytest.mark.parametrize("mach", [1.0, 1.4, 2.0])
++    def test_supersonic_mach_out_of_range(self, mach):
++        with pytest.raises(ValidationError, match="greater than or equal|less than"):
++            FlightConditions(supersonic_mach=mach)
++
++    def test_flight_path_angle_boundaries(self):
++        model = FlightConditions(flight_path_angle=0.01)
++        assert model.flight_path_angle == pytest.approx(0.01, abs=1e-6)
++        model2 = FlightConditions(flight_path_angle=1.99)
++        assert model2.flight_path_angle == pytest.approx(1.99, abs=1e-6)
++
++    @pytest.mark.parametrize("angle", [0.0, -1.0, 2.0, 5.0])
++    def test_flight_path_angle_out_of_range(self, angle):
++        with pytest.raises(ValidationError, match="greater than|less than"):
++            FlightConditions(flight_path_angle=angle)
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# ConfigurationLayout
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestConfigurationLayout:
++    def test_happy_path(self):
++        model = ConfigurationLayout(
++            center_of_gravity_station=10.0,
++            wing_apex_station=25.0,
++            model_scale=1.5,
++        )
++        assert model.center_of_gravity_station == pytest.approx(10.0, abs=1e-6)
++        assert model.wing_apex_station == pytest.approx(25.0, abs=1e-6)
++        assert model.model_scale == pytest.approx(1.5, abs=1e-6)
++
++    @pytest.mark.parametrize("field", [
++        "canard_apex_station", "wing_apex_station",
++        "horizontal_apex_station", "vertical_apex_station", "fin_apex_station",
++    ])
++    def test_ge0_fields_reject_negative(self, field):
++        with pytest.raises(ValidationError, match="non-negative|greater than or equal"):
++            ConfigurationLayout(**{field: -1.0})
++
++    def test_model_scale_must_be_positive(self):
++        with pytest.raises(ValidationError, match="greater than"):
++            ConfigurationLayout(model_scale=0.0)
++
++    def test_model_scale_rejects_negative(self):
++        with pytest.raises(ValidationError, match="non-negative|greater than"):
++            ConfigurationLayout(model_scale=-1.0)
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# LiftingSurface
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestLiftingSurface:
++    def test_happy_path(self):
++        model = LiftingSurface(
++            tip_chord=1.0, root_chord=6.0, reference_chord_fraction=0.25
++        )
++        assert model.tip_chord == pytest.approx(1.0, abs=1e-6)
++        assert model.root_chord == pytest.approx(6.0, abs=1e-6)
++        assert model.reference_chord_fraction == pytest.approx(0.25, abs=1e-6)
++
++    @pytest.mark.parametrize("field", [
++        "tip_chord", "outboard_panel_semi_span", "exposed_panel_semi_span",
++        "total_panel_semi_span", "breakpoint_chord", "root_chord",
++    ])
++    def test_non_negative_fields_reject_negative(self, field):
++        with pytest.raises(ValidationError, match="non-negative|must be non"):
++            LiftingSurface(**{field: -0.1})
++
++    @pytest.mark.parametrize("value", [0.0, -0.1, 1.0, 1.5])
++    def test_reference_chord_fraction_must_be_in_0_1_exclusive(self, value):
++        with pytest.raises(ValidationError, match="chord fraction|greater than|less than"):
++            LiftingSurface(reference_chord_fraction=value)
++
++    @pytest.mark.parametrize("value", [0.01, 0.5, 0.99])
++    def test_reference_chord_fraction_valid(self, value):
++        model = LiftingSurface(reference_chord_fraction=value)
++        assert model.reference_chord_fraction == pytest.approx(value, abs=1e-6)
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# TwinVerticalTail
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestTwinVerticalTail:
++    def test_happy_path(self):
++        model = TwinVerticalTail(span_above=1.5, total_span=3.0, body_depth=2.0)
++        assert model.span_above == pytest.approx(1.5, abs=1e-6)
++        assert model.total_span == pytest.approx(3.0, abs=1e-6)
++
++    @pytest.mark.parametrize("field", [
++        "span_above", "total_span", "body_depth", "separation",
++        "planform_area", "closure_angle", "lateral_arm", "vertical_arm",
++    ])
++    def test_all_fields_reject_negative(self, field):
++        with pytest.raises(ValidationError, match="not be negative|must not be"):
++            TwinVerticalTail(**{field: -0.01})
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# GroundEffectsDefinition
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestGroundEffectsDefinition:
++    def test_happy_path(self):
++        model = GroundEffectsDefinition(qty_heights=3, heights=[100.0, 200.0, 300.0])
++        assert model.qty_heights == 3
++        assert len(model.heights) == 3
++
++    def test_negative_height_rejected(self):
++        with pytest.raises(ValidationError, match="must be between 0 and 1000"):
++            GroundEffectsDefinition(heights=[-1.0, 100.0])
++
++    def test_height_above_1000_rejected(self):
++        with pytest.raises(ValidationError, match="must be between 0 and 1000"):
++            GroundEffectsDefinition(heights=[1001.0])
++
++    @pytest.mark.parametrize("heights", [[0.0], [500.0, 1000.0]])
++    def test_boundary_heights_accepted(self, heights):
++        model = GroundEffectsDefinition(qty_heights=len(heights), heights=heights)
++        assert model.heights == heights
++
++    def test_qty_heights_mismatch_raises(self):
++        with pytest.raises(ValidationError, match="must equal"):
++            GroundEffectsDefinition(qty_heights=4, heights=[100.0, 200.0, 300.0, 400.0, 500.0])
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# SymmetricFlap
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestSymmetricFlap:
++    def test_happy_path(self):
++        model = SymmetricFlap(
++            flap_type=FlapType.PLAIN,
++            nose_type=NoseType.ROUND,
++            balance_chord_ratio=0.1,
++        )
++        assert model.flap_type == FlapType.PLAIN
++        assert model.nose_type == NoseType.ROUND
++        assert model.balance_chord_ratio == pytest.approx(0.1, abs=1e-6)
++
++    @pytest.mark.parametrize("field", [
++        "balance_chord_ratio", "hinge_thickness_to_chord_ratio", "jet_efflux",
++    ])
++    def test_non_negative_fields_reject_negative(self, field):
++        with pytest.raises(ValidationError, match="not be negative|must not be"):
++            SymmetricFlap(**{field: -0.01})
++
++    @pytest.mark.parametrize("field", [
++        "balance_chord_ratio", "hinge_thickness_to_chord_ratio", "jet_efflux",
++    ])
++    def test_non_negative_fields_accept_zero(self, field):
++        model = SymmetricFlap(**{field: 0.0})
++        assert getattr(model, field) == pytest.approx(0.0, abs=1e-6)
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# AsymmetricControl
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestAsymmetricControl:
++    def test_happy_path(self):
++        model = AsymmetricControl(
++            control_type=ControlType.AILERON,
++            inboard_aileron_chord_ratio=0.1,
++            outboard_span_ratio=0.4,
++        )
++        assert model.control_type == ControlType.AILERON
++        assert model.inboard_aileron_chord_ratio == pytest.approx(0.1, abs=1e-6)
++
++    @pytest.mark.parametrize("field", [
++        "inboard_aileron_chord_ratio", "outboard_aileron_chord_ratio",
++        "inboard_span_ratio", "outboard_span_ratio", "hingeline_chord_ratio",
++    ])
++    def test_non_negative_fields_reject_negative(self, field):
++        with pytest.raises(ValidationError, match="not be negative|must not be"):
++            AsymmetricControl(**{field: -0.1})
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# Body
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestBody:
++    def test_happy_path(self):
++        model = Body(
++            qty_cross_sections=3,
++            stations=[0.1, 0.5, 0.9],
++            cross_sectional_areas=[1.0, 2.0, 3.0],
++            cross_sectional_perimeters=[4.0, 5.0, 6.0],
++            max_halfbredth=[7.0, 8.0, 9.0],
++            crown_line=[10.0, 11.0, 12.0],
++            keel_line=[13.0, 14.0, 15.0],
++            nose_type=BodyShape.CONICAL,
++        )
++        assert model.qty_cross_sections == 3
++        assert model.nose_type == BodyShape.CONICAL
++        assert len(model.stations) == 3
++
++    def test_negative_stations_rejected(self):
++        with pytest.raises(ValidationError, match="non-negative"):
++            Body(
++                qty_cross_sections=2,
++                stations=[-0.1, 0.5],
++                cross_sectional_areas=[1.0, 2.0],
++                cross_sectional_perimeters=[1.0, 2.0],
++                max_halfbredth=[1.0, 2.0],
++                crown_line=[1.0, 2.0],
++                keel_line=[1.0, 2.0],
++            )
++
++    def test_list_length_mismatch_raises(self):
++        with pytest.raises(ValidationError, match="must match qty_cross_sections"):
++            Body(
++                qty_cross_sections=3,
++                stations=[0.1, 0.5],
++                cross_sectional_areas=[1.0, 2.0],
++                cross_sectional_perimeters=[1.0, 2.0],
++                max_halfbredth=[1.0, 2.0],
++                crown_line=[1.0, 2.0],
++                keel_line=[1.0, 2.0],
++            )
++
++    def test_negative_cross_sectional_areas_rejected(self):
++        with pytest.raises(ValidationError, match="non-negative"):
++            Body(
++                qty_cross_sections=2,
++                stations=[0.1, 0.5],
++                cross_sectional_areas=[-1.0, 2.0],
++                cross_sectional_perimeters=[1.0, 2.0],
++                max_halfbredth=[1.0, 2.0],
++                crown_line=[1.0, 2.0],
++                keel_line=[1.0, 2.0],
++            )
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# LowAspectRatioWingBody
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestLowAspectRatioWingBody:
++    def test_happy_path(self):
++        model = LowAspectRatioWingBody(
++            body_centroid_height=0.0,
++            reference_area=1.2,
++            base_aft_of_lifting_surface=True,
++        )
++        assert model.body_centroid_height == pytest.approx(0.0, abs=1e-6)
++        assert model.reference_area == pytest.approx(1.2, abs=1e-6)
++        assert model.base_aft_of_lifting_surface is True
++
++    @pytest.mark.parametrize("field", [
++        "body_centroid_height", "reference_area", "sharpness", "frontal_area",
++        "aspect_ratio", "effective_radius", "wetted_area", "base_area",
++    ])
++    def test_numeric_fields_reject_negative(self, field):
++        with pytest.raises(ValidationError, match="must not be negative|Numeric values"):
++            LowAspectRatioWingBody(**{field: -0.1})
++
++    @pytest.mark.parametrize("field", [
++        "body_centroid_height", "reference_area", "sharpness", "frontal_area",
++    ])
++    def test_zero_accepted(self, field):
++        model = LowAspectRatioWingBody(**{field: 0.0})
++        assert getattr(model, field) == pytest.approx(0.0, abs=1e-6)
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# TransverseJetControl
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestTransverseJetControl:
++    def test_happy_path(self):
++        model = TransverseJetControl(
++            qty_time=3,
++            time=[0.1, 0.2, 0.3],
++            control_force=[1.0, 1.1, 1.2],
++            altitudes=[5.0, 5.1, 5.2],
++        )
++        assert model.qty_time == 3
++        assert len(model.time) == 3
++        assert len(model.control_force) == 3
++
++    def test_time_list_length_mismatch_raises(self):
++        with pytest.raises(ValidationError, match="must match qty_time"):
++            TransverseJetControl(qty_time=3, time=[0.1, 0.2])
++
++    def test_control_force_list_length_mismatch_raises(self):
++        with pytest.raises(ValidationError, match="must match qty_time"):
++            TransverseJetControl(qty_time=2, time=[0.1, 0.2], control_force=[1.0])
++
++    def test_altitudes_list_length_mismatch_raises(self):
++        with pytest.raises(ValidationError, match="must match qty_time"):
++            TransverseJetControl(qty_time=2, time=[0.1, 0.2], control_force=[1.0, 1.1], altitudes=[5.0])
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# HypersonicFlapControl
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestHypersonicFlapControl:
++    def test_happy_path(self):
++        model = HypersonicFlapControl(
++            altitude=10.0, qty_deflections=2, deflections=[0.1, 0.2]
++        )
++        assert model.altitude == pytest.approx(10.0, abs=1e-6)
++        assert model.qty_deflections == 2
++        assert len(model.deflections) == 2
++
++    def test_deflections_length_mismatch_raises(self):
++        with pytest.raises(ValidationError, match="must match qty_deflections"):
++            HypersonicFlapControl(qty_deflections=3, deflections=[0.1, 0.2])
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# PropellerPowerProperties
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestPropellerPowerProperties:
++    def test_happy_path(self):
++        model = PropellerPowerProperties(
++            thrust_incidence_angle=5.0, qty_engines=2, prop_radius=1.5
++        )
++        assert model.thrust_incidence_angle == pytest.approx(5.0, abs=1e-6)
++        assert model.qty_engines == 2
++        assert model.prop_radius == pytest.approx(1.5, abs=1e-6)
++
++    @pytest.mark.parametrize("field", [
++        "thrust_incidence_angle", "prop_radius", "thrust_coefficient", "normal_force_factor",
++    ])
++    def test_non_negative_fields_reject_negative(self, field):
++        with pytest.raises(ValidationError, match="non-negative|must be non"):
++            PropellerPowerProperties(**{field: -0.01})
++
++    @pytest.mark.parametrize("field", [
++        "thrust_incidence_angle", "prop_radius", "thrust_coefficient", "normal_force_factor",
++    ])
++    def test_non_negative_fields_accept_zero(self, field):
++        model = PropellerPowerProperties(**{field: 0.0})
++        assert getattr(model, field) == pytest.approx(0.0, abs=1e-6)
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# JetPowerProperties
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestJetPowerProperties:
++    def test_happy_path(self):
++        model = JetPowerProperties(
++            qty_engines=2, thrust_incidence_angle=5.0, inlet_area=1.2
++        )
++        assert model.qty_engines == 2
++        assert model.thrust_incidence_angle == pytest.approx(5.0, abs=1e-6)
++        assert model.inlet_area == pytest.approx(1.2, abs=1e-6)
++
++    @pytest.mark.parametrize("field", [
++        "thrust_incidence_angle", "thrust_coefficient", "inlet_area",
++        "exhaust_diameter", "exhaust_exit_velocity", "exhaust_total_pressure",
++    ])
++    def test_non_negative_fields_reject_negative(self, field):
++        with pytest.raises(ValidationError, match="non-negative|must be non"):
++            JetPowerProperties(**{field: -0.01})
++
++
++# ──────────────────────────────────────────────────────────────────────────────
++# AerodynamicsData
++# ──────────────────────────────────────────────────────────────────────────────
++
++class TestAerodynamicsData:
++    def test_happy_path(self):
++        model = AerodynamicsData(
++            CLalpha_body=[0.1, 0.2],
++            CMalpha_body=[0.01, 0.02],
++            CD_body=[0.001, 0.002],
++            CL_body=[0.1, 0.2],
++            CM_body=[0.01, 0.02],
++            CLAC=[0.1, 0.2], CMAC=[0.01, 0.02], CDC=[0.001, 0.002],
++            CLC=[0.1, 0.2], CMC=[0.01, 0.02],
++            CLAW=[0.1, 0.2], CMAW=[0.01, 0.02], CDW=[0.001, 0.002],
++            CLW=[0.1, 0.2], CMW=[0.01, 0.02],
++            CLAH=[0.1, 0.2], CMAH=[0.01, 0.02], CDH=[0.001, 0.002],
++            CLH=[0.1, 0.2], CMH=[0.01, 0.02],
++            CLAV=[0.1, 0.2], CMAV=[0.01, 0.02], CDV=[0.001, 0.002],
++            CLV=[0.1, 0.2], CMV=[0.01, 0.02],
++            CLAF=[0.1, 0.2], CMAF=[0.01, 0.02], CDF=[0.001, 0.002],
++            CLF=[0.1, 0.2], CMF=[0.01, 0.02],
++            CLAWB=[0.1, 0.2], CMAWB=[0.01, 0.02], CDWB=[0.001, 0.002],
++            CLWB=[0.1, 0.2], CMWB=[0.01, 0.02],
++            DEODA=[0.1, 0.2], EPSLON=[0.1, 0.2], QHOQINF=[0.1, 0.2],
++        )
++        assert model.CLalpha_body == [0.1, 0.2]
++        assert len(model.CLAWB) == 2
++
++    def test_negative_coefficient_rejected(self):
++        with pytest.raises(ValidationError, match="non-negative"):
++            AerodynamicsData(CLalpha_body=[-0.1, 0.2], CMalpha_body=[0.01, 0.02])
++
++    def test_inconsistent_list_lengths_rejected(self):
++        with pytest.raises(ValidationError, match="same length"):
++            AerodynamicsData(
++                CLalpha_body=[0.1, 0.2, 0.3],
++                CMalpha_body=[0.01, 0.02],
++            )
+diff --git a/tests/test_systems_diagrams.py b/tests/test_systems_diagrams.py
+new file mode 100644
+index 0000000..346c5d3
+--- /dev/null
++++ b/tests/test_systems_diagrams.py
+@@ -0,0 +1,354 @@
++"""Behavior-verifying tests for systems_diagrams.py.
++
++Each test asserts on the *output* of the functions under test —
++diagram source content, formatted table substrings, or mock call arguments —
++rather than merely checking that no exception was raised.
++"""
++
++import pytest
++from unittest.mock import patch, MagicMock
++
++import graphviz
++
++# Import the diagram module directly so we can patch attributes on the actual
++# module object. Patching via dotted string paths is unreliable here because
++# work_breakdown_structure/__init__.py does `from .X import *` for several
++# submodules, which causes mock's dotted-path resolver to occasionally land on
++# the wrong namespace and raise AttributeError. patch.object(_diag_mod, "name")
++# sidesteps the resolver entirely.
++from aircraft_data_hierarchy.work_breakdown_structure.systems import (
++    systems_diagrams as _diag_mod,
++)
++
++from aircraft_data_hierarchy.work_breakdown_structure.systems.systems_parameters import (
++    System as ParameterSystem,
++    SystemAttributes,
++    FunctionalBlock,
++    DataSignal,
++    PhysicalCharacteristics,
++    CoolingRequirements,
++    PowerRequirements,
++    FluidFlowCharacteristics,
++    SignalType,
++    SignalDirection,
++)
++from aircraft_data_hierarchy.work_breakdown_structure.systems.systems_diagrams import (
++    create_system_diagram,
++    create_system_attribute_tables,
++    display_system_info,
++)
++
++
++# ---------------------------------------------------------------------------
++# Fixtures
++# ---------------------------------------------------------------------------
++
++@pytest.fixture
++def two_block_system():
++    """Minimal system with two functional blocks connected by one data signal."""
++    return ParameterSystem(
++        wbs_id="1.2.3",
++        mil_std_881f_reference="1.2.3",
++        name="Hydraulic System",
++        attributes=SystemAttributes(
++            functional_blocks=[
++                FunctionalBlock(
++                    block_id="BLK_A",
++                    name="Pump Controller",
++                    description="Controls hydraulic pump speed",
++                    inputs=["pressure_cmd"],
++                    outputs=["motor_speed"],
++                ),
++                FunctionalBlock(
++                    block_id="BLK_B",
++                    name="Pressure Sensor",
++                    description="Measures hydraulic pressure",
++                    inputs=["line_pressure"],
++                    outputs=["pressure_reading"],
++                ),
++            ],
++            data_signals=[
++                DataSignal(
++                    name="PressureFeedback",
++                    type=SignalType.ANALOG,
++                    direction=SignalDirection.INPUT,
++                    source="BLK_B",
++                    destination="BLK_A",
++                    description="Feedback signal from sensor to controller",
++                ),
++            ],
++            physical_characteristics=PhysicalCharacteristics(
++                weight=10.5,
++                dimensions={"length": 0.5, "width": 0.3, "height": 0.2},
++                volume=0.03,
++                center_of_gravity={"x": 1.0, "y": 0.0, "z": 0.5},
++            ),
++            cooling_requirements=CoolingRequirements(
++                method="Air",
++                heat_dissipation=150.0,
++                max_operating_temperature=85.0,
++            ),
++            power_requirements=PowerRequirements(
++                voltage=28.0,
++                current=5.25,
++                frequency=400.0,
++                power_type="AC",
++                peak_power=200.0,
++                average_power=147.0,
++            ),
++        ),
++        components=["1.2.3.1"],
++    )
++
++
++@pytest.fixture
++def system_with_fluid(two_block_system):
++    """Same system but with fluid-flow characteristics populated."""
++    data = two_block_system.model_dump()
++    data["attributes"]["fluid_flow"] = {
++        "fluid_type": "Hydraulic Oil",
++        "flow_rate": 12.5,
++        "max_pressure": 21000000.0,
++        "min_pressure": 500000.0,
++        "temperature_range": (-40.0, 120.0),
++        "viscosity": 0.000032,
++        "density": 860.0,
++    }
++    return ParameterSystem(**data)
++
++
++@pytest.fixture
++def system_no_frequency(two_block_system):
++    """System whose power_requirements.frequency is None."""
++    data = two_block_system.model_dump()
++    data["attributes"]["power_requirements"]["frequency"] = None
++    return ParameterSystem(**data)
++
++
++# ---------------------------------------------------------------------------
++# create_system_diagram
++# ---------------------------------------------------------------------------
++
++def test_diagram_contains_node_names(two_block_system):
++    dot = create_system_diagram(two_block_system)
++    assert "Pump Controller" in dot.source
++    assert "Pressure Sensor" in dot.source
++
++
++def test_diagram_contains_node_ids(two_block_system):
++    dot = create_system_diagram(two_block_system)
++    assert "BLK_A" in dot.source
++    assert "BLK_B" in dot.source
++
++
++def test_diagram_edge_connects_source_to_destination(two_block_system):
++    dot = create_system_diagram(two_block_system)
++    assert "BLK_B -> BLK_A" in dot.source
++
++
++def test_diagram_edge_label(two_block_system):
++    dot = create_system_diagram(two_block_system)
++    assert "PressureFeedback" in dot.source
++
++
++def test_diagram_comment_contains_system_name(two_block_system):
++    dot = create_system_diagram(two_block_system)
++    assert "Hydraulic System" in dot.comment
++
++
++def test_diagram_rankdir_is_left_to_right(two_block_system):
++    dot = create_system_diagram(two_block_system)
++    assert "rankdir=LR" in dot.source
++
++
++def test_diagram_returns_digraph(two_block_system):
++    dot = create_system_diagram(two_block_system)
++    assert isinstance(dot, graphviz.Digraph)
++
++
++def test_diagram_multiple_signals():
++    """Two signals between three blocks produce two edges."""
++    system = ParameterSystem(
++        wbs_id="1.2.4",
++        mil_std_881f_reference="1.2.4",
++        name="ECS",
++        attributes=SystemAttributes(
++            functional_blocks=[
++                FunctionalBlock(block_id="B1", name="Valve", description="d", inputs=[], outputs=[]),
++                FunctionalBlock(block_id="B2", name="Actuator", description="d", inputs=[], outputs=[]),
++                FunctionalBlock(block_id="B3", name="Controller", description="d", inputs=[], outputs=[]),
++            ],
++            data_signals=[
++                DataSignal(name="Cmd", type=SignalType.DIGITAL, direction=SignalDirection.OUTPUT,
++                           source="B3", destination="B2", description="d"),
++                DataSignal(name="Status", type=SignalType.ANALOG, direction=SignalDirection.INPUT,
++                           source="B1", destination="B3", description="d"),
++            ],
++            physical_characteristics=PhysicalCharacteristics(
++                weight=5.0, dimensions={"length": 0.1, "width": 0.1, "height": 0.1},
++                volume=0.001, center_of_gravity={"x": 0.0, "y": 0.0, "z": 0.0},
++            ),
++            cooling_requirements=CoolingRequirements(method="Liquid", heat_dissipation=50.0, max_operating_temperature=70.0),
++            power_requirements=PowerRequirements(voltage=115.0, current=2.0, power_type="AC", peak_power=300.0, average_power=230.0),
++        ),
++        components=["1.2.4.1"],
++    )
++    dot = create_system_diagram(system)
++    assert "B3 -> B2" in dot.source
++    assert "B1 -> B3" in dot.source
++    assert "Cmd" in dot.source
++    assert "Status" in dot.source
++
++
++# ---------------------------------------------------------------------------
++# create_system_attribute_tables
++# ---------------------------------------------------------------------------
++
++def test_tables_count_without_fluid(two_block_system):
++    tables = create_system_attribute_tables(two_block_system)
++    assert len(tables) == 3
++
++
++def test_tables_count_with_fluid(system_with_fluid):
++    tables = create_system_attribute_tables(system_with_fluid)
++    assert len(tables) == 4
++
++
++def test_physical_characteristics_title_and_values(two_block_system):
++    tables = create_system_attribute_tables(two_block_system)
++    title, html = tables[0]
++    assert title == "Physical Characteristics"
++    # tabulate right-aligns numeric columns and strips trailing zeros
++    assert "Weight" in html
++    assert "10.5" in html
++    assert "Length" in html
++    assert "Width" in html
++    assert "Height" in html
++    assert "Volume" in html
++    assert "0.03" in html          # volume
++    assert "Center of Gravity X" in html
++    assert "Center of Gravity Y" in html
++    assert "Center of Gravity Z" in html
++    assert "kg" in html
++    assert "m³" in html
++
++
++def test_cooling_requirements_values(two_block_system):
++    tables = create_system_attribute_tables(two_block_system)
++    title, html = tables[1]
++    assert title == "Cooling Requirements"
++    assert "Air" in html
++    assert "150.0" in html
++    assert "85.0" in html
++
++
++def test_power_requirements_with_frequency(two_block_system):
++    tables = create_system_attribute_tables(two_block_system)
++    title, html = tables[2]
++    assert title == "Power Requirements"
++    assert "28.0" in html
++    assert "5.25" in html
++    assert "400.0" in html
++    assert "AC" in html
++    assert "200.0" in html
++    assert "147.0" in html
++
++
++def test_power_requirements_frequency_none_shows_na(system_no_frequency):
++    tables = create_system_attribute_tables(system_no_frequency)
++    _, html = tables[2]
++    assert "N/A" in html
++
++
++def test_fluid_flow_values(system_with_fluid):
++    tables = create_system_attribute_tables(system_with_fluid)
++    title, html = tables[3]
++    assert title == "Fluid Flow Characteristics"
++    assert "Hydraulic Oil" in html
++    assert "12.50" in html       # flow_rate
++    assert "21000.00" in html    # max_pressure / 1e3
++    assert "500.00" in html      # min_pressure / 1e3
++    assert "-40.0" in html       # temp min
++    assert "120.0" in html       # temp max
++    assert "0.000032" in html    # viscosity
++    assert "860.0" in html       # density
++    assert "L/min" in html
++    assert "kPa" in html
++
++
++def test_fluid_flow_absent_when_none(two_block_system):
++    tables = create_system_attribute_tables(two_block_system)
++    titles = [t for t, _ in tables]
++    assert "Fluid Flow Characteristics" not in titles
++
++
++def test_tables_are_html_formatted(two_block_system):
++    tables = create_system_attribute_tables(two_block_system)
++    for _, html in tables:
++        assert "<table" in html.lower()
++
++
++# ---------------------------------------------------------------------------
++# display_system_info
++# ---------------------------------------------------------------------------
++
++_DIAG_MODULE = "aircraft_data_hierarchy.work_breakdown_structure.systems.systems_diagrams"
++
++
++@patch.object(_diag_mod, "display")
++@patch.object(_diag_mod, "Image")
++@patch.object(_diag_mod, "HTML")
++@patch("graphviz.Digraph.render")
++def test_display_renders_png(mock_render, mock_html, mock_image, mock_display, two_block_system):
++    display_system_info(two_block_system)
++    mock_render.assert_called_once_with("system_diagram", format="png", cleanup=True)
++
++
++@patch.object(_diag_mod, "display")
++@patch.object(_diag_mod, "Image")
++@patch.object(_diag_mod, "HTML")
++@patch("graphviz.Digraph.render")
++def test_display_creates_image_with_correct_path(mock_render, mock_html, mock_image, mock_display, two_block_system):
++    display_system_info(two_block_system)
++    mock_image.assert_called_once_with("system_diagram.png")
++
++
++@patch.object(_diag_mod, "display")
++@patch.object(_diag_mod, "Image")
++@patch.object(_diag_mod, "HTML")
++@patch("graphviz.Digraph.render")
++def test_display_calls_display_twice(mock_render, mock_html, mock_image, mock_display, two_block_system):
++    display_system_info(two_block_system)
++    assert mock_display.call_count == 2
++
++
++@patch.object(_diag_mod, "display")
++@patch.object(_diag_mod, "Image")
++@patch.object(_diag_mod, "HTML")
++@patch("graphviz.Digraph.render")
++def test_display_first_call_is_image(mock_render, mock_html, mock_image, mock_display, two_block_system):
++    display_system_info(two_block_system)
++    first_call_arg = mock_display.call_args_list[0][0][0]
++    assert first_call_arg is mock_image.return_value
++
++
++@patch.object(_diag_mod, "display")
++@patch.object(_diag_mod, "Image")
++@patch.object(_diag_mod, "HTML")
++@patch("graphviz.Digraph.render")
++def test_display_second_call_is_html(mock_render, mock_html, mock_image, mock_display, two_block_system):
++    display_system_info(two_block_system)
++    second_call_arg = mock_display.call_args_list[1][0][0]
++    assert second_call_arg is mock_html.return_value
++
++
++@patch.object(_diag_mod, "display")
++@patch.object(_diag_mod, "Image")
++@patch.object(_diag_mod, "HTML")
++@patch("graphviz.Digraph.render")
++def test_display_html_contains_table_titles(mock_render, mock_html, mock_image, mock_display, two_block_system):
++    display_system_info(two_block_system)
++    html_arg = mock_html.call_args[0][0]
++    assert "Physical Characteristics" in html_arg
++    assert "Cooling Requirements" in html_arg
++    assert "Power Requirements" in html_arg
+diff --git a/tests/test_validate_non_empty_string.py b/tests/test_validate_non_empty_string.py
+new file mode 100644
+index 0000000..ce2d3b4
+--- /dev/null
++++ b/tests/test_validate_non_empty_string.py
+@@ -0,0 +1,37 @@
++"""Parametrized tests for the validate_non_empty_string validator shared by
++Equipment, System, and Propulsion models."""
++
++import pytest
++from pydantic import ValidationError
++
++from aircraft_data_hierarchy.work_breakdown_structure.equipment import Equipment
++from aircraft_data_hierarchy.work_breakdown_structure.propulsion.propulsion import Propulsion
++from aircraft_data_hierarchy.work_breakdown_structure.systems.systems import System
++
++MODELS = [Equipment, System, Propulsion]
++FIELDS = ["name", "description"]
++
++EMPTY_VALUES = ["", " ", "   ", "\t", "\n", " \t\n "]
++
++
++@pytest.mark.parametrize("model_cls", MODELS, ids=lambda c: c.__name__)
++@pytest.mark.parametrize("field", FIELDS)
++class TestValidateNonEmptyString:
++    """Verify that name/description validators reject empty or whitespace-only
++    strings and accept valid values across Equipment, System, and Propulsion."""
++
++    @pytest.mark.parametrize("empty", EMPTY_VALUES, ids=repr)
++    def test_rejects_empty_or_whitespace(self, model_cls, field, empty):
++        with pytest.raises(
++            ValidationError,
++            match="Name and description fields must not be empty or whitespace only",
++        ):
++            model_cls(**{field: empty})
++
++    def test_accepts_none(self, model_cls, field):
++        obj = model_cls(**{field: None})
++        assert getattr(obj, field) is None
++
++    def test_accepts_valid_string(self, model_cls, field):
++        obj = model_cls(**{field: "Boeing 737"})
++        assert getattr(obj, field) == "Boeing 737"

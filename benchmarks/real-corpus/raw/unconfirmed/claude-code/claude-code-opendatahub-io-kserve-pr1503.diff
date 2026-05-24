@@ -1,0 +1,535 @@
+diff --git a/charts/kserve-runtime-configs/files/llmisvcconfigs/resources.yaml b/charts/kserve-runtime-configs/files/llmisvcconfigs/resources.yaml
+index 35fa3ce86e0..ad9e298570b 100644
+--- a/charts/kserve-runtime-configs/files/llmisvcconfigs/resources.yaml
++++ b/charts/kserve-runtime-configs/files/llmisvcconfigs/resources.yaml
+@@ -54,8 +54,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -354,8 +354,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -662,8 +662,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -877,8 +877,8 @@ spec:
+                 hcas=$(IFS=,; echo "${active_hcas[*]}")
+                 echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                 export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                 echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                 echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -1119,8 +1119,8 @@ spec:
+                 hcas=$(IFS=,; echo "${active_hcas[*]}")
+                 echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                 export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                 echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                 echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -1367,8 +1367,8 @@ spec:
+                 hcas=$(IFS=,; echo "${active_hcas[*]}")
+                 echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                 export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                 echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                 echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -1844,8 +1844,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -2085,8 +2085,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -2333,8 +2333,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+diff --git a/config/llmisvcconfig/config-llm-decode-template.yaml b/config/llmisvcconfig/config-llm-decode-template.yaml
+index a55d835d3f5..ffa6f455ffc 100644
+--- a/config/llmisvcconfig/config-llm-decode-template.yaml
++++ b/config/llmisvcconfig/config-llm-decode-template.yaml
+@@ -59,8 +59,8 @@ spec:
+                   hcas=$(IFS=,; echo "${active_hcas[*]}")
+                   echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                   export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                  export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                  export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                  export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                  export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                   echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                   echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+diff --git a/config/llmisvcconfig/config-llm-decode-worker-data-parallel.yaml b/config/llmisvcconfig/config-llm-decode-worker-data-parallel.yaml
+index 2c492840384..24abc9f2abf 100644
+--- a/config/llmisvcconfig/config-llm-decode-worker-data-parallel.yaml
++++ b/config/llmisvcconfig/config-llm-decode-worker-data-parallel.yaml
+@@ -138,8 +138,8 @@ spec:
+                   hcas=$(IFS=,; echo "${active_hcas[*]}")
+                   echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                   export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                  export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                  export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                  export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                  export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                   echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                   echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -388,8 +388,8 @@ spec:
+                   hcas=$(IFS=,; echo "${active_hcas[*]}")
+                   echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                   export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                  export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                  export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                  export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                  export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                   echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                   echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+diff --git a/config/llmisvcconfig/config-llm-prefill-template.yaml b/config/llmisvcconfig/config-llm-prefill-template.yaml
+index f9321ff0962..fc64f71cf59 100644
+--- a/config/llmisvcconfig/config-llm-prefill-template.yaml
++++ b/config/llmisvcconfig/config-llm-prefill-template.yaml
+@@ -60,8 +60,8 @@ spec:
+                     hcas=$(IFS=,; echo "${active_hcas[*]}")
+                     echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                     export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                    export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                    export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                    export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                    export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                     echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                     echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+diff --git a/config/llmisvcconfig/config-llm-prefill-worker-data-parallel.yaml b/config/llmisvcconfig/config-llm-prefill-worker-data-parallel.yaml
+index b123511bdff..64c01792f47 100644
+--- a/config/llmisvcconfig/config-llm-prefill-worker-data-parallel.yaml
++++ b/config/llmisvcconfig/config-llm-prefill-worker-data-parallel.yaml
+@@ -80,8 +80,8 @@ spec:
+                     hcas=$(IFS=,; echo "${active_hcas[*]}")
+                     echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                     export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                    export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                    export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                    export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                    export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                     echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                     echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -330,8 +330,8 @@ spec:
+                     hcas=$(IFS=,; echo "${active_hcas[*]}")
+                     echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                     export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                    export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                    export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                    export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                    export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                     echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                     echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+diff --git a/config/llmisvcconfig/config-llm-template.yaml b/config/llmisvcconfig/config-llm-template.yaml
+index 471e589ed5b..58b996100f3 100644
+--- a/config/llmisvcconfig/config-llm-template.yaml
++++ b/config/llmisvcconfig/config-llm-template.yaml
+@@ -59,8 +59,8 @@ spec:
+                   hcas=$(IFS=,; echo "${active_hcas[*]}")
+                   echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                   export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                  export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                  export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                  export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                  export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                   echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                   echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+diff --git a/config/llmisvcconfig/config-llm-worker-data-parallel.yaml b/config/llmisvcconfig/config-llm-worker-data-parallel.yaml
+index c9e524faf5d..d05854c5ec8 100644
+--- a/config/llmisvcconfig/config-llm-worker-data-parallel.yaml
++++ b/config/llmisvcconfig/config-llm-worker-data-parallel.yaml
+@@ -79,8 +79,8 @@ spec:
+                   hcas=$(IFS=,; echo "${active_hcas[*]}")
+                   echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                   export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                  export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                  export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                  export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                  export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                   echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                   echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -329,8 +329,8 @@ spec:
+                   hcas=$(IFS=,; echo "${active_hcas[*]}")
+                   echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                   export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                  export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                  export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                  export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                  export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                   echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                   echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+diff --git a/hack/setup/quick-install/kserve-knative-mode-full-install-with-manifests.sh b/hack/setup/quick-install/kserve-knative-mode-full-install-with-manifests.sh
+index eeb93f842fe..31b8d3152b5 100755
+--- a/hack/setup/quick-install/kserve-knative-mode-full-install-with-manifests.sh
++++ b/hack/setup/quick-install/kserve-knative-mode-full-install-with-manifests.sh
+@@ -2515,8 +2515,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -2815,8 +2815,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -3123,8 +3123,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -3338,8 +3338,8 @@ spec:
+                 hcas=$(IFS=,; echo "${active_hcas[*]}")
+                 echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                 export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                 echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                 echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -3580,8 +3580,8 @@ spec:
+                 hcas=$(IFS=,; echo "${active_hcas[*]}")
+                 echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                 export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                 echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                 echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -3828,8 +3828,8 @@ spec:
+                 hcas=$(IFS=,; echo "${active_hcas[*]}")
+                 echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                 export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                 echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                 echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -4305,8 +4305,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -4546,8 +4546,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -4794,8 +4794,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+diff --git a/hack/setup/quick-install/kserve-standard-mode-full-install-with-manifests.sh b/hack/setup/quick-install/kserve-standard-mode-full-install-with-manifests.sh
+index eabc7b0b499..999d7bf12e8 100755
+--- a/hack/setup/quick-install/kserve-standard-mode-full-install-with-manifests.sh
++++ b/hack/setup/quick-install/kserve-standard-mode-full-install-with-manifests.sh
+@@ -2101,8 +2101,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -2401,8 +2401,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -2709,8 +2709,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -2924,8 +2924,8 @@ spec:
+                 hcas=$(IFS=,; echo "${active_hcas[*]}")
+                 echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                 export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                 echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                 echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -3166,8 +3166,8 @@ spec:
+                 hcas=$(IFS=,; echo "${active_hcas[*]}")
+                 echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                 export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                 echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                 echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -3414,8 +3414,8 @@ spec:
+                 hcas=$(IFS=,; echo "${active_hcas[*]}")
+                 echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                 export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                 echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                 echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -3891,8 +3891,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -4132,8 +4132,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -4380,8 +4380,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+diff --git a/hack/setup/quick-install/llmisvc-full-install-with-manifests.sh b/hack/setup/quick-install/llmisvc-full-install-with-manifests.sh
+index 853e5270a89..b609abca7d5 100755
+--- a/hack/setup/quick-install/llmisvc-full-install-with-manifests.sh
++++ b/hack/setup/quick-install/llmisvc-full-install-with-manifests.sh
+@@ -2434,8 +2434,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -2734,8 +2734,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -3042,8 +3042,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -3257,8 +3257,8 @@ spec:
+                 hcas=$(IFS=,; echo "${active_hcas[*]}")
+                 echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                 export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                 echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                 echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -3499,8 +3499,8 @@ spec:
+                 hcas=$(IFS=,; echo "${active_hcas[*]}")
+                 echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                 export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                 echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                 echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -3747,8 +3747,8 @@ spec:
+                 hcas=$(IFS=,; echo "${active_hcas[*]}")
+                 echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+                 export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-                export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-                export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++                export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++                export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+                 echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+                 echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -4224,8 +4224,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -4465,8 +4465,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"
+@@ -4713,8 +4713,8 @@ spec:
+               hcas=$(IFS=,; echo "${active_hcas[*]}")
+               echo "[Infer RoCE] Setting active HCAs: ${hcas}"
+               export NCCL_IB_HCA=${NCCL_IB_HCA:-${hcas}}
+-              export NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST:-${ucx_hcas}}
+-              export UCX_NET_DEVICES=${UCX_NET_DEVICES:-${ucx_hcas}}
++              export NVSHMEM_HCA_LIST="${NVSHMEM_HCA_LIST:-$(IFS=,; echo "${ucx_hcas[*]}")}"
++              export UCX_NET_DEVICES="${UCX_NET_DEVICES:-$(IFS=,; echo "${ucx_hcas[*]}")}"
+ 
+               echo "[Infer RoCE] NCCL_IB_HCA=${NCCL_IB_HCA}"
+               echo "[Infer RoCE] NVSHMEM_HCA_LIST=${NVSHMEM_HCA_LIST}"

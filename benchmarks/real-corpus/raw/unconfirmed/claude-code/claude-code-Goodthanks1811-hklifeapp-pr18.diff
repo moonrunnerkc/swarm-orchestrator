@@ -1,0 +1,27 @@
+diff --git a/replit.md b/replit.md
+index 2d5c5c9b..3b0cd65a 100644
+--- a/replit.md
++++ b/replit.md
+@@ -20,6 +20,22 @@ The project's vision is to create a highly customizable, performant, and integra
+ - **Do NOT regenerate or replace the HK logo** (`artifacts/task-manager/assets/images/hk-artwork-transparent.png`) unless the user explicitly provides a new one and says to replace it.
+ - **Before triggering ANY EAS build, read `artifacts/task-manager/EAS_BUILD_GUIDE.md` in full.** This is not optional.
+ 
++- **GitHub `origin/main` is the source of truth. Do NOT push from Replit.**
++  Code authoring happens in Claude/GitHub; the Replit workspace is a deploy host only.
++
++- **Before checking what's deployable, what's changed, or running a deploy, ALWAYS:**
++  1. `git fetch origin`
++  2. `git log HEAD..origin/main --oneline` → these are *incoming* commits, want them.
++  3. `git log origin/main..HEAD --oneline` → these are *local-ahead*, inspect them.
++
++  Then decide based on what's local-ahead:
++  - **No local-ahead commits and clean working tree** → fast-forward or `git reset --hard origin/main`, then deploy.
++  - **Local-ahead commits, ALL with `Replit-Commit-Author:` in the body** → Replit auto-checkpoints, safe to discard. `git reset --hard origin/main`.
++  - **Any local-ahead commit WITHOUT `Replit-Commit-Author:`** → STOP. Show them to the user and ask whether to keep on a branch, push to GitHub as a PR, or discard. Never auto-discard.
++  - **Working tree has uncommitted changes** → STOP. Show `git status` to the user and ask before doing anything.
++
++  Never report "nothing to pull" without running step 1 first. The local workspace HEAD is not authoritative.
++
+ # System Architecture
+ 
+ The project is structured as a pnpm workspace monorepo.

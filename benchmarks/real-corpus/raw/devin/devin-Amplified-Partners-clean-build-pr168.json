@@ -1,0 +1,26 @@
+{
+  "id": "devin-Amplified-Partners-clean-build-pr168",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 168,
+    "headSha": "de109c6b0e2df2b7ae1f290ead74b3f795edfa8b",
+    "baseSha": "80b28def2e048dc89f121acfa1ddd16a40ee30ab",
+    "title": "AMP-354 | feat: third-party structural review gate + GitHub governance bus v2",
+    "body": "## Linear ticket\n\nAMP-354\n\n## What changed\n\nFormalises Ewan's directive: every design and code change gets sent to a removed third party (Perplexity) for structural conformance review before implementation. The reviewer is an indicator node — STRUCTURED opinion, no authority, no responsibility. Also commits the GitHub Governance Bus architecture v2, incorporating Perplexity's structural review of v1.\n\n**New files:**\n- `docs/adr/ADR-007-third-party-structural-review.md` — the ADR formalising the gate\n- `01_truth/processes/2026-05_third-party-structural-review_sop_v1.md` — the SOP (when to trigger, procedure, context pack, reviewer role)\n- `docs/GITHUB_GOVERNANCE_BUS.md` — architecture v2\n\n**Perplexity's 4 additions incorporated into v2:**\n1. Gap parking — when a gap is caused by a known precondition failure (API down), park it instead of repeatedly alerting\n2. Reconciliation job — hourly GitHub API query to catch missed webhooks\n3. Governance export — nightly export to `vellum-record/` for Perplexity pattern recognition\n4. Noise reduction — aggregate by process_id, collapse CI checks, suppress Dependabot unless failed\n\n**Perplexity's 4 risk assessments incorporated:**\n1. Beast SPOF → dead man's switch (external health check, separate from Beast)\n2. Webhook reliability → belt-and-braces + reconciliation\n3. Noise overwhelms signal → filtering layer\n4. Complexity budget → validate with clear use case before building\n\n## Mode (per AGENTS.md)\n\n- [ ] Act — reversible or contained-impact\n- [x] Surface — significant / irreversible, with `DECISION_LOG.md` pointer below\n- [ ] Park — stuck, escalation note attached\n\n## Pre-merge checklist\n\n- [x] Signatures present on every committed artefact (`00_authority/SIGNATURES.md`)\n- [x] If `00_authority/*` touched: version bumped + changelog entry added\n- [x] If new authoritative rule or irreversible commit: `00_authority/DECISION_LOG.md` pointer added\n- [x] Every file reference points to a thing that exists (or is marked `[SOURCE REQUIRED]`)\n- [x] Examples do not contradict their own rule\n- [x] New indexable files (`00_authority/*`, `01_truth/processes/*`, etc.) appear in `00_authority/MANIFEST.md`\n\n## Surface link (only if Mode = Surface)\n\n`00_authority/DECISION_LOG.md` v26 — \"Third-Party Structural Review Gate + GitHub Governance Bus v2\"\n\n## Notes to reviewer\n\n- This is the first artifact that was itself subject to the third-party structural review process it formalises. Perplexity reviewed the governance bus v1, Devon incorporated the feedback into v2 and formalised the gate.\n- ADR-007 is `[DECISION REQUIRED]` — the gate shape needs Ewan's approval before becoming process.\n- The governance bus is design only — no code changes to Vellum yet. Implementation is phased (4 sessions).\n- Process templates are proposed as authority files — changes would require Five Rods review (per Perplexity's recommendation).\n\nLink to Devin session: https://app.devin.ai/sessions/bfbc7fe01e7c43dda8cbbb7f9d4a73ec\nRequested by: @ewan-dot",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779582291-third-party-validation-gate",
+    "repository": "Amplified-Partners/clean-build"
+  },
+  "diffRef": {
+    "repository": "Amplified-Partners/clean-build",
+    "headSha": "de109c6b0e2df2b7ae1f290ead74b3f795edfa8b",
+    "baseSha": "80b28def2e048dc89f121acfa1ddd16a40ee30ab"
+  },
+  "vendoredDiffPath": "devin/devin-Amplified-Partners-clean-build-pr168.diff",
+  "vendoredAt": "2026-05-24T03:04:31.797Z",
+  "collectedAt": "2026-05-24T03:04:31.797Z"
+}

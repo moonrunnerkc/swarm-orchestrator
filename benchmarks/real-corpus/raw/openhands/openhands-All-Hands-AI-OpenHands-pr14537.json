@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14537",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14537,
+    "headSha": "e135cdf027115ed7314454127879dd5b638dbf40",
+    "baseSha": "5e311f7f995008ffe4c74f8cf6f3085d4030c670",
+    "title": "Harden workflow GitHub context handling",
+    "body": "<!-- Keep this PR as draft until it is ready for review. -->\n\n<!-- AI/LLM agents: be concise and specific. Do not check the box below. -->\n\nHUMAN:\n\nThis PR hardens the issue-opened workflow by passing GitHub context values through environment variables before shell use.\n\n- [ ] A human has tested these changes.\n\nAGENT:\n\n---\n\n## Why\n\nPart of the cross-repo fix for OpenHands/software-agent-sdk#3371. Workflow `run:` blocks should not interpolate attacker-influenced GitHub context or derived step outputs directly into shell scripts.\n\n## Summary\n\n- Moves issue number and good-first-issue precheck outputs into `env:` before using them in shell.\n- Updates summary shell logic to reference environment variables instead of direct `${{ ... }}` interpolation.\n\n## Issue Number\n\nFixes OpenHands/software-agent-sdk#3371\n\n## How to Test\n\n- `python` + `PyYAML` validation over all changed workflow/action YAML files across the audited repositories: `validated changed yaml files: 33`\n- Repository scanner confirmed: `remaining suspicious run blocks: 0`\n- `git diff --check` across all audited repositories\n\n## Video/Screenshots\n\nNot applicable; workflow hardening only.\n\n## Type\n\n- [x] Bug fix\n- [ ] Feature\n- [ ] Refactor\n- [ ] Breaking change\n- [ ] Docs / chore\n\n## Notes\n\nThis PR was created by an AI agent (OpenHands) on behalf of the user.\n\n@enyst can click here to [continue refining the PR](https://app.all-hands.dev/conversations/05aa1d79-8d57-4e84-9ee0-fdd4bf20ec12)\n\n---\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-e135cdf   docker.openhands.dev/openhands/openhands:e135cdf\n```\n",
+    "author": "enyst",
+    "headRef": "openhands/issue-3371-workflow-env",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "e135cdf027115ed7314454127879dd5b638dbf40",
+    "baseSha": "5e311f7f995008ffe4c74f8cf6f3085d4030c670"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14537.diff",
+  "vendoredAt": "2026-05-24T03:17:45.170Z",
+  "collectedAt": "2026-05-24T03:17:45.170Z"
+}

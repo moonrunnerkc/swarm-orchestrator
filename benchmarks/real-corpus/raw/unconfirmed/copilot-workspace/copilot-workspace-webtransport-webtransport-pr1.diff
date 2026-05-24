@@ -1,0 +1,139 @@
+diff --git a/conn_js.go b/conn_js.go
+index 13075d3..6d6ab35 100644
+--- a/conn_js.go
++++ b/conn_js.go
+@@ -16,6 +16,7 @@ import (
+ 
+ var _ net.Conn = (*Conn)(nil)
+ 
++// Conn wraps a WebTransport bidirectional stream and implements net.Conn.
+ type Conn struct {
+ 	stream js.Value
+ 	reader js.Value
+@@ -38,6 +39,7 @@ func newConn(stream js.Value, addr string) *Conn {
+ 	}
+ }
+ 
++// Read reads data from the stream.
+ func (c *Conn) Read(p []byte) (int, error) {
+ 	c.mu.Lock()
+ 	if c.closed {
+@@ -77,6 +79,7 @@ func (c *Conn) Read(p []byte) (int, error) {
+ 	return n, nil
+ }
+ 
++// Write writes data to the stream.
+ func (c *Conn) Write(p []byte) (int, error) {
+ 	c.mu.Lock()
+ 	if c.closed {
+@@ -97,6 +100,7 @@ func (c *Conn) Write(p []byte) (int, error) {
+ 	return len(p), nil
+ }
+ 
++// Close closes both the read and write sides of the stream.
+ func (c *Conn) Close() error {
+ 	c.mu.Lock()
+ 	if c.closed {
+@@ -111,10 +115,13 @@ func (c *Conn) Close() error {
+ 	return errors.Join(normalizeStreamError(errCancel), normalizeStreamError(errClose))
+ }
+ 
++// LocalAddr returns the local network address.
+ func (c *Conn) LocalAddr() net.Addr { return c.addr }
+ 
++// RemoteAddr returns the remote network address.
+ func (c *Conn) RemoteAddr() net.Addr { return c.addr }
+ 
++// SetDeadline sets both read and write deadlines associated with the connection.
+ func (c *Conn) SetDeadline(t time.Time) error {
+ 	if err := c.SetReadDeadline(t); err != nil {
+ 		return err
+@@ -122,6 +129,7 @@ func (c *Conn) SetDeadline(t time.Time) error {
+ 	return c.SetWriteDeadline(t)
+ }
+ 
++// SetReadDeadline sets the deadline for future Read calls.
+ func (c *Conn) SetReadDeadline(t time.Time) error {
+ 	c.mu.Lock()
+ 	defer c.mu.Unlock()
+@@ -129,6 +137,7 @@ func (c *Conn) SetReadDeadline(t time.Time) error {
+ 	return nil
+ }
+ 
++// SetWriteDeadline sets the deadline for future Write calls.
+ func (c *Conn) SetWriteDeadline(t time.Time) error {
+ 	c.mu.Lock()
+ 	defer c.mu.Unlock()
+@@ -136,11 +145,13 @@ func (c *Conn) SetWriteDeadline(t time.Time) error {
+ 	return nil
+ }
+ 
++// CloseRead closes the read side of the stream.
+ func (c *Conn) CloseRead() error {
+ 	_, err := awaitPromise(context.Background(), c.reader.Call("cancel"))
+ 	return err
+ }
+ 
++// CloseWrite closes the write side of the stream.
+ func (c *Conn) CloseWrite() error {
+ 	_, err := awaitPromise(context.Background(), c.writer.Call("close"))
+ 	return err
+diff --git a/dial_js.go b/dial_js.go
+index 423f442..001cd68 100644
+--- a/dial_js.go
++++ b/dial_js.go
+@@ -9,6 +9,8 @@ import (
+ 	"syscall/js"
+ )
+ 
++// Dial connects to a WebTransport endpoint and returns a session once the
++// transport is ready.
+ func Dial(ctx context.Context, addr string) (*Session, error) {
+ 	u, err := url.Parse(addr)
+ 	if err != nil {
+diff --git a/session_js.go b/session_js.go
+index 95be4b7..763348e 100644
+--- a/session_js.go
++++ b/session_js.go
+@@ -9,6 +9,8 @@ import (
+ 	"syscall/js"
+ )
+ 
++// Session represents a WebTransport connection that can open and accept
++// bidirectional streams.
+ type Session struct {
+ 	transport js.Value
+ 	incoming  js.Value
+@@ -37,6 +39,7 @@ func newSession(transport js.Value, addr string) (*Session, error) {
+ 	return s, nil
+ }
+ 
++// Accept waits for and returns the next incoming bidirectional stream.
+ func (s *Session) Accept(ctx context.Context) (net.Conn, error) {
+ 	result, err := awaitPromise(ctx, s.incoming.Call("read"))
+ 	if err != nil {
+@@ -51,6 +54,7 @@ func (s *Session) Accept(ctx context.Context) (net.Conn, error) {
+ 	return newConn(result.Get("value"), s.addr), nil
+ }
+ 
++// Open creates and returns a new outgoing bidirectional stream.
+ func (s *Session) Open(ctx context.Context) (net.Conn, error) {
+ 	stream, err := awaitPromise(ctx, s.transport.Call("createBidirectionalStream"))
+ 	if err != nil {
+@@ -62,6 +66,7 @@ func (s *Session) Open(ctx context.Context) (net.Conn, error) {
+ 	return newConn(stream, s.addr), nil
+ }
+ 
++// Close closes the session and releases associated resources.
+ func (s *Session) Close() error {
+ 	s.cancel()
+ 	s.transport.Call("close")
+@@ -71,6 +76,8 @@ func (s *Session) Close() error {
+ 	return nil
+ }
+ 
++// Context returns a context that is canceled when the underlying transport is
++// closed.
+ func (s *Session) Context() context.Context {
+ 	return s.ctx
+ }

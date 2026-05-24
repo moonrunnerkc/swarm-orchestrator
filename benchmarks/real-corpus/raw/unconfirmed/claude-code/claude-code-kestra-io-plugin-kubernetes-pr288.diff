@@ -1,0 +1,23 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.kubernetes.md b/src/main/resources/doc/io.kestra.plugin.kubernetes.md
+new file mode 100644
+index 0000000..4ec326a
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.kubernetes.md
+@@ -0,0 +1,17 @@
++# How to use the Kubernetes plugin
++
++Connect to any cluster — in-cluster or with explicit credentials — to create pods and manage resources from Kestra flows.
++
++## Authentication
++
++Connection details are configured via a `connection` object on each task. All fields are optional; omitting `connection` entirely (or leaving `masterUrl` at its default of `https://kubernetes.default.svc`) works when Kestra itself runs on Kubernetes and the worker pod has a service account with the required permissions.
++
++For an external cluster, set `masterUrl` to the cluster API server URL and provide credentials via one of: `oauthToken` for token-based auth, `clientCertData`/`clientKeyData` for certificate auth, or `username`/`password` for basic auth. Set `caCertData` to the cluster's CA certificate to verify the server, or `trustAllSsl: true` to skip verification. Set `namespace` on `connection` to override the default namespace for all operations.
++
++Store credentials in [secrets](https://kestra.io/docs/concepts/secret) and reference them with `{{ secret('...') }}`.
++
++## Tasks
++
++`core.PodCreate` creates a pod, streams its logs, and waits for completion — use it when you need direct control over the pod spec (resource limits, volumes, init containers, node selectors). For simply running a script inside a container as part of a flow, prefer a [Kubernetes task runner](https://kestra.io/docs/workflow-components/task-runners) configured on a script task rather than `PodCreate` directly.
++
++The `kubectl` package covers resource management: `Apply` creates or updates resources from a manifest, `Get` reads resource state, `Patch` modifies a live resource, `Delete` removes it, and `Restart` triggers a rollout restart. All kubectl tasks accept a `namespace` property to scope the operation.

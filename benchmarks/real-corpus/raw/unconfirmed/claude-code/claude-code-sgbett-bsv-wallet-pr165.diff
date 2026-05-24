@@ -1,0 +1,310 @@
+diff --git a/.claude/strategies/Feature-testing.md b/.claude/strategies/Feature-testing.md
+new file mode 100644
+index 0000000..97013e4
+--- /dev/null
++++ b/.claude/strategies/Feature-testing.md
+@@ -0,0 +1,304 @@
++# Feature tests
++
++CLI tools let us test cross wallet capabilities, we have a basic CI proof of concept, we should expand on this. This document is a development on the original "A Proposal for #64" that drove our development of some of the tests you see now.
++
++The vertical concerns defined in #64 still apply: [E:IO] Engine (intent/outcome) and [S:DI] Store (data integrity). The split is more structurally separable at the Unit test level and perhaps the lower-level integrations.
++
++## Additional Context for #64
++
++The layers that seem to have fallen out here:
++
++1) Unit tests
++2) Integration
++  a) "Components" - the glue that transforms the Engine's orchestration of method calls into the low level Data manipulation calls.
++  b) "Engine" - that higher level methods correctly orchestrate calls to the lower level methods
++  c) cli tools match the shape of the API. make the correct calls, handle the responses, produce the expected changes in the database [S:DI] (whilst being unable to do unexpected things!) and generate the right outputs for the purposes of piping data [E:IO] or reporting success/failure
++3) Feature Tests -
++  a) "Functionality" - A suite of narrative examples, scenarios that exercise the interactions between multiple independent wallets. These real world interactions are driven (necessarily, due to the inherent single user database design) by the cli tools performing actions that might otherwise originate from third parties using wallet software to send and receive.
++  b) "Interoperability" - Orchestrates a similar set of tests using the ts-sdk/wallet-tools as a counterparty and ensures that basic interoperability works as expected e.g. I can send a transaction to an alternative provider wallet, and internalise a transaction received.
++
++Current Test infrastructure looks something like this:
++
++| Layer | Category | ./gem/bsv-wallet/spec.. | Depends | What it covers |
++|---|---|---|---|---|
++| 1 | UNIT-S:DI | ./bsv/wallet/store/ | SQLite (STORE_DB) | Store::SQLite + Store::Base orchestration, models, schema, migrations, constraints |
++| 1 | UNIT-S:DI | ./bsv/network/ | No DB | Network/chain_tracker logic with doubles |
++| 1 | UNIT-E:IO | ./bsv/wallet/engine_spec.rb + engine/ | SQLite (reuses STORE_DB) | Full Engine plumbing, porcelain (send_payment, auto-fund), limp mode, WBIKD |
++| 1 | UNIT-E:IO | ./bsv/wallet/ (key_deriver, daemon, fetchable, pushable) | No DB | Pure logic |
++| 2 | INTEGRATION-S:DI | ./bsv/wallet/cli/ | SQLite (subprocess sqlite::memory:) | CLI.boot end-to-end + bin argument parsing |
++| 2 | INTEGRATION-E:IO | ./integration/cli_spec.rb | SQLite tmpdirs per example | bin porcelain pipeline end-to-end with real on-chain UTXOs |
++
++We are going to expand the scope of integration/cli_spec.rb significantly, and introduce a 3rd Feature Test layer, starting with a comprehensive spidering of on-chain payment transactions to ensure robustness.
++
++## Expanding on the initial 2000 sats
++
++The initial WIF_ALICE served as a proof of concept.
++
++We will create 3 new keys, two to replace the existing WIF_ALICE and WIF_BOB, and we will introduce a third actor WIF_CAROL. I will create a funding utxo for each root_key of 1m sats, and we will use a baseline of 5k sats for our minimum 'unit' payment.
++
++This sets up economics whereby fees are generally <1% of a tx which allows testing to focus on tx value without outsized effects from non-deterministic fee calculations making tests brittle.
++
++This should also mitigate issues running into dust limits at the edges.
++
++### Predicted Change Fanout using 1m sats
++
++The standard SDK model uses the `:random` change algorithm, which produces 8 change outputs per spend. The layer structure below assumes that contract — if auto-fund's fanout changes, the layer numbers need recomputing.
++
++a. Layer 1
++  - The externally-funded root UTXO is brought under wallet management via `Engine#import_utxo` (today). Long-term this is automated via `Engine#import_wallet` — called on wallet startup and periodically by the wallet daemon. The import wraps the UTXO with its derivation context as a single self-payment, so subsequent layers can spend it through the auto-fund pipeline.
++  - 1 output with a BEEF ancestry depth n=1 to the merkle proof for the original utxo
++b. Layer 2 (ancestry depth n=1)
++  - 1 payment @ 5000 sats from the layer 1 utxo
++  - 8 change outputs of ~124k sats
++c. Layer 3 (ancestry depth n=2)
++  - 8 x payments @ 5000 sats from layer 2 change outputs
++  - 8 x 8 = 64 change outputs of ~14k sats
++d. Layer 4 (ancestry depth n=3)
++  - 64 x payments @ 5000 sats from layer 3 change outputs
++  - 64 x 8 = 512 change outputs of ~1k sats
++
++This provides potential for around 500 payments at a beef ancestry of n=3 which should still be relatively modest attracting perhaps a few hundred sat fees at most.
++
++
++### Broadcasting: "Test wallets not networks!"
++
++It is easy to fall into the trap of thinking that the best way to test a wallet is to see if you make a "real" payment.
++
++Although it is clear that every tx has two beneficiaries only one of them gets to spend the payment, which makes them arguably the recipient of most concern (the miner gets the fees but this is a fraction). Verifying that transactions are accepted by the network is a valid concern, and should be tested separately outside of CI, but spending money on-chain offers no real advantage to wallet to wallet validation, and carries a very real disadvantage of persistent wallet maintenance, which might be better achieved using a wallet store that we have not yet scoped. (e.g. sqlite restore/backup, remote RDS wallet service, filestore + cloud sync or some other method).
++
++That is why on-chain verification has been deferred until the comprehensive integration tests are successfully in place.
++
++#### Mocks, stubs and nosend
++
++All CI tests should use nosend to prevent inadvertent broadcasts; as a fallback the test suite should mock/stub ARC broadcasts — i) to prevent accidents, and ii) so that any specs which would exercise a different codepath (e.g. `no_send: false` and `accept_delayed_broadcast: false`) can be duplicated to a corresponding test that uses the stubbed ARC responses. In both cases error handling can also be fully exercised, by simulating various ARC responses with differing status/error combinations to verify synchronous broadcast error handling, or to confirm that deferred asynchronous broadcasts also handle errors correctly.
++
++The handling of asynchronous broadcasts will likely involve testing the abstract async interface, however this work has not been completed yet.
++
++The overriding principle: maximise what tests we can do in CI; take advantage of the WIF_ALICE, WIF_BOB and WIF_CAROL wallets as sources of payment activity that will fully exercise the wallet.
++
++## The Integration "Stress-Test" in CI
++
++A thoroughly comprehensive test of the inter wallet payment mechanism, in which (per the above) none of the payments are broadcast to ARC, but everything is sent directly from wallet to wallet using BRC-100 semantics and continues to be re-spent by virtue of the BSV wallet's automatic promotion feature.
++
++Use the "Predicted Change Fanout" principle to generate approx 200 payments across 3 wallets, resulting in a final state of around **1700 outputs in aggregate** across all three wallets. "Outputs" here is the schema term — rows in the `outputs` table that are tracked (spendable) by some wallet. The cascade resolves as follows per wallet:
++
++- ~512 final-tier change outputs retained (Layer 4 — earlier-layer change has been spent by the time the cascade completes)
++- ~73 incoming payments from the other two wallets, each tracked as a spendable output owned by the receiving wallet
++
++So per wallet: ~585 spendable outputs × 3 wallets ≈ 1700 in total, with approx 980k sats per wallet (average) remaining. Approx 20k per wallet earmarked as hypothetical fees.
++
++- All payments are nosend=true.
++- All payments are sent randomly to the other wallets (not-self), using identity-key semantics, BEEF, and internalise_action.
++- Test should output summary reports of the inter wallet activity. Every transaction **must** succeed.
++- Final database state should be reported, prior to termination, inline summary number of transactions, outputs etc.
++
++There is **NO REASON** for a payment to fail in terms of BEEF validation, data integrity, malformed tx etc. If however inter wallet communications fail, then this will give invaluable information on what we need to do to improve our wallet's I/O layer.
++
++- [TODO] wallet export does not yet exist: Once implemented, the final step will be to export all 3 wallets as github artefacts.
++
++Once this intensity of testing is working we can refine our current implementation(s) and prepare for the final test...
++
++### Consolidation Dry-Run
++
++Before we ever broadcast anything for real, we want confidence that the cleanup procedure works end-to-end. The final step of the stress test exercises the *same* consolidation and sweep logic the e2e on-chain test will use — but with `no_send: true` throughout, so nothing leaves the process.
++
++For each wallet (ALICE, BOB, CAROL):
++
++1. **Consolidate** — while the wallet has ≥ 20 spendable outputs, build a no_send self-payment that consumes the 20 smallest outputs + the 1 largest, producing a single output back to a derived key on the same wallet. Repeat until the wallet has < 20 spendable outputs.
++2. **Sweep** — build a final no_send payment that consumes all remaining spendable outputs and sends the balance (less a token fee) to a fresh ephemeral identity_key — generated per test run via `BSV::Primitives::PrivateKey.generate`. This is **not** `BSV_WALLET_WIF_SDK`; it's an in-memory routing target. The e2e on-chain test uses the real SDK identity; CI does not.
++
++Assertions after the dry-run:
++
++- Each wallet has zero spendable outputs
++- Each wallet's locked inputs account for every UTXO consumed during the cascade
++- The consolidation cycle terminated (didn't loop indefinitely on dust)
++- Every consolidation and sweep transaction passed BEEF validation
++- The action records reflect the expected count (consolidation rounds + 1 sweep per wallet)
++
++This serves two purposes:
++
++1. **Validates the algorithm under load** — by the time we run this, each wallet has ~585 spendable outputs from the cascade. Edge cases around dust, fee accounting, and BRC-67 input > output requirements all surface here, not on chain.
++2. **Pre-flight for e2e** — when the e2e test eventually does its real sweep, it's running the same code path we already proved correct in CI.
++
++## End-to-End (e2e) testing: "Feature tests" - does the wallet actually work in practice?
++
++In the "Context for #64" section above layer 3 describes two categories: functionality and interoperability.
++
++The main "Feature" of a wallet is being able to send and receive Bitcoin transactions to and from other people, in the fully peer-to-peer sense — without intermediary broadcasting being required for delivery. However there is an expectation that at some point txs do eventually find their way on to the blockchain! So it is important to ensure that we are able to broadcast.
++
++In our CI tests above ALICE, BOB and CAROL generate many nosend tx to each other, but these are intentionally never broadcast because we are primarily concerned with ensuring that the wallets communicate correctly with each other. End to end testing builds on this peer-to-peer activity by ensuring that we are able to then broadcast transactions, and that any BEEF ancestry that we built along the way is accepted by ARC endpoints.
++
++### On Chain Setup
++
++A new WIF value has been created for the purposes of on chain testing, this will act as the "funding wallet" and has been seeded with an initial balance of 1BSV (100m sats).
++
++The local ENV var is: BSV_WALLET_WIF_SDK
++
++To avoid having to store multiple WIF values, the on-chain wallets will be deterministically generated; the security risk in doing this is tolerable.
++
++We will use 5 wallets
++
++```ruby
++require "openssl"
++WALLET_COUNT = 5
++BSV_WALLET_WIF_SDK = ENV["BSV_WALLET_WIF_SDK"]
++root = OpenSSL::BN.new([BSV_WALLET_WIF_SDK].pack("H*"), 2)
++n = OpenSSL::BN.new("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141", 16)
++BSV_WALLET_WIF=[]
++WALLET_COUNT.times do |i|
++  child_bn = (root * OpenSSL::BN.new(i + 2)) % n
++  child_key = BSV::Primitives::PrivateKey.new(child_bn)
++  BSV_WALLET_WIF << child_key.to_wif
++end
++```
++- On-chain wallets should be drained to the funding wallet (synchronous send & broadcast)
++- If the on-chain wallets cannot be drained then the test must abort.
++- send each wallet **10 million** sats
++- wait for confirmation
++
++### Initial Fragmentation (no-send)
++
++Conduct a similar "nosend fanout" to that used in the CI test, but apply a 10x multiplier to the payment amounts, with the recipient chosen at random from the other wallets (not-self).
++  L2 change = 1 payment (10m - 50k payment - 100 fees) / 8 change outputs => 1.243m
++  L3 change = 8 payments (1.243m - 50k payment - 100 fees) / 8 change outputs => 149k
++  L4 change = 64 payments (149k - 50k payment - 100 fees) / 8 change outputs => 12k
++
++This will result in approx 73 outputs of 50k (payments), and 512 outputs of 12k (change).
++To fragment those 50k outputs, we conduct one more level of fanout (ancestry depth n=4): 73 x payments of 12k.
++  L5 change = 73 payments (50k - 12k payment - 100 fees) / 8 change outputs => approx 4700 sats
++
++This will result in 585 outputs of approx 12k (due to the benford random change distribution), with 73 outputs just under 5k. There will have been 146 total payments, and (generously) assuming 100 sats per output, the initial 10m balance will have only reduced by 14.6k in fees.
++
++This will all still be unsent.
++
++### Broadcasting phase
++
++The first of the e2e specs tests on-chain functionality, specifically continuity of operations as the blockchain is extended. i.e. there is a delay between a block being mined and the wallet's proof store being updated to use the new block_height / merkle_root. We need to be sure that broadcasting with stale BEEF does not cause problems (i.e. the broadcast is accepted regardless, or if it fails then it just gets retried later once the proof store has updated).
++
++**NB: This requires a wallet daemon to be running for each test wallet**
++
++We can make approx 2000 x 5k sat payments per wallet, using the L5 change outputs. With 5 wallets that is a total of around 10k tx.
++Whilst blocks should come every 10mins mining distribution is such that this is not guaranteed and an hour between blocks is not unusual. (If the test extends then we will also be stress testing auto fund!)
++
++#### Broadcast Timing
++
++We will target generating & broadcasting 25 tx every 9 seconds (absolute intervals, i.e. not `sleep(9)`):
++
++400 x 25 => 10k transactions
++400 x 9s => 3600s => 1hr
++
++We expect approximately 6 blocks to be mined during the test, but as a precautionary measure, the main execution loop will continue until at least 3 blocks have been mined since the test started.
++
++So the termination condition will be (both must be true — at least 10000 tx AND at least 3 blocks):
++
++```
++loop do
++  break if (tx_count > 10000) && (block_height > starting_block_height + 2)
++  t = time
++  25.times do
++    - A sending wallet and receiving wallet are chosen at random (not-self)
++    - An amount is selected at random (normal distribution: mean 5000, std deviation 1000)
++    - the `create` specifies `accept_delayed_broadcast: false`, and does not specify `no_send: true`
++    - the BEEF from `create` is given to `internalize` for the receiver
++  end
++  wait until t+9 seconds
++end
++```
++
++If the test aborts mid-run, restart is not safe to resume — re-runs require a fresh sweep-back cleanup (the Test Cleanup phase, run standalone) before starting again.
++
++#### Observability
++
++The e2e run emits a structured per-event logfile in parallel with the test database. The two views are complementary:
++
++- **Logfile** — chronological narrative. *When* and *in what order* things happened: submit, retry, accept, block transitions, periodic stats. The line *is* the order.
++- **Database** — final and intermediate state. Audit trail, point-in-time aggregations, ad-hoc queries via JOINs.
++
++If something looks wrong in the database afterwards, the log tells you when it went wrong.
++
++The log stream is dedicated to the broadcast/internalize lifecycle, separate from the noisy `[Store]` debug logs already emitted by the gem (likely written via a `BSV.broadcast_log` or similar, configured to a per-run `tmp/e2e-{timestamp}.log` file and retained as a test artefact).
++
++Shape, illustrative:
++
++```
++2026-05-19T14:32:01Z action_id=42 wallet=alice→bob amount=5000 status=submit
++2026-05-19T14:32:01Z action_id=42 broadcast=inline result=accepted latency_ms=287
++2026-05-19T14:32:05Z action_id=43 wallet=bob→carol amount=4800 status=submit
++2026-05-19T14:32:05Z action_id=43 broadcast=inline result=stale_beef retry_queued attempt=1
++2026-05-19T14:32:14Z action_id=43 status=retry attempt=2
++2026-05-19T14:32:14Z action_id=43 broadcast=inline result=accepted latency_ms=143
++2026-05-19T14:35:00Z block_height=897234 mined_in_run=2 actions_total=312 retries=8 failures=0
++```
++
++Three properties to aim for:
++
++1. **Time-monotonic** — one line per event, real wall-clock timestamps. The narrative *is* the order.
++2. **`tail -f`-friendly** — single-line per event, scannable without a parser.
++3. **`grep`-friendly** — distinct event keys (`status=submit`, `status=retry`, `result=stale_beef`) so phenomena can be filtered in post.
++
++Post-run analysis becomes mechanical: `grep result=stale_beef <log>` for retry frequency, `grep result=accepted <log> | wc -l` for total acceptances, `grep failures=[1-9] <log>` for any reported failures. Watching the run live (`tail -f`) shows the broadcast_queue self-healing in real time — exactly the "stall and recover" behaviour the test is designed to surface.
++
++### Test Cleanup
++
++All wallets will attempt to return funds to the BSV_WALLET_WIF_SDK address.
++
++They will first consolidate balances, by selecting the 20 smallest outputs and the largest output and attempting to make a single self payment - the estimated fee.
++
++This will proceed until the wallet has fewer than 20 outputs. At which point it will attempt to send the full balance as a single payment back to the source wallet (less the estimated fee).
++
++These funds re-circulate, with appropriate warnings should wallet balances decay below a functional threshold — let's say 0.8m. The persistent-store and replenishment strategy will primarily be a sweep-back step, but over time will require manual top-up.
++
++### Cut-down on-chain smoke (CI, scheduled)
++
++The full 1-hour e2e run is too expensive and too long for per-PR CI. But there is value in a much smaller on-chain test that runs **scheduled** (weekly/nightly, or `workflow_dispatch` only) and proves the broadcast/internalize path still works against the real network. Scope: *liveness*, not stress.
++
++What it catches:
++
++- SDK provider plumbing broken (WoC API changed, ARC endpoint moved)
++- Broadcast path misconfigured (wrong network, wrong endpoint, bad serialization)
++- A wallet change broke broadcast/internalize for real-world tx
++- CI secrets/credentials wired up correctly
++
++What it does **not** test (these stay in the full e2e run):
++
++- Stale-BEEF retry behaviour
++- Block-boundary continuity
++- Sustained throughput
++- Rate-limit behaviour
++
++#### Minimal design
++
++```
++1. bin/import for each test wallet (scans chain for its existing UTXOs)
++2. Wallet A → Wallet B: small payment with broadcast (no_send: false)
++3. Poll ARC for tx status until SEEN_ON_NETWORK, or timeout at 30s
++4. Wallet B internalizes the BEEF
++5. Assert: balance changed as expected, broadcast_queue has no failed actions
++```
++
++Wall time: typically 30–60 seconds, mostly waiting for ARC to accept.
++
++#### State between runs
++
++Each CI run is ephemeral — there is no persistent wallet DB. State is re-derived via `bin/import` each run by scanning the chain for the deterministically-derived wallets' UTXOs. The on-chain side persists between runs (every run consumes a UTXO and creates change).
++
++#### Dust accumulation
++
++Without a sweep step per run, dust accumulates on-chain over time. Two reasonable approaches:
++
++- **No sweep in the smoke test itself** — keep the smoke minimal; a separate scheduled sweep workflow cleans up periodically (say, monthly).
++- **Sweep at end of every run** — adds ~30s; carries small risk of inconsistent state if killed mid-sweep.
++
++The first is cleaner. Sweep cadence is decoupled from smoke cadence.
++
++#### Scheduling and failure handling
++
++- `schedule:` cron — e.g. weekly. Sufficient to catch SDK regressions without burning CI minutes.
++- Lives in its own job, clearly labelled e.g. "On-chain smoke (scheduled)".
++- **Failure does not block PRs** (it isn't a PR check). Failure generates a noticeable signal — Slack/email/whatever — so it gets attended to.
++- A per-PR on-chain smoke would erode trust in CI due to transient network flakes. Scheduled-only is the sweet spot.
++
++#### Prerequisites
++
++- `BSV_WALLET_WIF_SDK` must be set as a CI secret (matching the existing `BSV_WALLET_WIF_*` pattern).
++- The funding wallet must hold enough sats to keep the test wallets above their working threshold across the gaps between manual top-ups.

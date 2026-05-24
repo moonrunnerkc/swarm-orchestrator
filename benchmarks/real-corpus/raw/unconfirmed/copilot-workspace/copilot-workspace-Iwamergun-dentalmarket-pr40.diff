@@ -1,0 +1,209 @@
+diff --git a/__tests__/components/error-page.test.tsx b/__tests__/components/error-page.test.tsx
+index 669cad5..7fc1e4f 100644
+--- a/__tests__/components/error-page.test.tsx
++++ b/__tests__/components/error-page.test.tsx
+@@ -15,7 +15,7 @@ describe('Error page', () => {
+ 
+   it('yeni marka logosunu göstermeli', () => {
+     render(<ErrorPage error={mockError} reset={mockReset} />)
+-    expect(screen.getByAltText('dentalışveriş')).toHaveAttribute('src', '/brand/dentalisveris-logo.svg')
++    expect(screen.getByAltText('DentAlışveriş')).toHaveAttribute('src', '/brand/dentalisveris-logo.svg')
+   })
+ 
+   it('"Tekrar Dene" butonu görünmeli', () => {
+diff --git a/__tests__/components/header-brand.test.tsx b/__tests__/components/header-brand.test.tsx
+new file mode 100644
+index 0000000..4b4a0c9
+--- /dev/null
++++ b/__tests__/components/header-brand.test.tsx
+@@ -0,0 +1,29 @@
++import React from 'react'
++import { describe, it, expect, vi } from 'vitest'
++import { render, screen } from '@testing-library/react'
++import { Header } from '@/components/layout/header'
++
++vi.mock('@/components/cart/CartButton', () => ({
++  CartButton: () => <button type="button">Cart</button>,
++}))
++
++vi.mock('@/app/contexts/AuthContext', () => ({
++  useAuth: () => ({
++    user: null,
++    loading: false,
++  }),
++}))
++
++vi.mock('@/lib/supabase/client', () => ({
++  createClient: vi.fn(),
++}))
++
++describe('Header brand area', () => {
++  it('should render icon + exact DentAlışveriş wordmark without subtitle', () => {
++    render(<Header />)
++
++    expect(screen.getByText('DentAlışveriş')).toBeInTheDocument()
++    expect(screen.getByAltText('DentAlışveriş')).toHaveAttribute('src', '/brand/dentalisveris-icon.svg')
++    expect(screen.queryByText('Premium dental marketplace')).not.toBeInTheDocument()
++  })
++})
+diff --git a/__tests__/components/loading-page.test.tsx b/__tests__/components/loading-page.test.tsx
+index 6ed2e70..8548385 100644
+--- a/__tests__/components/loading-page.test.tsx
++++ b/__tests__/components/loading-page.test.tsx
+@@ -11,7 +11,7 @@ describe('Loading page', () => {
+ 
+   it('yeni marka logosu render edilmeli', () => {
+     render(<Loading />)
+-    expect(screen.getByAltText('dentalışveriş')).toHaveAttribute('src', '/brand/dentalisveris-logo.svg')
++    expect(screen.getByAltText('DentAlışveriş')).toHaveAttribute('src', '/brand/dentalisveris-logo.svg')
+   })
+ 
+   it('spinner (animate-spin class\'lı element) mevcut olmalı', () => {
+diff --git a/__tests__/components/not-found-page.test.tsx b/__tests__/components/not-found-page.test.tsx
+index 4a0b7f4..f0e1fd1 100644
+--- a/__tests__/components/not-found-page.test.tsx
++++ b/__tests__/components/not-found-page.test.tsx
+@@ -11,7 +11,7 @@ describe('NotFound page', () => {
+ 
+   it('yeni marka logosunu göstermeli', () => {
+     render(<NotFound />)
+-    expect(screen.getByAltText('dentalışveriş')).toHaveAttribute('src', '/brand/dentalisveris-logo.svg')
++    expect(screen.getByAltText('DentAlışveriş')).toHaveAttribute('src', '/brand/dentalisveris-logo.svg')
+   })
+ 
+   it('"Sayfa Bulunamadı" başlığı render edilmeli', () => {
+diff --git a/components/admin/AdminSidebar.tsx b/components/admin/AdminSidebar.tsx
+index 4af6a59..042a208 100644
+--- a/components/admin/AdminSidebar.tsx
++++ b/components/admin/AdminSidebar.tsx
+@@ -66,7 +66,7 @@ export default function AdminSidebar({ mobileOpen = false, onClose }: AdminSideb
+               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/45">
+                 Spark Admin
+               </p>
+-              <h1 className="mt-1 text-lg font-semibold text-white">Dent Alışveriş</h1>
++              <h1 className="mt-1 text-lg font-semibold text-white">DentAlışveriş</h1>
+             </div>
+           </div>
+           <button
+diff --git a/components/brand/BrandLogo.tsx b/components/brand/BrandLogo.tsx
+index d10c274..370d4ee 100644
+--- a/components/brand/BrandLogo.tsx
++++ b/components/brand/BrandLogo.tsx
+@@ -25,7 +25,7 @@ const brandLogoSources: Record<BrandLogoVariant, { src: string; width: number; h
+ 
+ export function BrandLogo({
+   variant = 'full',
+-  alt = 'dentalışveriş',
++  alt = 'DentAlışveriş',
+   className,
+   ...props
+ }: BrandLogoProps) {
+diff --git a/components/layout/footer.tsx b/components/layout/footer.tsx
+index 7c2756e..0416c4f 100644
+--- a/components/layout/footer.tsx
++++ b/components/layout/footer.tsx
+@@ -84,7 +84,6 @@ export async function Footer() {
+                 className="h-10 w-auto max-w-full"
+               />
+             </Link>
+-            <p className="mb-5 text-xs font-medium uppercase tracking-[0.22em] text-slate-400">Premium dental marketplace</p>
+             <p className="max-w-md text-sm leading-6 text-slate-300">
+               Türkiye&apos;nin dental B2B ticaretini daha hızlı, daha güvenilir ve daha okunabilir bir arayüzle yeniden düzenliyoruz.
+             </p>
+@@ -197,7 +196,7 @@ export async function Footer() {
+ 
+       <div className="border-t border-primary/10 bg-white/55">
+         <div className="container-main flex flex-col items-center justify-between gap-4 py-6 text-sm text-slate-500 md:flex-row">
+-          <p>© {new Date().getFullYear()} Dent Alışveriş. Tüm hakları saklıdır.</p>
++          <p>© {new Date().getFullYear()} DentAlışveriş. Tüm hakları saklıdır.</p>
+           <div className="flex items-center gap-6">
+             <Link href="/gizlilik-politikasi" className="transition-colors hover:text-primary">
+               Gizlilik Politikası
+diff --git a/components/layout/header.tsx b/components/layout/header.tsx
+index 543b453..cbee2c5 100644
+--- a/components/layout/header.tsx
++++ b/components/layout/header.tsx
+@@ -120,12 +120,11 @@ export function Header() {
+             <Link href="/" className="flex items-center gap-3 shrink-0">
+               <BrandLogo
+                 variant="icon"
+-                className="h-12 w-12 shrink-0 sm:hidden"
+-              />
+-              <BrandLogo
+-                variant="full"
+-                className="hidden h-10 w-auto sm:block md:h-11"
++                className="h-12 w-12 shrink-0 rounded-2xl md:h-14 md:w-14"
+               />
++              <span className="font-serif text-[1.3rem] font-semibold tracking-[0.01em] text-slate-900 sm:text-[1.45rem] md:text-[1.6rem]">
++                DentAlışveriş
++              </span>
+             </Link>
+ 
+             {/* Search Bar - Desktop */}
+diff --git a/components/supplier/SupplierSidebar.tsx b/components/supplier/SupplierSidebar.tsx
+index 4bfee08..e8ff58a 100644
+--- a/components/supplier/SupplierSidebar.tsx
++++ b/components/supplier/SupplierSidebar.tsx
+@@ -29,7 +29,7 @@ export default function SupplierSidebar() {
+             className="h-11 w-11 shrink-0"
+           />
+           <div>
+-            <h1 className="text-lg font-bold leading-tight text-white">Dent Alışveriş</h1>
++            <h1 className="text-lg font-bold leading-tight text-white">DentAlışveriş</h1>
+             <p className="mt-1 text-xs text-gray-400">Tedarikçi Paneli</p>
+           </div>
+         </Link>
+diff --git a/public/brand/dentalisveris-icon.svg b/public/brand/dentalisveris-icon.svg
+index cd5a4ae..d795104 100644
+--- a/public/brand/dentalisveris-icon.svg
++++ b/public/brand/dentalisveris-icon.svg
+@@ -1,5 +1,5 @@
+ <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+-  <title>dentalışveriş icon</title>
++  <title>DentAlışveriş icon</title>
+   <rect width="512" height="512" rx="128" fill="#0B1220"/>
+   <rect x="64" y="64" width="384" height="384" rx="104" fill="#111827" stroke="#D7B56D" stroke-width="8"/>
+   <circle cx="256" cy="256" r="150" fill="url(#glow)" opacity="0.4"/>
+diff --git a/public/brand/dentalisveris-logo.svg b/public/brand/dentalisveris-logo.svg
+index ec83dc3..886f4b2 100644
+--- a/public/brand/dentalisveris-logo.svg
++++ b/public/brand/dentalisveris-logo.svg
+@@ -1,25 +1,19 @@
+-<svg width="960" height="240" viewBox="0 0 960 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+-  <title>dentalışveriş premium logo</title>
+-  <rect x="24" y="24" width="192" height="192" rx="52" fill="#0B1220"/>
+-  <rect x="36" y="36" width="168" height="168" rx="44" fill="#111827" stroke="#D7B56D" stroke-width="4"/>
+-  <circle cx="120" cy="120" r="66" fill="url(#glow)" opacity="0.42"/>
+-  <path d="M119.9 73.5C107.1 60.4 80.7 64.4 73.5 85.1C65.7 107.5 76.8 143.6 89.8 166.8C95.4 176.6 107.6 174.9 109.6 163.8L114.7 134.6C115.8 128.9 124 128.9 125.1 134.6L130.2 163.8C132.2 174.9 144.4 176.6 150 166.8C163 143.6 174.1 107.5 166.3 85.1C159.1 64.4 132.7 60.4 119.9 73.5Z" fill="#F8FAFC"/>
+-  <path d="M84 116C97.9 128.6 142.1 128.6 156 116" stroke="#D7B56D" stroke-width="9" stroke-linecap="round"/>
+-  <path d="M158 58L163.8 72.4L178 78L163.8 83.6L158 98L152.2 83.6L138 78L152.2 72.4L158 58Z" fill="#D7B56D"/>
+-  <circle cx="78" cy="64" r="5" fill="#D7B56D"/>
+-  <text x="252" y="112" fill="#0B1220" font-family="Outfit, Inter, Arial, sans-serif" font-size="72" font-weight="800" letter-spacing="-2.5">dentalışveriş</text>
+-  <path d="M253 139H667" stroke="url(#goldLine)" stroke-width="6" stroke-linecap="round"/>
+-  <circle cx="688" cy="139" r="6" fill="#D7B56D"/>
+-  <text x="252" y="182" fill="#6B7280" font-family="DM Sans, Inter, Arial, sans-serif" font-size="24" font-weight="600" letter-spacing="3">PREMIUM DENTAL MARKETPLACE</text>
++<svg width="960" height="220" viewBox="0 0 960 220" fill="none" xmlns="http://www.w3.org/2000/svg">
++  <title>DentAlışveriş logo</title>
++  <rect x="20" y="20" width="180" height="180" rx="48" fill="#0B1220"/>
++  <rect x="32" y="32" width="156" height="156" rx="40" fill="#111827" stroke="#D7B56D" stroke-width="4"/>
++  <circle cx="110" cy="110" r="61" fill="url(#glow)" opacity="0.42"/>
++  <path d="M109.9 67.8C98.1 55.7 73.8 59.4 67.2 78.5C60 99.2 70.3 132.6 82.2 154.1C87.4 163.2 98.6 161.6 100.4 151.3L105.1 124.2C106.1 119 113.7 119 114.7 124.2L119.4 151.3C121.2 161.6 132.4 163.2 137.6 154.1C149.5 132.6 159.8 99.2 152.6 78.5C146 59.4 121.7 55.7 109.9 67.8Z" fill="#F8FAFC"/>
++  <path d="M76 106C88.8 117.6 129.2 117.6 142 106" stroke="#D7B56D" stroke-width="8" stroke-linecap="round"/>
++  <path d="M144 54L149.2 67L162 72L149.2 77L144 90L138.8 77L126 72L138.8 67L144 54Z" fill="#D7B56D"/>
++  <circle cx="70" cy="60" r="4.5" fill="#D7B56D"/>
++
++  <text x="238" y="132" fill="#0B1220" font-family="Cormorant Garamond, Playfair Display, Georgia, serif" font-size="74" font-weight="700" letter-spacing="0.2">DentAlışveriş</text>
++
+   <defs>
+-    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(120 120) rotate(90) scale(66)">
++    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(110 110) rotate(90) scale(61)">
+       <stop stop-color="#D7B56D"/>
+       <stop offset="1" stop-color="#D7B56D" stop-opacity="0"/>
+     </radialGradient>
+-    <linearGradient id="goldLine" x1="253" y1="139" x2="667" y2="139" gradientUnits="userSpaceOnUse">
+-      <stop stop-color="#B98A32"/>
+-      <stop offset="0.5" stop-color="#F3D790"/>
+-      <stop offset="1" stop-color="#B98A32"/>
+-    </linearGradient>
+   </defs>
+ </svg>

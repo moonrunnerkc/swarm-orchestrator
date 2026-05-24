@@ -1,0 +1,26 @@
+{
+  "id": "devin-kelenagi-content-pilot-pr2",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "b4ae58f291f88b4347f946cf8d415125f9d73ed3",
+    "baseSha": "9dd1c651f46c40c5959f04bcc24ed18642066ee0",
+    "title": "fix: add edge runtime for Cloudflare Pages deployment",
+    "body": "## Summary\n\nAdds `export const runtime = 'edge'` to `/api/chat/route.ts` to fix Cloudflare Pages build error. Cloudflare Pages requires all non-static routes to use the Edge Runtime.\n\n**Error fixed:**\n```\nERROR: Failed to produce a Cloudflare Pages build from the project.\nThe following routes were not configured to run with the Edge Runtime:\n  - /api/chat\n```\n\n## Review & Testing Checklist for Human\n\n- [ ] After merging, retry Cloudflare Pages deployment — build should succeed\n- [ ] Test the `/api/chat` endpoint still works correctly with your API key\n\n### Notes\n- This is a one-line change: `export const runtime = 'edge'` added to `src/app/api/chat/route.ts`\n- The Edge Runtime uses Web APIs (fetch, Response, Request) which the route already uses — no other changes needed\n\nLink to Devin session: https://app.devin.ai/sessions/8fc7e30c5a6543d8aef8ed81385daf74\nRequested by: @kelenagi",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779588473-cloudflare-edge-fix",
+    "repository": "kelenagi/content-pilot"
+  },
+  "diffRef": {
+    "repository": "kelenagi/content-pilot",
+    "headSha": "b4ae58f291f88b4347f946cf8d415125f9d73ed3",
+    "baseSha": "9dd1c651f46c40c5959f04bcc24ed18642066ee0"
+  },
+  "vendoredDiffPath": "devin/devin-kelenagi-content-pilot-pr2.diff",
+  "vendoredAt": "2026-05-24T03:04:08.435Z",
+  "collectedAt": "2026-05-24T03:04:08.435Z"
+}

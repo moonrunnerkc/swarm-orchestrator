@@ -1,0 +1,521 @@
+diff --git a/codex-rs/README.md b/codex-rs/README.md
+index d219061a350e..a6f116cefc37 100644
+--- a/codex-rs/README.md
++++ b/codex-rs/README.md
+@@ -93,6 +93,8 @@ codex --sandbox danger-full-access
+ The same setting can be persisted in `~/.codex/config.toml` via the top-level `sandbox_mode = "MODE"` key, e.g. `sandbox_mode = "workspace-write"`.
+ In `workspace-write`, Codex also includes `~/.codex/memories` in its writable roots so memory maintenance does not require an extra approval.
+ 
++For a less-permissive alternative to `--yolo`, pass `--not-so-yolo` to run with workspace write access and route approvals through auto-review.
++
+ ## Code Organization
+ 
+ This folder is the root of a Cargo workspace. It contains quite a bit of experimental code, but here are the key crates:
+diff --git a/codex-rs/cli/src/main.rs b/codex-rs/cli/src/main.rs
+index 83790c2c54bc..430c61826b5f 100644
+--- a/codex-rs/cli/src/main.rs
++++ b/codex-rs/cli/src/main.rs
+@@ -63,6 +63,8 @@ use codex_login::AuthManager;
+ use codex_memories_write::clear_memory_roots_contents;
+ use codex_models_manager::bundled_models_response;
+ use codex_models_manager::manager::RefreshStrategy;
++use codex_protocol::config_types::ApprovalsReviewer;
++use codex_protocol::config_types::SandboxMode;
+ use codex_protocol::protocol::AskForApproval;
+ use codex_protocol::user_input::UserInput;
+ use codex_terminal_detection::TerminalName;
+@@ -1351,20 +1353,31 @@ async fn run_debug_prompt_input_command(
+         ));
+     }
+ 
+-    let approval_policy = if shared.dangerously_bypass_approvals_and_sandbox {
+-        Some(AskForApproval::Never)
+-    } else {
+-        interactive.approval_policy.map(Into::into)
+-    };
+-    let sandbox_mode = if shared.dangerously_bypass_approvals_and_sandbox {
+-        Some(codex_protocol::config_types::SandboxMode::DangerFullAccess)
+-    } else {
+-        shared.sandbox_mode.map(Into::into)
+-    };
++    let (approval_policy, approvals_reviewer, sandbox_mode) =
++        if shared.dangerously_bypass_approvals_and_sandbox {
++            (
++                Some(AskForApproval::Never),
++                None,
++                Some(SandboxMode::DangerFullAccess),
++            )
++        } else if shared.auto_review_cli_mode {
++            (
++                Some(AskForApproval::OnRequest),
++                Some(ApprovalsReviewer::AutoReview),
++                Some(SandboxMode::WorkspaceWrite),
++            )
++        } else {
++            (
++                interactive.approval_policy.map(Into::into),
++                None,
++                shared.sandbox_mode.map(Into::into),
++            )
++        };
+     let overrides = ConfigOverrides {
+         model: shared.model,
+         config_profile: shared.config_profile,
+         approval_policy,
++        approvals_reviewer,
+         sandbox_mode,
+         cwd: shared.cwd,
+         codex_self_exe: arg0_paths.codex_self_exe,
+@@ -2205,6 +2218,52 @@ mod tests {
+         assert_eq!(interactive.resume_session_id, None);
+     }
+ 
++    #[test]
++    fn resume_merges_not_so_yolo_flag() {
++        let interactive = finalize_resume_from_args(["codex", "resume", "--not-so-yolo"].as_ref());
++
++        assert!(interactive.auto_review_cli_mode);
++        assert!(interactive.resume_picker);
++        assert!(!interactive.resume_last);
++        assert_eq!(interactive.resume_session_id, None);
++    }
++
++    #[test]
++    fn exec_inherits_root_not_so_yolo_flag() {
++        let cli = MultitoolCli::try_parse_from(["codex", "--not-so-yolo", "exec", "hello"])
++            .expect("parse");
++        let MultitoolCli {
++            interactive,
++            config_overrides: _,
++            feature_toggles: _,
++            remote: _,
++            subcommand,
++        } = cli;
++        let Some(Subcommand::Exec(mut exec_cli)) = subcommand else {
++            panic!("expected exec subcommand");
++        };
++
++        exec_cli
++            .shared
++            .inherit_exec_root_options(&interactive.shared);
++
++        assert!(exec_cli.auto_review_cli_mode);
++        assert!(!exec_cli.dangerously_bypass_approvals_and_sandbox);
++    }
++
++    #[test]
++    fn not_so_yolo_conflicts_with_approval_policy() {
++        let err = MultitoolCli::try_parse_from([
++            "codex",
++            "--not-so-yolo",
++            "--ask-for-approval",
++            "on-request",
++        ])
++        .expect_err("conflicting permission flags should be rejected");
++
++        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
++    }
++
+     #[test]
+     fn fork_picker_logic_none_and_not_last() {
+         let interactive = finalize_fork_from_args(["codex", "fork"].as_ref());
+diff --git a/codex-rs/exec/src/cli.rs b/codex-rs/exec/src/cli.rs
+index 2b12898c3cdf..638620f00aca 100644
+--- a/codex-rs/exec/src/cli.rs
++++ b/codex-rs/exec/src/cli.rs
+@@ -41,7 +41,10 @@ pub struct Cli {
+         hide = true,
+         global = true,
+         default_value_t = false,
+-        conflicts_with = "dangerously_bypass_approvals_and_sandbox"
++        conflicts_with_all = [
++            "dangerously_bypass_approvals_and_sandbox",
++            "auto_review_cli_mode"
++        ]
+     )]
+     pub removed_full_auto: bool,
+ 
+@@ -155,6 +158,7 @@ fn mark_exec_global_args(cmd: clap::Command) -> clap::Command {
+         .mut_arg("dangerously_bypass_approvals_and_sandbox", |arg| {
+             arg.global(true)
+         })
++        .mut_arg("auto_review_cli_mode", |arg| arg.global(true))
+ }
+ 
+ #[derive(Debug, clap::Subcommand)]
+diff --git a/codex-rs/exec/src/cli_tests.rs b/codex-rs/exec/src/cli_tests.rs
+index 45f2aa330d8a..c0e746193531 100644
+--- a/codex-rs/exec/src/cli_tests.rs
++++ b/codex-rs/exec/src/cli_tests.rs
+@@ -35,6 +35,25 @@ fn resume_parses_prompt_after_global_flags() {
+     assert_eq!(effective_prompt.as_deref(), Some(PROMPT));
+ }
+ 
++#[test]
++fn resume_parses_prompt_after_not_so_yolo_global_flag() {
++    const PROMPT: &str = "echo resume-with-not-so-yolo-after-subcommand";
++    let cli = Cli::parse_from(["codex-exec", "resume", "--last", "--not-so-yolo", PROMPT]);
++
++    assert!(cli.auto_review_cli_mode);
++    let Some(Command::Resume(args)) = cli.command else {
++        panic!("expected resume command");
++    };
++    let effective_prompt = args.prompt.clone().or_else(|| {
++        if args.last {
++            args.session_id.clone()
++        } else {
++            None
++        }
++    });
++    assert_eq!(effective_prompt.as_deref(), Some(PROMPT));
++}
++
+ #[test]
+ fn resume_accepts_output_last_message_flag_after_subcommand() {
+     const PROMPT: &str = "echo resume-with-output-file";
+diff --git a/codex-rs/exec/src/lib.rs b/codex-rs/exec/src/lib.rs
+index 784653620639..b58a3fa7e589 100644
+--- a/codex-rs/exec/src/lib.rs
++++ b/codex-rs/exec/src/lib.rs
+@@ -75,6 +75,7 @@ use codex_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID;
+ use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
+ use codex_otel::set_parent_from_context;
+ use codex_otel::traceparent_context_from_env;
++use codex_protocol::config_types::ApprovalsReviewer;
+ use codex_protocol::config_types::SandboxMode;
+ use codex_protocol::models::PermissionProfile;
+ use codex_protocol::protocol::AskForApproval;
+@@ -249,6 +250,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
+         config_profile,
+         sandbox_mode: sandbox_mode_cli_arg,
+         dangerously_bypass_approvals_and_sandbox,
++        auto_review_cli_mode,
+         cwd,
+         add_dir,
+     } = shared;
+@@ -278,9 +280,20 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
+         Some(SandboxMode::WorkspaceWrite)
+     } else if dangerously_bypass_approvals_and_sandbox {
+         Some(SandboxMode::DangerFullAccess)
++    } else if auto_review_cli_mode {
++        Some(SandboxMode::WorkspaceWrite)
+     } else {
+         sandbox_mode_cli_arg.map(Into::<SandboxMode>::into)
+     };
++    let (approval_policy, approvals_reviewer) = if auto_review_cli_mode {
++        (
++            Some(AskForApproval::OnRequest),
++            Some(ApprovalsReviewer::AutoReview),
++        )
++    } else {
++        // Default to never ask for approvals in headless mode. Feature flags can override.
++        (Some(AskForApproval::Never), None)
++    };
+ 
+     // Parse `-c` overrides from the CLI.
+     let cli_kv_overrides = match config_overrides.parse_overrides() {
+@@ -394,9 +407,8 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
+         model,
+         review_model: None,
+         config_profile,
+-        // Default to never ask for approvals in headless mode. Feature flags can override.
+-        approval_policy: Some(AskForApproval::Never),
+-        approvals_reviewer: None,
++        approval_policy,
++        approvals_reviewer,
+         sandbox_mode,
+         permission_profile: None,
+         cwd: resolved_cwd,
+diff --git a/codex-rs/exec/tests/suite/mod.rs b/codex-rs/exec/tests/suite/mod.rs
+index c6fa0f9fde69..081a6d2ca36d 100644
+--- a/codex-rs/exec/tests/suite/mod.rs
++++ b/codex-rs/exec/tests/suite/mod.rs
+@@ -4,6 +4,7 @@ mod apply_patch;
+ mod auth_env;
+ mod ephemeral;
+ mod mcp_required_exit;
++mod not_so_yolo;
+ mod originator;
+ mod output_schema;
+ mod prompt_stdin;
+diff --git a/codex-rs/exec/tests/suite/not_so_yolo.rs b/codex-rs/exec/tests/suite/not_so_yolo.rs
+new file mode 100644
+index 000000000000..d6a59c8cec68
+--- /dev/null
++++ b/codex-rs/exec/tests/suite/not_so_yolo.rs
+@@ -0,0 +1,46 @@
++#![allow(clippy::unwrap_used, clippy::expect_used)]
++
++use anyhow::Context;
++use codex_utils_cargo_bin::find_resource;
++use core_test_support::test_codex_exec::test_codex_exec;
++
++fn exec_fixture() -> anyhow::Result<std::path::PathBuf> {
++    Ok(find_resource!("tests/fixtures/cli_responses_fixture.sse")?)
++}
++
++#[test]
++fn not_so_yolo_uses_on_request_approvals_with_workspace_write() -> anyhow::Result<()> {
++    let test = test_codex_exec();
++    let fixture = exec_fixture()?;
++    let repo_root = codex_utils_cargo_bin::repo_root()?;
++
++    let output = test
++        .cmd()
++        .env("CODEX_RS_SSE_FIXTURE", &fixture)
++        .arg("--skip-git-repo-check")
++        .arg("--not-so-yolo")
++        .arg("-C")
++        .arg(&repo_root)
++        .arg("hello")
++        .output()
++        .context("not-so-yolo run should succeed")?;
++
++    assert!(output.status.success(), "run failed: {output:?}");
++
++    let stderr = String::from_utf8(output.stderr)?;
++    assert!(
++        stderr.contains("approval: on-request"),
++        "stderr missing on-request approval mode: {stderr}"
++    );
++    let expected_sandbox = if cfg!(target_os = "windows") {
++        "sandbox: read-only"
++    } else {
++        "sandbox: workspace-write"
++    };
++    assert!(
++        stderr.contains(expected_sandbox),
++        "stderr missing expected sandbox summary `{expected_sandbox}`: {stderr}"
++    );
++
++    Ok(())
++}
+diff --git a/codex-rs/tui/src/cli.rs b/codex-rs/tui/src/cli.rs
+index 3d47442c905d..4c5c57763e3e 100644
+--- a/codex-rs/tui/src/cli.rs
++++ b/codex-rs/tui/src/cli.rs
+@@ -134,4 +134,7 @@ fn mark_tui_args(cmd: clap::Command) -> clap::Command {
+     cmd.mut_arg("dangerously_bypass_approvals_and_sandbox", |arg| {
+         arg.conflicts_with("approval_policy")
+     })
++    .mut_arg("auto_review_cli_mode", |arg| {
++        arg.conflicts_with("approval_policy")
++    })
+ }
+diff --git a/codex-rs/tui/src/lib.rs b/codex-rs/tui/src/lib.rs
+index 39b4294b4aae..cb63decf7a20 100644
+--- a/codex-rs/tui/src/lib.rs
++++ b/codex-rs/tui/src/lib.rs
+@@ -44,6 +44,7 @@ use codex_login::default_client::set_default_client_residency_requirement;
+ use codex_login::enforce_login_restrictions;
+ use codex_protocol::ThreadId;
+ use codex_protocol::config_types::AltScreenMode;
++use codex_protocol::config_types::ApprovalsReviewer;
+ use codex_protocol::config_types::SandboxMode;
+ use codex_protocol::config_types::WindowsSandboxLevel;
+ use codex_protocol::protocol::AskForApproval;
+@@ -697,17 +698,26 @@ pub async fn run_main(
+         .cwd
+         .clone()
+         .filter(|_| matches!(app_server_target, AppServerTarget::Remote { .. }));
+-    let (sandbox_mode, approval_policy) = if cli.dangerously_bypass_approvals_and_sandbox {
+-        (
+-            Some(SandboxMode::DangerFullAccess),
+-            Some(AskForApproval::Never),
+-        )
+-    } else {
+-        (
+-            cli.sandbox_mode.map(Into::<SandboxMode>::into),
+-            cli.approval_policy.map(Into::into),
+-        )
+-    };
++    let (sandbox_mode, approval_policy, approvals_reviewer) =
++        if cli.dangerously_bypass_approvals_and_sandbox {
++            (
++                Some(SandboxMode::DangerFullAccess),
++                Some(AskForApproval::Never),
++                None,
++            )
++        } else if cli.auto_review_cli_mode {
++            (
++                Some(SandboxMode::WorkspaceWrite),
++                Some(AskForApproval::OnRequest),
++                Some(ApprovalsReviewer::AutoReview),
++            )
++        } else {
++            (
++                cli.sandbox_mode.map(Into::<SandboxMode>::into),
++                cli.approval_policy.map(Into::into),
++                None,
++            )
++        };
+ 
+     // Map the legacy --search flag to the canonical web_search mode.
+     if cli.web_search {
+@@ -842,6 +852,7 @@ pub async fn run_main(
+     let overrides = ConfigOverrides {
+         model,
+         approval_policy,
++        approvals_reviewer,
+         sandbox_mode,
+         cwd: if matches!(app_server_target, AppServerTarget::Remote { .. }) {
+             None
+diff --git a/codex-rs/utils/cli/src/shared_options.rs b/codex-rs/utils/cli/src/shared_options.rs
+index c174a7b5a654..d1521095d96b 100644
+--- a/codex-rs/utils/cli/src/shared_options.rs
++++ b/codex-rs/utils/cli/src/shared_options.rs
+@@ -47,6 +47,14 @@ pub struct SharedCliOptions {
+     )]
+     pub dangerously_bypass_approvals_and_sandbox: bool,
+ 
++    /// Let Codex auto-review approval requests while running with workspace write access.
++    #[arg(
++        long = "not-so-yolo",
++        default_value_t = false,
++        conflicts_with = "dangerously_bypass_approvals_and_sandbox"
++    )]
++    pub auto_review_cli_mode: bool,
++
+     /// Tell the agent to use the specified directory as its working root.
+     #[clap(long = "cd", short = 'C', value_name = "DIR")]
+     pub cwd: Option<PathBuf>,
+@@ -58,8 +66,9 @@ pub struct SharedCliOptions {
+ 
+ impl SharedCliOptions {
+     pub fn inherit_exec_root_options(&mut self, root: &Self) {
+-        let self_selected_sandbox_mode =
+-            self.sandbox_mode.is_some() || self.dangerously_bypass_approvals_and_sandbox;
++        let self_selected_permission_mode = self.sandbox_mode.is_some()
++            || self.dangerously_bypass_approvals_and_sandbox
++            || self.auto_review_cli_mode;
+         let Self {
+             images,
+             model,
+@@ -68,6 +77,7 @@ impl SharedCliOptions {
+             config_profile,
+             sandbox_mode,
+             dangerously_bypass_approvals_and_sandbox,
++            auto_review_cli_mode,
+             cwd,
+             add_dir,
+         } = self;
+@@ -79,6 +89,7 @@ impl SharedCliOptions {
+             config_profile: root_config_profile,
+             sandbox_mode: root_sandbox_mode,
+             dangerously_bypass_approvals_and_sandbox: root_dangerously_bypass_approvals_and_sandbox,
++            auto_review_cli_mode: root_auto_review_cli_mode,
+             cwd: root_cwd,
+             add_dir: root_add_dir,
+         } = root;
+@@ -98,9 +109,10 @@ impl SharedCliOptions {
+         if sandbox_mode.is_none() {
+             *sandbox_mode = *root_sandbox_mode;
+         }
+-        if !self_selected_sandbox_mode {
++        if !self_selected_permission_mode {
+             *dangerously_bypass_approvals_and_sandbox =
+                 *root_dangerously_bypass_approvals_and_sandbox;
++            *auto_review_cli_mode = *root_auto_review_cli_mode;
+         }
+         if cwd.is_none() {
+             cwd.clone_from(root_cwd);
+@@ -118,8 +130,9 @@ impl SharedCliOptions {
+     }
+ 
+     pub fn apply_subcommand_overrides(&mut self, subcommand: Self) {
+-        let subcommand_selected_sandbox_mode = subcommand.sandbox_mode.is_some()
+-            || subcommand.dangerously_bypass_approvals_and_sandbox;
++        let subcommand_selected_permission_mode = subcommand.sandbox_mode.is_some()
++            || subcommand.dangerously_bypass_approvals_and_sandbox
++            || subcommand.auto_review_cli_mode;
+         let Self {
+             images,
+             model,
+@@ -128,6 +141,7 @@ impl SharedCliOptions {
+             config_profile,
+             sandbox_mode,
+             dangerously_bypass_approvals_and_sandbox,
++            auto_review_cli_mode,
+             cwd,
+             add_dir,
+         } = subcommand;
+@@ -144,10 +158,11 @@ impl SharedCliOptions {
+         if let Some(config_profile) = config_profile {
+             self.config_profile = Some(config_profile);
+         }
+-        if subcommand_selected_sandbox_mode {
++        if subcommand_selected_permission_mode {
+             self.sandbox_mode = sandbox_mode;
+             self.dangerously_bypass_approvals_and_sandbox =
+                 dangerously_bypass_approvals_and_sandbox;
++            self.auto_review_cli_mode = auto_review_cli_mode;
+         }
+         if let Some(cwd) = cwd {
+             self.cwd = Some(cwd);
+@@ -160,3 +175,66 @@ impl SharedCliOptions {
+         }
+     }
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use clap::Parser;
++    use pretty_assertions::assert_eq;
++
++    #[derive(Debug, Parser)]
++    struct TestCli {
++        #[clap(flatten)]
++        shared: SharedCliOptions,
++    }
++
++    #[test]
++    fn parses_not_so_yolo() {
++        let cli = TestCli::parse_from(["test", "--not-so-yolo"]);
++
++        assert!(cli.shared.auto_review_cli_mode);
++        assert!(!cli.shared.dangerously_bypass_approvals_and_sandbox);
++    }
++
++    #[test]
++    fn yolo_and_not_so_yolo_conflict() {
++        let err = TestCli::try_parse_from(["test", "--yolo", "--not-so-yolo"])
++            .expect_err("permission modes should conflict");
++
++        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
++    }
++
++    #[test]
++    fn not_so_yolo_inherits_to_exec_subcommand_options() {
++        let root = SharedCliOptions {
++            auto_review_cli_mode: true,
++            ..Default::default()
++        };
++        let mut exec = SharedCliOptions::default();
++
++        exec.inherit_exec_root_options(&root);
++
++        assert!(exec.auto_review_cli_mode);
++        assert!(!exec.dangerously_bypass_approvals_and_sandbox);
++    }
++
++    #[test]
++    fn subcommand_permission_mode_blocks_root_not_so_yolo() {
++        let root = SharedCliOptions {
++            auto_review_cli_mode: true,
++            ..Default::default()
++        };
++        let mut exec = SharedCliOptions {
++            sandbox_mode: Some(SandboxModeCliArg::ReadOnly),
++            ..Default::default()
++        };
++
++        exec.inherit_exec_root_options(&root);
++
++        assert!(!exec.auto_review_cli_mode);
++        assert!(matches!(
++            exec.sandbox_mode,
++            Some(SandboxModeCliArg::ReadOnly)
++        ));
++    }
++}

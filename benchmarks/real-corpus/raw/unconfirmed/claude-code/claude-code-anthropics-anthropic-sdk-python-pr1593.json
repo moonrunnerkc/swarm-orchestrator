@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1593",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1593,
+    "headSha": "e34650c7ec1929f5ad429b5027ee9e3cc612ded9",
+    "baseSha": "5db69c6d5f3e7e39023973ca4b235046e5661157",
+    "title": "feat: enable Trusted Publishing for PyPI uploads",
+    "body": "## Summary\n\nReplace manual `PYPI_TOKEN` approach with OIDC-based authentication using `pypa/gh-action-pypi-publish`. This eliminates the need to manage and rotate API tokens, improving security posture and reducing supply chain attack risk.\n\n## Changes\n\n1. **`.github/workflows/publish-pypi.yml`**: \n   - Changed trigger from `workflow_dispatch` to `release` with `types: [published]`\n   - Added `permissions: id-token: write` for OIDC authentication\n   - Replaced `bash ./bin/publish-pypi` with `pypa/gh-action-pypi-publish@release/v1`\n   - Removed `PYPI_TOKEN` secret dependency\n\n## Why Trusted Publishing?\n\nFrom [PyPI documentation](https://docs.pypi.org/trusted-publishers/):\n> Trusted Publishers allow you to securely authenticate with PyPI without needing to manage a PyPI API token as a GitHub Secret.\n\nBenefits:\n- **No token rotation**: Eliminates the risk of leaked/stale tokens\n- **Principle of least privilege**: Only GitHub Actions can publish, not arbitrary code\n- **Audit trail**: Every publish is tied to a specific GitHub release\n- **Reduced attack surface**: No long-lived secrets to manage\n\n## Setup Requirements\n\nFor this to work, the repo needs to be registered as a Trusted Publisher on PyPI:\n1. Go to https://pypi.org/manage/account/publishing/\n2. Add a new publisher for the `anthropic` package\n3. Select GitHub Actions environment and this repository\n\n## Related Issue\n\nCloses #1568 — _Use Trusted Publishing to upload to PyPI_\n\n## Risk\n\nLow. This is additive — the old workflow still works manually for recovery scenarios. After testing, the old token can be deleted.",
+    "author": "AliSharjeell",
+    "headRef": "feat/trusted-publishing",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "e34650c7ec1929f5ad429b5027ee9e3cc612ded9",
+    "baseSha": "5db69c6d5f3e7e39023973ca4b235046e5661157"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1593.diff",
+  "vendoredAt": "2026-05-24T03:16:51.825Z",
+  "collectedAt": "2026-05-24T03:16:51.825Z"
+}

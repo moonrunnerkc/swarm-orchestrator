@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-opd-ai-nmcd-pr144",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 144,
+    "headSha": "f516c1f0a733e088859614831c80aeea32772e1a",
+    "baseSha": "ad414e971f6672bfdd1fbf7f6d7dee8258df59f4",
+    "title": "Fix reorg data loss and RPC timer leak",
+    "body": "Addresses two audit findings: expired names lost during blockchain reorganizations (HIGH-4) and accumulating auto-lock timers in RPC (MEDIUM-4).\n\n## Expired name restoration during reorg\n\nBlockchain reorgs across name expiration boundaries permanently deleted names. Added rollback support:\n\n- **Storage**: `StoreExpiredName()` persists names to `expiredNamesBucket` indexed by expiration height before deletion\n- **Restoration**: `RestoreExpiredNamesForBlock()` restores names when disconnecting blocks, maintaining both name records and expiration index\n- **Cleanup**: `CleanupOldExpiredNames()` prunes old backups beyond reorg safety window\n- **Integration**: `handleExpiredNames()` stores before deleting; `rollbackNameOperations()` restores as first step\n\nExample rollback scenario:\n```go\n// Name expires at height 36101\nhandleExpiredNames(36101)  // Stores then deletes\n\n// Reorg disconnects block 36101\nrollbackNameOperations(block) // RestoreExpiredNamesForBlock(36101)\n// Name is now active again with original ExpiresAt\n```\n\n## RPC timer cancellation\n\nMultiple `walletpassphrase` calls created accumulating timers - earlier timers could lock wallet before expected timeout. \n\n- Added `autoLockTimer` field to `Server` with dedicated mutex\n- Cancel existing timer before creating new one in `walletpassphrase`\n- Cancel timer on manual `walletlock`\n- Timer self-clears on expiration\n\n**All tests pass with race detector enabled.**",
+    "author": "Copilot",
+    "headRef": "copilot/execute-backlog-tasks-priority",
+    "repository": "opd-ai/nmcd"
+  },
+  "diffRef": {
+    "repository": "opd-ai/nmcd",
+    "headSha": "f516c1f0a733e088859614831c80aeea32772e1a",
+    "baseSha": "ad414e971f6672bfdd1fbf7f6d7dee8258df59f4"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-opd-ai-nmcd-pr144.diff",
+  "vendoredAt": "2026-05-24T03:05:57.218Z",
+  "collectedAt": "2026-05-24T03:05:57.218Z"
+}

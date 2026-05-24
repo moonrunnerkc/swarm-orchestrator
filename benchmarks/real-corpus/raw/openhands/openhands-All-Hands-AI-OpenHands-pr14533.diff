@@ -1,0 +1,488 @@
+diff --git a/enterprise/server/routes/integration/bitbucket_dc.py b/enterprise/server/routes/integration/bitbucket_dc.py
+index 07e05f33a8cf..d143d41b8ca1 100644
+--- a/enterprise/server/routes/integration/bitbucket_dc.py
++++ b/enterprise/server/routes/integration/bitbucket_dc.py
+@@ -5,7 +5,15 @@
+ import json
+ import secrets
+ 
+-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
++from fastapi import (
++    APIRouter,
++    BackgroundTasks,
++    Depends,
++    Header,
++    HTTPException,
++    Request,
++    status,
++)
+ from fastapi.responses import JSONResponse
+ from integrations.bitbucket_data_center.bitbucket_dc_manager import BitbucketDCManager
+ from integrations.bitbucket_data_center.bitbucket_dc_service import (
+@@ -15,11 +23,14 @@
+ from integrations.utils import HOST_URL, IS_LOCAL_DEPLOYMENT
+ from pydantic import BaseModel
+ from server.auth.authorization import Permission, require_permission
++from server.auth.constants import AUTOMATION_EVENT_FORWARDING_ENABLED
+ from server.auth.token_manager import TokenManager
++from server.services.automation_event_service import AutomationEventService
+ from storage.bitbucket_dc_webhook_store import BitbucketDCWebhookStore
+ from storage.redis import get_redis_client_async
+ 
+ from openhands.app_server.config_api.config_models import AppMode
++from openhands.app_server.integrations.provider import ProviderType
+ from openhands.app_server.utils.logger import openhands_logger as logger
+ 
+ bitbucket_dc_integration_router = APIRouter(prefix='/integration')
+@@ -27,9 +38,27 @@
+ webhook_store = BitbucketDCWebhookStore()
+ token_manager = TokenManager()
+ bitbucket_dc_manager = BitbucketDCManager(token_manager)
++automation_event_service = AutomationEventService(token_manager)
+ 
+ BITBUCKET_DC_WEBHOOK_NAME = 'OpenHands Resolver'
+-BITBUCKET_DC_WEBHOOK_EVENTS = ['pr:comment:added', 'pr:comment:edited']
++BITBUCKET_DC_WEBHOOK_EVENTS = [
++    'repo:refs_changed',
++    'repo:comment:added',
++    'repo:comment:edited',
++    'repo:comment:deleted',
++    'pr:opened',
++    'pr:from_ref_updated',
++    'pr:modified',
++    'pr:reviewer:approved',
++    'pr:reviewer:unapproved',
++    'pr:reviewer:needs_work',
++    'pr:merged',
++    'pr:declined',
++    'pr:deleted',
++    'pr:comment:added',
++    'pr:comment:edited',
++    'pr:comment:deleted',
++]
+ BITBUCKET_DC_WEBHOOK_URL = f'{HOST_URL}/integration/bitbucket-dc/events'
+ 
+ 
+@@ -184,6 +213,22 @@ def _extract_repo_identity(payload_data: dict) -> tuple[str, str]:
+     return project.get('key') or '', repository.get('slug') or ''
+ 
+ 
++def _normalize_bitbucket_dc_event_payload(
++    payload_data: dict,
++    event_key: str | None,
++) -> dict:
++    """Ensure automation parsing can identify the Bitbucket DC event key.
++
++    Bitbucket DC sends the event key both in ``X-Event-Key`` and, for normal
++    deliveries, in the JSON payload. Some tests and proxies only preserve the
++    header, so normalize the payload before forwarding it internally.
++    """
++    if event_key and not payload_data.get('eventKey'):
++        payload_data = dict(payload_data)
++        payload_data['eventKey'] = event_key
++    return payload_data
++
++
+ async def verify_bitbucket_dc_signature(
+     *,
+     signature_header: str | None,
+@@ -528,6 +573,7 @@ async def uninstall_bitbucket_dc_webhook(
+ @bitbucket_dc_integration_router.post('/bitbucket-dc/events')
+ async def bitbucket_dc_events(
+     request: Request,
++    background_tasks: BackgroundTasks,
+     x_hub_signature: str | None = Header(None),
+     x_event_key: str | None = Header(None),
+     x_request_id: str | None = Header(None),
+@@ -545,6 +591,8 @@ async def bitbucket_dc_events(
+                 content={'message': 'Bitbucket DC ping acknowledged.'},
+             )
+ 
++        payload_data = _normalize_bitbucket_dc_event_payload(payload_data, x_event_key)
++
+         project_key, repo_slug = _extract_repo_identity(payload_data)
+         await verify_bitbucket_dc_signature(
+             signature_header=x_hub_signature,
+@@ -571,12 +619,21 @@ async def bitbucket_dc_events(
+                 content={'message': 'Duplicate Bitbucket DC event ignored.'},
+             )
+ 
++        installation_id = f'{project_key}/{repo_slug}'
++        if AUTOMATION_EVENT_FORWARDING_ENABLED:
++            background_tasks.add_task(
++                automation_event_service.forward_event,
++                provider=ProviderType.BITBUCKET_DATA_CENTER,
++                payload=payload_data,
++                installation_id=installation_id,
++            )
++
+         message = Message(
+             source=SourceType.BITBUCKET_DATA_CENTER,
+             message={
+                 'payload': payload_data,
+                 'event_key': x_event_key,
+-                'installation_id': f'{project_key}/{repo_slug}',
++                'installation_id': installation_id,
+             },
+         )
+         await bitbucket_dc_manager.receive_message(message)
+diff --git a/enterprise/server/services/automation_event_service.py b/enterprise/server/services/automation_event_service.py
+index f17b9725b0ab..cda98c1c29cb 100644
+--- a/enterprise/server/services/automation_event_service.py
++++ b/enterprise/server/services/automation_event_service.py
+@@ -247,10 +247,26 @@ def _extract_owner_info(
+             repo = payload.get('repository', {})
+             owner = repo.get('owner', {})
+             return owner.get('login'), owner.get('type'), owner.get('id')
++        if provider == ProviderType.BITBUCKET_DATA_CENTER:
++            repo = self._extract_bitbucket_data_center_repository(payload)
++            project = repo.get('project') or {}
++            return project.get('key'), 'Project', None
+ 
+         logger.warning(f'Unsupported provider ({provider.value})')
+         return None, None, None
+ 
++    def _extract_bitbucket_data_center_repository(
++        self,
++        payload: dict[str, Any],
++    ) -> dict[str, Any]:
++        """Extract the target repository from a Bitbucket Data Center payload."""
++        pull_request = payload.get('pullRequest') or {}
++        return (
++            (pull_request.get('toRef') or {}).get('repository')
++            or payload.get('repository')
++            or {}
++        )
++
+     def _build_event_payload(
+         self,
+         org_context: OrgContext,
+diff --git a/enterprise/tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_webhook.py b/enterprise/tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_webhook.py
+index 0fb90b606401..52c9ff0541e0 100644
+--- a/enterprise/tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_webhook.py
++++ b/enterprise/tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_webhook.py
+@@ -8,6 +8,7 @@
+ import pytest
+ from fastapi import HTTPException
+ from server.routes.integration.bitbucket_dc import (
++    BITBUCKET_DC_WEBHOOK_EVENTS,
+     bitbucket_dc_events,
+     enroll_bitbucket_dc_webhook,
+     get_bitbucket_dc_resources,
+@@ -44,6 +45,27 @@ def _pr_comment_body() -> bytes:
+     ).encode()
+ 
+ 
++def test_bitbucket_dc_webhook_events_cover_automation_sources():
++    assert {
++        'repo:refs_changed',
++        'repo:comment:added',
++        'repo:comment:edited',
++        'repo:comment:deleted',
++        'pr:opened',
++        'pr:from_ref_updated',
++        'pr:modified',
++        'pr:reviewer:approved',
++        'pr:reviewer:unapproved',
++        'pr:reviewer:needs_work',
++        'pr:merged',
++        'pr:declined',
++        'pr:deleted',
++        'pr:comment:added',
++        'pr:comment:edited',
++        'pr:comment:deleted',
++    }.issubset(set(BITBUCKET_DC_WEBHOOK_EVENTS))
++
++
+ @pytest.mark.asyncio
+ @patch('server.routes.integration.bitbucket_dc.IS_LOCAL_DEPLOYMENT', False)
+ @patch('server.routes.integration.bitbucket_dc.webhook_store')
+@@ -61,6 +83,7 @@ async def test_signature_verification_rejects_bad_signature_with_403(
+     with pytest.raises(HTTPException) as exc:
+         await bitbucket_dc_events(
+             request=_request_with_body(body),
++            background_tasks=MagicMock(),
+             x_hub_signature='sha256=deadbeef',
+             x_event_key='pr:comment:added',
+             x_request_id='req-1',
+@@ -87,6 +110,7 @@ async def test_missing_repo_identity_rejected_with_403(
+     with pytest.raises(HTTPException) as exc:
+         await bitbucket_dc_events(
+             request=_request_with_body(body),
++            background_tasks=MagicMock(),
+             x_hub_signature=_signed(body),
+             x_event_key='pr:comment:added',
+             x_request_id='req-1',
+@@ -114,6 +138,7 @@ async def test_duplicate_event_returns_200_and_skips_dispatch(
+ 
+     response = await bitbucket_dc_events(
+         request=_request_with_body(body),
++        background_tasks=MagicMock(),
+         x_hub_signature=_signed(body),
+         x_event_key='pr:comment:added',
+         x_request_id='req-1',
+@@ -142,6 +167,7 @@ async def test_valid_pr_comment_event_dispatches_to_manager_and_returns_200(
+ 
+     response = await bitbucket_dc_events(
+         request=_request_with_body(body),
++        background_tasks=MagicMock(),
+         x_hub_signature=_signed(body),
+         x_event_key='pr:comment:added',
+         x_request_id='req-1',
+@@ -155,6 +181,52 @@ async def test_valid_pr_comment_event_dispatches_to_manager_and_returns_200(
+     assert response.status_code == 200
+ 
+ 
++@pytest.mark.asyncio
++@patch('server.routes.integration.bitbucket_dc.automation_event_service')
++@patch('server.routes.integration.bitbucket_dc.IS_LOCAL_DEPLOYMENT', False)
++@patch('server.routes.integration.bitbucket_dc.webhook_store')
++@patch('server.routes.integration.bitbucket_dc.bitbucket_dc_manager')
++@patch('server.routes.integration.bitbucket_dc.get_redis_client_async')
++async def test_valid_event_forwards_to_automations_when_enabled(
++    mock_get_redis_client_async,
++    mock_manager,
++    mock_store,
++    mock_automation_service,
++):
++    mock_store.get_webhook_secret = AsyncMock(return_value='shared-secret')
++    mock_manager.receive_message = AsyncMock()
++    redis = AsyncMock()
++    redis.set = AsyncMock(return_value=True)
++    mock_get_redis_client_async.return_value = redis
++
++    body = _pr_comment_body()
++    background_tasks = MagicMock()
++
++    with patch(
++        'server.routes.integration.bitbucket_dc.AUTOMATION_EVENT_FORWARDING_ENABLED',
++        True,
++    ):
++        response = await bitbucket_dc_events(
++            request=_request_with_body(body),
++            background_tasks=background_tasks,
++            x_hub_signature=_signed(body),
++            x_event_key='pr:opened',
++            x_request_id='req-1',
++        )
++
++    assert response.status_code == 200
++    background_tasks.add_task.assert_called_once_with(
++        mock_automation_service.forward_event,
++        provider=ProviderType.BITBUCKET_DATA_CENTER,
++        payload={
++            **json.loads(body),
++            'eventKey': 'pr:opened',
++        },
++        installation_id='PROJ/myrepo',
++    )
++    mock_manager.receive_message.assert_awaited_once()
++
++
+ @pytest.mark.asyncio
+ @patch('server.routes.integration.bitbucket_dc.bitbucket_dc_manager')
+ async def test_diagnostics_ping_returns_200_without_dispatch(mock_manager):
+@@ -162,6 +234,7 @@ async def test_diagnostics_ping_returns_200_without_dispatch(mock_manager):
+ 
+     response = await bitbucket_dc_events(
+         request=_request_with_body(b'{}'),
++        background_tasks=MagicMock(),
+         x_hub_signature=None,
+         x_event_key='diagnostics:ping',
+         x_request_id='ping-1',
+@@ -247,7 +320,7 @@ async def test_enroll_bitbucket_dc_webhook_generates_secret_and_stores_row(
+     assert response.success is True
+     assert response.webhook_secret == 'generated-secret'
+     assert response.webhook_url.endswith('/integration/bitbucket-dc/events')
+-    assert response.events == ['pr:comment:added', 'pr:comment:edited']
++    assert response.events == BITBUCKET_DC_WEBHOOK_EVENTS
+ 
+ 
+ @pytest.mark.asyncio
+diff --git a/enterprise/tests/unit/server/services/test_automation_event_service.py b/enterprise/tests/unit/server/services/test_automation_event_service.py
+index 54e8d6b7bd02..e727cd29e4e3 100644
+--- a/enterprise/tests/unit/server/services/test_automation_event_service.py
++++ b/enterprise/tests/unit/server/services/test_automation_event_service.py
+@@ -92,6 +92,37 @@ def github_user_payload():
+     }
+ 
+ 
++@pytest.fixture
++def bitbucket_dc_pr_payload():
++    """Create a sample Bitbucket DC PR webhook payload."""
++    return {
++        'eventKey': 'pr:opened',
++        'pullRequest': {
++            'id': 1,
++            'toRef': {
++                'repository': {
++                    'slug': 'myrepo',
++                    'project': {'key': 'PROJ'},
++                }
++            },
++        },
++        'actor': {'name': 'testuser'},
++    }
++
++
++@pytest.fixture
++def bitbucket_dc_repo_payload():
++    """Create a sample Bitbucket DC repo-level webhook payload."""
++    return {
++        'eventKey': 'repo:refs_changed',
++        'repository': {
++            'slug': 'myrepo',
++            'project': {'key': 'PROJ'},
++        },
++        'changes': [{'refId': 'refs/heads/main'}],
++    }
++
++
+ def create_service(mock_token_manager):
+     """Helper to create a service with mocked constants."""
+     with patch.dict('os.environ', {}, clear=False):
+@@ -504,6 +535,54 @@ async def test_forward_event_org_not_claimed_and_not_personal(
+             mock_logger.warning.assert_called()
+             assert 'not claimed' in str(mock_logger.warning.call_args)
+ 
++    @pytest.mark.asyncio
++    async def test_forward_bitbucket_dc_project_event_success(
++        self, mock_token_manager, bitbucket_dc_pr_payload, mock_org_git_claim
++    ):
++        """
++        GIVEN: A Bitbucket DC event from a claimed project
++        WHEN: forward_event is called
++        THEN: The project key is used as the git org for routing
++        """
++        from server.services.automation_event_service import AutomationEventService
++
++        mock_redis = AsyncMock()
++        mock_redis.get = AsyncMock(return_value=None)
++        mock_redis.setex = AsyncMock()
++
++        with (
++            patch(
++                'server.services.automation_event_service.resolve_org_for_repo',
++                new_callable=AsyncMock,
++                return_value=mock_org_git_claim.org_id,
++            ) as mock_resolver,
++            patch(REDIS_PATCH, return_value=mock_redis),
++            patch.object(
++                AutomationEventService,
++                '_send_to_automation_service',
++                new_callable=AsyncMock,
++            ) as mock_send,
++        ):
++            service = AutomationEventService(mock_token_manager)
++            await service.forward_event(
++                provider=ProviderType.BITBUCKET_DATA_CENTER,
++                payload=bitbucket_dc_pr_payload,
++                installation_id='PROJ/myrepo',
++            )
++
++            mock_resolver.assert_awaited_once_with(
++                provider='bitbucket_data_center',
++                full_repo_name='proj/',
++            )
++            mock_send.assert_called_once()
++            call_args = mock_send.call_args
++            assert call_args[0][0] == ProviderType.BITBUCKET_DATA_CENTER
++            assert call_args[0][1] == mock_org_git_claim.org_id
++
++            payload = call_args[0][2]
++            assert payload['organization']['git_org'] == 'PROJ'
++            assert payload['payload'] == bitbucket_dc_pr_payload
++
+ 
+ class TestExtractOwnerInfo:
+     """Tests for _extract_owner_info method."""
+@@ -540,6 +619,40 @@ def test_extract_github_user_owner_info(
+         assert owner_type == 'User'
+         assert owner_id == 12345
+ 
++    def test_extract_bitbucket_dc_pr_owner_info(
++        self, mock_token_manager, bitbucket_dc_pr_payload
++    ):
++        """
++        GIVEN: A Bitbucket DC PR payload
++        WHEN: _extract_owner_info is called
++        THEN: The target repository project key is used as the org
++        """
++        service = create_service(mock_token_manager)
++        git_org, owner_type, owner_id = service._extract_owner_info(
++            ProviderType.BITBUCKET_DATA_CENTER, bitbucket_dc_pr_payload
++        )
++
++        assert git_org == 'PROJ'
++        assert owner_type == 'Project'
++        assert owner_id is None
++
++    def test_extract_bitbucket_dc_repo_owner_info(
++        self, mock_token_manager, bitbucket_dc_repo_payload
++    ):
++        """
++        GIVEN: A Bitbucket DC repository payload
++        WHEN: _extract_owner_info is called
++        THEN: The repository project key is used as the org
++        """
++        service = create_service(mock_token_manager)
++        git_org, owner_type, owner_id = service._extract_owner_info(
++            ProviderType.BITBUCKET_DATA_CENTER, bitbucket_dc_repo_payload
++        )
++
++        assert git_org == 'PROJ'
++        assert owner_type == 'Project'
++        assert owner_id is None
++
+ 
+ class TestBuildEventPayload:
+     """Tests for _build_event_payload method."""
+diff --git a/tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_webhooks.py b/tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_webhooks.py
+index 04643f576699..afe767c95017 100644
+--- a/tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_webhooks.py
++++ b/tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_webhooks.py
+@@ -15,6 +15,8 @@
+ )
+ from openhands.app_server.integrations.service_types import RequestMethod
+ 
++WEBHOOK_EVENTS = ['repo:refs_changed', 'pr:opened', 'pr:comment:added']
++
+ 
+ def _make_service() -> BitbucketDCService:
+     """Build a service rooted at a known base_domain so URL assertions are stable."""
+@@ -34,7 +36,7 @@ async def test_create_repository_webhook_posts_bbdc_payload():
+         name='OpenHands Resolver',
+         webhook_url='https://app.example.com/integration/bitbucket-dc/events',
+         webhook_secret='secret-123',
+-        events=['pr:comment:added', 'pr:comment:edited'],
++        events=WEBHOOK_EVENTS,
+     )
+ 
+     # BBDC returns numeric ids; we normalize to str to match the storage column.
+@@ -45,7 +47,7 @@ async def test_create_repository_webhook_posts_bbdc_payload():
+             'name': 'OpenHands Resolver',
+             'url': 'https://app.example.com/integration/bitbucket-dc/events',
+             'active': True,
+-            'events': ['pr:comment:added', 'pr:comment:edited'],
++            'events': WEBHOOK_EVENTS,
+             # The shared secret is nested under ``configuration`` for BBDC —
+             # this is the field Cloud puts at the top level.
+             'configuration': {'secret': 'secret-123'},
+@@ -68,7 +70,7 @@ async def test_update_repository_webhook_puts_full_payload():
+         name='OpenHands Resolver',
+         webhook_url='https://app.example.com/integration/bitbucket-dc/events',
+         webhook_secret='rotated',
+-        events=['pr:comment:added', 'pr:comment:edited'],
++        events=WEBHOOK_EVENTS,
+     )
+ 
+     assert webhook_id == '7'
+@@ -78,7 +80,7 @@ async def test_update_repository_webhook_puts_full_payload():
+             'name': 'OpenHands Resolver',
+             'url': 'https://app.example.com/integration/bitbucket-dc/events',
+             'active': True,
+-            'events': ['pr:comment:added', 'pr:comment:edited'],
++            'events': WEBHOOK_EVENTS,
+             'configuration': {'secret': 'rotated'},
+         },
+         method=RequestMethod.PUT,

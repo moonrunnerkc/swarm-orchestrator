@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-J2WFFDev-CadreOS-pr108",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 108,
+    "headSha": "c8dfc8db0d8151be59b810cc171ef9292acc8cf2",
+    "baseSha": "fb28476c7d56f06ae6b6f5415463e893deb72cbe",
+    "title": "Phase 14B: Lightweight rapid-capture workflow optimizations for staff operations",
+    "body": "Phase 14B targets lower-friction operational capture in existing staff workflows (attendance, observations, follow-ups, events, FieldOps) while explicitly deferring offline sync, native-mobile runtime, Feed/Inbox, messaging/notifications, and automation. This PR introduces incremental UI/runtime-prefill improvements that preserve current org scoping and authorization boundaries.\n\n- **Attendance rapid-capture in event workflow**\n  - Added per-person quick actions in missing-roster attendance lists to prefill attendance status and jump directly to the capture form.\n  - Added event-level quick link into FieldOps booking request flow.\n\n- **Context-prefill continuity across capture forms**\n  - `notes/new`: when `eventId` is present and `teamId` is empty, team defaults from event context.\n  - `tasks/new`: when `sourceNoteId` is selected and `sourceEventId` is empty, source event defaults from note context.\n  - `field-ops/bookings/new`: when `eventId` is present, prefill title/time/program/team from event context where available.\n\n- **Dashboard navigation compression for operational capture**\n  - Added a dedicated “Rapid operational capture” shortcut section (note capture, follow-up capture, attendance lane, FieldOps request).\n  - Updated event concern cards to link directly to capture entry points instead of only review surfaces.\n\n- **Phase planning/docs update**\n  - Added `planning/PHASE_14B_LIGHTWEIGHT_RAPID_OPERATIONAL_CAPTURE_OPTIMIZATIONS.md` with scope, delivered optimizations, deferred runtime behavior, and validation guidance.\n  - Indexed Phase 14B in `planning/README.md`.\n\n```tsx\n// Event detail: rapid prefill link into attendance capture form\n<Link\n  href={`/events/${event.id}?attendancePersonId=${person.id}&attendanceStatus=${AttendanceStatus.PRESENT}#attendance-capture-form`}\n  className=\"underline\"\n>\n  Mark present\n</Link>\n```",
+    "author": "Copilot",
+    "headRef": "copilot/phase-14b-lightweight-optimizations",
+    "repository": "J2WFFDev/CadreOS"
+  },
+  "diffRef": {
+    "repository": "J2WFFDev/CadreOS",
+    "headSha": "c8dfc8db0d8151be59b810cc171ef9292acc8cf2",
+    "baseSha": "fb28476c7d56f06ae6b6f5415463e893deb72cbe"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-J2WFFDev-CadreOS-pr108.diff",
+  "vendoredAt": "2026-05-24T03:06:22.147Z",
+  "collectedAt": "2026-05-24T03:06:22.147Z"
+}

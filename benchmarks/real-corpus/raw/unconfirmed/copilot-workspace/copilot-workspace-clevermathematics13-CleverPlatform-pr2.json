@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-clevermathematics13-CleverPlatform-pr2",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "d3d3127f70b589d6133ba93e9e074f86e44e476b",
+    "baseSha": "f39ca8565317b4d380c5a6be64f2547960f2d6dd",
+    "title": "feat: wire MSA Grader GAS backend into CleverPlatform",
+    "body": "## Summary\n\nIntegrates the `MSA_Grader-API_Backend` Google Apps Script (GAS) project into the CleverPlatform monorepo and wires it into the gradebook UI so teachers can trigger automated grading.\n\n## Changes\n\n- [x] **Phase 1 — GAS source colocated** (`platform/msa-grader/`)\n  - All `.js` and `.html` GAS source files copied from `MSA_Grader-API_Backend`\n  - `package.json` with `push`, `pull`, `deploy` scripts (clasp) and `jest` for tests\n  - `.clasp.json` for `clasp push/pull` from the monorepo\n  - 4 test files (`grader.test.js`, `ocr_verify.test.js`, `sigma.test.js`, `student_profile.test.js`)\n\n- [x] **Phase 2 — GAS Web App `doPost()` dispatcher** (`platform/msa-grader/ApiEndpoint.js`)\n  - `doGet(?action=health)` → health check JSON response\n  - `doPost({ action, payload })` → dispatches to `gradeStudentWork` or `healthCheck`\n  - `gradeStudentWorkForApi_()` orchestrates OCR → markscheme lookup → Claude grading → returns structured marks array\n\n- [x] **Phase 3 — Next.js proxy layer**\n  - `platform/lib/msa-grader.ts` — typed helper with `callGraderHealth()` and `callGradeStudentWork()`, attaches Google OAuth token to each GAS request (reuses existing `google-auth-library`)\n  - `GET /api/grader/health` — unauthenticated health-check proxy for UI status indicator\n  - `POST /api/grader/grade` — teacher-only; calls GAS pipeline and upserts returned marks into `student_marks` with `auto_graded = true`\n\n- [x] **Phase 4 — Supabase migration** (`platform/supabase/migrations/052_add_auto_graded.sql`)\n  - `ALTER TABLE student_marks ADD COLUMN IF NOT EXISTS auto_graded boolean DEFAULT false`\n\n- [x] **Phase 5 — Gradebook UI** (`GradebookGrid.tsx`)\n  - 🤖 button in each student name cell\n  - Modal: test selector, Drive file ID input, optional exam/markscheme ID\n  - On confirm → `POST /api/grader/grade` → page reload with fresh marks\n\n- [x] **Phase 6 — Documentation**\n  - `platform/.env.local.example` — documents all env vars including `MSA_GRADER_URL` and `MSA_GRADER_SERVICE_ACCOUNT_JSON`\n  - `platform/AGENTS.md` — sub-project overview, deployment steps, end-to-end flow\n\n## Configuration needed after merge\n\n1. Deploy the GAS Web App from `platform/msa-grader/`:\n   ```bash\n   cd platform/msa-grader\n   npm install\n   clasp login\n   npm run push\n   npm run deploy   # copy the Web App URL\n   ```\n2. Set in Vercel / `.env.local`:\n   ```\n   MSA_GRADER_URL=https://script.google.com/macros/s/.../exec\n   MSA_GRADER_SERVICE_ACCOUNT_JSON={\"type\":\"service_account\",...}\n   ```\n3. Run the Supabase migration `052_add_auto_graded.sql`.\n",
+    "author": "Copilot",
+    "headRef": "copilot/wire-in-msa-grader-api-backend",
+    "repository": "clevermathematics13/CleverPlatform"
+  },
+  "diffRef": {
+    "repository": "clevermathematics13/CleverPlatform",
+    "headSha": "d3d3127f70b589d6133ba93e9e074f86e44e476b",
+    "baseSha": "f39ca8565317b4d380c5a6be64f2547960f2d6dd"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-clevermathematics13-CleverPlatform-pr2.diff",
+  "vendoredAt": "2026-05-24T03:05:55.146Z",
+  "collectedAt": "2026-05-24T03:05:55.146Z"
+}

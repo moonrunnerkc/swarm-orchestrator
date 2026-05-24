@@ -1,0 +1,154 @@
+diff --git a/firestore.rules b/firestore.rules
+index ab75fae..ffa43f5 100644
+--- a/firestore.rules
++++ b/firestore.rules
+@@ -77,11 +77,13 @@ service cloud.firestore {
+         && request.resource.data.poster.name.size() > 0
+         && request.resource.data.poster.name.size() <= 120
+         && request.resource.data.poster.type is string
+-        && request.resource.data.poster.type in [
++        && request.resource.data.poster.type.lower() in [
+           'image/jpeg',
+           'image/png',
+           'image/webp',
+-          'image/gif'
++          'image/gif',
++          'image/heic',
++          'image/heif'
+         ]
+         && request.resource.data.poster.size is int
+         && request.resource.data.poster.size > 0
+@@ -97,10 +99,11 @@ service cloud.firestore {
+         && request.resource.data.video.name.size() > 0
+         && request.resource.data.video.name.size() <= 120
+         && request.resource.data.video.type is string
+-        && request.resource.data.video.type in [
++        && request.resource.data.video.type.lower() in [
+           'video/mp4',
+           'video/quicktime',
+-          'video/webm'
++          'video/webm',
++          'video/x-m4v'
+         ]
+         && request.resource.data.video.size is int
+         && request.resource.data.video.size > 0
+@@ -120,8 +123,8 @@ service cloud.firestore {
+     }
+ 
+     function hasTrustedStorageUrl(fieldName) {
+-      return request.resource.data[fieldName].url.matches('^https://firebasestorage\\.googleapis\\.com/v0/b/bible-matrix\\.(firebasestorage\\.app|appspot\\.com)/o/.*$')
+-        || request.resource.data[fieldName].url.matches('^https://storage\\.googleapis\\.com/bible-matrix\\.(firebasestorage\\.app|appspot\\.com)/.*$');
++      return request.resource.data[fieldName].url.matches('^https://firebasestorage\\.googleapis\\.com/v0/b/bible-matrix(-[a-z0-9]+(-[a-z0-9]+)*)?\\.(firebasestorage\\.app|appspot\\.com)/o/.*$')
++        || request.resource.data[fieldName].url.matches('^https://storage\\.googleapis\\.com/bible-matrix(-[a-z0-9]+(-[a-z0-9]+)*)?\\.(firebasestorage\\.app|appspot\\.com)/.*$');
+     }
+ 
+     function hasValidOptionalAttachment() {
+@@ -133,7 +136,7 @@ service cloud.firestore {
+           && request.resource.data.attachment.name.size() > 0
+           && request.resource.data.attachment.name.size() <= 120
+           && request.resource.data.attachment.type is string
+-          && request.resource.data.attachment.type in [
++          && request.resource.data.attachment.type.lower() in [
+             'application/pdf',
+             'application/msword',
+             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+@@ -143,9 +146,12 @@ service cloud.firestore {
+             'image/png',
+             'image/webp',
+             'image/gif',
++            'image/heic',
++            'image/heif',
+             'video/mp4',
+             'video/quicktime',
+-            'video/webm'
++            'video/webm',
++            'video/x-m4v'
+           ]
+           && request.resource.data.attachment.size is int
+           && request.resource.data.attachment.size > 0
+@@ -167,11 +173,13 @@ service cloud.firestore {
+         && request.resource.data.photo.name.size() > 0
+         && request.resource.data.photo.name.size() <= 120
+         && request.resource.data.photo.type is string
+-        && request.resource.data.photo.type in [
++        && request.resource.data.photo.type.lower() in [
+           'image/jpeg',
+           'image/png',
+           'image/webp',
+-          'image/gif'
++          'image/gif',
++          'image/heic',
++          'image/heif'
+         ]
+         && request.resource.data.photo.size is int
+         && request.resource.data.photo.size > 0
+diff --git a/storage.rules b/storage.rules
+index 3bc270f..3a12211 100644
+--- a/storage.rules
++++ b/storage.rules
+@@ -19,7 +19,7 @@ service firebase.storage {
+     function isAllowedStatusAttachmentType() {
+       return request.resource != null
+         && request.resource.contentType is string
+-        && request.resource.contentType in [
++        && request.resource.contentType.lower() in [
+           'application/pdf',
+           'application/msword',
+           'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+@@ -29,41 +29,49 @@ service firebase.storage {
+           'image/png',
+           'image/webp',
+           'image/gif',
++          'image/heic',
++          'image/heif',
+           'video/mp4',
+           'video/quicktime',
+-          'video/webm'
++          'video/webm',
++          'video/x-m4v'
+         ];
+     }
+ 
+     function isAllowedSundayPhotoType() {
+       return request.resource != null
+         && request.resource.contentType is string
+-        && request.resource.contentType in [
++        && request.resource.contentType.lower() in [
+           'image/jpeg',
+           'image/png',
+           'image/webp',
+-          'image/gif'
++          'image/gif',
++          'image/heic',
++          'image/heif'
+         ];
+     }
+ 
+     function isAllowedAnnouncementPosterType() {
+       return request.resource != null
+         && request.resource.contentType is string
+-        && request.resource.contentType in [
++        && request.resource.contentType.lower() in [
+           'image/jpeg',
+           'image/png',
+           'image/webp',
+-          'image/gif'
++          'image/gif',
++          'image/heic',
++          'image/heif'
+         ];
+     }
+ 
+     function isAllowedAnnouncementVideoType() {
+       return request.resource != null
+         && request.resource.contentType is string
+-        && request.resource.contentType in [
++        && request.resource.contentType.lower() in [
+           'video/mp4',
+           'video/quicktime',
+-          'video/webm'
++          'video/webm',
++          'video/x-m4v'
+         ];
+     }
+ 

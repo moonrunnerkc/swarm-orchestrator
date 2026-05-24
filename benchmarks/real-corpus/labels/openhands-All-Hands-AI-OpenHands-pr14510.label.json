@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Refactor: the conversation chip's model display moves from raw model strings (llmModel='anthropic/claude-sonnet-4-20250514') to a structured AgentChip object ({kind, text, tooltip}) that supports brand icons and prettified text. Test-file changes update the test data shape to match (llmModel='...' to agentChip={...}) and update the assertion targets to the prettified text ('anthropic/claude-sonnet-4-20250514' to 'Claude Sonnet 4') while preserving the raw model string in the tooltip attribute. The detector flagged assertion-strip because some assertion lines were removed in the diff, but every removed assertion has a paired replacement checking the same property against the new structure. The PR also adds two entirely new test files (agent-display-label.test.ts with 7 it blocks, format-llm-model.test.ts with 17+ assertion cases) plus the new utility modules they cover. Textbook refactor with expanded test coverage; detector false positive.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T04:00:00.000Z"
+}

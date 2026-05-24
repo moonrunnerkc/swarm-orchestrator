@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-nashsu-llm_wiki-pr238",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "commit=codex-cli-footer"
+  },
+  "pr": {
+    "number": 238,
+    "headSha": "e09f0635ec073ce0c5d687e9727802f69e3d1af9",
+    "baseSha": "ff118d4b04417d4ce021810cdf91d8529a22b0c2",
+    "title": "Fix CLI ingest completion handling",
+    "body": "Fixes #227.\n\n## Summary\n\n- wait for the CLI completion event before resolving the transport stream\n- include captured stdout in the Rust done payload as a fallback source\n- replay missed `agent_message` stdout only when no live agent message was emitted\n- handle pre-aborted and abort-during-spawn races\n\n## Validation\n\n- `npm run test:mocks -- src/lib/codex-cli-transport.test.ts`\n- `npm run typecheck`\n- `git diff --check`\n- `cargo test --locked --manifest-path src-tauri/Cargo.toml codex_cli --lib`\n- `scripts/validate-local.sh`\n\n## Notes\n\nThe fix keeps stdout capture capped and only uses it as a fallback for parseable JSONL output.\n",
+    "author": "sunilkumarvalmiki",
+    "headRef": "fix/cli-ingest-completion",
+    "repository": "nashsu/llm_wiki"
+  },
+  "diffRef": {
+    "repository": "nashsu/llm_wiki",
+    "headSha": "e09f0635ec073ce0c5d687e9727802f69e3d1af9",
+    "baseSha": "ff118d4b04417d4ce021810cdf91d8529a22b0c2"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-nashsu-llm_wiki-pr238.diff",
+  "vendoredAt": "2026-05-24T03:13:13.094Z",
+  "collectedAt": "2026-05-24T03:13:13.094Z"
+}

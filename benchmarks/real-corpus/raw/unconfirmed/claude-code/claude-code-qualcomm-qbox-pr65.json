@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-qualcomm-qbox-pr65",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 65,
+    "headSha": "02198b62b5abd1d10beef1bb5dc8d2e3e548cf99",
+    "baseSha": "2a4383f40e62f4d068bf391fd47748a530ee2812",
+    "title": "display: pick gl=off on Windows where virglrenderer is unavailable",
+    "body": "Change depends on landing libqemu/v11.0 MR !1571 first.\n\nOn Windows-on-ARM, libqemu is built without virglrenderer because\nmsys2 clangarm64 does not ship it. Requesting \"sdl,gl=on\" segfaults\nat SDL/EGL init since the GL path cannot establish a virgl-backed\ncontext.\n\nPick \"sdl,gl=off\" on _WIN32 and \"sdl,gl=on\" elsewhere. The 2D path\nin libqemu requires a companion fix to ui/sdl2 so that sdl2_2d_switch\ncreates the SDL_Renderer after dpy_window_create; without that fix\nthe SDL window opens but never paints.\n\nAlso log the chosen backend at INFO so it is visible at default\nverbosity.\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nSigned-off-by: Steve Aarnio <saarnio@qti.qualcomm.com>\n",
+    "author": "AngelBob",
+    "headRef": "saarnio/display-windows-backend",
+    "repository": "qualcomm/qbox"
+  },
+  "diffRef": {
+    "repository": "qualcomm/qbox",
+    "headSha": "02198b62b5abd1d10beef1bb5dc8d2e3e548cf99",
+    "baseSha": "2a4383f40e62f4d068bf391fd47748a530ee2812"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-qualcomm-qbox-pr65.diff",
+  "vendoredAt": "2026-05-24T03:08:37.223Z",
+  "collectedAt": "2026-05-24T03:08:37.223Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "replit-agent-Mvandy11-studio-flow-pr1",
+  "agent": {
+    "vendor": "replit-agent",
+    "confidence": "low",
+    "source": "body=replit-agent-footer"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "573485ddbfb72f29923390fce855023d5a0706b6",
+    "baseSha": "4927f7ee8b0252167f0b8b41db3f5269808529ea",
+    "title": "Fix contests backend for Netlify functions",
+    "body": "🔗 **View agent run:** https://app.netlify.com/projects/ois-studio-flow/agent-runs/69fe90b287eb2391c10b1c3e\n\n🤖 **Agent:** Claude\n\n💬 **Prompt:** REPLIT AGENT PROMPT — Fix Contests Backend for Netlify Functions\nI need you to fix the Studio Flow Contests backend so that all contest API routes work correctly inside Netlify Functions. The frontend is throwing 404 and 500 errors because the backen...\n\n✅ **Result:** The deploy was failing because the Netlify CLI detected multiple pnpm workspace members (`@workspace/api-client-react`, `@workspace/api-spec`, `@workspace/api-zod`, `@workspace/db`, `@workspace/scripts`, `studio-flow-api`) and could not determine which project to deploy.\n\nInvestigation confirmed that none of these workspace packages are imported by the main application source code (`src/`) or the Netlify function (`netlify/functions/api.mjs`). The `src` directory uses local `src/lib/` modules via relative paths, and the Netlify function wraps the Express app from `server/app.js` which only uses npm dependencies already declared in the root `package.json`.\n\nThe `packages` field was removed from `pnpm-workspace.yaml`, eliminating the workspace member declarations that triggered monorepo detection. The `catalog:` section and other workspace-level settings (overrides, build optimizations) were preserved since the root `package.json` depends on `catalog:` for `@tanstack/react-query` and `tailwindcss` version resolution. The corresponding workspace member importer entries were also removed from `pnpm-lock.yaml` to keep the lockfile consistent with the updated workspace configuration.\n",
+    "author": "netlify-coding[bot]",
+    "headRef": "agent-for-netlify-functions-1c3e",
+    "repository": "Mvandy11/studio-flow"
+  },
+  "diffRef": {
+    "repository": "Mvandy11/studio-flow",
+    "headSha": "573485ddbfb72f29923390fce855023d5a0706b6",
+    "baseSha": "4927f7ee8b0252167f0b8b41db3f5269808529ea"
+  },
+  "vendoredDiffPath": "unconfirmed/replit-agent/replit-agent-Mvandy11-studio-flow-pr1.diff",
+  "vendoredAt": "2026-05-24T03:14:02.145Z",
+  "collectedAt": "2026-05-24T03:14:02.145Z"
+}

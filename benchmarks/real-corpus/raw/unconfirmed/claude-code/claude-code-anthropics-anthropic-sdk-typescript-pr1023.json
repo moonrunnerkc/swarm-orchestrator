@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1023",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1023,
+    "headSha": "5891b84f134afef679f52a935b63e76ee42edfba",
+    "baseSha": "74ac150346ca92290b0fc57d9728e3841aa2dd54",
+    "title": "fix(build): rewrite block-comment @ts-ignore to line-comment form in dist declaration files",
+    "body": "## Summary\n\nFixes #1022.\n\nTypeScript only recognises the single-line `// @ts-ignore` comment form as an error-suppression directive.  When generating declaration files, the TypeScript compiler collapses a JSDoc block comment (`/** @ts-ignore <msg> */`) and the declaration that immediately follows it onto a **single line**.  A block comment on the same line as the offending declaration has no suppression effect, causing spurious `TS2307` errors like:\n\n```\nnode_modules/@anthropic-ai/sdk/internal/types.d.ts:48:181 - error TS2307:\nCannot find module '../../../node_modules/undici-types/index.d.ts' or\nits corresponding type declarations.\n```\n\nThese errors affect users who do not have optional peer dependencies (undici, node-fetch, …) installed.\n\n## Fix\n\nAdd a postprocess step in `scripts/utils/postprocess-files.cjs` that rewrites every `/** @ts-ignore <msg> */` occurrence in emitted `.d.ts` / `.d.mts` / `.d.cts` declaration files to the `// @ts-ignore <msg>` line-comment form on its own preceding line — the form that TypeScript's error-suppression logic actually recognises.\n\n**Before** (generated `.d.ts`):\n```ts\n/** @ts-ignore For users with \\@types/node */ type UndiciTypesRequestInit = NotAny<…>;\n```\n\n**After** (generated `.d.ts`):\n```ts\n// @ts-ignore For users with \\@types/node\ntype UndiciTypesRequestInit = NotAny<…>;\n```\n\nThe transformation is scoped to `*.d.[cm]?ts` files only, so source copies in `dist/src/` are left untouched.\n\n## Test plan\n\n- [x] `./scripts/build` completes with zero TypeScript errors\n- [x] `dist/internal/types.d.ts` and `dist/internal/types.d.mts` now have `// @ts-ignore` on a separate line before each affected type alias\n- [x] `dist/internal/shim-types.d.ts` and `.d.mts` now have `// @ts-ignore` on a separate line before each affected type alias\n- [x] `node -e 'require(\"@anthropic-ai/sdk\")'` and ESM import still succeed\n\nhttps://claude.ai/code/session_01T8f8SVd3zUdGd8WwocA8Ck",
+    "author": "xodn348",
+    "headRef": "fix/ts-ignore-block-comment-in-dist-dts",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "5891b84f134afef679f52a935b63e76ee42edfba",
+    "baseSha": "74ac150346ca92290b0fc57d9728e3841aa2dd54"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1023.diff",
+  "vendoredAt": "2026-05-24T03:16:41.476Z",
+  "collectedAt": "2026-05-24T03:16:41.476Z"
+}

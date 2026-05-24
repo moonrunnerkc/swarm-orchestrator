@@ -1,0 +1,518 @@
+diff --git a/.github/workflows/daily-skills-review.yml b/.github/workflows/daily-skills-review.yml
+new file mode 100644
+index 0000000..26bf0c1
+--- /dev/null
++++ b/.github/workflows/daily-skills-review.yml
+@@ -0,0 +1,47 @@
++name: daily-skills-review
++
++on:
++  schedule:
++    - cron: '17 3 * * *'
++  workflow_dispatch:
++  pull_request:
++    branches: [main]
++
++permissions:
++  contents: read
++
++jobs:
++  review:
++    runs-on: ubuntu-latest
++
++    steps:
++      - name: Checkout repository
++        uses: actions/checkout@v4
++
++      - name: Set up Python
++        uses: actions/setup-python@v5
++        with:
++          python-version: '3.12'
++
++      - name: Install review dependencies
++        run: pip install pyyaml
++
++      - name: Run daily skills review
++        id: review
++        continue-on-error: true
++        run: ./scripts/run_daily_review.sh
++
++      - name: Upload daily review summary
++        if: always()
++        uses: actions/upload-artifact@v4
++        with:
++          name: daily-skills-review-summary
++          path: artifacts/daily-review-summary.md
++          if-no-files-found: error
++
++      - name: Fail workflow if review detected problems
++        if: steps.review.outcome == 'failure'
++        run: |
++          echo "Daily skills review found issues. See artifacts/daily-review-summary.md for actionable details."
++          cat artifacts/daily-review-summary.md
++          exit 1
+diff --git a/.gitignore b/.gitignore
+index b170d78..5663201 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,6 +1,7 @@
+ # Build artifacts
+ dist/
+ *.zip
++artifacts/
+ 
+ # Editor / OS junk
+ .DS_Store
+diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+index 0e91841..dde1f81 100644
+--- a/CONTRIBUTING.md
++++ b/CONTRIBUTING.md
+@@ -72,26 +72,19 @@ The `description:` is what Claude uses to route. Make it:
+ 
+ ## Validation
+ 
+-Both packs have a CI workflow (`.github/workflows/validate-skills.yml`) that checks:
+-- YAML frontmatter present and valid
+-- `name` matches folder name
+-- Referenced files in `references/` actually exist
++The repository has CI validation workflows (`.github/workflows/validate-all.yml` and `.github/workflows/daily-skills-review.yml`) that check content-oriented quality, including:
++- required file presence and skill structure
++- YAML frontmatter validity and `name`/folder alignment
++- required workflow section headings in each `SKILL.md`
++- duplicate skill names/titles
++- broken internal references or malformed link targets
++- shell script hygiene (`bash -n`, and `shellcheck` when available)
+ 
+ Run locally:
+ 
+ ```bash
+-cd saas-security-pack  # or appsec-stack-pack
+-python3 -c "$(cat <<'EOF'
+-import os, re, yaml
+-for root, dirs, files in os.walk('.'):
+-    if 'SKILL.md' not in files: continue
+-    with open(f'{root}/SKILL.md') as f: c = f.read()
+-    m = re.match(r'^---\n(.*?)\n---', c, re.DOTALL)
+-    meta = yaml.safe_load(m.group(1))
+-    assert meta['name'] == os.path.basename(root), root
+-print('OK')
+-EOF
+-)"
++./scripts/run_daily_review.sh
++# summary output: artifacts/daily-review-summary.md
+ ```
+ 
+ ## Issue and PR templates
+diff --git a/README.md b/README.md
+index b1afe32..316c22a 100644
+--- a/README.md
++++ b/README.md
+@@ -103,6 +103,25 @@ Each pack also has a `scripts/package_skills.sh` that produces per-skill `.zip`
+ - **Multi-skill orchestration.** A real audit often activates 5+ skills. Finding ID prefixes prevent collision; the combined report is severity-sorted.
+ - **Reproducible evidence.** Every finding has a file:line reference and a copy-pasteable remediation.
+ 
++## Daily automated review
++
++The repository runs `.github/workflows/daily-skills-review.yml` on a daily schedule to keep skill content consistent and actionable. The review script is content-focused (not compile-focused) and checks:
++
++- required repository/pack files and skill structure,
++- `SKILL.md` frontmatter and required workflow sections,
++- duplicate skill names/titles,
++- broken internal file references and obviously malformed link targets,
++- shell-script hygiene (`bash -n`, plus `shellcheck` when available),
++- generation of a human-readable summary at `artifacts/daily-review-summary.md`.
++
++In CI, the summary is uploaded as an artifact (`daily-skills-review-summary`) and the workflow fails with actionable output when validation errors are detected.
++
++Run locally:
++
++```bash
++./scripts/run_daily_review.sh
++```
++
+ ## Companion projects
+ 
+ - **[Crowbyte](https://crowbyte.io)** — Offensive security platform (red team / blue team / purple team modes)
+diff --git a/scripts/review_skills_repo.py b/scripts/review_skills_repo.py
+new file mode 100755
+index 0000000..15e2367
+--- /dev/null
++++ b/scripts/review_skills_repo.py
+@@ -0,0 +1,358 @@
++#!/usr/bin/env python3
++"""Content-oriented repository review for claude-skills-security."""
++
++from __future__ import annotations
++
++import argparse
++import datetime as dt
++import os
++import re
++import shutil
++import subprocess
++import sys
++from dataclasses import dataclass
++from pathlib import Path
++from typing import Iterable
++
++import yaml
++
++REPO_ROOT_REQUIREMENTS = [
++    "README.md",
++    "CONTRIBUTING.md",
++    "LICENSE",
++    ".github/workflows",
++]
++
++PACKS = ["saas-security-pack", "appsec-stack-pack"]
++PACK_SHARED_REQUIREMENTS = ["_shared/audit-workflow.md", "_shared/findings-schema.md"]
++
++SKILL_DIR_EXCLUDES = {"_shared", "scripts", "dist", ".github"}
++
++REQUIRED_SECTION_MARKERS = [
++    "## When this skill applies",
++    "## Workflow",
++    "### Phase 1:",
++    "### Phase 2:",
++    "### Phase 3:",
++    "### Phase 4:",
++    "### Phase 5:",
++]
++
++FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
++H1_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
++MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
++CODE_PATH_RE = re.compile(r"`((?:\./|\.\./)?[^`\s]+\.(?:md|sh|sql)(?:#[^`\s]+)?)`")
++
++
++@dataclass
++class ReviewResult:
++    errors: list[str]
++    warnings: list[str]
++    reviewed_skills: int
++    reviewed_shell_scripts: int
++
++
++def list_skill_dirs(pack_path: Path) -> Iterable[Path]:
++    for child in sorted(pack_path.iterdir()):
++        if not child.is_dir():
++            continue
++        if child.name.startswith(".") or child.name in SKILL_DIR_EXCLUDES:
++            continue
++        yield child
++
++
++def parse_frontmatter(skill_path: Path, content: str, errors: list[str]) -> dict:
++    match = FRONTMATTER_RE.match(content)
++    if not match:
++        errors.append(f"{skill_path}: missing YAML frontmatter delimited by ---")
++        return {}
++
++    try:
++        meta = yaml.safe_load(match.group(1))
++    except yaml.YAMLError as exc:
++        errors.append(f"{skill_path}: invalid YAML frontmatter: {exc}")
++        return {}
++
++    if not isinstance(meta, dict):
++        errors.append(f"{skill_path}: YAML frontmatter must parse to a mapping")
++        return {}
++
++    return meta
++
++
++def normalize_repo_relative(path: Path, repo_root: Path) -> str:
++    return path.resolve().relative_to(repo_root.resolve()).as_posix()
++
++
++def resolve_internal_target(raw_target: str, source_file: Path, repo_root: Path) -> Path:
++    target = raw_target.split("#", 1)[0].strip()
++    target = target.split("?", 1)[0].strip()
++
++    if target.startswith("/"):
++        return repo_root / target.lstrip("/")
++
++    if target.startswith(("saas-security-pack/", "appsec-stack-pack/", "docs/")):
++        return repo_root / target
++
++    return (source_file.parent / target).resolve()
++
++
++def should_skip_path_validation(target: str) -> bool:
++    return any(marker in target for marker in ("<", ">", "*", "{", "}"))
++
++
++def collect_internal_targets(content: str) -> tuple[list[str], list[str]]:
++    markdown_targets: list[str] = [t.strip() for t in MARKDOWN_LINK_RE.findall(content)]
++    code_targets: list[str] = [t.strip() for t in CODE_PATH_RE.findall(content)]
++    return markdown_targets, code_targets
++
++
++def check_skill_file(
++    skill_dir: Path,
++    repo_root: Path,
++    names_seen: dict[str, Path],
++    titles_seen: dict[str, Path],
++    errors: list[str],
++    warnings: list[str],
++) -> None:
++    skill_file = skill_dir / "SKILL.md"
++    if not skill_file.is_file():
++        errors.append(f"{normalize_repo_relative(skill_dir, repo_root)}: missing required SKILL.md")
++        return
++
++    content = skill_file.read_text(encoding="utf-8")
++    meta = parse_frontmatter(skill_file, content, errors)
++
++    rel_skill_file = normalize_repo_relative(skill_file, repo_root)
++
++    for field in ("name", "description"):
++        value = meta.get(field)
++        if not isinstance(value, str) or not value.strip():
++            errors.append(f"{rel_skill_file}: missing or empty `{field}` in frontmatter")
++
++    name = meta.get("name")
++    if isinstance(name, str):
++        if name != skill_dir.name:
++            errors.append(
++                f"{rel_skill_file}: frontmatter name `{name}` must match folder `{skill_dir.name}`"
++            )
++        previous = names_seen.get(name)
++        if previous is not None and previous != skill_file:
++            errors.append(
++                f"Duplicate skill name `{name}` in {normalize_repo_relative(previous, repo_root)} and {rel_skill_file}"
++            )
++        names_seen[name] = skill_file
++
++    description = meta.get("description")
++    if isinstance(description, str) and len(description.strip()) < 30:
++        warnings.append(f"{rel_skill_file}: description seems very short (<30 chars), verify routing quality")
++
++    for marker in REQUIRED_SECTION_MARKERS:
++        if marker not in content:
++            errors.append(f"{rel_skill_file}: missing required section marker `{marker}`")
++
++    h1_match = H1_RE.search(content)
++    if not h1_match:
++        errors.append(f"{rel_skill_file}: missing top-level `# Title` heading")
++    else:
++        title = h1_match.group(1).strip()
++        previous = titles_seen.get(title)
++        if previous is not None and previous != skill_file:
++            warnings.append(
++                f"Duplicate skill title `{title}` in {normalize_repo_relative(previous, repo_root)} and {rel_skill_file}"
++            )
++        titles_seen[title] = skill_file
++
++    markdown_targets, code_targets = collect_internal_targets(content)
++
++    for raw_target in markdown_targets:
++        target = raw_target.strip()
++        if not target or target.startswith("#"):
++            continue
++
++        if target.startswith(("http://", "https://", "mailto:")):
++            continue
++
++        if " " in target:
++            errors.append(f"{rel_skill_file}: link/path target contains spaces and may be malformed: `{target}`")
++            continue
++
++        if should_skip_path_validation(target):
++            continue
++
++        resolved = resolve_internal_target(target, skill_file, repo_root)
++        if not resolved.exists():
++            errors.append(
++                f"{rel_skill_file}: broken internal reference `{target}` (resolved to `{normalize_repo_relative(resolved, repo_root)}`)"
++            )
++
++    for raw_target in code_targets:
++        target = raw_target.strip()
++        if not target:
++            continue
++        if not target.startswith(("./", "../", "saas-security-pack/", "appsec-stack-pack/", "docs/")):
++            continue
++        if should_skip_path_validation(target):
++            continue
++
++        resolved = resolve_internal_target(target, skill_file, repo_root)
++        if not resolved.exists():
++            warnings.append(
++                f"{rel_skill_file}: possible broken inline file reference `{target}` "
++                f"(resolved to `{normalize_repo_relative(resolved, repo_root)}`)"
++            )
++
++
++def run_shell_hygiene(repo_root: Path, errors: list[str], warnings: list[str]) -> int:
++    shell_scripts = sorted(
++        p
++        for p in repo_root.rglob("*.sh")
++        if ".git" not in p.parts and "dist" not in p.parts and p.is_file()
++    )
++
++    for script in shell_scripts:
++        rel = normalize_repo_relative(script, repo_root)
++        syntax = subprocess.run(
++            ["bash", "-n", str(script)],
++            capture_output=True,
++            text=True,
++            check=False,
++        )
++        if syntax.returncode != 0:
++            details = (syntax.stderr or syntax.stdout).strip() or "bash -n failed"
++            errors.append(f"{rel}: shell syntax check failed: {details}")
++
++    shellcheck = shutil.which("shellcheck")
++    if shellcheck:
++        for script in shell_scripts:
++            rel = normalize_repo_relative(script, repo_root)
++            lint = subprocess.run(
++                [shellcheck, "--severity=style", str(script)],
++                capture_output=True,
++                text=True,
++                check=False,
++            )
++            if lint.returncode != 0:
++                details = (lint.stdout + "\n" + lint.stderr).strip()
++                warnings.append(f"{rel}: shellcheck reported issues:\n{details}")
++    else:
++        warnings.append("shellcheck is not installed; only `bash -n` syntax checks were executed")
++
++    return len(shell_scripts)
++
++
++def review_repository(repo_root: Path) -> ReviewResult:
++    errors: list[str] = []
++    warnings: list[str] = []
++    names_seen: dict[str, Path] = {}
++    titles_seen: dict[str, Path] = {}
++    reviewed_skills = 0
++
++    for required in REPO_ROOT_REQUIREMENTS:
++        required_path = repo_root / required
++        if not required_path.exists():
++            errors.append(f"Missing required repository path: {required}")
++
++    for pack in PACKS:
++        pack_path = repo_root / pack
++        if not pack_path.is_dir():
++            errors.append(f"Missing required pack directory: {pack}")
++            continue
++
++        for shared in PACK_SHARED_REQUIREMENTS:
++            shared_path = pack_path / shared
++            if not shared_path.is_file():
++                errors.append(f"{pack}: missing required shared file `{shared}`")
++
++        skill_dirs = list(list_skill_dirs(pack_path))
++        if not skill_dirs:
++            errors.append(f"{pack}: no skill directories found")
++            continue
++
++        for skill_dir in skill_dirs:
++            reviewed_skills += 1
++            check_skill_file(skill_dir, repo_root, names_seen, titles_seen, errors, warnings)
++
++    reviewed_shell_scripts = run_shell_hygiene(repo_root, errors, warnings)
++
++    return ReviewResult(
++        errors=errors,
++        warnings=warnings,
++        reviewed_skills=reviewed_skills,
++        reviewed_shell_scripts=reviewed_shell_scripts,
++    )
++
++
++def write_summary(summary_path: Path, result: ReviewResult) -> None:
++    summary_path.parent.mkdir(parents=True, exist_ok=True)
++
++    status = "PASS ✅" if not result.errors else "FAIL ❌"
++    now = dt.datetime.now(dt.timezone.utc).isoformat()
++
++    lines = [
++        "# Daily Skills Review Summary",
++        "",
++        f"- **Status:** {status}",
++        f"- **Generated (UTC):** {now}",
++        f"- **Skills reviewed:** {result.reviewed_skills}",
++        f"- **Shell scripts checked:** {result.reviewed_shell_scripts}",
++        f"- **Errors:** {len(result.errors)}",
++        f"- **Warnings:** {len(result.warnings)}",
++        "",
++    ]
++
++    if result.errors:
++        lines.extend(["## Validation errors", ""])
++        lines.extend([f"- {error}" for error in result.errors])
++        lines.append("")
++
++    if result.warnings:
++        lines.extend(["## Warnings", ""])
++        lines.extend([f"- {warning}" for warning in result.warnings])
++        lines.append("")
++
++    if not result.errors and not result.warnings:
++        lines.extend(["No issues detected. ✅", ""])
++
++    summary_path.write_text("\n".join(lines), encoding="utf-8")
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description="Run daily content-oriented review checks for skills repository")
++    parser.add_argument("--repo-root", default=".", help="Path to repository root")
++    parser.add_argument(
++        "--summary",
++        default="artifacts/daily-review-summary.md",
++        help="Path to output markdown summary",
++    )
++
++    args = parser.parse_args()
++
++    repo_root = Path(args.repo_root).resolve()
++    summary_path = Path(args.summary).resolve() if Path(args.summary).is_absolute() else (repo_root / args.summary)
++
++    result = review_repository(repo_root)
++    write_summary(summary_path, result)
++
++    print(f"Wrote review summary: {summary_path}")
++    print(f"Skills reviewed: {result.reviewed_skills}")
++    print(f"Shell scripts checked: {result.reviewed_shell_scripts}")
++
++    if result.warnings:
++        print("Warnings:")
++        for warning in result.warnings:
++            print(f"  - {warning}")
++
++    if result.errors:
++        print("Validation errors:")
++        for error in result.errors:
++            print(f"  - {error}")
++        print("Daily review failed. See summary for details.")
++        return 1
++
++    print("Daily review passed.")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/scripts/run_daily_review.sh b/scripts/run_daily_review.sh
+new file mode 100755
+index 0000000..201ed21
+--- /dev/null
++++ b/scripts/run_daily_review.sh
+@@ -0,0 +1,13 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++SUMMARY_PATH="${1:-${REPO_ROOT}/artifacts/daily-review-summary.md}"
++
++mkdir -p "$(dirname "${SUMMARY_PATH}")"
++
++python3 "${REPO_ROOT}/scripts/review_skills_repo.py" \
++  --repo-root "${REPO_ROOT}" \
++  --summary "${SUMMARY_PATH}"
++
++printf '\nDaily review summary written to: %s\n' "${SUMMARY_PATH}"

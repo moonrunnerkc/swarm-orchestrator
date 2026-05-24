@@ -1,0 +1,47 @@
+diff --git a/.github/workflows/issue-duplicate-checker.yml b/.github/workflows/issue-opened.yml
+similarity index 99%
+rename from .github/workflows/issue-duplicate-checker.yml
+rename to .github/workflows/issue-opened.yml
+index 752391123ab1..c9f5cb203308 100644
+--- a/.github/workflows/issue-duplicate-checker.yml
++++ b/.github/workflows/issue-opened.yml
+@@ -1,5 +1,5 @@
+ ---
+-name: Issue Duplicate Check via OpenHands Cloud
++name: Issue Opened Automation
+ 
+ on:
+     issues:
+@@ -687,6 +687,7 @@ jobs:
+               env:
+                   GITHUB_TOKEN: ${{ secrets.OPENHANDS_BOT_GITHUB_PAT_PUBLIC || github.token }}
+                   CLOSE_AFTER_DAYS: ${{ inputs.close_after_days || '3' }}
++                  REPOSITORY: ${{ github.repository }}
+               run: |
+                   python scripts/auto_close_duplicate_issues.py \
+                     --repository "$REPOSITORY" \
+diff --git a/AGENTS.md b/AGENTS.md
+index 92e9bb812294..40902a59454d 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -500,6 +500,6 @@ Called by `workspace.get_llm()` in the SDK to retrieve LLM config with the API k
+ 
+ ### Issue Triage Automation
+ 
+-- `.github/workflows/issue-duplicate-checker.yml` now has a second job that auto-applies `good first issue` after the duplicate check completes.
++- `.github/workflows/issue-opened.yml` has a second issue-opened job that auto-applies `good first issue` after the duplicate check completes.
+ - The duplicate check is used only as a veto/guardrail for `good first issue` automation: duplicate or overlapping-scope issues should not be auto-labeled.
+ - The OpenHands classifier logic for newcomer suitability lives in `scripts/issue_good_first_issue_check_openhands.py`, with focused unit coverage in `tests/unit/test_issue_good_first_issue_check_openhands.py`.
+diff --git a/scripts/issue_good_first_issue_check_openhands.py b/scripts/issue_good_first_issue_check_openhands.py
+index 28e71488ca10..c0ffae9f8eb1 100644
+--- a/scripts/issue_good_first_issue_check_openhands.py
++++ b/scripts/issue_good_first_issue_check_openhands.py
+@@ -154,7 +154,7 @@ def extract_label_names(issue: dict[str, Any]) -> list[str]:
+             candidate = ''
+         if candidate:
+             label_names.append(candidate)
+-    return sorted(set(label_names), key=str.lower)
++    return sorted(set(label_names), key=lambda label: (label.lower(), label))
+ 
+ 
+ def build_prompt(repository: str, issue: dict[str, Any]) -> str:

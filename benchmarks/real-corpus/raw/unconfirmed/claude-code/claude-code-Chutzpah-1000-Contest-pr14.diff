@@ -1,0 +1,87 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index fc98f74..c005d6e 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -247,3 +247,23 @@ from etl.transform import normalize_supplier
+ - 라운드별 브랜치를 `agent/round-N-...` 로 push 한 뒤 PR 생성 또는 기존 자율 개선 PR에 커밋 추가.
+ - PR 본문에는 Round N 로그 엔트리 그대로 + 전/후 측정치(가능한 경우) 포함.
+ - CI 실패 시 1회만 fix 재시도. 같은 에러 반복이면 중단·보고.
++
++### 11.6 Stacked PR 정책
++
++여러 라운드를 한 세션에서 연속 실행할 때, 매 라운드를 **이전 라운드 브랜치 위에** 분기해 stacked PR 로 누적한다 (이유: 사용자가 머지 시점을 직접 통제할 수 있고, 이전 라운드 변경에 의존하는 후속 라운드도 안전하게 검증 가능).
++
++- 브랜치 분기: `git checkout agent/round-{N-1}-...` → `git checkout -b agent/round-N-...`
++- PR 생성 시 `--base agent/round-{N-1}-...` 명시. GitHub 은 이전 PR 머지 시 base 를 main 으로 자동 갱신한다.
++- 머지 순서: **가장 오래된 stacked 부터 차례로**. PR 1개 머지 → 다음 PR base 자동 갱신 → 다음 머지.
++- 사용자 변경 사항 충돌 방지: 라운드 작업 중 `git checkout main` 으로 메인 워킹트리를 건드리지 말 것. 항상 `agent/round-*` 브랜치 안에서만 작업.
++
++### 11.7 컨텍스트 인계 안전장치 (토큰 임계 대비)
++
++세션 토큰 임계에 가까워졌거나, 다른 에이전트(Codex CLI · Cursor 등)에게 인계해야 할 때:
++
++1. **마지막 라운드 엔트리** 가 `AUTONOMOUS_IMPROVEMENT_LOG.md` 끝에 완전히 append 됐는지 확인 (Scores·Files changed·Verification·Commit·Notes 5개 필드 모두).
++2. **열린 stacked PR 목록**: `gh pr list --state open --search "agent/round-"` 출력을 메모.
++3. **현재 브랜치 위치**: `git rev-parse --abbrev-ref HEAD` 와 `git log --oneline -5` 출력을 메모.
++4. 후속 에이전트는 본 §11.1 ~ §11.6 + 위 3가지 메모 + `AUTONOMOUS_IMPROVEMENT_LOG.md` 마지막 라운드 엔트리를 읽고 다음 라운드부터 재개.
++
++토큰 임계가 임박했지만 다음 라운드 후보를 정하지 못한 상태라면, 본 §11.7 절차만 마치고 라운드를 시작하지 말 것. 잘못된 후보 선정 + 검증 실패가 인계 시 가장 큰 마찰 지점.
+diff --git a/AUTONOMOUS_IMPROVEMENT_LOG.md b/AUTONOMOUS_IMPROVEMENT_LOG.md
+index 8a2cc2e..608f7a3 100644
+--- a/AUTONOMOUS_IMPROVEMENT_LOG.md
++++ b/AUTONOMOUS_IMPROVEMENT_LOG.md
+@@ -942,7 +942,53 @@ uv run streamlit run app/main.py  # 앱 실행
+ 
+ ---
+ 
+-## 최종 점수 (Round 30 기준)
++## Round 31 — AGENTS.md 컨텍스트 인계 안전장치 보강 (O1) (2026-05-19)
++
++- **Branch**: `agent/round-31-context-handoff-guard` (stacked on R30)
++- **Scores (before → after)**:
++  - 기능 완성도: 9 → 9
++  - 사용자 경험: 9 → 9
++  - 안정성: 9 → 9
++  - 성능: 9 → 9
++  - 코드 품질: 9 → 9 (인계 절차 명시)
++  - 완성도: 9 → 9 (운영 안전장치)
++- **Lowest area**: 동률 9. **프롬프트 L148** "토큰이 다 사용되기 전에 코덱스가 이해하기 좋은 컨텍스트로 로그를 만들어주고. AGENTS.md에 이 로그를 사용해서 개발을 시작하라는 안전장치를 만들어." 의 일부가 §11.1 체크리스트로 들어가 있으나, **stacked PR 누적 시 머지 순서**와 **토큰 임계 직전 인계 절차**가 명시되어 있지 않음. 본 세션은 R22~R30 까지 10개 stacked PR 누적 → 후속 에이전트가 머지 순서·재개 지점을 즉시 파악하기 어려운 상태.
++
++### Planned improvement (O1 소진)
++`AGENTS.md §11` 끝에 두 절 신규 추가:
++- **§11.6 Stacked PR 정책** — 분기/머지 순서/사용자 변경 충돌 방지 절차.
++- **§11.7 컨텍스트 인계 안전장치** — 토큰 임계 직전 3단계 메모(마지막 로그 엔트리·열린 PR 목록·현재 브랜치) 명시. 다음 에이전트가 따라야 할 시작 절차.
++
++### Files changed
++- `AGENTS.md` — §11.6, §11.7 두 절 신규 추가 (약 30줄)
++
++### Verification
++- `uv run ruff check --fix .` → All checks passed
++- `uv run ruff format .` → 43 files left unchanged
++- `uv run pyright` → 0 errors, 137 warnings
++- `uv run pytest` → **71 passed** 유지, coverage 65.35%
++
++### Slack 메시지 (요약)
++> Round 31 ✅ AGENTS.md §11.6 Stacked PR 정책 + §11.7 컨텍스트 인계 안전장치 추가 — 프롬프트 L148 명시 안전장치 충족.
++
++### Commit
++- `docs(agents): §11.6 Stacked PR 정책 + §11.7 컨텍스트 인계 안전장치 추가`
++
++### Notes (다음 라운드 후보 풀)
++- **M1**: main.py 데이터 출처 caption 헬퍼화 (refactor 일관성)
++- **N1**: main.py warning/error 메시지 톤 일관화
++- **P1 (신규)**: `app/components/welcome_modal.py` 의 `_open_dialog` 에서 `st.session_state.get(_WELCOME_STEP_KEY, 0)` 두 곳 호출 — clamp 헬퍼로 통합 (코드 미세 중복)
++- **F1**·**E1** 보류
++
++### 세션 종료 핸드오프 (R22~R31 누적)
++- 본 세션 실행 라운드: **Round 22 → Round 31 (10 라운드, 지정 작업 R22 포함)**.
++- 모든 라운드 검증 4종 + GitHub Actions CI 통과 (push + pull_request 양쪽).
++- 열린 stacked PR: **#5 (R22) → #6 (R23) → #7 (R24) → #8 (R25) → #9 (R26) → #10 (R27) → #11 (R28) → #12 (R29) → #13 (R30) → #14 (R31)** (R31 PR 생성 대기). 머지 순서: 가장 오래된부터 차례로 (PR #5 → #14).
++- 다음 에이전트는 `AGENTS.md §11.1` + §11.6 + §11.7 절차에 따라 시작. 후보 풀 1순위: **M1 데이터 출처 caption 헬퍼화** 또는 **N1 warning 톤 일관화**.
++
++---
++
++## 최종 점수 (Round 31 기준)
+ | 영역 | 점수 |
+ |------|------|
+ | 기능 완성도 | 9 |

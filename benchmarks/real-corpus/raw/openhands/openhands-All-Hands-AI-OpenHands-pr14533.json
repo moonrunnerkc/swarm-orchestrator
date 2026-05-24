@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14533",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14533,
+    "headSha": "f23d6ab1a1e163bca0fd047862916ab5a73f0252",
+    "baseSha": "077039ef0c0238dd9c55b90d32c8d7feacc8d7bc",
+    "title": "Forward Bitbucket Data Center events to automations",
+    "body": "HUMAN:\nThis PR makes Bitbucket Data Center webhooks usable as an automation event source in OHE: signed BBDC webhooks are forwarded to the automation service, org context resolves from the BBDC project key, and the installed webhook subscribes to repo, pull request, reviewer, and comment events.\n\n- [x] A human has tested these changes.\n\n## Summary\n- forward signed Bitbucket Data Center webhook deliveries to the automation service when automation event forwarding is enabled\n- expand the installed Bitbucket DC webhook events to cover repo changes, PR lifecycle, reviewer, and PR comment events\n- resolve Bitbucket DC automation org context from the repository project key, matching the org-claim model added for Bitbucket DC\n- normalize `eventKey` from `X-Event-Key` when needed so automation parsing is reliable\n\nDepends on OpenHands/automation support for the built-in `bitbucket_data_center` source.\n\n## Test plan\n- [x] `env PYTHONPATH=enterprise:. uv run ruff format --check --config enterprise/dev_config/python/ruff.toml enterprise/server/routes/integration/bitbucket_dc.py enterprise/server/services/automation_event_service.py enterprise/tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_webhook.py enterprise/tests/unit/server/services/test_automation_event_service.py tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_webhooks.py`\n- [x] `env PYTHONPATH=enterprise:. uv run ruff check --config enterprise/dev_config/python/ruff.toml enterprise/server/routes/integration/bitbucket_dc.py enterprise/server/services/automation_event_service.py enterprise/tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_webhook.py enterprise/tests/unit/server/services/test_automation_event_service.py tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_webhooks.py`\n- [x] `env PYTHONPATH=enterprise:. uv run --with python-keycloak --with pytest-asyncio --with aiosqlite --with limits --with coredis pytest enterprise/tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_webhook.py enterprise/tests/unit/server/services/test_automation_event_service.py tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_webhooks.py -q` (46 passed)\n- [x] R01 OHE E2E: patched R01 with the OpenHands and automation changes, created an org claim for Bitbucket DC project `AIV`, created automations through the automation API, sent signed Bitbucket DC webhooks through `/integration/bitbucket-dc/events`, and verified forwarding/matching for `pr:opened`, `repo:refs_changed`, `pr:comment:added`, and `pr:reviewer:approved`.\n- [x] R01 OHE completion E2E: `pr:reviewer:approved` created automation run `ef186555-53b0-4830-a7b9-6f83a5b49087`, dispatched sandbox `5oJ2T2breoJ4ZKZ15Q5Sb8`, and completed successfully with no error.\n\n---\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-f23d6ab   docker.openhands.dev/openhands/openhands:f23d6ab\n```",
+    "author": "ak684",
+    "headRef": "alona/bbdc-automations",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "f23d6ab1a1e163bca0fd047862916ab5a73f0252",
+    "baseSha": "077039ef0c0238dd9c55b90d32c8d7feacc8d7bc"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14533.diff",
+  "vendoredAt": "2026-05-24T03:17:50.393Z",
+  "collectedAt": "2026-05-24T03:17:50.393Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-WookLabs-athanor-pr13",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer"
+  },
+  "pr": {
+    "number": 13,
+    "headSha": "cb0ab4b47c3176744ad4d380b149676bb98542df",
+    "baseSha": "611d94388b9ce9deb038d4acb6d817a421b4f359",
+    "title": "chore: add SECURITY.md with private reporting channel",
+    "body": "## Summary\n\nAdds a security policy declaring how to report vulnerabilities privately, plus explicit in-scope / out-of-scope language tied to Athanor's actual attack surface.\n\n## Motivation\n\nAthanor dispatches shell commands through Claude Code hooks, skills, and the Codex CLI. Concrete attack surfaces a finder might encounter:\n\n- Hook prompts that execute shell commands beyond what the user authorized\n- Skills writing outside the project root\n- Codex CLI dispatch paths allowing argument injection (already partly addressed in PR #11)\n- `.athanor/sessions/` or `.athanor/lessons/` artifacts leaking credentials\n\nWith no `SECURITY.md`, the default finder behavior is to open a public issue with the vulnerability inline — the wrong channel.\n\n## Change\n\nSingle file: `SECURITY.md`. Codex CLI cross-review applied before submission (fallback-channel heading corrected, \"documented sandbox\" claim removed as unsupported, \"released version on main\" release/branch conflation fixed).\n\n## Operational note\n\nThis assumes **GitHub private vulnerability reporting is enabled** for the repo:\n*Settings > Security > Private vulnerability reporting > Enable*\n\nIf you prefer not to enable it, the fallback channel (public `security: contact request` issue → private channel) still works and is documented.\n\n## Test plan\n\n- [ ] `SECURITY.md` is discoverable via the GitHub Security tab\n- [ ] Private advisory link resolves to a \"Report a vulnerability\" page (if private reporting enabled)\n- [ ] Fallback issue title pattern is reasonable for a first-time finder\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "Wooklae-cho",
+    "headRef": "chore/add-security-policy",
+    "repository": "WookLabs/athanor"
+  },
+  "diffRef": {
+    "repository": "WookLabs/athanor",
+    "headSha": "cb0ab4b47c3176744ad4d380b149676bb98542df",
+    "baseSha": "611d94388b9ce9deb038d4acb6d817a421b4f359"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-WookLabs-athanor-pr13.diff",
+  "vendoredAt": "2026-05-24T03:13:38.363Z",
+  "collectedAt": "2026-05-24T03:13:38.363Z"
+}

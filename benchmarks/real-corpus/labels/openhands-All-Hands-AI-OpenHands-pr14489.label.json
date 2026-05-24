@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Fixes a duplicate-key race in save_app_conversation_info (sql_app_conversation_info_service.py): the merge+commit is wrapped in try/except IntegrityError, and on failure it rolls back, fetches the existing StoredConversationMetadata via db_session.get, copies every non-primary-key column from `stored` onto `existing`, and commits again. If get returns None (the conflict wasn't actually a duplicate of our row), the IntegrityError is re-raised — so this is NOT a try/except: pass cheat; the original error is preserved when there's no recovery path. The regression test test_save_recovers_from_concurrent_insert monkeypatches commit to perform a concurrent insert and then raise IntegrityError on the first call, asserts the second commit succeeds, and verifies retrieved data matches the second writer; this is a real test of the race-recovery path. Clean, targeted fix.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T13:40:00.000Z"
+}

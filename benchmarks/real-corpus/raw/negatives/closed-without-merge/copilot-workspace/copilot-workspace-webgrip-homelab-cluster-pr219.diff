@@ -1,0 +1,75 @@
+diff --git a/.copilot-review/result.md b/.copilot-review/result.md
+new file mode 100644
+index 00000000..48614d3e
+--- /dev/null
++++ b/.copilot-review/result.md
+@@ -0,0 +1,69 @@
++pr: 217
++
++## Dependency Update Review
++
++**Verdict:** Yellow Caution
++**Recommendation:** Merge after checks
++**Confidence:** High
++
++### Executive summary
++
++This PR bumps the `ghcr.io/grafana-community/helm-charts/loki` OCI Helm chart from **16.0.1 → 17.1.1**, a major chart version jump that skips six intermediate releases. The headline breaking change in 17.0.0 is the removal/deprecation of the built-in MinIO sub-chart — however, this repository already configures Loki with external S3 storage (`minio.enabled` defaults to `false`), so that breaking change does not affect this deployment. The underlying **Loki app version remains unchanged at 3.7.2** across both chart releases. The risk is low-to-moderate: the app does not change, no values migration is required for this config, but a StatefulSet-based workload with persistent storage and S3 credentials is being upgraded, so a verified rollout is prudent.
++
++### Update inventory
++
++| Dependency | Ecosystem | Change | Scope | Local role | Risk |
++|---|---|---|---|---|---|
++| `ghcr.io/grafana-community/helm-charts/loki` | OCI Helm chart | `16.0.1 → 17.1.1` | major (chart), none (app) | runtime / observability log aggregation | Yellow |
++
++### Important upstream changes
++
++Changes between 16.0.1 and 17.1.1 (all releases reviewed):
++
++- **[breaking]** **17.0.0**: Built-in MinIO sub-chart deprecated and disabled by chart validation. Deploying with `minio.enabled: true` now causes a hard chart-render failure. A temporary escape hatch `ignoreMinioDeprecation: true` exists. **This repo is not affected** — the HelmRelease already uses external S3. ([grafana-community/helm-charts#366](https://github.com/grafana-community/helm-charts/pull/366))
++
++- **[feature]** **16.1.0**: Added `ipFamilyPolicy` and `ipFamilies` support to all Service resources. No impact unless dual-stack configuration is needed. ([grafana-community/helm-charts#515](https://github.com/grafana-community/helm-charts/pull/515))
++
++- **[bugfix]** **16.1.1**: Fixed missing zone suffix in HPA/KEDA `scaleTargetRef` when zone-aware ingester replication is enabled. Not applicable to this deployment (SingleBinary, no HPA/KEDA configured). ([grafana-community/helm-charts#514](https://github.com/grafana-community/helm-charts/pull/514))
++
++- **[bugfix]** **17.0.2**: Fixed incorrect replica rendering when `replicas` is set to `null`. This repo sets `read.replicas: 0`, `write.replicas: 0`, `backend.replicas: 0` explicitly — not null — so no impact, but this fix is beneficial. ([grafana-community/helm-charts#448](https://github.com/grafana-community/helm-charts/pull/448))
++
++- **[feature]** **17.1.0**: Added workload template helpers for index-gateway, ingester, overrides-exporter, querier, query-frontend, query-scheduler, read, ruler, and write. These are internal chart helper refactors; no values changes required. ([grafana-community/helm-charts#502](https://github.com/grafana-community/helm-charts/pull/502))
++
++- **[feature]** **17.1.1**: Added workload template helper for the monolithic (SingleBinary) deployment mode — directly relevant to this deployment. This is the active mode in this repo. ([grafana-community/helm-charts#520](https://github.com/grafana-community/helm-charts/pull/520))
++
++### Local impact
++
++Loki is deployed at `kubernetes/apps/observability/loki/app/` via a Flux `OCIRepository` + `HelmRelease`. Key configuration details:
++
++- **Deployment mode**: `SingleBinary` with 1 replica — the simplest Loki topology; least likely to be affected by chart restructuring.
++- **Storage**: External S3 with endpoint/region/credentials injected via the `observability-s3` secret using `$${S3_ENDPOINT}` / `$${S3_ACCESS_KEY_ID}` / `$${S3_SECRET_ACCESS_KEY}`. MinIO is **not used**, making the 17.0.0 breaking change a non-issue.
++- **Persistence**: `longhorn` StorageClass, 10Gi PVC (`singleBinary.persistence`). Upgrade involves a StatefulSet pod restart; Longhorn volumes will reattach.
++- **Upgrade remediation**: `strategy: uninstall` is configured — if upgrade fails after 3 retries, Flux will uninstall and reinstall. This is a clean approach but means a brief log-ingestion gap and PVC re-attachment on failed upgrades.
++- **Monitoring**: ServiceMonitor, dashboards, and alerting rules are enabled. After upgrade, verify these are still rendered correctly.
++- **Automerge**: Disabled by Renovate config; manual merge required. Appropriate for a major-version chart bump.
++
++Files reviewed:
++- `kubernetes/apps/observability/loki/app/helmrelease.yaml`
++- `kubernetes/apps/observability/loki/app/ocirepository.yaml`
++- `kubernetes/apps/observability/loki/app/kustomization.yaml`
++- `kubernetes/apps/observability/loki/ks.yaml`
++
++### Pre-merge checks
++
++- [ ] Confirm `minio.enabled` is not set (explicitly or via a ConfigMap/Secret substitute) anywhere in the Loki configuration tree — the upgrade will fail hard if it is.
++- [ ] Review the 17.1.1 chart's `values.yaml` to verify no new required values have been added for `singleBinary` mode that are not covered by the current HelmRelease values.
++- [ ] After merge, watch the HelmRelease reconciliation status in Flux (`flux get helmrelease -n observability loki`) to confirm the upgrade completes cleanly.
++- [ ] Verify the `singleBinary` pod restarts successfully and the Longhorn PVC re-attaches — check `kubectl get pods -n observability` and Longhorn UI.
++- [ ] Confirm Loki's ServiceMonitor is still scraped by Prometheus after upgrade (check Grafana → Explore or alert rules).
++- [ ] Spot-check that the S3 bucket integration still works post-upgrade (e.g., query recent logs in Grafana to confirm both write and read paths are healthy).
++
++### Evidence reviewed
++
++- **PR**: "feat(container)!: Update image ghcr.io/grafana-community/helm-charts/loki ( 16.0.1 ➔ 17.1.1 )" — labels: `area/kubernetes`, `type/major`, `renovate/container`, `dependencies`, `major`. Diff: 1 file changed (`ocirepository.yaml`), tag and digest updated.
++- **Files in repo**: `kubernetes/apps/observability/loki/app/helmrelease.yaml`, `ocirepository.yaml`, `kustomization.yaml`, `ks.yaml`
++- **Upstream sources checked**:
++  - GitHub releases for all versions 16.0.1 → 17.1.1: `https://api.github.com/repos/grafana-community/helm-charts/releases/tags/loki-{version}`
++  - Chart.yaml at `loki-16.0.1` and `loki-17.1.1` tags (confirmed app version 3.7.2 in both)
++  - PR details for [#366](https://github.com/grafana-community/helm-charts/pull/366) (MinIO deprecation)
++- **Notable uncertainty**: The grafana-community chart is a community fork (not official Grafana). Release notes are sparse (single PR per release); no comprehensive CHANGELOG. The 17.0.0 MinIO deprecation PR body was reviewed in detail and confirms no impact for this external-S3 deployment.

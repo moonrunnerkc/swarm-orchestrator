@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-KRcpl88-WinAmy4D-pr37",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 37,
+    "headSha": "d5ef957b83aa49ca8ded858b8ee3eafaca142bb9",
+    "baseSha": "132ca579e8f2630497be1a262a3ed7ec1be0a677",
+    "title": "Move non-inline `CBitBoard` implementations from header to source",
+    "body": "This PR addresses the bitboard organization issue by moving `CBitBoard` function bodies out of `bitboard.h` into `bitboard.cpp`, starting at `ClearLowestBit` and continuing through all subsequent methods/operators. The goal is to keep the header as interface and place implementation logic in the translation unit.\n\n- **Header cleanup (`include/bitboard.h`)**\n  - Replaced in-class definitions (from `ClearLowestBit` onward) with declarations.\n  - Kept existing signatures and friend declarations intact to preserve API shape.\n\n- **Implementation relocation (`src/bitboard.cpp`)**\n  - Added out-of-class definitions for:\n    - `ClearLowestBit`, `SetMask`, `ClrMask`, `CountBits`, `FindSetBit`, `FindSetBitCoord`\n    - state/query helpers (`IsEmpty`, `IsNotEmpty`, `operator bool`, `operator!`)\n    - bitwise/shift/arithmetic/comparison operators and compound assignments\n  - Preserved logic and behavior; this is a structural move of code location.\n\n- **Code organization impact**\n  - `bitboard.cpp` is no longer a placeholder and now owns the concrete `CBitBoard` implementation body.\n  - `bitboard.h` now serves as a cleaner public interface.\n\n```cpp\n// include/bitboard.h\nvoid ClearLowestBit();\nstatic CBitBoard SetMask(uint16_t i);\nint CountBits() const;\nfriend CBitBoard operator&(const CBitBoard& lhs, const CBitBoard& rhs);\n\n// src/bitboard.cpp\nvoid CBitBoard::ClearLowestBit() { /* existing logic moved here */ }\nCBitBoard CBitBoard::SetMask(uint16_t i) { /* existing logic moved here */ }\nint CBitBoard::CountBits() const { /* existing logic moved here */ }\n```",
+    "author": "Copilot",
+    "headRef": "copilot/move-functions-to-bitboard-cpp",
+    "repository": "KRcpl88/WinAmy4D"
+  },
+  "diffRef": {
+    "repository": "KRcpl88/WinAmy4D",
+    "headSha": "d5ef957b83aa49ca8ded858b8ee3eafaca142bb9",
+    "baseSha": "132ca579e8f2630497be1a262a3ed7ec1be0a677"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-KRcpl88-WinAmy4D-pr37.diff",
+  "vendoredAt": "2026-05-24T03:06:14.595Z",
+  "collectedAt": "2026-05-24T03:06:14.595Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "devin-divord97-ccc-pr18",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 18,
+    "headSha": "f5a3a0f2611b00ff8b304df901f6645f9bc188b2",
+    "baseSha": "3066ad91b0ffa7905b2c2432bb79fe324db6c9c0",
+    "title": "feat: Video Call Support — media_type field + mod_verto video codecs (Phase 10.20)",
+    "body": "## Summary\n\nPhase 10.20 视频通话扩展 — 预留 `media_type=VIDEO` 字段 + mod_verto 视频编解码配置。\n\n**Domain (Call BC):**\n- `CreateCallInput` 新增 `MediaType` 字段，`resolveMediaType()` 默认 AUDIO（向后兼容）\n- `ValidMediaType()` 验证函数（仅允许 `audio`/`video`）\n- `CallListFilter` 新增 `MediaType` 过滤条件\n- Mock repo + MySQL repo 均支持 MediaType 过滤\n\n**Application (Outbound):**\n- `DialRequest` + `InternalDialRequest` 新增 `MediaType` 字段，传递到 Call 创建\n\n**HTTP Handler:**\n- `POST /calls/dial` 和 `POST /calls/internal-dial` 接受 `media_type` 参数\n- `GET /calls` 支持 `?media_type=video` 查询过滤\n\n**FreeSWITCH:**\n- mod_verto 两个 profile (WS/WSS) 新增 `outbound-video-codec-string` 和 `inbound-video-codec-string`（VP8, H264）\n\n**TDD (6 新测试):**\n- 视频呼入/呼出/内呼创建\n- 默认 MediaType 为 AUDIO\n- MediaType 枚举校验\n- 按 MediaType 过滤通话列表\n\n## Review & Testing Checklist for Human\n\n- [ ] 确认 `resolveMediaType` 在 MediaType 为空时默认 AUDIO，不破坏现有通话记录\n- [ ] 确认 Dial/InternalDial API 不传 `media_type` 时行为与之前一致（默认 audio）\n- [ ] 验证 MySQL `calls` 表 `media_type` 列已存在（migration 000001 中已创建）\n\n### Notes\n- `media_type` 字段在 Phase 0 migration 中已预留于 `calls` 表，本 PR 激活该字段在所有调用链中的传递\n- 视频编解码使用 VP8 + H264，覆盖主流 WebRTC 浏览器\n- 9 个文件修改，+130 行，零破坏性变更\n\nLink to Devin session: https://app.devin.ai/sessions/35e328fa681447e98fa82466c8f69b99\nRequested by: @divord97\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/divord97/ccc/pull/18\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779579883-video-call",
+    "repository": "divord97/ccc"
+  },
+  "diffRef": {
+    "repository": "divord97/ccc",
+    "headSha": "f5a3a0f2611b00ff8b304df901f6645f9bc188b2",
+    "baseSha": "3066ad91b0ffa7905b2c2432bb79fe324db6c9c0"
+  },
+  "vendoredDiffPath": "devin/devin-divord97-ccc-pr18.diff",
+  "vendoredAt": "2026-05-24T03:04:39.732Z",
+  "collectedAt": "2026-05-24T03:04:39.732Z"
+}

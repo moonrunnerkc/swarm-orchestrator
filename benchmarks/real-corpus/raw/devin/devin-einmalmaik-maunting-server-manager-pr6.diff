@@ -1,0 +1,2683 @@
+diff --git a/.gitignore b/.gitignore
+index 4dba26d..1395538 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -3,6 +3,9 @@
+ .env.*
+ !.env.example
+ 
++# MSM console logs (per-server, runtime)
++backend/logs/
++
+ # Virtual environments (anywhere in the repository)
+ .venv/
+ venv/
+diff --git a/backend/config.py b/backend/config.py
+index 6581bdc..b9b408a 100644
+--- a/backend/config.py
++++ b/backend/config.py
+@@ -44,7 +44,9 @@ class Settings(BaseSettings):
+     # Produktion: /opt/msm/servers  |  Dev: ./servers
+     servers_dir: str = "/opt/msm/servers"
+ 
+-    # Steam
++    # Steam — SteamCMD läuft in einem ephemeren Container (cm2network/steamcmd:root),
++    # nicht mehr auf dem Host. steamcmd_path bleibt nur für Backward-Compat-Tests
++    # (sollte nirgendwo im Code mehr verwendet werden).
+     steamcmd_path: str = "/usr/games/steamcmd"
+     steam_api_key: str = ""
+ 
+diff --git a/backend/games/__init__.py b/backend/games/__init__.py
+index 1162a61..1677bcb 100644
+--- a/backend/games/__init__.py
++++ b/backend/games/__init__.py
+@@ -1,4 +1,13 @@
+-from .base import GamePlugin, ServerStatus, ConfigField, _run_install_with_logging, _append_console_log, query_a2s_info
++from .base import (
++    ConfigField,
++    GamePlugin,
++    ServerStatus,
++    _append_console_log,
++    container_name_for,
++    query_a2s_info,
++    run_steamcmd_install,
++    run_steamcmd_workshop_download,
++)
+ from .conan_exiles_ue5.plugin import ConanExilesUE5Plugin
+ from .dayz.plugin import DayZPlugin
+ 
+@@ -15,4 +24,15 @@ def get_plugin(game_type: str) -> GamePlugin | None:
+     return None
+ 
+ 
+-__all__ = ["GamePlugin", "ServerStatus", "ConfigField", "get_plugin", "PLUGINS", "_run_install_with_logging"]
++__all__ = [
++    "GamePlugin",
++    "ServerStatus",
++    "ConfigField",
++    "get_plugin",
++    "PLUGINS",
++    "_append_console_log",
++    "container_name_for",
++    "query_a2s_info",
++    "run_steamcmd_install",
++    "run_steamcmd_workshop_download",
++]
+diff --git a/backend/games/base.py b/backend/games/base.py
+index 00e889b..34464bd 100644
+--- a/backend/games/base.py
++++ b/backend/games/base.py
+@@ -1,20 +1,41 @@
++"""Game-Plugin-Basis — Docker-only Lifecycle.
++
++Jeder GamePlugin liefert minimale, Docker-spezifische Bausteine:
++  - build_container_command(server)  → cmd-Args im Container
++  - build_container_env(server)      → ENV-Vars im Container
++  - build_port_publishes(server)     → Liste von PortPublish (host↔container)
++  - build_volume_binds(server)       → Liste von VolumeBind (host↔container)
++
++`start/stop/get_status/get_logs` haben Default-Implementierungen in der Basis,
++die alle Container-Operationen über `docker_service` ausführen. Plugins
++überschreiben nur, was wirklich game-spezifisch ist (z. B. Custom-Workshop-
++Pfade beim install_mod).
++
++Es gibt KEINE systemd-/linux-user-Pfade mehr. Game-Server laufen ausschließlich
++in Docker-Containern. Isolation kommt von Docker, nicht von POSIX-Usern.
++"""
++
++from __future__ import annotations
++
++import logging
+ import os
+ import socket
+-import threading
+ import subprocess
+-import logging
+ from abc import ABC, abstractmethod
+ from dataclasses import dataclass
+ from typing import Any
+ 
++from services import docker_service
++from services.docker_service import PortPublish, VolumeBind
++
+ logger = logging.getLogger(__name__)
+ 
+ 
+ def query_a2s_info(host: str, port: int, timeout: float = 3.0) -> dict | None:
+-    """Sends a Steam A2S_INFO query and returns player count + server info.
++    """Sendet eine Steam A2S_INFO-Query und liest Spielerzahlen/Servername.
+ 
+-    Returns dict with 'players', 'max_players', 'server_name', 'map' or None on failure.
+-    Protocol: https://developer.valvesoftware.com/wiki/Server_queries#A2S_INFO
++    Returns dict {'players', 'max_players', 'server_name', 'map'} or None.
++    Protokoll: https://developer.valvesoftware.com/wiki/Server_queries#A2S_INFO
+     """
+     request = b"\xFF\xFF\xFF\xFF\x54Source Engine Query\x00"
+     try:
+@@ -27,13 +48,12 @@ def query_a2s_info(host: str, port: int, timeout: float = 3.0) -> dict | None:
+         if len(data) < 6:
+             return None
+ 
+-        # Skip 4-byte header (0xFFFFFFFF)
+         idx = 4
+         header = data[idx]
+         idx += 1
+ 
+         if header == 0x41:
+-            # Challenge response — resend with challenge
++            # Challenge-Response — erneut mit Challenge senden
+             challenge = data[5:9]
+             request2 = b"\xFF\xFF\xFF\xFF\x54Source Engine Query\x00" + challenge
+             sock2 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+@@ -50,31 +70,21 @@ def query_a2s_info(host: str, port: int, timeout: float = 3.0) -> dict | None:
+         if header != 0x49:
+             return None
+ 
+-        # Protocol version
+-        idx += 1
+-
+-        # Server name (null-terminated string)
++        idx += 1  # protocol version
+         end = data.index(b"\x00", idx)
+         server_name = data[idx:end].decode("utf-8", errors="replace")
+         idx = end + 1
+ 
+-        # Map
+         end = data.index(b"\x00", idx)
+         map_name = data[idx:end].decode("utf-8", errors="replace")
+         idx = end + 1
+ 
+-        # Folder
+-        end = data.index(b"\x00", idx)
++        end = data.index(b"\x00", idx)  # folder
+         idx = end + 1
+-
+-        # Game
+-        end = data.index(b"\x00", idx)
++        end = data.index(b"\x00", idx)  # game
+         idx = end + 1
++        idx += 2  # id (short)
+ 
+-        # ID (short)
+-        idx += 2
+-
+-        # Players, Max Players
+         players = data[idx]
+         idx += 1
+         max_players = data[idx]
+@@ -111,9 +121,13 @@ class ServerStatus:
+     message: str | None = None
+ 
+ 
++# ── Console-Logging (MSM-eigene Log-Datei pro Server) ──────────────────────
++
++
+ def _console_log_path(server_id: int) -> str:
+-    """Gibt den Pfad zur MSM Console-Log-Datei zurueck.
+-    Liegt zentral unter backend/logs/<id>/console.log — unabhaengig vom install_dir.
++    """Pfad zur MSM Console-Log-Datei. Liegt zentral unter backend/logs/<id>/console.log
++    — unabhängig vom install_dir, damit der Pfad auch dann existiert, wenn der
++    Bind-Mount geleert wird.
+     """
+     base_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
+     srv_dir = os.path.join(base_dir, str(server_id))
+@@ -122,7 +136,6 @@ def _console_log_path(server_id: int) -> str:
+ 
+ 
+ def _append_console_log(server_id: int, text: str) -> None:
+-    """Appends text to the server console log."""
+     try:
+         log_path = _console_log_path(server_id)
+         with open(log_path, "a", encoding="utf-8") as f:
+@@ -132,207 +145,315 @@ def _append_console_log(server_id: int, text: str) -> None:
+         logger.warning("Could not write console log for server %s: %s", server_id, e)
+ 
+ 
+-def _run_install_with_logging(cmd: list[str], server_id: int, install_dir: str) -> None:
+-    """Runs an install command in background, writes output to console log,
+-    and updates server status on completion."""
+-    log_path = _console_log_path(server_id)
+-    returncode = -1
+-    error_msg: str | None = None
+-    try:
+-        os.makedirs(install_dir, exist_ok=True)
+-        with open(log_path, "a", encoding="utf-8") as log_file:
+-            log_file.write(f"[MSM] Installation gestartet...\n")
+-            log_file.write(f"[MSM] Befehl: {' '.join(cmd)}\n")
+-            log_file.flush()
+-            proc = subprocess.Popen(
+-                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+-                env={**os.environ, "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
+-            )
+-            # Stream output line by line to log file (live)
+-            for line in proc.stdout:
+-                log_file.write(line)
+-                log_file.flush()
+-            proc.wait()
+-            returncode = proc.returncode
+-            if returncode == 0:
+-                log_file.write(f"\n[MSM] Installation abgeschlossen.\n")
+-            else:
+-                log_file.write(f"\n[MSM] Installation fehlgeschlagen (exit code {returncode}).\n")
+-            log_file.flush()
+-    except Exception as e:
+-        error_msg = str(e)
+-        logger.warning("Install failed for server %s: %s", server_id, e)
+-        try:
+-            with open(log_path, "a", encoding="utf-8") as log_file:
+-                log_file.write(f"\n[MSM] Installation Fehler: {e}\n")
+-        except OSError:
+-            pass
++# ── Container-Name ─────────────────────────────────────────────────────────
+ 
+-    # Update server status in DB
+-    try:
+-        from database import SessionLocal
+-        from models import Server
+-        db = SessionLocal()
+-        try:
+-            srv = db.query(Server).filter(Server.id == server_id).first()
+-            if srv:
+-                if returncode == 0:
+-                    srv.status = "stopped"
+-                    srv.status_message = "Installation abgeschlossen"
+-                elif error_msg:
+-                    srv.status = "error"
+-                    srv.status_message = f"Installation fehlgeschlagen: {error_msg}"
+-                else:
+-                    srv.status = "error"
+-                    srv.status_message = f"Installation fehlgeschlagen (exit {returncode})"
+-                db.commit()
+-        finally:
+-            db.close()
+-    except Exception as e:
+-        logger.warning("Could not update server status after install: %s", e)
++
++def container_name_for(server_id: int) -> str:
++    """Stabile, vorhersagbare Container-Bezeichnung pro Server."""
++    return f"msm-srv-{server_id}"
++
++
++# ── Bind-Mount-Layout ──────────────────────────────────────────────────────
++
++
++# Im Container wird das Server-Verzeichnis IMMER unter /data eingehängt.
++# Plugins bauen ihre Kommandos relativ zu /data.
++CONTAINER_DATA_DIR = "/data"
++
++
++def default_volume_binds(server) -> list[VolumeBind]:
++    """Standard-Bind: install_dir (Host) → /data (Container, RW)."""
++    return [VolumeBind(host_path=server.install_dir, container_path=CONTAINER_DATA_DIR, read_only=False)]
++
++
++# ── SteamCMD-Installer im ephemeren Container ──────────────────────────────
++
++
++# Kuratiertes, gepflegtes SteamCMD-Image. Eine Pin auf einen festen Tag erfolgt
++# in einer Folge-Phase (Phase 5 wird Image+Tag pro Plugin-Egg konfigurierbar).
++STEAMCMD_IMAGE = "cm2network/steamcmd:root"
++
++
++def run_steamcmd_install(
++    *,
++    server_id: int,
++    install_dir: str,
++    app_id: str,
++    extra_args: list[str] | None = None,
++) -> dict:
++    """Lädt/aktualisiert eine Steam-App in `install_dir` via ephemerem
++    SteamCMD-Container. Blockiert bis SteamCMD fertig ist.
++
++    Schreibt strukturiertes Console-Log und gibt strukturiertes dict zurück.
++    """
++    os.makedirs(install_dir, exist_ok=True)
++
++    cmd: list[str] = [
++        "+force_install_dir", CONTAINER_DATA_DIR,
++        "+login", "anonymous",
++        "+app_update", app_id, "validate",
++    ]
++    if extra_args:
++        cmd.extend(extra_args)
++    cmd.extend(["+quit"])
++
++    _append_console_log(server_id, f"[MSM] SteamCMD startet für App {app_id} (Docker)\n")
++
++    uid, gid = docker_service.host_uid_gid()
++    result = docker_service.run_ephemeral(
++        image=STEAMCMD_IMAGE,
++        command=cmd,
++        volumes=[VolumeBind(install_dir, CONTAINER_DATA_DIR, read_only=False)],
++        user=f"{uid}:{gid}",
++        timeout=3600,
++    )
++
++    if result["ok"]:
++        # SteamCMD-Output ins Console-Log spiegeln (ohne Stderr separat zu loggen — wir
++        # kombinieren bewusst, damit das UI eine vollständige Sicht hat)
++        out = (result.get("stdout") or "") + (result.get("stderr") or "")
++        _append_console_log(server_id, out)
++        _append_console_log(server_id, f"\n[MSM] SteamCMD abgeschlossen (App {app_id}).\n")
++    else:
++        _append_console_log(server_id, f"\n[MSM] SteamCMD fehlgeschlagen: {result['error']}\n")
++    return result
++
++
++def run_steamcmd_workshop_download(
++    *,
++    server_id: int,
++    install_dir: str,
++    workshop_app_id: str,
++    workshop_item_id: str,
++) -> dict:
++    """Lädt ein Workshop-Item via ephemerem SteamCMD-Container.
++
++    Intelligent: SteamCMD validiert und holt nur Deltas. Kein erzwungenes
++    Vollredownload — das übernimmt SteamCMD selbst, sofern lokale Files
++    existieren.
++    """
++    cmd: list[str] = [
++        "+force_install_dir", CONTAINER_DATA_DIR,
++        "+login", "anonymous",
++        "+workshop_download_item", workshop_app_id, workshop_item_id,
++        "+quit",
++    ]
++    _append_console_log(
++        server_id, f"[MSM] SteamCMD Workshop-Download: app={workshop_app_id} item={workshop_item_id}\n"
++    )
++    uid, gid = docker_service.host_uid_gid()
++    result = docker_service.run_ephemeral(
++        image=STEAMCMD_IMAGE,
++        command=cmd,
++        volumes=[VolumeBind(install_dir, CONTAINER_DATA_DIR, read_only=False)],
++        user=f"{uid}:{gid}",
++        timeout=3600,
++    )
++    out = (result.get("stdout") or "") + (result.get("stderr") or "")
++    if out:
++        _append_console_log(server_id, out)
++    if not result["ok"]:
++        _append_console_log(
++            server_id, f"\n[MSM] Workshop-Download fehlgeschlagen: {result['error']}\n"
++        )
++    return result
++
++
++# ── Plugin-Basis ───────────────────────────────────────────────────────────
+ 
+ 
+ class GamePlugin(ABC):
++    """Basisklasse für Game-Plugins.
++
++    Pflichtfelder:
++      - game_id, game_name, supports_mods
++      - docker_image: das Base-Image, in dem der Server läuft
++      - container_needs_tmpfs: wenn True, wird /tmp als tmpfs hinzugefügt
++
++    Pflichtmethoden:
++      - build_container_command, build_container_env, build_port_publishes,
++        get_config_schema, get_config_files, get_backup_paths, get_logs
++    """
++
+     game_id: str = ""
+     game_name: str = ""
+     supports_mods: bool = False
+ 
++    # Docker-spezifisch — Pflicht für alle konkreten Plugins
++    docker_image: str = ""
++    container_needs_tmpfs: bool = True  # /tmp als tmpfs (read-only rootfs ist Default)
++    container_read_only_rootfs: bool = False  # Game-Binaries schreiben oft in WorkingDir → False
++
++    # ─ Setup / Lifecycle ─────────────────────────────────────────────────
++
+     @abstractmethod
+     def install(self, server) -> dict:
+-        """Installiert den Server. Returns dict with 'message' key."""
++        """Installiert oder aktualisiert die Game-Binaries. Threading erlaubt."""
+         ...
+ 
+-    @abstractmethod
+     def update(self, server) -> dict:
+-        """Aktualisiert den Server."""
+-        ...
++        """Standard-Update == frische Installation (SteamCMD validate macht es smart)."""
++        return self.install(server)
+ 
+     @abstractmethod
+-    def start(self, server) -> dict:
+-        """Startet den Server-Prozess."""
++    def build_container_command(self, server) -> list[str]:
++        """Args, mit denen der Server im Container gestartet wird (ohne Image)."""
+         ...
+ 
++    def build_container_env(self, server) -> dict[str, str]:
++        """Default: keine zusätzlichen Env-Vars."""
++        return {}
++
+     @abstractmethod
+-    def stop(self, server) -> dict:
+-        """Stoppt den Server-Prozess."""
++    def build_port_publishes(self, server) -> list[PortPublish]:
++        """Welche Ports werden veröffentlicht? (game/query/rcon)."""
+         ...
+ 
+-    @abstractmethod
++    def build_volume_binds(self, server) -> list[VolumeBind]:
++        """Default: nur install_dir → /data."""
++        return default_volume_binds(server)
++
++    def container_workdir(self, server) -> str:
++        return CONTAINER_DATA_DIR
++
++    def container_tmpfs_paths(self, server) -> list[str]:
++        return ["/tmp"] if self.container_needs_tmpfs else []
++
++    # ─ Default Lifecycle (Docker) ────────────────────────────────────────
++
++    def start(self, server) -> dict:
++        """Standard-Start: Container mit aktuellen Limits/Ports neu hochziehen."""
++        if not self.docker_image:
++            return {"error": "Plugin hat kein docker_image konfiguriert"}
++        if not docker_service.is_available():
++            return {"error": "Docker ist auf diesem Host nicht verfügbar"}
++
++        # Image bei Bedarf vorziehen — KISS, scheitert nicht hart bei Offline
++        pull_result = docker_service.pull(self.docker_image)
++        if not pull_result["ok"]:
++            _append_console_log(
++                server.id, f"[MSM] Hinweis: Pull für {self.docker_image} fehlgeschlagen, nutze lokales Image\n"
++            )
++
++        uid, gid = docker_service.host_uid_gid()
++        name = container_name_for(server.id)
++
++        result = docker_service.run_container(
++            name=name,
++            image=self.docker_image,
++            command=self.build_container_command(server),
++            env=self.build_container_env(server),
++            ports=self.build_port_publishes(server),
++            volumes=self.build_volume_binds(server),
++            cpu_limit_percent=server.cpu_limit_percent,
++            ram_limit_mb=server.ram_limit_mb,
++            user=f"{uid}:{gid}",
++            workdir=self.container_workdir(server),
++            read_only_rootfs=self.container_read_only_rootfs,
++            tmpfs_paths=self.container_tmpfs_paths(server),
++        )
++        if not result["ok"]:
++            _append_console_log(server.id, f"[MSM] Container-Start fehlgeschlagen: {result['error']}\n")
++            return {"error": result["error"]}
++
++        _append_console_log(server.id, f"[MSM] Container {name} gestartet\n")
++
++        # Optionaler Auto-Backup-Trigger (Fire-and-forget, lokaler Loopback)
++        try:
++            import requests
++            requests.post(f"http://127.0.0.1:8000/api/backups/{server.id}/auto", timeout=5)
++        except Exception:
++            pass
++
++        return {"message": "Server gestartet", "container": name}
++
++    def stop(self, server) -> dict:
++        """Standard-Stop: Container graceful stoppen (30 s)."""
++        name = container_name_for(server.id)
++        result = docker_service.stop(name, timeout=30)
++        if not result["ok"]:
++            return {"error": result["error"]}
++        _append_console_log(server.id, f"[MSM] Container {name} gestoppt\n")
++        return {"message": "Server gestoppt", "container": name}
++
+     def get_status(self, server) -> ServerStatus:
+-        """Liefert aktuellen Server-Status."""
+-        ...
++        """Liefert Live-Status aus Docker (Container-State + CPU/RAM via stats).
++        Players via A2S, sofern Query-Port gesetzt.
++        """
++        name = container_name_for(server.id)
++        state = docker_service.inspect_state(name)
++        if state is None:
++            return ServerStatus(status="stopped")
++
++        is_running = state["status"] == "running"
++        live_stats = docker_service.stats(name) if is_running else None
++
++        players_online: int | None = None
++        if is_running and server.query_port:
++            a2s = query_a2s_info("127.0.0.1", server.query_port)
++            if a2s:
++                players_online = a2s["players"]
++
++        msg = None
++        if state.get("oom_killed"):
++            msg = "Container wurde wegen RAM-Limit beendet (OOM)"
++
++        return ServerStatus(
++            status="running" if is_running else state["status"],
++            cpu_percent=(live_stats or {}).get("cpu_percent"),
++            ram_mb=(live_stats or {}).get("ram_mb"),
++            disk_mb=None,  # Disk wird zentral im Scheduler-Job ermittelt
++            uptime_seconds=None,
++            players_online=players_online,
++            message=msg,
++        )
++
++    # ─ Logs ──────────────────────────────────────────────────────────────
+ 
+     @abstractmethod
+     def get_logs(self, server, lines: int = 100) -> str:
+-        """Liest die letzten N Zeilen aus dem Log."""
++        """Liest die game-spezifischen Logs (z. B. UE-/DayZ-Logfile im install_dir)."""
+         ...
+ 
++    def get_console_log(self, server, lines: int = 200) -> str:
++        """MSM-Console-Log (Install-Output, MSM-Events) + Docker-Container-Logs."""
++        log_path = _console_log_path(server.id)
++        msm_part = ""
++        if os.path.exists(log_path):
++            try:
++                with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
++                    all_lines = f.readlines()
++                msm_part = "".join(all_lines[-lines:])
++            except Exception:
++                msm_part = ""
++        docker_part = docker_service.logs(container_name_for(server.id), lines=lines)
++        if not docker_part:
++            return msm_part
++        return msm_part + "\n--- container logs ---\n" + docker_part
++
++    # ─ Config ────────────────────────────────────────────────────────────
++
+     @abstractmethod
+     def get_config_schema(self) -> list[ConfigField]:
+-        """Liefert die Config-Schema-Felder für dieses Spiel."""
+         ...
+ 
+     @abstractmethod
+     def get_config_files(self) -> list[dict]:
+-        """Liefert die editierbaren Config-Dateien."""
+         ...
+ 
+     @abstractmethod
+     def get_backup_paths(self, server) -> list[str]:
+-        """Liefert Pfade, die in Backups eingeschlossen werden sollen."""
+         ...
+ 
+-    def get_console_log(self, server, lines: int = 200) -> str:
+-        """Reads the MSM console log (install output, system events)."""
+-        log_path = _console_log_path(server.id)
+-        if not os.path.exists(log_path):
+-            return ""
+-        try:
+-            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+-                all_lines = f.readlines()
+-            return "".join(all_lines[-lines:])
+-        except Exception:
+-            return ""
++    # ─ Mods ──────────────────────────────────────────────────────────────
+ 
+     def install_mod(self, server, workshop_id: str) -> dict:
+-        """Installs a single mod. Override in game-specific plugins."""
++        """Default: Plugins ohne Mod-Support liefern einen Fehler."""
++        if not self.supports_mods:
++            return {"error": "Mod-Installation nicht unterstützt"}
+         return {"error": "Mod-Installation nicht implementiert"}
+ 
+     def get_mod_support(self) -> dict | None:
+-        """Liefert Mod-Metadaten, falls unterstützt."""
+         if self.supports_mods:
+             return {"workshop_id": None, "dependency_resolution": False, "required_tags": []}
+         return None
+-
+-
+-def build_systemd_unit(
+-    name: str,
+-    linux_user: str,
+-    working_dir: str,
+-    exec_start: str,
+-    cpu_limit_percent: int | None = None,
+-    ram_limit_mb: int | None = None,
+-    disk_limit_gb: int | None = None,
+-) -> str:
+-    """Erzeugt eine systemd-Unit mit Resource-Limits und Security-Hardening.
+-
+-    Args:
+-        name: Anzeigename des Servers
+-        linux_user: Linux-User unter dem der Server läuft
+-        working_dir: Arbeitsverzeichnis
+-        exec_start: ExecStart-Kommando
+-        cpu_limit_percent: Max CPU-Usage (10-100). None = kein Limit.
+-        ram_limit_mb: Max RAM in MB. None = kein Limit.
+-        disk_limit_gb: Max Disk in GB. None = kein Limit.
+-          Hinweis: systemd kann kein hartes Disk-Limit. Wir nutzen
+-          ReadWritePaths + LimitNOFILE als Defense-in-Depth.
+-    """
+-    lines: list[str] = [
+-        "[Unit]",
+-        f"Description=MSM Server {name}",
+-        "After=network.target",
+-        "",
+-        "[Service]",
+-        "Type=simple",
+-        f"User={linux_user}",
+-        f"WorkingDirectory={working_dir}",
+-        f"ExecStart={exec_start}",
+-        "Restart=on-failure",
+-        "RestartSec=10",
+-        "StandardOutput=journal",
+-        "StandardError=journal",
+-        "",
+-        "# Security Hardening",
+-        "PrivateTmp=true",
+-        "ProtectSystem=strict",
+-        "ProtectHome=true",
+-        f"ReadWritePaths={working_dir}",
+-        "TasksMax=100",
+-        "LimitNOFILE=4096",
+-    ]
+-
+-    if cpu_limit_percent:
+-        lines.append(f"CPUQuota={cpu_limit_percent}%")
+-
+-    if ram_limit_mb:
+-        lines.append(f"MemoryMax={ram_limit_mb}M")
+-        lines.append("MemorySwapMax=0")
+-        # OOM-Killer priorisiert den Game-Server niedriger, damit der Host stabil bleibt
+-        lines.append("OOMScoreAdjust=500")
+-
+-    if disk_limit_gb:
+-        # systemd kann kein hartes Disk-Limit. Wir dokumentieren es
+-        # und setzen zusätzliche Einschränkungen.
+-        lines.append(f"# Disk-Limit: {disk_limit_gb}GB (Monitoring via Panel)")
+-        # Verhindert, dass der Prozess Dateien außerhalb seines Verzeichnisses anlegt
+-        lines.append("ProtectKernelTunables=true")
+-        lines.append("ProtectKernelModules=true")
+-        lines.append("ProtectControlGroups=true")
+-
+-    lines.extend([
+-        "",
+-        "[Install]",
+-        "WantedBy=multi-user.target",
+-    ])
+-
+-    return "\n".join(lines)
+diff --git a/backend/games/conan_exiles_ue5/plugin.py b/backend/games/conan_exiles_ue5/plugin.py
+index 9c34570..c466fb9 100644
+--- a/backend/games/conan_exiles_ue5/plugin.py
++++ b/backend/games/conan_exiles_ue5/plugin.py
+@@ -1,21 +1,33 @@
++"""Conan Exiles (UE5 Enhanced) — Docker-basiertes Plugin.
++
++Lifecycle läuft komplett über GamePlugin-Defaults (docker_service). Spezifisch
++sind: SteamCMD-Args, Workshop-Pfade, .pak-Kopier-Logik, modlist.txt-Generierung.
++"""
++
++from __future__ import annotations
++
+ import glob
+ import os
+ import shutil
+-import subprocess
+ import threading
+ 
+-from config import settings
+-from games.base import GamePlugin, ServerStatus, ConfigField, build_systemd_unit, _run_install_with_logging, _append_console_log, query_a2s_info
+-
+-_SYSTEM_ENV = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
++from games.base import (
++    CONTAINER_DATA_DIR,
++    ConfigField,
++    GamePlugin,
++    PortPublish,
++    VolumeBind,
++    _append_console_log,
++    run_steamcmd_install,
++    run_steamcmd_workshop_download,
++)
+ 
+ 
+ class ConanExilesUE5Plugin(GamePlugin):
+-    """Conan Exiles Enhanced (UE5) Dedicated Server Plugin — Linux native.
++    """Conan Exiles Enhanced (UE5) Dedicated Server — Linux native, in Docker.
+ 
+     Offizielle Doku: https://exiles-enhanced.inflexion.io/servers/linux/
+-    App ID: 443030. Es wird ausschließlich die native Linux-Version genutzt.
+-    Wine/UE4-Fallback ist nicht vorgesehen (dazu wäre ein separates Plugin nötig).
++    App ID: 443030 (Server), Workshop App ID: 440900 (Mods).
+     """
+ 
+     game_id = "conan_exiles_ue5"
+@@ -25,136 +37,61 @@ class ConanExilesUE5Plugin(GamePlugin):
+     APP_ID = "443030"
+     WORKSHOP_ID = "440900"
+ 
+-    def _resolve_executable(self, server) -> str | None:
+-        """Nur native Linux-Binaries — kein Wine-Fallback."""
+-        candidates = [
+-            os.path.join(server.install_dir, "ConanSandboxServer.sh"),
+-            os.path.join(server.install_dir, "ConanSandboxServer"),
+-        ]
+-        for candidate in candidates:
+-            if os.path.exists(candidate):
+-                return candidate
+-        return None
+-
+-    def _build_exec_start(self, server, exe: str) -> str:
+-        """Build the ExecStart line für systemd (nur native Linux).
+-        Fügt Port-Parameter hinzu (Game, Query, RCon)."""
+-        args = "-log"
+-        if server.game_port:
+-            args += f" -Port={server.game_port}"
+-        if server.query_port:
+-            args += f" -QueryPort={server.query_port}"
+-        if server.rcon_port:
+-            args += f" -RconPort={server.rcon_port}"
++    # SteamCMD-Image enthält bereits glibc + Steam-Runtime; Conan-Binaries
++    # laufen im selben Image, weil sie nur die Steam-Runtime brauchen.
++    docker_image = "cm2network/steamcmd:root"
++    container_needs_tmpfs = False  # UE legt mehrere temporäre Verzeichnisse in CWD an
++    container_read_only_rootfs = False
+ 
+-        if exe.endswith(".sh"):
+-            return f"/bin/bash {exe} {args}"
+-        return f"{exe} {args}"
++    # ─ Setup ─────────────────────────────────────────────────────────────
+ 
+     def install(self, server) -> dict:
+-        cmd = [
+-            settings.steamcmd_path,
+-            "+force_install_dir", server.install_dir,
+-            "+login", "anonymous",
+-            "+app_update", self.APP_ID,
+-            "+quit",
+-        ]
+-        thread = threading.Thread(
+-            target=_run_install_with_logging,
+-            args=(cmd, server.id, server.install_dir),
+-            daemon=True,
+-        )
++        def _install():
++            run_steamcmd_install(
++                server_id=server.id,
++                install_dir=server.install_dir,
++                app_id=self.APP_ID,
++            )
++        thread = threading.Thread(target=_install, daemon=True)
+         thread.start()
+         return {"message": "Installation gestartet"}
+ 
+-    def update(self, server) -> dict:
+-        return self.install(server)
+-
+-    def start(self, server) -> dict:
+-        exe = self._resolve_executable(server)
+-        if not exe:
+-            return {"error": "Server-Executable nicht gefunden. Bitte zuerst installieren."}
+-
+-        unit_name = f"msm-{server.linux_user}.service"
+-        unit_path = f"/etc/systemd/system/{unit_name}"
+-        exec_start = self._build_exec_start(server, exe)
+-
+-        unit_content = build_systemd_unit(
+-            name=server.name,
+-            linux_user=server.linux_user,
+-            working_dir=server.install_dir,
+-            exec_start=exec_start,
+-            cpu_limit_percent=server.cpu_limit_percent,
+-            ram_limit_mb=server.ram_limit_mb,
+-            disk_limit_gb=server.disk_limit_gb,
+-        )
+-        try:
+-            subprocess.run(
+-                ["sudo", "-n", "/usr/bin/tee", unit_path],
+-                input=unit_content, capture_output=True, text=True, check=True,
+-                env=_SYSTEM_ENV
+-            )
+-        except subprocess.CalledProcessError as e:
+-            detail = e.stderr.strip() if e.stderr else str(e)
+-            return {"error": f"Konnte systemd-Unit nicht schreiben: {detail}"}
+-        except FileNotFoundError as e:
+-            return {"error": f"Konnte systemd-Unit nicht schreiben: {e}"}
++    # ─ Container-Config ──────────────────────────────────────────────────
+ 
+-        try:
+-            subprocess.run(["sudo", "systemctl", "daemon-reload"], check=False, capture_output=True, env=_SYSTEM_ENV)
+-            subprocess.run(["sudo", "systemctl", "enable", unit_name], check=False, capture_output=True, env=_SYSTEM_ENV)
+-            subprocess.run(["sudo", "systemctl", "start", unit_name], check=False, capture_output=True, env=_SYSTEM_ENV)
+-        except FileNotFoundError as e:
+-            return {"error": f"sudo nicht gefunden: {e}"}
++    def _container_executable(self, server) -> str:
++        """Pfad zum Conan-Start-Script INNERHALB des Containers."""
++        return f"{CONTAINER_DATA_DIR}/ConanSandboxServer.sh"
+ 
+-        # Auto-Backup nach Start auslösen (fire-and-forget)
+-        try:
+-            from database import SessionLocal
+-            import requests
+-            db2 = SessionLocal()
+-            try:
+-                requests.post(f"http://localhost:8000/api/backups/{server.id}/auto", timeout=5)
+-            finally:
+-                db2.close()
+-        except Exception:
+-            pass
++    def build_container_command(self, server) -> list[str]:
++        cmd = ["/bin/bash", self._container_executable(server), "-log"]
++        if server.game_port:
++            cmd.append(f"-Port={server.game_port}")
++        if server.query_port:
++            cmd.append(f"-QueryPort={server.query_port}")
++        if server.rcon_port:
++            cmd.append(f"-RconPort={server.rcon_port}")
++        return cmd
+ 
+-        return {"message": "Server gestartet", "unit": unit_name}
++    def build_port_publishes(self, server) -> list[PortPublish]:
++        ports: list[PortPublish] = []
++        host_ip = getattr(server, "public_bind_ip", None) or None
++        if server.game_port:
++            ports.append(PortPublish(server.game_port, server.game_port, "udp", host_ip))
++        if server.query_port:
++            ports.append(PortPublish(server.query_port, server.query_port, "udp", host_ip))
++        if server.rcon_port:
++            ports.append(PortPublish(server.rcon_port, server.rcon_port, "tcp", host_ip))
++        return ports
+ 
+-    def stop(self, server) -> dict:
+-        unit_name = f"msm-{server.linux_user}.service"
+-        subprocess.run(["sudo", "systemctl", "stop", unit_name], check=False, capture_output=True, env=_SYSTEM_ENV)
+-        return {"message": "Server gestoppt", "unit": unit_name}
++    def build_volume_binds(self, server) -> list[VolumeBind]:
++        return [VolumeBind(server.install_dir, CONTAINER_DATA_DIR, read_only=False)]
+ 
+-    def get_status(self, server) -> ServerStatus:
+-        unit_name = f"msm-{server.linux_user}.service"
+-        try:
+-            result = subprocess.run(
+-                ["sudo", "systemctl", "is-active", unit_name],
+-                capture_output=True, text=True, timeout=5,
+-                env=_SYSTEM_ENV
+-            )
+-            active = result.stdout.strip() == "active"
+-        except Exception:
+-            active = False
+-
+-        players_online = None
+-        if active and server.query_port:
+-            a2s = query_a2s_info("127.0.0.1", server.query_port)
+-            if a2s:
+-                players_online = a2s["players"]
+-
+-        return ServerStatus(
+-            status="running" if active else "stopped",
+-            cpu_percent=None,
+-            ram_mb=None,
+-            disk_mb=None,
+-            uptime_seconds=None,
+-            players_online=players_online,
+-        )
++    # ─ Logs ──────────────────────────────────────────────────────────────
+ 
+     def get_logs(self, server, lines: int = 100) -> str:
+-        log_path = os.path.join(server.install_dir, "ConanSandbox", "Saved", "Logs", "ConanSandbox.log")
++        log_path = os.path.join(
++            server.install_dir, "ConanSandbox", "Saved", "Logs", "ConanSandbox.log"
++        )
+         if not os.path.exists(log_path):
+             return ""
+         try:
+@@ -164,6 +101,8 @@ def get_logs(self, server, lines: int = 100) -> str:
+         except Exception:
+             return ""
+ 
++    # ─ Config-Schema ─────────────────────────────────────────────────────
++
+     def get_config_schema(self) -> list[ConfigField]:
+         return [
+             ConfigField("MaxNumbPlayers", "Max. Spieler", "number", default=40, description="Maximale Spieleranzahl"),
+@@ -196,42 +135,40 @@ def get_backup_paths(self, server) -> list[str]:
+             os.path.join(server.install_dir, "ConanSandbox", "Saved"),
+         ]
+ 
++    # ─ Mods ──────────────────────────────────────────────────────────────
++
+     def install_mod(self, server, workshop_id: str) -> dict:
+-        """Conan Exiles mod install: SteamCMD download → copy .pak to Mods/ → update modlist.txt."""
++        """Lädt Mod via SteamCMD-Container, kopiert .pak nach Mods/, aktualisiert modlist.txt."""
+         def _install():
+             install_dir = server.install_dir
+-            workshop_dir = os.path.join(install_dir, "steamapps", "workshop", "content", self.WORKSHOP_ID, workshop_id)
++            workshop_dir = os.path.join(
++                install_dir, "steamapps", "workshop", "content", self.WORKSHOP_ID, workshop_id
++            )
+             mods_dir = os.path.join(install_dir, "ConanSandbox", "Mods")
+ 
+-            # 1) Download via SteamCMD
+-            cmd = [
+-                settings.steamcmd_path,
+-                "+force_install_dir", install_dir,
+-                "+login", "anonymous",
+-                "+workshop_download_item", self.WORKSHOP_ID, workshop_id,
+-                "+quit",
+-            ]
+-            _run_install_with_logging(cmd, server.id, install_dir)
+-
+-            # 2) Find .pak files and copy to ConanSandbox/Mods/
++            run_steamcmd_workshop_download(
++                server_id=server.id,
++                install_dir=install_dir,
++                workshop_app_id=self.WORKSHOP_ID,
++                workshop_item_id=workshop_id,
++            )
++
+             os.makedirs(mods_dir, exist_ok=True)
+             pak_files = glob.glob(os.path.join(workshop_dir, "**", "*.pak"), recursive=True)
+ 
+             if not pak_files:
+-                _append_console_log(server.id, f"[MSM] Warnung: Keine .pak-Dateien für Mod {workshop_id} gefunden\n")
++                _append_console_log(
++                    server.id, f"[MSM] Warnung: Keine .pak-Dateien für Mod {workshop_id} gefunden\n"
++                )
+                 return
+ 
+-            copied_paks = []
+             for pak_path in pak_files:
+                 pak_name = os.path.basename(pak_path)
+                 dest = os.path.join(mods_dir, pak_name)
+                 shutil.copy2(pak_path, dest)
+-                copied_paks.append(pak_name)
+                 _append_console_log(server.id, f"[MSM] Mod-Datei kopiert: {pak_name}\n")
+ 
+-            # 3) Update modlist.txt
+             self._update_modlist(server)
+-
+             _append_console_log(server.id, f"[MSM] Mod {workshop_id} Installation abgeschlossen.\n")
+ 
+         thread = threading.Thread(target=_install, daemon=True)
+@@ -239,32 +176,36 @@ def _install():
+         return {"message": f"Mod {workshop_id} wird installiert"}
+ 
+     def _update_modlist(self, server) -> None:
+-        """Rebuilds modlist.txt from all installed mods in load order."""
++        """Rebuildet modlist.txt aus aktivierten Mods in Lade-Reihenfolge."""
+         install_dir = server.install_dir
+         mods_dir = os.path.join(install_dir, "ConanSandbox", "Mods")
+         modlist_path = os.path.join(mods_dir, "modlist.txt")
+         os.makedirs(mods_dir, exist_ok=True)
+ 
+-        # Get ordered mod list from DB
+         try:
+             from database import SessionLocal
+             from models import Mod
+             db = SessionLocal()
+             try:
+-                mods = db.query(Mod).filter(Mod.server_id == server.id, Mod.enabled == True).order_by(Mod.load_order.asc()).all()
++                mods = (
++                    db.query(Mod)
++                    .filter(Mod.server_id == server.id, Mod.enabled == True)  # noqa: E712
++                    .order_by(Mod.load_order.asc())
++                    .all()
++                )
+             finally:
+                 db.close()
+         except Exception:
+             return
+ 
+-        # For each enabled mod, find .pak files in its workshop dir
+-        lines = []
++        lines: list[str] = []
+         for mod in mods:
+-            workshop_dir = os.path.join(install_dir, "steamapps", "workshop", "content", self.WORKSHOP_ID, mod.workshop_id)
++            workshop_dir = os.path.join(
++                install_dir, "steamapps", "workshop", "content", self.WORKSHOP_ID, mod.workshop_id
++            )
+             pak_files = glob.glob(os.path.join(workshop_dir, "**", "*.pak"), recursive=True)
+             for pak_path in pak_files:
+                 pak_name = os.path.basename(pak_path)
+-                # Also check if .pak exists in Mods/ dir
+                 if os.path.exists(os.path.join(mods_dir, pak_name)):
+                     lines.append(pak_name)
+ 
+@@ -274,5 +215,3 @@ def _update_modlist(self, server) -> None:
+                     f.write(f"{line}\n")
+         except OSError as e:
+             _append_console_log(server.id, f"[MSM] Fehler beim Schreiben der modlist.txt: {e}\n")
+-
+-
+diff --git a/backend/games/dayz/plugin.py b/backend/games/dayz/plugin.py
+index dde15b0..8ef61ea 100644
+--- a/backend/games/dayz/plugin.py
++++ b/backend/games/dayz/plugin.py
+@@ -1,20 +1,32 @@
++"""DayZ — Docker-basiertes Plugin.
++
++Lifecycle läuft komplett über GamePlugin-Defaults (docker_service). Spezifisch
++sind: Mod-Symlink-Logik, Start-Argumente (-mod=…;), Workshop-Pfade.
++"""
++
++from __future__ import annotations
++
+ import glob
+ import os
+-import subprocess
+ import threading
+ 
+-from config import settings
+-from games.base import GamePlugin, ServerStatus, ConfigField, build_systemd_unit, _run_install_with_logging, _append_console_log, query_a2s_info
+-
+-_SYSTEM_ENV = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
++from games.base import (
++    CONTAINER_DATA_DIR,
++    ConfigField,
++    GamePlugin,
++    PortPublish,
++    VolumeBind,
++    _append_console_log,
++    run_steamcmd_install,
++    run_steamcmd_workshop_download,
++)
+ 
+ 
+ class DayZPlugin(GamePlugin):
+-    """DayZ Linux Dedicated Server Plugin — Linux native.
++    """DayZ Linux Dedicated Server — Linux native, in Docker.
+ 
+     Offizielle Doku: https://community.bohemia.net/wiki/DayZ:Hosting_a_Linux_Server
+-    App ID: 223350. Es wird ausschließlich die native Linux-Version genutzt.
+-    Wine-Fallback ist nicht vorgesehen.
++    App ID: 223350 (Server), Workshop App ID: 221100 (Mods).
+     """
+ 
+     game_id = "dayz"
+@@ -24,151 +36,97 @@ class DayZPlugin(GamePlugin):
+     APP_ID = "223350"
+     WORKSHOP_ID = "221100"
+ 
+-    def _resolve_executable(self, server) -> str | None:
+-        """Nur native Linux-Binaries — kein Wine-Fallback."""
+-        candidates = [
+-            os.path.join(server.install_dir, "DayZServer"),
+-            os.path.join(server.install_dir, "DayZServer_x64"),
+-        ]
+-        for candidate in candidates:
+-            if os.path.exists(candidate):
+-                return candidate
+-        return None
++    docker_image = "cm2network/steamcmd:root"
++    container_needs_tmpfs = False
++    container_read_only_rootfs = False
++
++    # ─ Setup ─────────────────────────────────────────────────────────────
+ 
+     def install(self, server) -> dict:
+-        cmd = [
+-            settings.steamcmd_path,
+-            "+force_install_dir", server.install_dir,
+-            "+login", "anonymous",
+-            "+app_update", self.APP_ID,
+-            "+quit",
+-        ]
+-        thread = threading.Thread(
+-            target=_run_install_with_logging,
+-            args=(cmd, server.id, server.install_dir),
+-            daemon=True,
+-        )
++        def _install():
++            run_steamcmd_install(
++                server_id=server.id,
++                install_dir=server.install_dir,
++                app_id=self.APP_ID,
++            )
++        thread = threading.Thread(target=_install, daemon=True)
+         thread.start()
+         return {"message": "Installation gestartet"}
+ 
+-    def update(self, server) -> dict:
+-        return self.install(server)
++    # ─ Mods → Start-Argument ─────────────────────────────────────────────
++
++    def _get_active_mod_ids(self, server) -> list[str]:
++        """Liest aktivierte (`enabled=True`) Mods in Lade-Reihenfolge.
+ 
+-    def _get_mod_ids(self, server) -> list[str]:
+-        """Reads installed mod IDs from DB."""
++        Inaktive Mods bleiben im DB-State, werden aber NICHT in die
++        Startargumente geschrieben.
++        """
+         try:
+             from database import SessionLocal
+             from models import Mod
+             db = SessionLocal()
+             try:
+-                mods = db.query(Mod).filter(Mod.server_id == server.id).order_by(Mod.load_order.asc()).all()
++                mods = (
++                    db.query(Mod)
++                    .filter(Mod.server_id == server.id, Mod.enabled == True)  # noqa: E712
++                    .order_by(Mod.load_order.asc())
++                    .all()
++                )
+                 return [m.workshop_id for m in mods]
+             finally:
+                 db.close()
+         except Exception:
+             return []
+ 
+-    def start(self, server) -> dict:
+-        exe = self._resolve_executable(server)
+-        if not exe:
+-            return {"error": "Server-Executable nicht gefunden. Bitte zuerst installieren."}
++    # ─ Container-Config ──────────────────────────────────────────────────
+ 
+-        unit_name = f"msm-{server.linux_user}.service"
+-        unit_path = f"/etc/systemd/system/{unit_name}"
++    def _container_executable(self) -> str:
++        """Pfad zum DayZ-Server-Binary INNERHALB des Containers (Bind-Mount)."""
++        return f"{CONTAINER_DATA_DIR}/DayZServer"
+ 
+-        port_args = ""
++    def build_container_command(self, server) -> list[str]:
++        cmd: list[str] = [self._container_executable()]
+         if server.game_port:
+-            port_args += f" -port={server.game_port}"
+-
+-        # Build -mod= parameter from installed mods
+-        mod_ids = self._get_mod_ids(server)
+-        mod_arg = ""
++            cmd.append(f"-port={server.game_port}")
++        mod_ids = self._get_active_mod_ids(server)
+         if mod_ids:
+-            mod_arg = f' "-mod={";".join(mod_ids)};"'
+-
+-        exec_start = f"{exe}{port_args}{mod_arg}"
+-
+-        unit_content = build_systemd_unit(
+-            name=server.name,
+-            linux_user=server.linux_user,
+-            working_dir=server.install_dir,
+-            exec_start=exec_start,
+-            cpu_limit_percent=server.cpu_limit_percent,
+-            ram_limit_mb=server.ram_limit_mb,
+-            disk_limit_gb=server.disk_limit_gb,
+-        )
+-        try:
+-            subprocess.run(
+-                ["sudo", "-n", "/usr/bin/tee", unit_path],
+-                input=unit_content, capture_output=True, text=True, check=True,
+-                env=_SYSTEM_ENV
+-            )
+-        except subprocess.CalledProcessError as e:
+-            detail = e.stderr.strip() if e.stderr else str(e)
+-            return {"error": f"Konnte systemd-Unit nicht schreiben: {detail}"}
+-        except FileNotFoundError as e:
+-            return {"error": f"Konnte systemd-Unit nicht schreiben: {e}"}
+-
+-        try:
+-            subprocess.run(["sudo", "systemctl", "daemon-reload"], check=False, capture_output=True, env=_SYSTEM_ENV)
+-            subprocess.run(["sudo", "systemctl", "enable", unit_name], check=False, capture_output=True, env=_SYSTEM_ENV)
+-            subprocess.run(["sudo", "systemctl", "start", unit_name], check=False, capture_output=True, env=_SYSTEM_ENV)
+-        except FileNotFoundError as e:
+-            return {"error": f"sudo nicht gefunden: {e}"}
+-
+-        # Auto-Backup nach Start auslösen (fire-and-forget)
+-        try:
+-            import requests
+-            requests.post(f"http://localhost:8000/api/backups/{server.id}/auto", timeout=5)
+-        except Exception:
+-            pass
++            # DayZ erwartet ein einzelnes Argument mit semikolon-separierten Mod-IDs.
++            cmd.append(f"-mod={';'.join(mod_ids)};")
++        return cmd
+ 
+-        return {"message": "Server gestartet", "unit": unit_name}
++    def build_port_publishes(self, server) -> list[PortPublish]:
++        ports: list[PortPublish] = []
++        host_ip = getattr(server, "public_bind_ip", None) or None
++        if server.game_port:
++            ports.append(PortPublish(server.game_port, server.game_port, "udp", host_ip))
++        if server.query_port:
++            ports.append(PortPublish(server.query_port, server.query_port, "udp", host_ip))
++        if server.rcon_port:
++            ports.append(PortPublish(server.rcon_port, server.rcon_port, "tcp", host_ip))
++        return ports
+ 
+-    def stop(self, server) -> dict:
+-        unit_name = f"msm-{server.linux_user}.service"
+-        subprocess.run(["sudo", "systemctl", "stop", unit_name], check=False, capture_output=True, env=_SYSTEM_ENV)
+-        return {"message": "Server gestoppt", "unit": unit_name}
++    def build_volume_binds(self, server) -> list[VolumeBind]:
++        return [VolumeBind(server.install_dir, CONTAINER_DATA_DIR, read_only=False)]
+ 
+-    def get_status(self, server) -> ServerStatus:
+-        unit_name = f"msm-{server.linux_user}.service"
+-        try:
+-            result = subprocess.run(
+-                ["sudo", "systemctl", "is-active", unit_name],
+-                capture_output=True, text=True, timeout=5,
+-                env=_SYSTEM_ENV
+-            )
+-            active = result.stdout.strip() == "active"
+-        except Exception:
+-            active = False
+-
+-        players_online = None
+-        if active and server.query_port:
+-            a2s = query_a2s_info("127.0.0.1", server.query_port)
+-            if a2s:
+-                players_online = a2s["players"]
+-
+-        return ServerStatus(
+-            status="running" if active else "stopped",
+-            cpu_percent=None,
+-            ram_mb=None,
+-            disk_mb=None,
+-            uptime_seconds=None,
+-            players_online=players_online,
+-        )
++    # ─ Logs ──────────────────────────────────────────────────────────────
+ 
+     def get_logs(self, server, lines: int = 100) -> str:
+-        log_path = os.path.join(server.install_dir, "log", "script_1.log")
+-        if not os.path.exists(log_path):
+-            log_path = os.path.join(server.install_dir, "log_1.txt")
+-        if not os.path.exists(log_path):
+-            return ""
+-        try:
+-            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+-                all_lines = f.readlines()
+-            return "".join(all_lines[-lines:])
+-        except Exception:
+-            return ""
++        # DayZ schreibt rotierende Logs unter log/ und log_*.txt
++        candidates = [
++            os.path.join(server.install_dir, "log", "script_1.log"),
++            os.path.join(server.install_dir, "log_1.txt"),
++        ]
++        for path in candidates:
++            if os.path.exists(path):
++                try:
++                    with open(path, "r", encoding="utf-8", errors="ignore") as f:
++                        all_lines = f.readlines()
++                    return "".join(all_lines[-lines:])
++                except Exception:
++                    continue
++        return ""
++
++    # ─ Config-Schema ─────────────────────────────────────────────────────
+ 
+     def get_config_schema(self) -> list[ConfigField]:
+         return [
+@@ -191,7 +149,6 @@ def get_config_schema(self) -> list[ConfigField]:
+         ]
+ 
+     def get_mod_support(self) -> dict | None:
+-        """DayZ: Keine Tag-Filter nötig, nur ein Workshop."""
+         return {
+             "workshop_id": self.WORKSHOP_ID,
+             "dependency_resolution": False,
+@@ -216,35 +173,40 @@ def get_backup_paths(self, server) -> list[str]:
+             os.path.join(server.install_dir, "storage"),
+         ]
+ 
++    # ─ Mods ──────────────────────────────────────────────────────────────
++
+     def install_mod(self, server, workshop_id: str) -> dict:
+         """DayZ mod install: SteamCMD download → symlink to server root → copy keys."""
+         def _install():
+             install_dir = server.install_dir
+-            workshop_dir = os.path.join(install_dir, "steamapps", "workshop", "content", self.WORKSHOP_ID, workshop_id)
+-
+-            # 1) Download via SteamCMD
+-            cmd = [
+-                settings.steamcmd_path,
+-                "+force_install_dir", install_dir,
+-                "+login", "anonymous",
+-                "+workshop_download_item", self.WORKSHOP_ID, workshop_id,
+-                "+quit",
+-            ]
+-            _run_install_with_logging(cmd, server.id, install_dir)
+-
+-            # 2) Symlink mod folder to server root
++            workshop_dir = os.path.join(
++                install_dir, "steamapps", "workshop", "content", self.WORKSHOP_ID, workshop_id
++            )
++
++            run_steamcmd_workshop_download(
++                server_id=server.id,
++                install_dir=install_dir,
++                workshop_app_id=self.WORKSHOP_ID,
++                workshop_item_id=workshop_id,
++            )
++
+             link_path = os.path.join(install_dir, workshop_id)
+             if os.path.isdir(workshop_dir):
+                 if os.path.exists(link_path):
+                     if os.path.islink(link_path):
+                         os.unlink(link_path)
+                     else:
+-                        _append_console_log(server.id, f"[MSM] Warnung: {link_path} existiert bereits und ist kein Symlink\n")
++                        _append_console_log(
++                            server.id,
++                            f"[MSM] Warnung: {link_path} existiert bereits und ist kein Symlink\n",
++                        )
+                         return
+                 os.symlink(workshop_dir, link_path)
+-                _append_console_log(server.id, f"[MSM] Mod {workshop_id} verlinkt: {link_path} → {workshop_dir}\n")
++                _append_console_log(
++                    server.id, f"[MSM] Mod {workshop_id} verlinkt: {link_path} → {workshop_dir}\n"
++                )
+ 
+-                # 3) Symlink keys
++                # Bikey-Files in keys/ verlinken
+                 keys_dir = os.path.join(install_dir, "keys")
+                 os.makedirs(keys_dir, exist_ok=True)
+                 mod_keys = os.path.join(workshop_dir, "keys")
+@@ -254,19 +216,16 @@ def _install():
+                         if os.path.exists(key_link):
+                             os.unlink(key_link)
+                         os.symlink(key_file, key_link)
+-                        _append_console_log(server.id, f"[MSM] Key verlinkt: {os.path.basename(key_file)}\n")
++                        _append_console_log(
++                            server.id, f"[MSM] Key verlinkt: {os.path.basename(key_file)}\n"
++                        )
+             else:
+-                _append_console_log(server.id, f"[MSM] Warnung: Workshop-Verzeichnis nicht gefunden: {workshop_dir}\n")
++                _append_console_log(
++                    server.id, f"[MSM] Warnung: Workshop-Verzeichnis nicht gefunden: {workshop_dir}\n"
++                )
+ 
+             _append_console_log(server.id, f"[MSM] Mod {workshop_id} Installation abgeschlossen.\n")
+ 
+         thread = threading.Thread(target=_install, daemon=True)
+         thread.start()
+         return {"message": f"Mod {workshop_id} wird installiert"}
+-
+-    def get_mod_support(self) -> dict | None:
+-        return {
+-            "workshop_id": self.WORKSHOP_ID,
+-            "dependency_resolution": True,
+-            "symlink_mods": True,
+-        }
+diff --git a/backend/main.py b/backend/main.py
+index 39332e4..dcd0778 100644
+--- a/backend/main.py
++++ b/backend/main.py
+@@ -61,7 +61,7 @@ async def lifespan(app: FastAPI):
+             with engine.begin() as conn:
+                 conn.execute(text("ALTER TABLE users ADD COLUMN email_notifications BOOLEAN DEFAULT true"))
+ 
+-    # Migration: Backup-Scheduling-Spalten
++    # Migration: Backup-Scheduling-Spalten + Phase-1 Docker-Spalten
+     if 'servers' in inspector.get_table_names():
+         cols = [c['name'] for c in inspector.get_columns('servers')]
+         with engine.begin() as conn:
+@@ -71,6 +71,13 @@ async def lifespan(app: FastAPI):
+                 conn.execute(text("ALTER TABLE servers ADD COLUMN backup_interval_hours INTEGER"))
+             if 'backup_retention_count' not in cols:
+                 conn.execute(text("ALTER TABLE servers ADD COLUMN backup_retention_count INTEGER DEFAULT 5"))
++            # Phase 1 — Docker-Runtime: container_name + public_bind_ip + disk_usage_mb
++            if 'container_name' not in cols:
++                conn.execute(text("ALTER TABLE servers ADD COLUMN container_name VARCHAR(64)"))
++            if 'public_bind_ip' not in cols:
++                conn.execute(text("ALTER TABLE servers ADD COLUMN public_bind_ip VARCHAR(64)"))
++            if 'disk_usage_mb' not in cols:
++                conn.execute(text("ALTER TABLE servers ADD COLUMN disk_usage_mb INTEGER"))
+ 
+     # Migration: Mod enabled-Spalte
+     if 'mods' in inspector.get_table_names():
+diff --git a/backend/models/server.py b/backend/models/server.py
+index 936a88c..2b45bf7 100644
+--- a/backend/models/server.py
++++ b/backend/models/server.py
+@@ -13,7 +13,11 @@ class Server(Base):
+     name: Mapped[str] = mapped_column(String(128), nullable=False)
+     game_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+     install_dir: Mapped[str] = mapped_column(String(512), nullable=False)
+-    linux_user: Mapped[str] = mapped_column(String(64), nullable=False)
++
++    # Docker-Runtime: stabiler Container-Name (msm-srv-<id>) wird zur Laufzeit
++    # vom Plugin via `container_name_for(server.id)` generiert. Hier wird der
++    # konkret zuletzt verwendete Name gecached für Debug-/Audit-Zwecke.
++    container_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+ 
+     # Status
+     status: Mapped[str] = mapped_column(String(32), default="stopped")  # stopped, running, installing, updating, error
+@@ -39,6 +43,14 @@ class Server(Base):
+     query_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+     rcon_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+ 
++    # Optional: bestimmte Host-IP, an die Container-Ports gebunden werden.
++    # None = alle Interfaces (Docker-Default 0.0.0.0). Empfehlung im UI:
++    # NUR setzen, wenn der Host mehrere externe IPs hat.
++    public_bind_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
++
++    # Soft-Disk-Limit-Tracking (in MB, wird vom Scheduler aktualisiert)
++    disk_usage_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
++
+     created_at: Mapped[datetime] = mapped_column(
+         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+     )
+diff --git a/backend/routers/servers.py b/backend/routers/servers.py
+index b565464..741e12b 100644
+--- a/backend/routers/servers.py
++++ b/backend/routers/servers.py
+@@ -1,5 +1,5 @@
+ import os
+-import subprocess
++import shutil
+ 
+ from fastapi import APIRouter, Depends, HTTPException
+ from sqlalchemy.orm import Session
+@@ -10,11 +10,10 @@
+ from schemas import ServerCreate, ServerResponse, ServerUpdate, ServerStatusResponse
+ from dependencies import get_current_user, verify_csrf, require_server_permission
+ from games import get_plugin
++from games.base import container_name_for
++from services import EmailService, docker_service
++from services.firewall_service import close_ports, open_ports
+ from services.port_allocation_service import allocate_ports
+-from services.firewall_service import open_ports, close_ports
+-from services import EmailService
+-
+-_SYSTEM_ENV = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
+ 
+ router = APIRouter(prefix="/api/servers", tags=["servers"])
+ 
+@@ -38,28 +37,15 @@ async def create_server(req: ServerCreate, db: Session = Depends(get_db), user:
+     base_dir = os.path.abspath(settings.servers_dir)
+     count = db.query(Server).count() + 1
+     install_dir = os.path.join(base_dir, f"{req.game_type}_{count}")
+-    linux_user = f"msm_srv_{count}"
+ 
+-    # Linux-User erstellen (isoliert, keine Login-Shell)
+-    try:
+-        subprocess.run(
+-            ["sudo", "useradd", "-r", "-m", "-s", "/usr/sbin/nologin", "-d", install_dir, linux_user],
+-            check=True, capture_output=True, env=_SYSTEM_ENV
+-        )
+-    except (subprocess.CalledProcessError, FileNotFoundError):
+-        # User existiert vielleicht schon — sicherstellen dass er nologin hat
+-        try:
+-            subprocess.run(["sudo", "usermod", "-s", "/usr/sbin/nologin", linux_user], check=False, capture_output=True, env=_SYSTEM_ENV)
+-        except FileNotFoundError:
+-            pass
+-
+-    # Verzeichnis anlegen und Rechte setzen
++    # Verzeichnis anlegen — wird vom Panel-User (`msm`) angelegt und ist von dort
++    # rw, während der Container das Volume mit derselben UID/GID mountet (siehe
++    # docker_service.host_uid_gid()). Kein useradd, kein chown via sudo nötig.
+     try:
+         os.makedirs(install_dir, exist_ok=True)
+-        subprocess.run(["sudo", "chown", f"{linux_user}:{linux_user}", install_dir], check=False, capture_output=True, env=_SYSTEM_ENV)
+-        subprocess.run(["sudo", "chmod", "750", install_dir], check=False, capture_output=True, env=_SYSTEM_ENV)
+-    except OSError:
+-        pass
++        os.chmod(install_dir, 0o750)
++    except OSError as e:
++        raise HTTPException(status_code=500, detail=f"install_dir konnte nicht angelegt werden: {e}")
+ 
+     # Ports automatisch vergeben (oder vom Nutzer übernehmen)
+     try:
+@@ -78,7 +64,6 @@ async def create_server(req: ServerCreate, db: Session = Depends(get_db), user:
+         name=req.name,
+         game_type=req.game_type,
+         install_dir=install_dir,
+-        linux_user=linux_user,
+         status="stopped",
+         auto_restart=req.auto_restart,
+         restart_interval_hours=req.restart_interval_hours,
+@@ -89,11 +74,17 @@ async def create_server(req: ServerCreate, db: Session = Depends(get_db), user:
+         game_port=game_port,
+         query_port=query_port,
+         rcon_port=rcon_port,
++        public_bind_ip=req.public_bind_ip,
+     )
+     db.add(server)
+     db.commit()
+     db.refresh(server)
+ 
++    # Stabilen Container-Namen cachen (Debug/Audit).
++    server.container_name = container_name_for(server.id)
++    db.commit()
++    db.refresh(server)
++
+     # Firewall-Regeln anlegen (nur auf Linux mit UFW)
+     open_ports(server.name, game_port, query_port, rcon_port)
+ 
+@@ -171,23 +162,13 @@ def update_server(server_id: int, req: ServerUpdate, db: Session = Depends(get_d
+         )
+         open_ports(server.name, server.game_port, server.query_port, server.rcon_port)
+ 
+-        # systemd-Unit neu schreiben (damit Ports im ExecStart greifen)
++        # Container neu starten, damit neue Ports/Limits greifen — nur, wenn er
++        # gerade läuft. Der Plugin-Default-Start zieht den Container ohnehin mit
++        # frischen Flags hoch.
+         plugin = get_plugin(server.game_type)
+-        if plugin:
+-            # Server kurz stoppen, Unit neu schreiben, wieder starten
+-            was_running = False
+-            try:
+-                result = subprocess.run(
+-                    ["sudo", "systemctl", "is-active", f"msm-{server.linux_user}.service"],
+-                    capture_output=True, text=True, timeout=5, env=_SYSTEM_ENV
+-                )
+-                was_running = result.stdout.strip() == "active"
+-            except Exception:
+-                pass
+-
+-            if was_running:
+-                plugin.stop(server)
+-                plugin.start(server)
++        if plugin and docker_service.is_running(container_name_for(server.id)):
++            plugin.stop(server)
++            plugin.start(server)
+ 
+     return server
+ 
+@@ -200,16 +181,9 @@ def delete_server(server_id: int, db: Session = Depends(get_db), user: User = De
+     if not server:
+         raise HTTPException(status_code=404, detail="Server nicht gefunden")
+ 
+-    # systemd-Unit stoppen und entfernen (nur auf Linux)
+-    unit_name = f"msm-{server.linux_user}.service"
+-    try:
+-        subprocess.run(["sudo", "systemctl", "stop", unit_name], check=False, capture_output=True, env=_SYSTEM_ENV)
+-        subprocess.run(["sudo", "systemctl", "disable", unit_name], check=False, capture_output=True, env=_SYSTEM_ENV)
+-        unit_path = f"/etc/systemd/system/{unit_name}"
+-        subprocess.run(["sudo", "rm", "-f", unit_path], check=False, capture_output=True, env=_SYSTEM_ENV)
+-        subprocess.run(["sudo", "systemctl", "daemon-reload"], check=False, capture_output=True, env=_SYSTEM_ENV)
+-    except (FileNotFoundError, OSError):
+-        pass
++    # Container stoppen + entfernen (idempotent — kein Fehler, wenn nicht da)
++    container = container_name_for(server.id)
++    docker_service.remove(container, force=True)
+ 
+     # Firewall-Regeln schließen
+     close_ports(
+@@ -218,23 +192,20 @@ def delete_server(server_id: int, db: Session = Depends(get_db), user: User = De
+         rcon_port=server.rcon_port,
+     )
+ 
+-    # Linux-User und Home-Verzeichnis entfernen (nur auf Linux)
+-    try:
+-        subprocess.run(["sudo", "userdel", "-r", server.linux_user], check=False, capture_output=True, env=_SYSTEM_ENV)
+-    except (FileNotFoundError, OSError):
+-        pass
+-
+-    # Verzeichnis aufräumen (falls userdel es nicht gelöscht hat)
+-    if os.path.exists(server.install_dir):
+-        import shutil
++    # Install-Verzeichnis aufräumen
++    install_dir = server.install_dir
++    if os.path.exists(install_dir):
+         try:
+-            shutil.rmtree(server.install_dir)
++            shutil.rmtree(install_dir)
+         except OSError:
+             pass
+ 
+     db.delete(server)
+     db.commit()
+-    return {"message": "Server gelöscht", "cleanup": {"user_removed": server.linux_user, "dir_removed": server.install_dir}}
++    return {
++        "message": "Server gelöscht",
++        "cleanup": {"container_removed": container, "dir_removed": install_dir},
++    }
+ 
+ 
+ @router.post("/{server_id}/start")
+diff --git a/backend/schemas/server.py b/backend/schemas/server.py
+index 255144d..da00ceb 100644
+--- a/backend/schemas/server.py
++++ b/backend/schemas/server.py
+@@ -2,13 +2,17 @@
+ from pydantic import BaseModel, Field
+ 
+ 
++# cpu_limit_percent erlaubt Werte > 100 (200 % = 2 Cores). Limit 3200 % = 32 Cores
++# als pragmatische Obergrenze.
++
++
+ class ServerCreate(BaseModel):
+     name: str = Field(..., min_length=1, max_length=128)
+     game_type: str = Field(..., pattern=r"^[a-z0-9_]+$")
+     auto_restart: bool = False
+     restart_interval_hours: int | None = Field(None, ge=1, le=168)
+     restart_time_utc: str | None = Field(None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
+-    cpu_limit_percent: int | None = Field(None, ge=10, le=100)
++    cpu_limit_percent: int | None = Field(None, ge=10, le=3200)
+     ram_limit_mb: int | None = Field(None, ge=512)
+     disk_limit_gb: int | None = Field(None, ge=1)
+ 
+@@ -17,18 +21,23 @@ class ServerCreate(BaseModel):
+     query_port: int | None = Field(None, ge=1024, le=65535)
+     rcon_port: int | None = Field(None, ge=1024, le=65535)
+ 
++    # Optional: Host-IP, an die die Container-Ports gebunden werden.
++    # None = Docker-Default (alle Interfaces). Nur setzen, wenn nötig.
++    public_bind_ip: str | None = Field(None, max_length=64)
++
+ 
+ class ServerUpdate(BaseModel):
+     name: str | None = Field(None, min_length=1, max_length=128)
+     auto_restart: bool | None = None
+     restart_interval_hours: int | None = Field(None, ge=1, le=168)
+     restart_time_utc: str | None = Field(None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
+-    cpu_limit_percent: int | None = Field(None, ge=10, le=100)
++    cpu_limit_percent: int | None = Field(None, ge=10, le=3200)
+     ram_limit_mb: int | None = Field(None, ge=512)
+     disk_limit_gb: int | None = Field(None, ge=1)
+     game_port: int | None = Field(None, ge=1024, le=65535)
+     query_port: int | None = Field(None, ge=1024, le=65535)
+     rcon_port: int | None = Field(None, ge=1024, le=65535)
++    public_bind_ip: str | None = Field(None, max_length=64)
+ 
+ 
+ class ServerResponse(BaseModel):
+@@ -36,7 +45,7 @@ class ServerResponse(BaseModel):
+     name: str
+     game_type: str
+     install_dir: str
+-    linux_user: str
++    container_name: str | None
+     status: str
+     status_message: str | None
+     auto_restart: bool
+@@ -45,9 +54,11 @@ class ServerResponse(BaseModel):
+     cpu_limit_percent: int | None
+     ram_limit_mb: int | None
+     disk_limit_gb: int | None
++    disk_usage_mb: int | None
+     game_port: int | None
+     query_port: int | None
+     rcon_port: int | None
++    public_bind_ip: str | None
+     created_at: datetime
+ 
+     class Config:
+diff --git a/backend/services/__init__.py b/backend/services/__init__.py
+index f6f32a1..614d2cf 100644
+--- a/backend/services/__init__.py
++++ b/backend/services/__init__.py
+@@ -1,4 +1,5 @@
++from . import docker_service
+ from .auth_service import AuthService
+ from .email_service import EmailService
+ 
+-__all__ = ["AuthService", "EmailService"]
++__all__ = ["AuthService", "EmailService", "docker_service"]
+diff --git a/backend/services/docker_service.py b/backend/services/docker_service.py
+new file mode 100644
+index 0000000..ba16cdb
+--- /dev/null
++++ b/backend/services/docker_service.py
+@@ -0,0 +1,429 @@
++"""Docker-CLI Wrapper — startet, stoppt und inspiziert Game-Server-Container.
++
++KISS: dünner subprocess-Wrapper um `docker`-CLI. Keine neuen Python-Deps.
++Identisches Muster wie `firewall_service.py` (UFW). API klein und auditierbar.
++
++Sicherheitsinvarianten:
++- Keine Geheimnisse (Passwörter, API-Keys) landen in Log-Output. Aufrufer ist
++  verantwortlich, sensible Env-Werte nicht in Konsole zu schreiben; dieses
++  Modul rückt nichts ins Klartext-Log.
++- Stderr/Stdout werden nur in strukturierten Rückgaben weitergereicht; nicht
++  über `print()` oder ungefiltertes Logging.
++- Kein `--privileged`, kein `--network host`, kein `--cap-add` außer explizit
++  durch Aufrufer angefragt.
++- `_check_docker()` cached das Ergebnis, damit jeder Aufruf billig ist.
++
++Rückgabe-Format einheitlich:
++    {"ok": True,  ...payload}
++    {"ok": False, "error": "kurze, sichere Fehlermeldung"}
++"""
++
++from __future__ import annotations
++
++import logging
++import os
++import shlex
++import subprocess
++from dataclasses import dataclass
++from typing import Iterable
++
++logger = logging.getLogger(__name__)
++
++# Fester PATH für Subprozesse — verhindert PATH-Hijacking via User-Env
++_SYSTEM_ENV = {
++    "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
++    "LC_ALL": "C",
++    "LANG": "C",
++}
++
++# Default-Log-Optionen — begrenzen Disk-Druck durch Container-Logs
++_DEFAULT_LOG_OPTS = ["--log-driver=json-file", "--log-opt=max-size=10m", "--log-opt=max-file=3"]
++
++# Hardening-Flags, die wir IMMER setzen (KISS: keine Plugin-Override-Option in Phase 1)
++_HARDENING_FLAGS = ["--cap-drop=ALL", "--security-opt=no-new-privileges"]
++
++
++@dataclass(frozen=True)
++class PortPublish:
++    """Eine einzelne Port-Veröffentlichung für `docker run -p ...`."""
++    host_port: int
++    container_port: int
++    protocol: str = "udp"  # "udp" oder "tcp"
++    host_ip: str | None = None  # None = an alle Interfaces binden (0.0.0.0)
++
++    def to_arg(self) -> str:
++        proto = self.protocol.lower()
++        if proto not in ("tcp", "udp"):
++            raise ValueError(f"Ungültiges Protokoll: {self.protocol}")
++        if self.host_ip:
++            return f"{self.host_ip}:{self.host_port}:{self.container_port}/{proto}"
++        return f"{self.host_port}:{self.container_port}/{proto}"
++
++
++@dataclass(frozen=True)
++class VolumeBind:
++    """Bind-Mount für `docker run -v ...`."""
++    host_path: str
++    container_path: str
++    read_only: bool = False
++
++    def to_arg(self) -> str:
++        flag = "ro" if self.read_only else "rw"
++        return f"{self.host_path}:{self.container_path}:{flag}"
++
++
++_DOCKER_AVAILABLE: bool | None = None
++
++
++def _check_docker(force: bool = False) -> bool:
++    """Cached-Check: ist `docker`-CLI verfügbar?
++
++    Wird beim ersten Aufruf einmal evaluiert. Tests können `force=True` setzen,
++    um den Cache zurückzusetzen.
++    """
++    global _DOCKER_AVAILABLE
++    if _DOCKER_AVAILABLE is not None and not force:
++        return _DOCKER_AVAILABLE
++    try:
++        result = subprocess.run(
++            ["docker", "version", "--format", "{{.Server.Version}}"],
++            capture_output=True, text=True, timeout=5, env=_SYSTEM_ENV,
++        )
++        _DOCKER_AVAILABLE = result.returncode == 0
++    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
++        _DOCKER_AVAILABLE = False
++    return _DOCKER_AVAILABLE
++
++
++def _run_docker(args: list[str], timeout: int = 60, stdin: str | None = None) -> dict:
++    """Führt `docker <args>` aus und liefert strukturiertes Ergebnis.
++
++    Niemals Stack-Traces nach außen. Bei Fehlern eine kurze, sichere Meldung.
++    """
++    if not _check_docker():
++        return {"ok": False, "error": "Docker ist nicht verfügbar", "stdout": "", "stderr": ""}
++
++    cmd = ["docker", *args]
++    try:
++        result = subprocess.run(
++            cmd,
++            capture_output=True,
++            text=True,
++            timeout=timeout,
++            env=_SYSTEM_ENV,
++            input=stdin,
++        )
++        if result.returncode != 0:
++            err = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
++            # Stderr nicht direkt loggen — könnte Pfade/Env-Werte enthalten
++            logger.warning("docker %s fehlgeschlagen (rc=%d)", args[0] if args else "?", result.returncode)
++            return {"ok": False, "error": err, "stdout": result.stdout, "stderr": result.stderr}
++        return {"ok": True, "stdout": result.stdout, "stderr": result.stderr}
++    except subprocess.TimeoutExpired:
++        return {"ok": False, "error": "Docker-Befehl hat Timeout überschritten", "stdout": "", "stderr": ""}
++    except FileNotFoundError:
++        return {"ok": False, "error": "Docker ist nicht verfügbar", "stdout": "", "stderr": ""}
++    except OSError as e:
++        logger.warning("docker subprocess OSError: %s", e)
++        return {"ok": False, "error": "Docker-Befehl konnte nicht ausgeführt werden", "stdout": "", "stderr": ""}
++
++
++# ── Lifecycle ──────────────────────────────────────────────────────────────
++
++
++def is_available() -> bool:
++    """Public-API: ist Docker auf diesem Host nutzbar?"""
++    return _check_docker(force=True)
++
++
++def pull(image: str) -> dict:
++    """Lädt ein Image vor (idempotent, ok wenn schon lokal)."""
++    return _run_docker(["pull", image], timeout=600)
++
++
++def exists(name: str) -> bool:
++    """Prüft, ob ein Container mit diesem Namen existiert (auch wenn gestoppt)."""
++    result = _run_docker(["ps", "-a", "--filter", f"name=^{name}$", "--format", "{{.Names}}"])
++    if not result["ok"]:
++        return False
++    return name in result["stdout"].splitlines()
++
++
++def is_running(name: str) -> bool:
++    result = _run_docker(["ps", "--filter", f"name=^{name}$", "--format", "{{.Names}}"])
++    if not result["ok"]:
++        return False
++    return name in result["stdout"].splitlines()
++
++
++def remove(name: str, force: bool = True) -> dict:
++    """Entfernt einen Container (idempotent — kein Fehler, wenn nicht vorhanden)."""
++    if not exists(name):
++        return {"ok": True, "stdout": "", "stderr": "", "note": "container did not exist"}
++    args = ["rm"]
++    if force:
++        args.append("-f")
++    args.append(name)
++    return _run_docker(args, timeout=30)
++
++
++def stop(name: str, timeout: int = 30) -> dict:
++    """Stoppt einen Container mit Graceful-Timeout."""
++    if not is_running(name):
++        return {"ok": True, "stdout": "", "stderr": "", "note": "container was not running"}
++    return _run_docker(["stop", "-t", str(timeout), name], timeout=timeout + 10)
++
++
++def start(name: str) -> dict:
++    """Startet einen existierenden, gestoppten Container neu (nutzt vorhandene Config)."""
++    return _run_docker(["start", name], timeout=30)
++
++
++def run_container(
++    *,
++    name: str,
++    image: str,
++    command: list[str] | None = None,
++    env: dict[str, str] | None = None,
++    ports: list[PortPublish] | None = None,
++    volumes: list[VolumeBind] | None = None,
++    cpu_limit_percent: int | None = None,
++    ram_limit_mb: int | None = None,
++    user: str | None = None,
++    workdir: str | None = None,
++    read_only_rootfs: bool = True,
++    tmpfs_paths: list[str] | None = None,
++    extra_args: list[str] | None = None,
++    detach: bool = True,
++) -> dict:
++    """Startet einen neuen, langlebigen Container für einen Game-Server.
++
++    Falls bereits ein Container mit demselben Namen existiert (z. B. gestoppt
++    vom letzten Lauf), wird er vorher entfernt — wir starten immer mit frischen
++    Flags, weil Limits/Ports sich geändert haben könnten.
++    """
++    # Vorherigen Container räumen — KISS, immer frische Config.
++    if exists(name):
++        remove_result = remove(name, force=True)
++        if not remove_result["ok"]:
++            return remove_result
++
++    args: list[str] = ["run"]
++    if detach:
++        args.append("-d")
++    args.extend(["--name", name])
++    args.extend(["--restart=on-failure:5"])
++    args.extend(_DEFAULT_LOG_OPTS)
++    args.extend(_HARDENING_FLAGS)
++
++    if read_only_rootfs:
++        args.append("--read-only")
++
++    if tmpfs_paths:
++        for path in tmpfs_paths:
++            args.extend(["--tmpfs", f"{path}:rw,size=64m,mode=1777"])
++
++    if user:
++        args.extend(["--user", user])
++
++    if workdir:
++        args.extend(["--workdir", workdir])
++
++    if cpu_limit_percent is not None and cpu_limit_percent > 0:
++        # 100 % == 1 Core; 200 % == 2 Cores
++        cpus = round(cpu_limit_percent / 100.0, 2)
++        args.extend([f"--cpus={cpus}"])
++
++    if ram_limit_mb is not None and ram_limit_mb > 0:
++        args.extend([f"--memory={ram_limit_mb}m"])
++        # Swap == RAM verhindert, dass Container in Swap überläuft und Host destabilisiert.
++        args.extend([f"--memory-swap={ram_limit_mb}m"])
++
++    if env:
++        for key, value in env.items():
++            # Niemals den Wert in Logs schreiben — wir übergeben ihn direkt an docker.
++            args.extend(["-e", f"{key}={value}"])
++
++    if ports:
++        for p in ports:
++            args.extend(["-p", p.to_arg()])
++
++    if volumes:
++        for v in volumes:
++            args.extend(["-v", v.to_arg()])
++
++    if extra_args:
++        args.extend(extra_args)
++
++    args.append(image)
++    if command:
++        args.extend(command)
++
++    return _run_docker(args, timeout=120)
++
++
++def run_ephemeral(
++    *,
++    image: str,
++    command: list[str],
++    volumes: list[VolumeBind] | None = None,
++    env: dict[str, str] | None = None,
++    user: str | None = None,
++    workdir: str | None = None,
++    timeout: int = 1800,
++) -> dict:
++    """Führt ein einmaliges `docker run --rm`-Kommando aus (für SteamCMD-Installs etc.).
++
++    Blockiert bis der Container beendet ist (oder Timeout).
++    """
++    args: list[str] = ["run", "--rm"]
++    args.extend(_HARDENING_FLAGS)
++
++    if user:
++        args.extend(["--user", user])
++    if workdir:
++        args.extend(["--workdir", workdir])
++    if env:
++        for key, value in env.items():
++            args.extend(["-e", f"{key}={value}"])
++    if volumes:
++        for v in volumes:
++            args.extend(["-v", v.to_arg()])
++
++    args.append(image)
++    args.extend(command)
++
++    return _run_docker(args, timeout=timeout)
++
++
++# ── Inspect / Stats / Logs ─────────────────────────────────────────────────
++
++
++def inspect_state(name: str) -> dict | None:
++    """Liefert State-Felder (Status, StartedAt, ExitCode) oder None."""
++    if not exists(name):
++        return None
++    fmt = (
++        "{{.State.Status}}|{{.State.StartedAt}}|{{.State.ExitCode}}|{{.State.OOMKilled}}"
++    )
++    result = _run_docker(["inspect", "--format", fmt, name])
++    if not result["ok"]:
++        return None
++    parts = result["stdout"].strip().split("|")
++    if len(parts) < 4:
++        return None
++    return {
++        "status": parts[0],
++        "started_at": parts[1],
++        "exit_code": int(parts[2]) if parts[2].lstrip("-").isdigit() else None,
++        "oom_killed": parts[3].lower() == "true",
++    }
++
++
++def stats(name: str) -> dict | None:
++    """Liefert CPU%/RAM (MB) für einen laufenden Container — one-shot.
++
++    Nutzt `docker stats --no-stream`. Bei gestopptem Container: None.
++    """
++    if not is_running(name):
++        return None
++    result = _run_docker(
++        ["stats", "--no-stream", "--format", "{{.CPUPerc}}|{{.MemUsage}}", name],
++        timeout=10,
++    )
++    if not result["ok"]:
++        return None
++    line = result["stdout"].strip().splitlines()
++    if not line:
++        return None
++    parts = line[0].split("|")
++    if len(parts) < 2:
++        return None
++    cpu_str, mem_str = parts[0], parts[1]
++    cpu_percent: float | None = None
++    try:
++        cpu_percent = float(cpu_str.rstrip("%").strip())
++    except ValueError:
++        cpu_percent = None
++    ram_mb = _parse_mem_used_mb(mem_str)
++    return {"cpu_percent": cpu_percent, "ram_mb": ram_mb}
++
++
++def _parse_mem_used_mb(mem_usage: str) -> int | None:
++    """Wandelt `docker stats`-MemUsage ("123.4MiB / 2GiB") in genutzte MB."""
++    if not mem_usage:
++        return None
++    used = mem_usage.split("/")[0].strip()
++    # Beispiele: "123.4MiB", "1.2GiB", "456KiB", "789B"
++    number = ""
++    for ch in used:
++        if ch.isdigit() or ch == ".":
++            number += ch
++        else:
++            break
++    unit = used[len(number):].strip().lower()
++    try:
++        value = float(number)
++    except ValueError:
++        return None
++    if unit.startswith("g"):
++        return int(value * 1024)
++    if unit.startswith("m"):
++        return int(value)
++    if unit.startswith("k"):
++        return int(value / 1024)
++    if unit.startswith("b") or unit == "":
++        return int(value / (1024 * 1024))
++    return None
++
++
++def logs(name: str, lines: int = 200) -> str:
++    """Liefert die letzten N Zeilen Container-Logs als String. Leer bei Fehler."""
++    if not exists(name):
++        return ""
++    result = _run_docker(["logs", "--tail", str(lines), name], timeout=15)
++    if not result["ok"]:
++        return ""
++    # stdout + stderr zusammen, damit auch Crash-Output sichtbar bleibt
++    return (result.get("stdout") or "") + (result.get("stderr") or "")
++
++
++def exec_in(name: str, command: list[str], timeout: int = 30) -> dict:
++    """Führt ein Kommando in einem laufenden Container aus."""
++    if not is_running(name):
++        return {"ok": False, "error": "Container läuft nicht", "stdout": "", "stderr": ""}
++    args = ["exec", name, *command]
++    return _run_docker(args, timeout=timeout)
++
++
++# ── Disk-Usage (Soft-Limit) ────────────────────────────────────────────────
++
++
++def disk_usage_mb(path: str) -> int | None:
++    """Liefert die Bytes-Größe eines Pfads in MB (gerundet) oder None bei Fehler.
++
++    Nutzt `du -sb` für Konsistenz mit Disk-Soft-Limit. Verhält sich gutartig,
++    wenn der Pfad nicht existiert oder Lese-Rechte fehlen.
++    """
++    if not os.path.isdir(path):
++        return None
++    try:
++        result = subprocess.run(
++            ["du", "-sb", path],
++            capture_output=True, text=True, timeout=60, env=_SYSTEM_ENV,
++        )
++        if result.returncode != 0:
++            return None
++        first = result.stdout.split()
++        if not first:
++            return None
++        return int(first[0]) // (1024 * 1024)
++    except (FileNotFoundError, subprocess.TimeoutExpired, ValueError, OSError):
++        return None
++
++
++def host_uid_gid() -> tuple[int, int]:
++    """Aktuelles UID:GID des Panel-Prozesses. Wird als `--user` an Container übergeben,
++    damit Bind-Mount-Files die korrekte Besitzer haben.
++    """
++    return os.getuid(), os.getgid()
+diff --git a/backend/services/scheduler_service.py b/backend/services/scheduler_service.py
+index e9f2ba5..dccbee4 100644
+--- a/backend/services/scheduler_service.py
++++ b/backend/services/scheduler_service.py
+@@ -5,6 +5,7 @@
+ Simple, reliable, and extensible.
+ """
+ 
++import logging
+ import os
+ import subprocess
+ from datetime import datetime, timezone
+@@ -16,6 +17,16 @@
+ 
+ from database import SessionLocal
+ from games import get_plugin
++from services import docker_service
++
++logger = logging.getLogger(__name__)
++
++# Schwelle, ab der wir eine Warnung schreiben (Server läuft weiter).
++DISK_WARN_THRESHOLD_PERCENT = 80
++# Schwelle, ab der wir den Container hart stoppen (Soft-Limit-Enforcement).
++DISK_STOP_THRESHOLD_PERCENT = 100
++# Wie oft Disk-Usage geprüft wird (Minuten).
++DISK_CHECK_INTERVAL_MINUTES = 15
+ 
+ _scheduler: Optional[AsyncIOScheduler] = None
+ 
+@@ -246,10 +257,81 @@ def cleanup_old_backups(server_id: int, db):
+         db.commit()
+ 
+ 
++async def _disk_soft_limit_task() -> None:
++    """Globaler periodischer Job: prüft Disk-Usage aller Server gegen ihr
++    Soft-Limit. Bei >= 80 % schreibt eine Warnung in status_message. Bei
++    >= 100 % stoppt der Job den Container und setzt status='error'.
++
++    Dies ist KEIN hartes Quota — nur ein KISS Monitoring + Auto-Stop.
++    """
++    from models import AuditLog, Server
++
++    db = SessionLocal()
++    try:
++        servers = db.query(Server).filter(Server.disk_limit_gb.is_not(None)).all()
++        for server in servers:
++            usage_mb = docker_service.disk_usage_mb(server.install_dir)
++            if usage_mb is None:
++                continue
++            server.disk_usage_mb = usage_mb
++            limit_mb = (server.disk_limit_gb or 0) * 1024
++            if limit_mb <= 0:
++                continue
++            percent = (usage_mb * 100) // limit_mb
++
++            if percent >= DISK_STOP_THRESHOLD_PERCENT:
++                plugin = get_plugin(server.game_type)
++                if plugin and server.status == "running":
++                    try:
++                        plugin.stop(server)
++                    except Exception as e:
++                        logger.warning("disk-limit stop failed for %s: %s", server.id, e)
++                server.status = "error"
++                server.status_message = (
++                    f"Disk-Soft-Limit erreicht ({usage_mb} MB / {limit_mb} MB). Container gestoppt."
++                )
++                db.add(AuditLog(
++                    user_id=None,
++                    action="disk_limit_stop",
++                    target_type="server",
++                    target_id=server.id,
++                    details=f"Disk usage {usage_mb} MB hit limit {limit_mb} MB",
++                ))
++            elif percent >= DISK_WARN_THRESHOLD_PERCENT:
++                server.status_message = (
++                    f"Warnung: Disk-Verbrauch bei {percent} % von {limit_mb} MB."
++                )
++        db.commit()
++    except Exception as e:
++        logger.warning("disk soft-limit task crashed: %s", e)
++    finally:
++        db.close()
++
++
++def _ensure_disk_check_job() -> None:
++    scheduler = get_scheduler()
++    job_id = "global_disk_soft_limit_check"
++    try:
++        scheduler.remove_job(job_id)
++    except Exception:
++        pass
++    scheduler.add_job(
++        func=_disk_soft_limit_task,
++        trigger=IntervalTrigger(minutes=DISK_CHECK_INTERVAL_MINUTES),
++        id=job_id,
++        name="Disk Soft-Limit Check",
++        replace_existing=True,
++        max_instances=1,
++        coalesce=True,
++    )
++
++
+ def init_server_schedules(db):
+     """Initialize schedules for all servers on startup."""
+     from models import Server
+ 
++    _ensure_disk_check_job()
++
+     servers = db.query(Server).all()
+     for server in servers:
+         if server.auto_restart and server.restart_interval_hours:
+diff --git a/backend/tests/conftest.py b/backend/tests/conftest.py
+index aeb9e04..a8f4a68 100644
+--- a/backend/tests/conftest.py
++++ b/backend/tests/conftest.py
+@@ -142,7 +142,7 @@ def test_server(db: Session, owner_user: User) -> Server:
+         name="Test Server",
+         game_type="dayz",
+         install_dir="/tmp/test_server",
+-        linux_user="test_user",
++        container_name="msm-srv-test",
+         status="stopped",
+     )
+     db.add(server)
+diff --git a/backend/tests/test_auth_router.py b/backend/tests/test_auth_router.py
+index 910c506..88ac502 100644
+--- a/backend/tests/test_auth_router.py
++++ b/backend/tests/test_auth_router.py
+@@ -334,8 +334,13 @@ def test_post_without_csrf_fails(self, client: TestClient, owner_cookies: dict):
+ 
+     def test_post_with_csrf_succeeds(self, client: TestClient, owner_cookies: dict):
+         from unittest.mock import patch
+-        with patch("routers.servers.subprocess.run") as mock_run:
+-            mock_run.return_value = type("obj", (object,), {"returncode": 0})()
++        # Routers nutzen kein subprocess mehr (Docker-Runtime). Wir patchen
++        # nur Filesystem/Firewall/Plugin, damit der Create-Pfad ohne Side-Effects
++        # gegen den Docker-Daemon laufen kann.
++        with patch("routers.servers.os.makedirs"), \
++             patch("routers.servers.os.chmod"), \
++             patch("routers.servers.open_ports"), \
++             patch("routers.servers.get_plugin", return_value=None):
+             csrf = owner_cookies.get("__Secure-csrf_token")
+             response = client.post(
+                 "/api/servers",
+diff --git a/backend/tests/test_docker_service.py b/backend/tests/test_docker_service.py
+new file mode 100644
+index 0000000..8fcfc30
+--- /dev/null
++++ b/backend/tests/test_docker_service.py
+@@ -0,0 +1,159 @@
++"""Unit-Tests für docker_service (KISS subprocess-Wrapper).
++
++Diese Tests mocken `subprocess.run`, damit sie ohne Docker-Daemon laufen.
++Wir prüfen primär, dass die zusammengebauten `docker`-CLI-Args korrekt sind
++(Cap-Drop, no-new-privileges, Port-Publish, Limits, etc.).
++"""
++from __future__ import annotations
++
++import subprocess
++from unittest.mock import MagicMock, patch
++
++import pytest
++
++from services import docker_service
++from services.docker_service import PortPublish, VolumeBind
++
++
++def _ok(stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess:
++    return subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout, stderr=stderr)
++
++
++def _fail(stderr: str = "boom", returncode: int = 1) -> subprocess.CompletedProcess:
++    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout="", stderr=stderr)
++
++
++@pytest.fixture(autouse=True)
++def reset_docker_cache():
++    """Avoid leakage between tests of `_check_docker` cache."""
++    docker_service._docker_available_cache = None
++    yield
++    docker_service._docker_available_cache = None
++
++
++class TestRunContainer:
++    def test_builds_hardened_command(self):
++        with patch.object(docker_service, "_run_docker") as mock_run:
++            mock_run.side_effect = [
++                {"ok": True, "stdout": "", "stderr": ""},  # rm (idempotent)
++                {"ok": True, "stdout": "abc123\n", "stderr": ""},  # run
++            ]
++            with patch.object(docker_service, "_check_docker", return_value=True):
++                result = docker_service.run_container(
++                    name="msm-srv-7",
++                    image="cm2network/steamcmd:root",
++                    command=["/data/DayZServer", "-port=27015"],
++                    env={"FOO": "bar"},
++                    ports=[PortPublish(27015, 27015, "udp", None)],
++                    volumes=[VolumeBind("/opt/msm/servers/7", "/data", read_only=False)],
++                    cpu_limit_percent=200,
++                    ram_limit_mb=4096,
++                    user="1000:1000",
++                    workdir="/data",
++                )
++        assert result["ok"] is True
++        # Letzter Aufruf war das `run`
++        run_args = mock_run.call_args_list[-1].args[0]
++        assert run_args[0] == "run"
++        # Sicherheits-Härtungen
++        assert "--cap-drop=ALL" in run_args
++        assert "--security-opt=no-new-privileges" in run_args
++        # Limits
++        assert "--cpus=2.0" in run_args
++        assert "--memory=4096m" in run_args
++        assert "--memory-swap=4096m" in run_args
++        # Bind-Mount + User
++        # Docker-CLI nimmt --user als separates Argument
++        user_idx = run_args.index("--user")
++        assert run_args[user_idx + 1] == "1000:1000"
++        # --volume <src>:<dst>
++        assert any("/opt/msm/servers/7:/data" in a for a in run_args)
++        # Port-Publish UDP
++        assert any("27015:27015/udp" in a for a in run_args)
++        # Image + CMD am Ende
++        assert run_args[-3] == "cm2network/steamcmd:root"
++        assert run_args[-2:] == ["/data/DayZServer", "-port=27015"]
++
++    def test_bind_ip_in_port_publish(self):
++        with patch.object(docker_service, "_run_docker") as mock_run, \
++             patch.object(docker_service, "_check_docker", return_value=True):
++            mock_run.side_effect = [
++                {"ok": True, "stdout": "", "stderr": ""},
++                {"ok": True, "stdout": "abc\n", "stderr": ""},
++            ]
++            docker_service.run_container(
++                name="msm-srv-1",
++                image="img",
++                command=["x"],
++                env={},
++                ports=[PortPublish(27015, 27015, "tcp", "192.0.2.5")],
++                volumes=[],
++                cpu_limit_percent=None,
++                ram_limit_mb=None,
++                user="1000:1000",
++                workdir="/data",
++            )
++        run_args = mock_run.call_args_list[-1].args[0]
++        assert any("192.0.2.5:27015:27015/tcp" in a for a in run_args)
++
++
++class TestLifecycle:
++    def test_stop_returns_ok_when_not_exists(self):
++        with patch.object(docker_service, "_check_docker", return_value=True), \
++             patch.object(docker_service, "_run_docker", return_value={"ok": False, "error": "No such container", "stdout": "", "stderr": ""}):
++            result = docker_service.stop("missing")
++        # Stop bei nicht-existentem Container ist idempotent: ok=True
++        assert result["ok"] is True
++
++    def test_remove_returns_ok_when_not_exists(self):
++        with patch.object(docker_service, "_check_docker", return_value=True), \
++             patch.object(docker_service, "_run_docker", return_value={"ok": False, "error": "No such container", "stdout": "", "stderr": ""}):
++            result = docker_service.remove("missing")
++        assert result["ok"] is True
++
++
++class TestDiskUsage:
++    def test_du_returns_mb(self, tmp_path):
++        # du -sb gibt Bytes als erste Spalte zurück. Pfad muss existieren.
++        with patch("services.docker_service.subprocess.run",
++                   return_value=_ok(stdout=f"104857600\t{tmp_path}\n")):
++            mb = docker_service.disk_usage_mb(str(tmp_path))
++        assert mb == 100
++
++    def test_du_failure_returns_none(self, tmp_path):
++        with patch("services.docker_service.subprocess.run", side_effect=FileNotFoundError):
++            mb = docker_service.disk_usage_mb(str(tmp_path))
++        assert mb is None
++
++    def test_du_nonexistent_path_returns_none(self):
++        # Pfad existiert nicht → sofort None ohne subprocess-Aufruf
++        assert docker_service.disk_usage_mb("/nonexistent-xyz-msm-test") is None
++
++
++class TestHostUidGid:
++    def test_returns_tuple(self):
++        uid, gid = docker_service.host_uid_gid()
++        assert isinstance(uid, int)
++        assert isinstance(gid, int)
++
++
++class TestEphemeralRun:
++    def test_steamcmd_args_passed_through(self):
++        with patch.object(docker_service, "_check_docker", return_value=True), \
++             patch.object(docker_service, "_run_docker") as mock_run:
++            mock_run.return_value = {"ok": True, "stdout": "done", "stderr": ""}
++            result = docker_service.run_ephemeral(
++                image="cm2network/steamcmd:root",
++                command=["+force_install_dir", "/data", "+login", "anonymous", "+app_update", "223350", "+quit"],
++                volumes=[VolumeBind("/opt/msm/servers/1", "/data", read_only=False)],
++                env={},
++                user="1000:1000",
++                workdir="/data",
++                timeout=600,
++            )
++        assert result["ok"] is True
++        args = mock_run.call_args.args[0]
++        assert args[0] == "run"
++        assert "--rm" in args
++        assert "--cap-drop=ALL" in args
++        assert "+app_update" in args[-1] or any("+app_update" in a for a in args)
+diff --git a/backend/tests/test_servers_router.py b/backend/tests/test_servers_router.py
+index 23b62ab..9a4189b 100644
+--- a/backend/tests/test_servers_router.py
++++ b/backend/tests/test_servers_router.py
+@@ -45,8 +45,13 @@ def test_user_without_permission_blocked(self, client: TestClient, regular_user:
+ 
+ class TestCreateServer:
+     def test_owner_can_create(self, client: TestClient, owner_user: User, owner_cookies: dict, csrf_token: str):
+-        with patch("routers.servers.subprocess.run") as mock_run:
+-            mock_run.return_value = type("obj", (object,), {"returncode": 0})()
++        # docker_service.is_available() darf False sein — der Endpunkt lebt
++        # auch ohne lokales Docker (install() schl\u00e4gt nur fehl). Wir mocken
++        # nichts; install_dir landet unter /tmp/msm-test/.
++        with patch("routers.servers.os.makedirs"), \
++             patch("routers.servers.os.chmod"), \
++             patch("routers.servers.open_ports"), \
++             patch("routers.servers.get_plugin", return_value=None):
+             response = client.post(
+                 "/api/servers",
+                 json={"name": "New Server", "game_type": "dayz"},
+diff --git a/docs/agent-rules/architecture.md b/docs/agent-rules/architecture.md
+index 0ad36c0..546cfaa 100644
+--- a/docs/agent-rules/architecture.md
++++ b/docs/agent-rules/architecture.md
+@@ -359,3 +359,56 @@ Regeln:
+ - [ ] Kein neuer Manager-/Pipeline-Monolith?
+ - [ ] Keine doppelten Core-Importpfade?
+ - [ ] Runtime-Pfade wirklich geöffnet, wenn betroffen?
++
++---
++
++## 12. Game-Server-Runtime (Phase 1 — Docker)
++
++Stand: 2026-05-23. Diese Sektion ist MSM-spezifisch und gilt für alle Game-/Voice-Server, die das Panel verwaltet.
++
++### 12.1 Invarianten
++
++- Game-Server laufen ausschließlich in Docker-Containern. Kein systemd-pro-Server, kein POSIX-User-pro-Server, kein direktes Binary auf dem Host.
++- Das Panel selbst (FastAPI) bindet weiterhin an `127.0.0.1:8000` und wird ausschließlich über Caddy nach außen gereicht. Container-Ports werden direkt von Docker auf der Host-Schnittstelle gepublisht (Option: spezifische `public_bind_ip`).
++- Container-Lifecycle wird über `services/docker_service.py` abgewickelt — ein dünner `subprocess`-Wrapper um `docker`. Kein Python-SDK, keine REST-API zum Docker-Daemon.
++- Jeder Server erhält einen stabilen Container-Namen `msm-srv-<server_id>`. Das ist auch `server.container_name` in der DB.
++- Container starten mit `--cap-drop=ALL --security-opt=no-new-privileges --restart=on-failure:5 --log-driver=json-file --log-opt max-size=10m --log-opt max-file=3`.
++- Bind-Mounts: Host `<install_dir>` → Container `/data`. Der Container läuft mit derselben UID/GID wie der Panel-User (`msm`), damit Schreibrechte konsistent sind.
++
++### 12.2 Pflichtmethoden für Game-Plugins
++
++Jedes Plugin (`backend/games/<game>/plugin.py`) erbt von `GamePlugin` und implementiert mindestens:
++
++- `build_container_command(server) -> list[str]` — argv des Containers (Pfade INNERHALB des Containers, z. B. `/data/DayZServer`).
++- `build_port_publishes(server) -> list[PortPublish]` — Welche Ports nach außen.
++- `docker_image: str` — Container-Image (Default: `cm2network/steamcmd:root`).
++
++Standard-Implementationen für `start/stop/get_status/install` in `games/base.py`. Override nur, wenn das Spiel etwas Game-spezifisches braucht.
++
++### 12.3 Resource-Limits (CPU, RAM, Disk)
++
++- `cpu_limit_percent` → `--cpus=<percent/100>` (200 = 2 Cores).
++- `ram_limit_mb` → `--memory=<mb>m --memory-swap=<mb>m` (swap=RAM verhindert Thrashing).
++- `disk_limit_gb` → **Soft-Limit**. Kein Docker-natives Quota; stattdessen prüft der globale Scheduler-Job (`services/scheduler_service._disk_soft_limit_task`) alle 15 Minuten den Verbrauch via `du -sb`. Bei ≥ 80 % schreibt er eine Warnung in `server.status_message`. Bei ≥ 100 % stoppt er den Container hart und setzt `status="error"`.
++
++Hartes Disk-Quota (XFS-Projekt-Quota oder Overlay-Quota) ist explizit Phase-2-Material.
++
++### 12.4 SteamCMD
++
++Es gibt kein Host-`steamcmd` mehr. Installs und Workshop-Downloads laufen in ephemeren Containern (`cm2network/steamcmd:root`), die in `games/base.run_steamcmd_install()` und `run_steamcmd_workshop_download()` gekapselt sind. Das nutzt das gleiche Bind-Mount-Layout (`<install_dir>` → `/data`).
++
++Intelligentes Mod-Update bleibt erhalten: SteamCMD selbst entscheidet, ob ein `workshop_download_item` einen Refresh braucht — wir starten den Container einfach jedes Mal, und SteamCMD validiert die lokalen Dateien gegen das Manifest. Kein Voll-Redownload, wenn nichts geändert hat.
++
++### 12.5 TODO: Rootless Docker
++
++Aktuell ist `msm` Mitglied der `docker`-Gruppe. Das ist effektiv lokales Root. Akzeptiert für Phase 1, ABER:
++
++- Vor Phase 3 (RBAC) muss auf [rootless Docker](https://docs.docker.com/engine/security/rootless/) umgestellt werden. Dann läuft der Docker-Daemon als unprivilegierter `msm`-User, und ein Bruch im Container kompromittiert nur diesen User, nicht den Host.
++- Migrationspfad: `dockerd-rootless-setuptool.sh install` als `msm`, `DOCKER_HOST=unix:///run/user/<uid>/docker.sock`. Plus Anpassung der Bind-Mount-Pfade auf user-namespaced UIDs.
++- Bis dahin: Keine externen, nicht vertrauenswürdigen Images. Wir pinnen `cm2network/steamcmd:root` und prüfen Updates manuell.
++
++### 12.6 Keine 0.0.0.0-Bindings im Panel
++
++Die Panel-API darf nur an `127.0.0.1` binden. Container-Port-Publishes dürfen `0.0.0.0` nutzen (Docker-Default), wenn die Game-Spielebene das benötigt. Optional pro Server: `server.public_bind_ip` setzt einen explizit gebundenen Host-Interface — empfohlen bei Multi-IP-Hosts.
++
++Phase-2-Port-Manager wird das absichern (UFW-Regeln nur öffnen, wenn Container läuft).
+diff --git a/frontend/package-lock.json b/frontend/package-lock.json
+index 527304e..c24a397 100644
+--- a/frontend/package-lock.json
++++ b/frontend/package-lock.json
+@@ -11,7 +11,7 @@
+         "i18next": "^23.11.5",
+         "i18next-browser-languagedetector": "^8.2.1",
+         "i18next-http-backend": "^2.5.2",
+-        "lucide-react": "^0.400.0",
++        "lucide-react": "^0.577.0",
+         "react": "^18.3.1",
+         "react-dom": "^18.3.1",
+         "react-i18next": "^14.1.2",
+@@ -3427,9 +3427,9 @@
+       }
+     },
+     "node_modules/lucide-react": {
+-      "version": "0.400.0",
+-      "resolved": "https://registry.npmjs.org/lucide-react/-/lucide-react-0.400.0.tgz",
+-      "integrity": "sha512-rpp7pFHh3Xd93KHixNgB0SqThMHpYNzsGUu69UaQbSZ75Q/J3m5t6EhKyMT3m4w2WOxmJ2mY0tD3vebnXqQryQ==",
++      "version": "0.577.0",
++      "resolved": "https://registry.npmjs.org/lucide-react/-/lucide-react-0.577.0.tgz",
++      "integrity": "sha512-4LjoFv2eEPwYDPg/CUdBJQSDfPyzXCRrVW1X7jrx/trgxnxkHFjnVZINbzvzxjN70dxychOfg+FTYwBiS3pQ5A==",
+       "license": "ISC",
+       "peerDependencies": {
+         "react": "^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0"
+diff --git a/frontend/src/locales/de.json b/frontend/src/locales/de.json
+index 372e909..7b9451d 100644
+--- a/frontend/src/locales/de.json
++++ b/frontend/src/locales/de.json
+@@ -36,7 +36,15 @@
+     "deleted": "Server gelöscht",
+     "confirmDelete": "Server wirklich löschen? Alle Daten werden unwiderruflich entfernt.",
+     "createDescription": "Erstelle einen neuen Game-Server.",
+-    "fileManager": "Datei-Manager"
++    "fileManager": "Datei-Manager",
++    "containerName": "Container-Name",
++    "publicBindIp": "Öffentliche Host-IP",
++    "publicBindIpHint": "Optional. Leer = Docker bindet an alle Interfaces. Nur setzen, wenn der Host mehrere externe IPs hat.",
++    "disk": {
++      "usage": "Disk-Verbrauch",
++      "softLimitWarning": "Disk-Verbrauch erreicht {percent} % des Soft-Limits ({usedMb} MB / {limitMb} MB). Bereinige alte Daten, sonst wird der Server bei 100 % automatisch gestoppt.",
++      "softLimitStopped": "Server wurde wegen Disk-Soft-Limit gestoppt ({usedMb} MB / {limitMb} MB)."
++    }
+   },
+   "users": {
+     "subtitle": "Benutzer und Berechtigungen verwalten",
+diff --git a/frontend/src/locales/en.json b/frontend/src/locales/en.json
+index 5d4668c..2889f8c 100644
+--- a/frontend/src/locales/en.json
++++ b/frontend/src/locales/en.json
+@@ -36,7 +36,15 @@
+     "deleted": "Server deleted",
+     "confirmDelete": "Really delete this server? All data will be permanently removed.",
+     "createDescription": "Create a new game server.",
+-    "fileManager": "File Manager"
++    "fileManager": "File Manager",
++    "containerName": "Container name",
++    "publicBindIp": "Public host IP",
++    "publicBindIpHint": "Optional. Empty = Docker binds to all interfaces. Only set this if the host has multiple external IPs.",
++    "disk": {
++      "usage": "Disk usage",
++      "softLimitWarning": "Disk usage hit {percent}% of the soft limit ({usedMb} MB / {limitMb} MB). Clean up old data — at 100% the server will be stopped automatically.",
++      "softLimitStopped": "Server was stopped due to disk soft limit ({usedMb} MB / {limitMb} MB)."
++    }
+   },
+   "users": {
+     "subtitle": "Manage users and permissions",
+diff --git a/frontend/src/types/index.ts b/frontend/src/types/index.ts
+index fc73c1d..a854c0c 100644
+--- a/frontend/src/types/index.ts
++++ b/frontend/src/types/index.ts
+@@ -15,7 +15,7 @@ export interface Server {
+   name: string
+   game_type: string
+   install_dir: string
+-  linux_user: string
++  container_name: string | null
+   status: string
+   status_message: string | null
+   auto_restart: boolean
+@@ -24,9 +24,11 @@ export interface Server {
+   cpu_limit_percent: number | null
+   ram_limit_mb: number | null
+   disk_limit_gb: number | null
++  disk_usage_mb: number | null
+   game_port: number | null
+   query_port: number | null
+   rcon_port: number | null
++  public_bind_ip: string | null
+   created_at: string
+ }
+ 
+diff --git a/install.sh b/install.sh
+index a292320..e219198 100644
+--- a/install.sh
++++ b/install.sh
+@@ -303,28 +303,37 @@ CADDYEOF
+     fi
+ fi
+ 
+-# ── steamcmd (direktes Binary, apt-Wrapper ist fehleranfällig) ──
+-if ! command -v steamcmd &>/dev/null || ! steamcmd +login anonymous +quit &>/dev/null; then
+-    log "Installiere steamcmd (direkte Binary-Installation)..."
+-    # i386 Architektur für 32-bit SteamCMD Libs
+-    dpkg --add-architecture i386 2>/dev/null || true
+-    apt-get update -qq | tee -a "$LOG_FILE"
+-    apt-get install -y -qq lib32gcc-s1 lib32stdc++6 curl tar 2>&1 | tee -a "$LOG_FILE"
+-
+-    mkdir -p /usr/games
+-    rm -f /tmp/steamcmd.tar.gz
+-    wget -q https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz -O /tmp/steamcmd.tar.gz
+-    tar -xzf /tmp/steamcmd.tar.gz -C /usr/games/
+-    chmod +x /usr/games/steamcmd
+-    rm -f /usr/local/bin/steamcmd 2>/dev/null || true
+-    ln -s /usr/games/steamcmd /usr/local/bin/steamcmd
+-
+-    # Verifizierung: smoke-test
+-    if ! steamcmd +login anonymous +quit &>/dev/null; then
+-        err "steamcmd Installation fehlgeschlagen. Prüfe 32-bit Bibliotheken (lib32gcc-s1, lib32stdc++6)."
+-    fi
+-    ok "steamcmd installiert und getestet"
++# ── Docker (Game-Server-Runtime — Phase 1) ──
++# Game-Server laufen ausschließlich in Docker-Containern. SteamCMD wird in
++# einem ephemeren Container (cm2network/steamcmd) genutzt, nicht auf dem Host.
++if ! command -v docker &>/dev/null; then
++    log "Installiere Docker (offizieller Installer von docker.com)..."
++    curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
++    sh /tmp/get-docker.sh 2>&1 | tee -a "$LOG_FILE"
++    rm -f /tmp/get-docker.sh
++    ok "Docker installiert"
++else
++    log "Docker bereits installiert ($(docker --version 2>/dev/null || echo unbekannt))"
++fi
++
++if $SYSTEMD_AVAILABLE; then
++    systemctl enable docker 2>&1 | tee -a "$LOG_FILE" || true
++    systemctl start docker 2>&1 | tee -a "$LOG_FILE" || true
++fi
++
++# msm-User in docker-Gruppe → kann Container ohne sudo verwalten.
++# HINWEIS: docker-Gruppe ≈ lokale Root-Privilegien. Rootless-Docker ist als
++# nächster Sicherheits-TODO eingeplant (siehe docs/agent-rules/architecture.md).
++if ! id -nG "$MSM_USER" 2>/dev/null | grep -qw docker; then
++    log "Füge $MSM_USER der docker-Gruppe hinzu (rootless folgt in späterer Phase)..."
++    usermod -aG docker "$MSM_USER" 2>&1 | tee -a "$LOG_FILE" || true
+ fi
++ok "Docker bereit (User '$MSM_USER' in docker-Gruppe)"
++
++# SteamCMD-Image vorziehen (idempotent, blockiert nicht harten Abbruch).
++log "Lade SteamCMD-Container-Image vor (cm2network/steamcmd:root)..."
++docker pull cm2network/steamcmd:root 2>&1 | tee -a "$LOG_FILE" || \
++    warn "Konnte SteamCMD-Image nicht vorziehen — wird beim ersten Server-Install nachgeholt."
+ 
+ ok "System-Abhängigkeiten installiert"
+ 
+@@ -1158,25 +1167,13 @@ EOF
+         fi
+         ok "Service registriert"
+ 
+-        # ── sudoers: msm-User darf Game-Server systemd-Units verwalten ──
+-        cat > /etc/sudoers.d/msm-panel <<'SUDOEOF'
+-# MSM Panel — Game-Server systemd-Unit-Verwaltung
+-msm ALL=(root) NOPASSWD: /usr/bin/systemctl daemon-reload
+-msm ALL=(root) NOPASSWD: /usr/bin/systemctl enable msm-*.service
+-msm ALL=(root) NOPASSWD: /usr/bin/systemctl disable msm-*.service
+-msm ALL=(root) NOPASSWD: /usr/bin/systemctl start msm-*.service
+-msm ALL=(root) NOPASSWD: /usr/bin/systemctl stop msm-*.service
+-msm ALL=(root) NOPASSWD: /usr/bin/systemctl is-active msm-*.service
+-msm ALL=(root) NOPASSWD: /usr/bin/tee /etc/systemd/system/msm-*.service
+-msm ALL=(root) NOPASSWD: /usr/bin/rm -f /etc/systemd/system/msm-*.service
+-msm ALL=(root) NOPASSWD: /usr/sbin/useradd -r -m -s /usr/sbin/nologin -d * msm_srv_*
+-msm ALL=(root) NOPASSWD: /usr/sbin/usermod -s /usr/sbin/nologin msm_srv_*
+-msm ALL=(root) NOPASSWD: /usr/sbin/userdel -r msm_srv_*
+-msm ALL=(root) NOPASSWD: /usr/bin/chown msm_srv_*:msm_srv_* /opt/msm/servers/*
+-msm ALL=(root) NOPASSWD: /usr/bin/chmod 750 /opt/msm/servers/*
+-SUDOEOF
+-        chmod 440 /etc/sudoers.d/msm-panel
+-        ok "sudoers für msm-User konfiguriert"
++        # ── Legacy-sudoers entfernen: Game-Server laufen jetzt in Docker, der
++        # msm-User braucht keine root-Privilegien für systemd/useradd mehr. ──
++        if [[ -f /etc/sudoers.d/msm-panel ]]; then
++            log "Entferne legacy /etc/sudoers.d/msm-panel (Game-Server laufen jetzt in Docker)..."
++            rm -f /etc/sudoers.d/msm-panel
++            ok "Legacy-sudoers entfernt"
++        fi
+     else
+         warn "systemd nicht verfügbar (typisch für WSL). msm-panel.service wird geschrieben, aber nicht aktiviert."
+         warn "Starte manuell mit: cd /opt/msm/backend && source venv/bin/activate && uvicorn main:app --host 127.0.0.1 --port 8000"

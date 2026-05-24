@@ -1,0 +1,330 @@
+diff --git a/src/lib/BetaMessageStream.ts b/src/lib/BetaMessageStream.ts
+index 24839208..61d7abce 100644
+--- a/src/lib/BetaMessageStream.ts
++++ b/src/lib/BetaMessageStream.ts
+@@ -44,6 +44,7 @@ type MessageStreamEventListeners<Event extends keyof MessageStreamEvents> = {
+ }[];
+ 
+ const JSON_BUF_PROPERTY = '__json_buf';
++const TEXT_CHUNKS_PROPERTY = '__text_chunks';
+ 
+ export type TracksToolInput = BetaToolUseBlock | BetaServerToolUseBlock | BetaMCPToolUseBlock;
+ 
+@@ -51,6 +52,49 @@ function tracksToolInput(content: BetaContentBlock): content is TracksToolInput
+   return content.type === 'tool_use' || content.type === 'server_tool_use' || content.type === 'mcp_tool_use';
+ }
+ 
++function appendTextDelta(content: BetaTextBlock, text: string): void {
++  let chunks = (content as any)[TEXT_CHUNKS_PROPERTY] as string[] | undefined;
++  if (!chunks) {
++    const newChunks = content.text ? [content.text] : [];
++    chunks = newChunks;
++    Object.defineProperty(content, TEXT_CHUNKS_PROPERTY, {
++      value: newChunks,
++      enumerable: false,
++      writable: true,
++      configurable: true,
++    });
++    Object.defineProperty(content, 'text', {
++      get: () => newChunks.join(''),
++      set: (value: string) => {
++        newChunks.length = 0;
++        if (value) {
++          newChunks.push(value);
++        }
++      },
++      enumerable: true,
++      configurable: true,
++    });
++  }
++  chunks.push(text);
++}
++
++function materializeText(content: BetaContentBlock | undefined): void {
++  if (content?.type !== 'text') {
++    return;
++  }
++  const chunks = (content as any)[TEXT_CHUNKS_PROPERTY] as string[] | undefined;
++  if (!chunks) {
++    return;
++  }
++  Object.defineProperty(content, 'text', {
++    value: chunks.join(''),
++    enumerable: true,
++    writable: true,
++    configurable: true,
++  });
++  delete (content as any)[TEXT_CHUNKS_PROPERTY];
++}
++
+ export class BetaMessageStream<ParsedT = null> implements AsyncIterable<BetaMessageStreamEvent> {
+   messages: BetaMessageParam[] = [];
+   receivedMessages: ParsedBetaMessage<ParsedT>[] = [];
+@@ -450,7 +494,7 @@ export class BetaMessageStream<ParsedT = null> implements AsyncIterable<BetaMess
+         const content = messageSnapshot.content.at(-1)!;
+         switch (event.delta.type) {
+           case 'text_delta': {
+-            if (content.type === 'text') {
++            if (content.type === 'text' && this.#listeners.text?.length) {
+               this._emit('text', event.delta.text, content.text || '');
+             }
+             break;
+@@ -611,10 +655,7 @@ export class BetaMessageStream<ParsedT = null> implements AsyncIterable<BetaMess
+         switch (event.delta.type) {
+           case 'text_delta': {
+             if (snapshotContent?.type === 'text') {
+-              snapshot.content[event.index] = {
+-                ...snapshotContent,
+-                text: (snapshotContent.text || '') + event.delta.text,
+-              };
++              appendTextDelta(snapshotContent, event.delta.text);
+             }
+             break;
+           }
+@@ -689,6 +730,7 @@ export class BetaMessageStream<ParsedT = null> implements AsyncIterable<BetaMess
+         return snapshot;
+       }
+       case 'content_block_stop':
++        materializeText(snapshot.content.at(event.index));
+         return snapshot;
+     }
+   }
+diff --git a/src/lib/MessageStream.ts b/src/lib/MessageStream.ts
+index f29d23f8..dd2973ba 100644
+--- a/src/lib/MessageStream.ts
++++ b/src/lib/MessageStream.ts
+@@ -41,6 +41,7 @@ type MessageStreamEventListeners<ParsedT, Event extends keyof MessageStreamEvent
+ }[];
+ 
+ const JSON_BUF_PROPERTY = '__json_buf';
++const TEXT_CHUNKS_PROPERTY = '__text_chunks';
+ 
+ export type TracksToolInput = ToolUseBlock | ServerToolUseBlock;
+ 
+@@ -48,6 +49,49 @@ function tracksToolInput(content: ContentBlock): content is TracksToolInput {
+   return content.type === 'tool_use' || content.type === 'server_tool_use';
+ }
+ 
++function appendTextDelta(content: TextBlock, text: string): void {
++  let chunks = (content as any)[TEXT_CHUNKS_PROPERTY] as string[] | undefined;
++  if (!chunks) {
++    const newChunks = content.text ? [content.text] : [];
++    chunks = newChunks;
++    Object.defineProperty(content, TEXT_CHUNKS_PROPERTY, {
++      value: newChunks,
++      enumerable: false,
++      writable: true,
++      configurable: true,
++    });
++    Object.defineProperty(content, 'text', {
++      get: () => newChunks.join(''),
++      set: (value: string) => {
++        newChunks.length = 0;
++        if (value) {
++          newChunks.push(value);
++        }
++      },
++      enumerable: true,
++      configurable: true,
++    });
++  }
++  chunks.push(text);
++}
++
++function materializeText(content: ContentBlock | undefined): void {
++  if (content?.type !== 'text') {
++    return;
++  }
++  const chunks = (content as any)[TEXT_CHUNKS_PROPERTY] as string[] | undefined;
++  if (!chunks) {
++    return;
++  }
++  Object.defineProperty(content, 'text', {
++    value: chunks.join(''),
++    enumerable: true,
++    writable: true,
++    configurable: true,
++  });
++  delete (content as any)[TEXT_CHUNKS_PROPERTY];
++}
++
+ export class MessageStream<ParsedT = null> implements AsyncIterable<MessageStreamEvent> {
+   messages: MessageParam[] = [];
+   receivedMessages: ParsedMessage<ParsedT>[] = [];
+@@ -458,7 +502,7 @@ export class MessageStream<ParsedT = null> implements AsyncIterable<MessageStrea
+         const content = messageSnapshot.content.at(-1)!;
+         switch (event.delta.type) {
+           case 'text_delta': {
+-            if (content.type === 'text') {
++            if (content.type === 'text' && this.#listeners.text?.length) {
+               this._emit('text', event.delta.text, content.text || '');
+             }
+             break;
+@@ -605,10 +649,7 @@ export class MessageStream<ParsedT = null> implements AsyncIterable<MessageStrea
+         switch (event.delta.type) {
+           case 'text_delta': {
+             if (snapshotContent?.type === 'text') {
+-              snapshot.content[event.index] = {
+-                ...snapshotContent,
+-                text: (snapshotContent.text || '') + event.delta.text,
+-              };
++              appendTextDelta(snapshotContent, event.delta.text);
+             }
+             break;
+           }
+@@ -668,6 +709,7 @@ export class MessageStream<ParsedT = null> implements AsyncIterable<MessageStrea
+         return snapshot;
+       }
+       case 'content_block_stop':
++        materializeText(snapshot.content.at(event.index));
+         return snapshot;
+     }
+   }
+diff --git a/tests/api-resources/BetaMessageStream.test.ts b/tests/api-resources/BetaMessageStream.test.ts
+index b72f9944..6fd0eeae 100644
+--- a/tests/api-resources/BetaMessageStream.test.ts
++++ b/tests/api-resources/BetaMessageStream.test.ts
+@@ -297,6 +297,72 @@ describe('BetaMessageStream class', () => {
+     expect(finalText).toBe('Hello there!');
+   });
+ 
++  it('handles many text deltas', async () => {
++    const { fetch, handleStreamEvents } = mockFetch();
++
++    const anthropic = new Anthropic({
++      apiKey: 'test-key',
++      fetch,
++      defaultHeaders: {
++        'anthropic-beta': 'fine-grained-tool-streaming-2025-05-14',
++      },
++    });
++    const chunks = Array.from({ length: 2048 }, (_, index) => String(index % 10));
++    const expectedText = chunks.join('');
++    const streamEvents: any[] = [
++      {
++        type: 'message_start',
++        message: {
++          id: 'msg_many_text_deltas',
++          type: 'message',
++          role: 'assistant',
++          content: [],
++          model: 'claude-opus-4-20250514',
++          stop_reason: null,
++          stop_sequence: null,
++          usage: { input_tokens: 1, output_tokens: 1 },
++        },
++      },
++      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
++      ...chunks.map((text) => ({
++        type: 'content_block_delta',
++        index: 0,
++        delta: { type: 'text_delta', text },
++      })),
++      { type: 'content_block_stop', index: 0 },
++      {
++        type: 'message_delta',
++        delta: { stop_reason: 'end_turn', stop_sequence: null, container: null },
++        usage: { output_tokens: chunks.length },
++      },
++      { type: 'message_stop' },
++    ];
++    handleStreamEvents(streamEvents);
++
++    const stream = anthropic.beta.messages.stream({
++      max_tokens: 4096,
++      model: 'claude-opus-4-20250514',
++      messages: [{ role: 'user', content: 'Repeat digits.' }],
++    });
++
++    let textSnapshot = '';
++    stream.on('text', (_textDelta, snapshot) => {
++      textSnapshot = snapshot;
++    });
++
++    for await (const _event of stream) {
++      // consume the stream
++    }
++
++    await stream.done();
++    const finalMessage = await stream.finalMessage();
++    const finalText = await stream.finalText();
++
++    expect(textSnapshot).toBe(expectedText);
++    expect(finalText).toBe(expectedText);
++    expect(finalMessage.content).toEqual([{ type: 'text', text: expectedText }]);
++  });
++
+   it('handles tool use response fixture', async () => {
+     const { fetch, handleStreamEvents } = mockFetch();
+ 
+diff --git a/tests/api-resources/MessageStream.test.ts b/tests/api-resources/MessageStream.test.ts
+index a7ec7379..bdc37b40 100644
+--- a/tests/api-resources/MessageStream.test.ts
++++ b/tests/api-resources/MessageStream.test.ts
+@@ -198,6 +198,66 @@ describe('MessageStream class', () => {
+     expect(finalText).toBe('Hello there!');
+   });
+ 
++  it('handles many text deltas', async () => {
++    const { fetch, handleStreamEvents } = mockFetch();
++
++    const anthropic = new Anthropic({ apiKey: '...', fetch });
++    const chunks = Array.from({ length: 2048 }, (_, index) => String(index % 10));
++    const expectedText = chunks.join('');
++    const streamEvents: any[] = [
++      {
++        type: 'message_start',
++        message: {
++          id: 'msg_many_text_deltas',
++          type: 'message',
++          role: 'assistant',
++          content: [],
++          model: 'claude-opus-4-20250514',
++          stop_reason: null,
++          stop_sequence: null,
++          usage: { input_tokens: 1, output_tokens: 1 },
++        },
++      },
++      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
++      ...chunks.map((text) => ({
++        type: 'content_block_delta',
++        index: 0,
++        delta: { type: 'text_delta', text },
++      })),
++      { type: 'content_block_stop', index: 0 },
++      {
++        type: 'message_delta',
++        delta: { stop_reason: 'end_turn', stop_sequence: null },
++        usage: { output_tokens: chunks.length },
++      },
++      { type: 'message_stop' },
++    ];
++    handleStreamEvents(streamEvents);
++
++    const stream = anthropic.messages.stream({
++      max_tokens: 4096,
++      model: 'claude-opus-4-20250514',
++      messages: [{ role: 'user', content: 'Repeat digits.' }],
++    });
++
++    let textSnapshot = '';
++    stream.on('text', (_textDelta, snapshot) => {
++      textSnapshot = snapshot;
++    });
++
++    for await (const _event of stream) {
++      // consume the stream
++    }
++
++    await stream.done();
++    const finalMessage = await stream.finalMessage();
++    const finalText = await stream.finalText();
++
++    expect(textSnapshot).toBe(expectedText);
++    expect(finalText).toBe(expectedText);
++    expect(finalMessage.content).toEqual([{ type: 'text', text: expectedText }]);
++  });
++
+   it('handles tool use response fixture', async () => {
+     const { fetch, handleStreamEvents } = mockFetch();
+ 

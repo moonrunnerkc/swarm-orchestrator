@@ -1,0 +1,26 @@
+{
+  "id": "devin-ewitulsk-SuiOptions-pr21",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 21,
+    "headSha": "dd8cd6ebb9df468f0738f6e526f5742c44488a58",
+    "baseSha": "547438489037dffdfb77655cab3a552e7cda5221",
+    "title": "Address review comments on PR #20",
+    "body": "## Summary\n\nAddresses all 5 review comments from @ewitulsk on PR #20:\n\n1. **Rename `http.rs` → `router.rs`** — File renamed, all references updated in `lib.rs` and `main.rs`.\n2. **Create `handlers/buckets.rs`** — Moved `BucketDto`, `BucketsResponse`, and `list_buckets` handler into `handlers/buckets.rs`. Router now imports from the new module.\n3. **Keep `build_cors` in `router.rs`** — `build_cors` stays in `router.rs` alongside the server setup and health endpoint.\n4. **Pull `indexer_client` into shared crate** — Created `shared::indexer_client` with a generic `EventSink` trait. Both `api-service` and `quoting-service` implement `EventSink` for their respective `AppState` types. Removed the duplicate `indexer_client.rs` from both services. Updated `tests/src/lib.rs` to use the shared version.\n5. **Pull `Bucket` struct into its own file** — Extracted `Bucket` struct from `state.rs` into `bucket.rs` in `api-service`.\n\n## Review & Testing Checklist for Human\n- [ ] Verify the shared `EventSink` trait + generic `indexer_client::run` compiles and correctly dispatches events to each service's `AppState`\n- [ ] Verify no regressions in quoting-service behavior after removing its local `indexer_client.rs`\n- [ ] Run `cargo build` once the upstream `move-core-types` Sui dependency issue is resolved (pre-existing on `SO-33-mvp` — the `framework/mainnet` branch of `mystenlabs/sui` has moved past the pinned commit)\n\n### Notes\n- `cargo check` fails on the base `SO-33-mvp` branch with `error: no matching package named move-core-types found` — this is a pre-existing issue caused by the Sui `framework/mainnet` git branch advancing past the commit pinned in `Cargo.lock`. Not introduced by this PR.\n- Code has been rustfmt-checked (edition 2021).\n\nLink to Devin session: https://app.devin.ai/sessions/1600072e62ba4d90baa17ab2c57df840",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779581206-fix-pr20-review-comments",
+    "repository": "ewitulsk/SuiOptions"
+  },
+  "diffRef": {
+    "repository": "ewitulsk/SuiOptions",
+    "headSha": "dd8cd6ebb9df468f0738f6e526f5742c44488a58",
+    "baseSha": "547438489037dffdfb77655cab3a552e7cda5221"
+  },
+  "vendoredDiffPath": "devin/devin-ewitulsk-SuiOptions-pr21.diff",
+  "vendoredAt": "2026-05-24T03:04:35.162Z",
+  "collectedAt": "2026-05-24T03:04:35.162Z"
+}

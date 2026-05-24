@@ -1,0 +1,26 @@
+{
+  "id": "devin-alykay1522-AWDP1-pr126",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 126,
+    "headSha": "71780889272da93e3025f6cfec858adc8db9e961",
+    "baseSha": "08f63d49c19d3a38421dbadf485581a7c51d943c",
+    "title": "Fix corrupted artifacts/awdp-site/vercel.json breaking Vercel deployments",
+    "body": "## Summary\n\n`artifacts/awdp-site/vercel.json` had **invalid JSON** from a bad merge — rewrite entries were mixed into the `headers` array (line 24), a comma was missing (line 23), and the `headers` key was duplicated (line 44). This produced malformed JSON that broke all Vercel deployments.\n\nRestored the file to valid, clean JSON with the correct structure.\n\n## Review & Testing Checklist for Human\n\n- [ ] Merge and verify Vercel deployment succeeds (this is the most likely fix for the persistent failures)\n- [ ] Verify `https://www.allwindowdoorparts.com/api/healthz` returns `{\"status\":\"ok\"}`\n- [ ] Verify `https://www.allwindowdoorparts.com/` loads the homepage\n\n### Notes\n- The corruption was introduced when merging main into PR #124's branch — rewrite entries ended up inside the `headers` array\n- The root `vercel.json` is fine; only `artifacts/awdp-site/vercel.json` was affected\n\nLink to Devin session: https://app.devin.ai/sessions/9bd3cd88f5fd44588b47c179eb66930f\nRequested by: @alykay1522\n\n<!-- This is an auto-generated description by cubic. -->\n---\n## Summary by cubic\nFix invalid JSON in `artifacts/awdp-site/vercel.json` that broke Vercel deployments. Restores valid structure by removing a duplicate `headers` block, moving rewrite entries out of `headers`, and fixing a missing comma.\n\n<sup>Written for commit 71780889272da93e3025f6cfec858adc8db9e961. Summary will update on new commits. <a href=\"https://cubic.dev/pr/alykay1522/AWDP1/pull/126?utm_source=github\">Review in cubic</a></sup>\n\n<!-- End of auto-generated description by cubic. -->\n\n",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779516479-fix-corrupted-vercel-json",
+    "repository": "alykay1522/AWDP1"
+  },
+  "diffRef": {
+    "repository": "alykay1522/AWDP1",
+    "headSha": "71780889272da93e3025f6cfec858adc8db9e961",
+    "baseSha": "08f63d49c19d3a38421dbadf485581a7c51d943c"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/devin/devin-alykay1522-AWDP1-pr126.diff",
+  "vendoredAt": "2026-05-24T04:27:49.950Z",
+  "collectedAt": "2026-05-24T04:27:49.950Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1055",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1055,
+    "headSha": "c0817e24a48d547df4df78fbebf19b924ae66716",
+    "baseSha": "ac9ece3c566b4488dcf73849c17b656ec2d7d17d",
+    "title": "feat(helpers): add zodTool for non-beta messages API",
+    "body": "## Summary\n\nThe SDK provides `betaZodTool` for defining Zod-schema tools with the beta `toolRunner()` API, but there is no equivalent helper for the non-beta `messages.create` / `messages.stream` endpoints. Developers who want typed, schema-validated tools for the standard API must either use the raw `Tool` interface with a hand-written JSON Schema or cast `betaZodTool`'s return value to `Anthropic.Tool` — both of which lose the Zod validation that makes these helpers valuable.\n\nThis PR adds:\n\n- **`src/lib/tools/RunnableTool.ts`** — defines `RunnableTool<Input>`, `ToolRunContext`, and the `Promisable<T>` utility, mirroring `BetaRunnableTool<T>` / `BetaToolRunContext` from `src/lib/tools/BetaRunnableTool.ts` but targeting non-beta types (`Tool`, `ToolResultBlockParam`, `ToolUseBlock`). Because `RunnableTool<T>` extends `Tool`, it is directly assignable to `ToolUnion` — no cast required.\n\n- **`zodTool()` in `src/helpers/zod.ts`** — mirrors `betaZodTool()` but returns `RunnableTool<T>`. The Zod schema is converted to JSON Schema via `z.toJSONSchema`, the result is type-asserted as an object schema, and a `parse` callback wraps `zodObject.parse` for input validation.\n\n- **Re-export** from `src/helpers/index.ts` — `zodTool` is exported alongside `zodOutputFormat`; `RunnableTool` and `ToolRunContext` are exported as types.\n\n### Before / after\n\n```ts\n// Before — requires a cast that discards type safety\nimport { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';\nconst tool = betaZodTool({ name: 'search', inputSchema: MySchema, description: '...', run });\nclient.messages.stream({ tools: [tool as unknown as Anthropic.Tool], ... });\n\n// After — no cast needed\nimport { zodTool } from '@anthropic-ai/sdk/helpers/zod';\nconst tool = zodTool({ name: 'search', inputSchema: MySchema, description: '...', run });\nclient.messages.stream({ tools: [tool], ... });  // RunnableTool<T> extends Tool ✓\n```\n\n## Related\n\nContext from #1010.\n\n## Local verification\n\n```\n$ yarn install --frozen-lockfile --ignore-scripts\nDone in 4.75s.\n\n$ ./node_modules/.bin/tsc --noEmit\n(exit 0)\n\n$ ./node_modules/.bin/jest tests/helpers/zod.test.ts --no-coverage\nPASS tests/helpers/zod.test.ts\n  GA zodTool helper\n    zodTool\n      ✓ creates a runnable tool with valid zod schema (2 ms)\n      ✓ throws error for non-object zod schema\n      ✓ throws parse error for invalid input (1 ms)\n      ✓ handles async run functions (4 ms)\n\nTest Suites: 1 passed, 1 total\nTests:       24 passed, 24 total\n\n=== LOCAL_TEST_PASSED ===\n```\n\n## Risk\n\n- **No runtime changes** to existing code — only new exports are added.\n- `src/lib/tools/RunnableTool.ts` is in `src/lib/` (generator-safe per CONTRIBUTING.md).\n- The new `zodTool` and `RunnableTool` types are purely additive; no existing signatures are modified.\n- `RunnableTool<T>` structurally extends `Tool`, so any place that accepts `Tool` or `ToolUnion` will accept it without breakage.",
+    "author": "xodn348",
+    "headRef": "feat/zod-tool-non-beta",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "c0817e24a48d547df4df78fbebf19b924ae66716",
+    "baseSha": "ac9ece3c566b4488dcf73849c17b656ec2d7d17d"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1055.diff",
+  "vendoredAt": "2026-05-24T03:16:16.903Z",
+  "collectedAt": "2026-05-24T03:16:16.903Z"
+}

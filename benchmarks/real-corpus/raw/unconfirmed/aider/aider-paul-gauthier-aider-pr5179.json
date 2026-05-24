@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5179",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5179,
+    "headSha": "7c691373ff7d3416a40044ba36d4b1ffe9db15b3",
+    "baseSha": "5dc9490bb35f9729ef2c95d00a19ccd30c26339c",
+    "title": "fix: handle tree-sitter parse() str/bytes contract on Python 3.14",
+    "body": "## Summary\r\nOn Python 3.14, tree-sitter's `Parser.parse()` rejects `bytes` arguments with\r\n`TypeError: argument 'source': 'bytes' object is not an instance of 'str'`,\r\nwhile the version aider pins (`tree-sitter==0.25.2`) accepts only `bytes`.\r\n\r\nThis wraps both `parser.parse(bytes(code, \"utf-8\"))` call sites with a\r\n`try/except TypeError` that falls back to passing the raw string, so aider\r\nworks on both contracts without changing the pinned dependency.\r\n\r\n## Files changed\r\n- `aider/repomap.py` (line 299)\r\n- `aider/linter.py` (line 220)\r\n\r\n## Test plan\r\n- [x] `pytest tests/basic/test_repomap.py tests/basic/test_linter.py` — 52/52 pass on Python 3.13.5\r\n- [x] Full `pytest` — 446 passed (1 unrelated Windows symlink-permission failure on local env, not present in CI)\r\n- [x] Pre-commit hooks pass: black, isort, flake8, codespell\r\n- [x] Fallback logic verified by simulating both contract directions\r\n- [ ] Original reporters to confirm on Python 3.14\r\n\r\nCloses #5174\r\nCloses #5164",
+    "author": "Mramaran",
+    "headRef": "fix-tree-sitter-parse-py314",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "7c691373ff7d3416a40044ba36d4b1ffe9db15b3",
+    "baseSha": "5dc9490bb35f9729ef2c95d00a19ccd30c26339c"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5179.diff",
+  "vendoredAt": "2026-05-24T03:18:52.346Z",
+  "collectedAt": "2026-05-24T03:18:52.346Z"
+}

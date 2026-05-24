@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-beckmt4-anime-subtitle-pipeline-pr167",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 167,
+    "headSha": "919d6e50bbdd252e1a50b5f61fe9b7efead98edd",
+    "baseSha": "1633b2bc53eda25e0e12cbb9d56d402455312bd3",
+    "title": "Wire language/domain packs into generate runtime paths (Phase 4b)",
+    "body": "## Summary\n\nWires existing `ja_en` language and `anime` domain packs into production generate paths so pack-owned aliases, prompt selection, and style limits are used at runtime. This removes duplicated runtime config in orchestrator and enables pack-driven injection via `packs.*` config keys.\n\n## Linked issue\n\n## What changed\n\n- **`core/runtime/orchestrator.py`**\n  - Replaced default alias source with pack alias map import:\n    - `from packs.language.ja_en.aliases import LANG_ALIASES as _LANG_ALIASES`\n  - Added config-driven pack resolution:\n    - `packs.language` → resolves language routing hooks (`<source>_<target>`)\n    - `packs.domain` → selects active domain pack (overrides legacy `domain.pack` when set)\n  - Added anime style merge for runtime QC defaults:\n    - merges domain style over base line/line-length defaults and uses merged values in `run_qc(...)`\n  - Injects pack prompt function into LLM polish calls when `ja_en` is active.\n- **`core/polish/__init__.py`**\n  - `LLMPolisher.__init__` now accepts optional `prompt_fn: Callable[[str], str]`.\n  - `polish_text(...)` uses `prompt_fn(style)` when provided, with safe fallback to `config.get_llm_prompt(style)`.\n  - `polish_candidate_with_llm(...)` now accepts/forwards `prompt_fn`.\n- **`core/runtime/config.py`**\n  - `domain_pack` now supports `packs.domain` as first-priority source.\n- **`config.yaml`**\n  - Added:\n    - `packs.language: \"ja_en\"`\n    - `packs.domain: null`\n- **`packs/language/ja_en/prompts.py`**\n  - Updated `natural`/`literal` prompt strings to match current `config.yaml` prompt templates.\n- **Tests**\n  - Added/updated focused tests across:\n    - `tests/test_source_selection.py`\n    - `tests/test_llm_polish_drift.py`\n    - `tests/test_orchestrator.py`\n    - `tests/test_config.py`\n    - `tests/test_packs_language_ja_en.py`\n\nExample of the new prompt injection seam:\n\n```python\npolished = polish_candidate_with_llm(\n    mt_candidate,\n    cfg,\n    ja_candidate=ja_candidate,\n    prompt_fn=prompt_fn,\n)\n```\n\n## Tests\n\n- [x] New tests added for new behavior\n- [x] Existing tests updated where behavior changed\n- [x] All tests pass locally (`pytest`)\n- [ ] If no tests apply, reason documented here: \n\n## Acceptance checklist\n\n- [x] Acceptance criteria for the linked issue are met (reference `acceptance/` doc or paste criteria inline below)\n- [ ] `docs/` updated if architecture, module boundaries, or design decisions changed\n- [ ] `specs/` updated or created if this implements a spec\n- [ ] `prompts/` updated if this introduces or changes a reusable AI prompt\n- [ ] `acceptance/` updated if this changes or defines acceptance criteria for a feature\n\n**Acceptance criteria status:**\n\n- [x] `orchestrator._LANG_ALIASES` is sourced from `packs/language/ja_en/aliases.py`\n- [x] `LLMPolisher` accepts optional `prompt_fn` and uses pack prompt when provided\n- [x] `run_generate` reads `packs.language` and `packs.domain` and injects active pack behavior\n- [x] Existing tests pass; new tests cover pack injection paths\n\n## AI usage disclosure\n\n- [ ] AI tooling was NOT used for this change\n- [x] AI tooling WAS used — details below:\n\n**Tool(s) used:**\n- GitHub Copilot Coding Agent\n\n**What was generated:**\n- Targeted code edits for pack wiring, config handling, and associated tests.\n\n**How it was validated (tests run, diff reviewed, etc.):**\n- Diff reviewed file-by-file; targeted tests and full non-integration pytest suite run locally.\n\n**Assumptions made by the AI that affect design or scope:**\n- `ja_en` is the active production language pack for this phase.\n- Legacy `domain.pack` remains supported; `packs.domain` is preferred when present.\n\n## Risks and follow-up\n\n- Prompt wiring currently injects only `ja_en` prompt function; additional language packs should register prompt hooks through the same seam.\n- `packs.domain` and legacy `domain.pack` now coexist; deprecation cleanup can be handled in a follow-up.",
+    "author": "Copilot",
+    "headRef": "copilot/refactor-wire-packs-into-production",
+    "repository": "beckmt4/anime-subtitle-pipeline"
+  },
+  "diffRef": {
+    "repository": "beckmt4/anime-subtitle-pipeline",
+    "headSha": "919d6e50bbdd252e1a50b5f61fe9b7efead98edd",
+    "baseSha": "1633b2bc53eda25e0e12cbb9d56d402455312bd3"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-beckmt4-anime-subtitle-pipeline-pr167.diff",
+  "vendoredAt": "2026-05-24T03:06:07.219Z",
+  "collectedAt": "2026-05-24T03:06:07.219Z"
+}

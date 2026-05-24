@@ -1,0 +1,36 @@
+diff --git a/src/evalhub/cli/main.py b/src/evalhub/cli/main.py
+index e12c084..9409199 100755
+--- a/src/evalhub/cli/main.py
++++ b/src/evalhub/cli/main.py
+@@ -578,7 +578,9 @@ def _watch_job(client: Any, job_id: str, poll_interval: float) -> None:
+         if job.status and job.status.benchmarks:
+             done = sum(1 for b in job.status.benchmarks if b.state in terminal)
+             benchmarks_status = f" [{done}/{len(job.status.benchmarks)} benchmarks]"
+-        click.echo(f"\r{job.id}: {job.state.value}{benchmarks_status}", nl=False)
++        click.echo(
++            f"\r{job.id}: {job.effective_state.value}{benchmarks_status}", nl=False
++        )
+         sys.stdout.flush()
+         if job.effective_state in terminal:
+             click.echo()
+@@ -591,7 +593,7 @@ def _print_job_detail(job: Any) -> None:
+     """Print detailed job information in human-readable format."""
+     click.echo(f"Job:     {job.id}")
+     click.echo(f"Name:    {job.name}")
+-    click.echo(f"State:   {job.state.value}")
++    click.echo(f"State:   {job.effective_state.value}")
+     if job.description:
+         click.echo(f"Desc:    {job.description}")
+     click.echo(f"Model:   {job.model.name} ({job.model.url})")
+@@ -626,9 +628,9 @@ def eval_results(ctx: click.Context, job_id: str, output_format: str) -> None:
+     client = get_client(ctx)
+     job = client.jobs.get(job_id)
+ 
+-    if job.state != JobStatus.COMPLETED:
++    if job.effective_state != JobStatus.COMPLETED:
+         click.echo(
+-            f"Warning: job {job_id} is in state '{job.state.value}', "
++            f"Warning: job {job_id} is in state '{job.effective_state.value}', "
+             "results may be incomplete.",
+             err=True,
+         )

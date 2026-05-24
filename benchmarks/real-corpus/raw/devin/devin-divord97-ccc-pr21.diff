@@ -1,0 +1,2217 @@
+diff --git a/web/src/App.tsx b/web/src/App.tsx
+index c7316ab..abb6b24 100644
+--- a/web/src/App.tsx
++++ b/web/src/App.tsx
+@@ -25,6 +25,7 @@ import AsrHotwordsPage from './pages/ai/AsrHotwordsPage';
+ import PerformancePage from './pages/ai/PerformancePage';
+ import AnnotationPage from './pages/ai/AnnotationPage';
+ import LlmModelPage from './pages/ai/LlmModelPage';
++import AdvancedAiPage from './pages/ai/AdvancedAiPage';
+ import AgentReportPage from './pages/reports/AgentReportPage';
+ import GroupAgentReportPage from './pages/reports/GroupAgentReportPage';
+ import SkillGroupReportPage from './pages/reports/SkillGroupReportPage';
+@@ -45,6 +46,8 @@ import QuickRepliesPage from './pages/settings/QuickRepliesPage';
+ import CsatConfigPage from './pages/settings/CsatConfigPage';
+ import AudioFilesPage from './pages/settings/AudioFilesPage';
+ import AuditLogPage from './pages/settings/AuditLogPage';
++import SocialChannelPage from './pages/im/SocialChannelPage';
++import CampaignLiveDashboard from './pages/campaigns/CampaignLiveDashboard';
+ import { useAuthStore } from './stores/auth';
+ 
+ function ProtectedRoute({ children }: { children: React.ReactNode }) {
+@@ -75,9 +78,11 @@ export default function App() {
+             <Route path="voicemails" element={<VoicemailPage />} />
+             {/* Campaign */}
+             <Route path="campaigns" element={<CampaignPage />} />
++            <Route path="campaigns/live" element={<CampaignLiveDashboard />} />
+             {/* IM */}
+             <Route path="im/sessions" element={<ImSessionPage />} />
+             <Route path="im/channels" element={<ImChannelPage />} />
++            <Route path="im/social" element={<SocialChannelPage />} />
+             {/* Business */}
+             <Route path="crm/customers" element={<CustomerPage />} />
+             <Route path="tickets" element={<TicketListPage />} />
+@@ -98,6 +103,7 @@ export default function App() {
+             <Route path="ai/performance" element={<PerformancePage />} />
+             <Route path="ai/annotations" element={<AnnotationPage />} />
+             <Route path="ai/llm-models" element={<LlmModelPage />} />
++            <Route path="ai/advanced" element={<AdvancedAiPage />} />
+             {/* Settings */}
+             <Route path="settings/tenant" element={<TenantSettingsPage />} />
+             <Route path="settings/break-reasons" element={<BreakReasonsPage />} />
+diff --git a/web/src/api/endpoints.ts b/web/src/api/endpoints.ts
+index e920145..9326753 100644
+--- a/web/src/api/endpoints.ts
++++ b/web/src/api/endpoints.ts
+@@ -238,3 +238,39 @@ export const performanceApi = {
+   list: (params?: Record<string, unknown>) => api.get('/performance-scorecards', { params }),
+   generate: (data: Record<string, unknown>) => api.post('/performance-scorecards/generate', data),
+ };
++
++// --- Social Channels ---
++export const socialChannelApi = {
++  list: () => api.get('/social-channels'),
++  create: (data: Record<string, unknown>) => api.post('/social-channels', data),
++  update: (id: number, data: Record<string, unknown>) => api.put(`/social-channels/${id}`, data),
++  delete: (id: number) => api.delete(`/social-channels/${id}`),
++};
++
++// --- Advanced AI ---
++export const voiceCloneApi = {
++  listTasks: () => api.get('/ai/voice-clone/tasks'),
++  createTask: (data: Record<string, unknown>) => api.post('/ai/voice-clone/tasks', data),
++  getTask: (id: number) => api.get(`/ai/voice-clone/tasks/${id}`),
++};
++
++export const conversationAnalyticsApi = {
++  analyze: (data: Record<string, unknown>) => api.post('/ai/conversation-analytics/analyze', data),
++};
++
++export const trainingApi = {
++  generateQuestions: (data: Record<string, unknown>) => api.post('/ai/training/generate-questions', data),
++  evaluate: (data: Record<string, unknown>) => api.post('/ai/training/evaluate', data),
++};
++
++// --- Supervisor ---
++export const supervisorApi = {
++  activeCalls: () => api.get('/supervisor/active-calls'),
++};
++
++// --- Webchat ---
++export const webchatApi = {
++  createSession: (data: Record<string, unknown>) => api.post('/webchat/sessions', data),
++  getMessages: (sessionId: string) => api.get(`/webchat/sessions/${sessionId}/messages`),
++  sendMessage: (sessionId: string, data: Record<string, unknown>) => api.post(`/webchat/sessions/${sessionId}/messages`, data),
++};
+diff --git a/web/src/components/layout/AppLayout.tsx b/web/src/components/layout/AppLayout.tsx
+index 61f5ead..2ecd76a 100644
+--- a/web/src/components/layout/AppLayout.tsx
++++ b/web/src/components/layout/AppLayout.tsx
+@@ -22,6 +22,7 @@ import {
+ } from '@ant-design/icons';
+ import type { MenuProps } from 'antd';
+ import { useAuthStore } from '../../stores/auth';
++import AgentPhoneBar from '../phone/AgentPhoneBar';
+ 
+ const { Header, Sider, Content } = Layout;
+ 
+@@ -61,6 +62,7 @@ const menuItems: MenuProps['items'] = [
+     label: '批量外呼',
+     children: [
+       { key: '/campaigns', label: '外呼活动' },
++      { key: '/campaigns/live', label: '实时大屏' },
+     ],
+   },
+   {
+@@ -70,6 +72,7 @@ const menuItems: MenuProps['items'] = [
+     children: [
+       { key: '/im/sessions', label: '会话管理' },
+       { key: '/im/channels', label: '渠道配置' },
++      { key: '/im/social', label: '社交渠道' },
+     ],
+   },
+   {
+@@ -108,6 +111,7 @@ const menuItems: MenuProps['items'] = [
+       { key: '/ai/performance', label: '绩效管理' },
+       { key: '/ai/annotations', label: '标注管理' },
+       { key: '/ai/llm-models', label: 'LLM 网关' },
++      { key: '/ai/advanced', label: '高级 AI' },
+     ],
+   },
+   {
+@@ -176,6 +180,7 @@ export default function AppLayout() {
+         />
+       </Sider>
+       <Layout>
++        <AgentPhoneBar />
+         <Header style={{ padding: '0 24px', background: colorBgContainer, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+           <Dropdown menu={{ items: userMenu }} placement="bottomRight">
+             <Space style={{ cursor: 'pointer' }}>
+diff --git a/web/src/components/phone/AgentPhoneBar.tsx b/web/src/components/phone/AgentPhoneBar.tsx
+new file mode 100644
+index 0000000..113636e
+--- /dev/null
++++ b/web/src/components/phone/AgentPhoneBar.tsx
+@@ -0,0 +1,197 @@
++import { useState, useEffect, useCallback } from 'react';
++import { Badge, Button, Dropdown, Space, Tag, Tooltip, message } from 'antd';
++import {
++  PhoneOutlined, PhoneFilled, PauseCircleOutlined, SwapOutlined,
++  TeamOutlined, AudioOutlined, AudioMutedOutlined, ClockCircleOutlined,
++  CoffeeOutlined, CheckCircleOutlined, PoweroffOutlined,
++} from '@ant-design/icons';
++import type { MenuProps } from 'antd';
++import { callControlApi, agentPresenceApi } from '../../api/endpoints';
++import TransferModal from './TransferModal';
++
++type AgentStatus = 'idle' | 'ringing' | 'talking' | 'acw' | 'break' | 'offline';
++
++const statusConfig: Record<AgentStatus, { color: string; label: string; icon: React.ReactNode }> = {
++  idle:    { color: 'green',   label: '空闲',   icon: <CheckCircleOutlined /> },
++  ringing: { color: 'orange',  label: '振铃',   icon: <PhoneOutlined /> },
++  talking: { color: 'blue',    label: '通话中', icon: <PhoneFilled /> },
++  acw:     { color: 'purple',  label: '话后处理', icon: <ClockCircleOutlined /> },
++  break:   { color: 'gold',    label: '小休',   icon: <CoffeeOutlined /> },
++  offline: { color: 'default', label: '离线',   icon: <PoweroffOutlined /> },
++};
++
++const breakReasons = [
++  { value: 'lunch', label: '午餐' },
++  { value: 'rest', label: '休息' },
++  { value: 'meeting', label: '会议' },
++  { value: 'training', label: '培训' },
++  { value: 'personal', label: '私事' },
++];
++
++export default function AgentPhoneBar() {
++  const [status, setStatus] = useState<AgentStatus>('offline');
++  const [callId, setCallId] = useState<number | null>(null);
++  const [muted, setMuted] = useState(false);
++  const [held, setHeld] = useState(false);
++  const [duration, setDuration] = useState(0);
++  const [transferOpen, setTransferOpen] = useState(false);
++
++  // Timer for call duration.
++  useEffect(() => {
++    if (status !== 'talking') return;
++    const timer = setInterval(() => setDuration((d) => d + 1), 1000);
++    return () => clearInterval(timer);
++  }, [status]);
++
++  const formatDuration = (s: number) => {
++    const m = Math.floor(s / 60);
++    const sec = s % 60;
++    return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
++  };
++
++  const changeStatus = useCallback(async (newStatus: string, reason?: string) => {
++    try {
++      await agentPresenceApi.changeStatus({ status: newStatus, ...(reason && { reason }) });
++      setStatus(newStatus as AgentStatus);
++    } catch {
++      message.error('状态切换失败');
++    }
++  }, []);
++
++  const handleAnswer = async () => {
++    setStatus('talking');
++    setDuration(0);
++    message.success('已接听');
++  };
++
++  const handleHangup = async () => {
++    setStatus('acw');
++    setCallId(null);
++    setDuration(0);
++    setHeld(false);
++    setMuted(false);
++    message.info('通话结束');
++  };
++
++  const handleHold = async () => {
++    if (!callId) return;
++    try {
++      if (held) {
++        await callControlApi.retrieve(callId);
++        setHeld(false);
++      } else {
++        await callControlApi.hold(callId);
++        setHeld(true);
++      }
++    } catch {
++      message.error('操作失败');
++    }
++  };
++
++  const handleConference = async () => {
++    if (!callId) return;
++    try {
++      await callControlApi.conference(callId);
++      message.success('已发起会议');
++    } catch {
++      message.error('会议发起失败');
++    }
++  };
++
++  const handleFinishAcw = () => {
++    setStatus('idle');
++    message.success('话后处理完成');
++  };
++
++  const breakMenu: MenuProps['items'] = breakReasons.map((r) => ({
++    key: r.value,
++    label: r.label,
++    onClick: () => changeStatus('break', r.value),
++  }));
++
++  const cfg = statusConfig[status];
++
++  return (
++    <>
++      <div style={{
++        display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px',
++        background: '#fff', borderBottom: '1px solid #f0f0f0', boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
++      }}>
++        {/* Status indicator */}
++        <Badge status={cfg.color as 'success' | 'warning' | 'processing' | 'default' | 'error'} />
++        <Tag icon={cfg.icon} color={cfg.color}>{cfg.label}</Tag>
++
++        {/* Call duration */}
++        {status === 'talking' && (
++          <Tag icon={<ClockCircleOutlined />} color="blue">{formatDuration(duration)}</Tag>
++        )}
++
++        <div style={{ flex: 1 }} />
++
++        {/* Call control buttons */}
++        {status === 'ringing' && (
++          <Button type="primary" icon={<PhoneOutlined />} onClick={handleAnswer} style={{ background: '#52c41a' }}>
++            接听
++          </Button>
++        )}
++
++        {status === 'talking' && (
++          <Space>
++            <Tooltip title={muted ? '取消静音' : '静音'}>
++              <Button
++                icon={muted ? <AudioMutedOutlined /> : <AudioOutlined />}
++                onClick={() => setMuted(!muted)}
++                type={muted ? 'primary' : 'default'}
++                danger={muted}
++              />
++            </Tooltip>
++            <Tooltip title={held ? '恢复' : '保持'}>
++              <Button
++                icon={<PauseCircleOutlined />}
++                onClick={handleHold}
++                type={held ? 'primary' : 'default'}
++              />
++            </Tooltip>
++            <Tooltip title="转接">
++              <Button icon={<SwapOutlined />} onClick={() => setTransferOpen(true)} />
++            </Tooltip>
++            <Tooltip title="会议">
++              <Button icon={<TeamOutlined />} onClick={handleConference} />
++            </Tooltip>
++            <Button danger icon={<PhoneFilled />} onClick={handleHangup}>挂机</Button>
++          </Space>
++        )}
++
++        {status === 'acw' && (
++          <Button type="primary" onClick={handleFinishAcw}>完成话后处理</Button>
++        )}
++
++        {/* Status controls */}
++        {(status === 'idle' || status === 'break' || status === 'offline') && (
++          <Space>
++            {status === 'offline' && (
++              <Button type="primary" onClick={() => changeStatus('idle')}>上线</Button>
++            )}
++            {status === 'idle' && (
++              <Dropdown menu={{ items: breakMenu }}>
++                <Button icon={<CoffeeOutlined />}>小休</Button>
++              </Dropdown>
++            )}
++            {status === 'break' && (
++              <Button type="primary" onClick={() => changeStatus('idle')}>恢复空闲</Button>
++            )}
++            {status !== 'offline' && (
++              <Button icon={<PoweroffOutlined />} onClick={() => changeStatus('offline')}>下线</Button>
++            )}
++          </Space>
++        )}
++      </div>
++
++      <TransferModal
++        open={transferOpen}
++        callId={callId}
++        onClose={() => setTransferOpen(false)}
++      />
++    </>
++  );
++}
+diff --git a/web/src/components/phone/AiAssistPanel.tsx b/web/src/components/phone/AiAssistPanel.tsx
+new file mode 100644
+index 0000000..6158da4
+--- /dev/null
++++ b/web/src/components/phone/AiAssistPanel.tsx
+@@ -0,0 +1,103 @@
++import { useState } from 'react';
++import { Card, Tabs, Button, Descriptions, Tag, Spin, Space, message } from 'antd';
++import { RobotOutlined, SmileOutlined, FileTextOutlined, FormOutlined } from '@ant-design/icons';
++import api from '../../api/client';
++
++interface AiAnalysis {
++  sentiment: { label: string; score: number; emoji: string };
++  summary: string;
++  tags: string[];
++  ticketDraft: Record<string, string>;
++}
++
++const sentimentMap: Record<string, { color: string; emoji: string }> = {
++  positive: { color: 'green', emoji: '😊' },
++  neutral:  { color: 'default', emoji: '😐' },
++  negative: { color: 'red', emoji: '😠' },
++};
++
++export default function AiAssistPanel({ callId }: { callId?: number }) {
++  const [analysis, setAnalysis] = useState<AiAnalysis | null>(null);
++  const [loading, setLoading] = useState(false);
++
++  const runAnalysis = async () => {
++    if (!callId) return;
++    setLoading(true);
++    try {
++      const res = await api.post('/ai/analysis/realtime', { call_id: callId });
++      setAnalysis(res.data);
++    } catch {
++      message.error('分析失败');
++    } finally {
++      setLoading(false);
++    }
++  };
++
++  const createTicket = async () => {
++    if (!analysis?.ticketDraft) return;
++    try {
++      await api.post('/tickets', analysis.ticketDraft);
++      message.success('工单已创建');
++    } catch {
++      message.error('创建失败');
++    }
++  };
++
++  return (
++    <Card
++      title={<Space><RobotOutlined /> AI 辅助</Space>}
++      size="small"
++      extra={<Button size="small" type="primary" onClick={runAnalysis} loading={loading}>分析</Button>}
++    >
++      {loading ? (
++        <div style={{ textAlign: 'center', padding: 40 }}><Spin tip="AI 分析中..." /></div>
++      ) : !analysis ? (
++        <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>点击"分析"获取 AI 辅助信息</div>
++      ) : (
++        <Tabs size="small" items={[
++          {
++            key: 'sentiment',
++            label: <Space><SmileOutlined />情绪</Space>,
++            children: (
++              <div style={{ textAlign: 'center', padding: 16 }}>
++                <div style={{ fontSize: 48 }}>{sentimentMap[analysis.sentiment.label]?.emoji || '😐'}</div>
++                <Tag color={sentimentMap[analysis.sentiment.label]?.color}>{analysis.sentiment.label}</Tag>
++                <div style={{ marginTop: 8, color: '#666' }}>置信度: {Math.round(analysis.sentiment.score * 100)}%</div>
++                {analysis.tags.length > 0 && (
++                  <div style={{ marginTop: 12 }}>
++                    {analysis.tags.map((t) => <Tag key={t} color="blue">{t}</Tag>)}
++                  </div>
++                )}
++              </div>
++            ),
++          },
++          {
++            key: 'summary',
++            label: <Space><FileTextOutlined />摘要</Space>,
++            children: (
++              <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8, padding: 8 }}>
++                {analysis.summary || '暂无摘要'}
++              </div>
++            ),
++          },
++          {
++            key: 'ticket',
++            label: <Space><FormOutlined />填单</Space>,
++            children: (
++              <>
++                <Descriptions size="small" column={1} bordered>
++                  {Object.entries(analysis.ticketDraft || {}).map(([k, v]) => (
++                    <Descriptions.Item key={k} label={k}>{v}</Descriptions.Item>
++                  ))}
++                </Descriptions>
++                <Button type="primary" block style={{ marginTop: 12 }} onClick={createTicket}>
++                  创建工单
++                </Button>
++              </>
++            ),
++          },
++        ]} />
++      )}
++    </Card>
++  );
++}
+diff --git a/web/src/components/phone/PreviewCaseCard.tsx b/web/src/components/phone/PreviewCaseCard.tsx
+new file mode 100644
+index 0000000..e9faf01
+--- /dev/null
++++ b/web/src/components/phone/PreviewCaseCard.tsx
+@@ -0,0 +1,106 @@
++import { useState, useEffect, useRef } from 'react';
++import { Card, Descriptions, Button, Space, Tag, Spin, message } from 'antd';
++import { PhoneOutlined, ForwardOutlined, ClockCircleOutlined } from '@ant-design/icons';
++import api from '../../api/client';
++
++interface PreviewCase {
++  id: number;
++  campaign_id: number;
++  campaign_name: string;
++  customer_name: string;
++  phone: string;
++  company: string;
++  priority: number;
++  attempt_count: number;
++  custom_fields: Record<string, string>;
++  notes: string;
++  expires_in: number;
++}
++
++export default function PreviewCaseCard() {
++  const [caseData, setCaseData] = useState<PreviewCase | null>(null);
++  const [loading, setLoading] = useState(false);
++  const [countdown, setCountdown] = useState(0);
++  const wasCountingRef = useRef(false);
++
++  const loadCase = async () => {
++    setLoading(true);
++    try {
++      const res = await api.get('/campaigns/preview/current');
++      setCaseData(res.data || null);
++      if (res.data?.expires_in) setCountdown(res.data.expires_in);
++    } catch {
++      setCaseData(null);
++    }
++    setLoading(false);
++  };
++
++  useEffect(() => { loadCase(); }, []);
++
++  useEffect(() => {
++    if (countdown <= 0) return;
++    wasCountingRef.current = true;
++    const t = setInterval(() => {
++      setCountdown((c) => (c <= 1 ? 0 : c - 1));
++    }, 1000);
++    return () => clearInterval(t);
++  }, [countdown > 0]);
++
++  useEffect(() => {
++    if (countdown === 0 && wasCountingRef.current) {
++      wasCountingRef.current = false;
++      handleSkip();
++    }
++  }, [countdown]);
++
++  const handleDial = async () => {
++    if (!caseData) return;
++    try {
++      await api.post(`/campaigns/${caseData.campaign_id}/cases/${caseData.id}/dial`);
++      message.success('已发起呼叫');
++      setCaseData(null);
++    } catch {
++      message.error('拨号失败');
++    }
++  };
++
++  const handleSkip = async () => {
++    if (!caseData) return;
++    try {
++      await api.post(`/campaigns/${caseData.campaign_id}/cases/${caseData.id}/skip`);
++      loadCase();
++    } catch { /* ignore */ }
++  };
++
++  if (loading) return <Card size="small"><Spin style={{ display: 'block', padding: 24 }} /></Card>;
++  if (!caseData) return null;
++
++  return (
++    <Card
++      title={<Space><PhoneOutlined /> Preview 预览案例</Space>}
++      size="small"
++      extra={<Tag icon={<ClockCircleOutlined />} color={countdown < 10 ? 'red' : 'orange'}>{countdown}s</Tag>}
++    >
++      <Descriptions size="small" column={2} bordered>
++        <Descriptions.Item label="客户">{caseData.customer_name}</Descriptions.Item>
++        <Descriptions.Item label="电话">{caseData.phone}</Descriptions.Item>
++        <Descriptions.Item label="公司">{caseData.company}</Descriptions.Item>
++        <Descriptions.Item label="优先级"><Tag color="blue">{caseData.priority}</Tag></Descriptions.Item>
++        <Descriptions.Item label="活动">{caseData.campaign_name}</Descriptions.Item>
++        <Descriptions.Item label="尝试次数">{caseData.attempt_count}</Descriptions.Item>
++        {Object.entries(caseData.custom_fields || {}).map(([k, v]) => (
++          <Descriptions.Item key={k} label={k}>{v}</Descriptions.Item>
++        ))}
++      </Descriptions>
++      {caseData.notes && (
++        <div style={{ marginTop: 8, padding: 8, background: '#fffbe6', borderRadius: 4, fontSize: 13 }}>
++          {caseData.notes}
++        </div>
++      )}
++      <Space style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
++        <Button icon={<ForwardOutlined />} onClick={handleSkip}>跳过</Button>
++        <Button type="primary" icon={<PhoneOutlined />} onClick={handleDial} style={{ background: '#52c41a' }}>拨号</Button>
++      </Space>
++    </Card>
++  );
++}
+diff --git a/web/src/components/phone/QuickReplyPicker.tsx b/web/src/components/phone/QuickReplyPicker.tsx
+new file mode 100644
+index 0000000..b129065
+--- /dev/null
++++ b/web/src/components/phone/QuickReplyPicker.tsx
+@@ -0,0 +1,89 @@
++import { useState, useEffect, useMemo } from 'react';
++import { Card, Input, List, Tag, Button, Empty, Space, message } from 'antd';
++import { SearchOutlined, SendOutlined, CopyOutlined, ThunderboltOutlined } from '@ant-design/icons';
++import api from '../../api/client';
++
++interface QuickReply {
++  id: number;
++  title: string;
++  content: string;
++  category: string;
++  shortcut?: string;
++}
++
++interface QuickReplyPickerProps {
++  onSelect?: (content: string) => void;
++}
++
++export default function QuickReplyPicker({ onSelect }: QuickReplyPickerProps) {
++  const [replies, setReplies] = useState<QuickReply[]>([]);
++  const [search, setSearch] = useState('');
++  const [category, setCategory] = useState<string>('');
++
++  useEffect(() => {
++    api.get('/quick-replies')
++      .then((res) => setReplies(Array.isArray(res.data) ? res.data : res.data?.items || []))
++      .catch(() => {});
++  }, []);
++
++  const categories = useMemo(() => [...new Set(replies.map((r) => r.category))].filter(Boolean), [replies]);
++
++  const filtered = useMemo(() => {
++    let list = replies;
++    if (category) list = list.filter((r) => r.category === category);
++    if (search) {
++      const q = search.toLowerCase();
++      list = list.filter((r) => r.title.toLowerCase().includes(q) || r.content.toLowerCase().includes(q));
++    }
++    return list;
++  }, [replies, search, category]);
++
++  const handleCopy = (text: string) => {
++    navigator.clipboard.writeText(text);
++    message.success('已复制');
++  };
++
++  return (
++    <Card title={<Space><ThunderboltOutlined /> 快捷回复</Space>} size="small" bodyStyle={{ padding: '8px 12px' }}>
++      <Input
++        prefix={<SearchOutlined />}
++        placeholder="搜索快捷回复..."
++        value={search}
++        onChange={(e) => setSearch(e.target.value)}
++        allowClear
++        style={{ marginBottom: 8 }}
++      />
++      <div style={{ marginBottom: 8 }}>
++        <Tag color={!category ? 'blue' : undefined} style={{ cursor: 'pointer' }} onClick={() => setCategory('')}>全部</Tag>
++        {categories.map((c) => (
++          <Tag key={c} color={category === c ? 'blue' : undefined} style={{ cursor: 'pointer' }} onClick={() => setCategory(c)}>{c}</Tag>
++        ))}
++      </div>
++      <div style={{ maxHeight: 300, overflowY: 'auto' }}>
++        {filtered.length === 0 ? (
++          <Empty description="无匹配" image={Empty.PRESENTED_IMAGE_SIMPLE} />
++        ) : (
++          <List
++            size="small"
++            dataSource={filtered}
++            renderItem={(item) => (
++              <List.Item
++                style={{ padding: '6px 0', cursor: 'pointer' }}
++                actions={[
++                  <Button key="copy" size="small" type="text" icon={<CopyOutlined />} onClick={() => handleCopy(item.content)} />,
++                  onSelect ? <Button key="send" size="small" type="text" icon={<SendOutlined />} onClick={() => onSelect(item.content)} /> : null,
++                ].filter(Boolean)}
++                onClick={() => onSelect?.(item.content)}
++              >
++                <List.Item.Meta
++                  title={<Space size={4}>{item.title}{item.shortcut && <Tag style={{ fontSize: 11 }}>{item.shortcut}</Tag>}</Space>}
++                  description={<div style={{ fontSize: 12, color: '#666', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>{item.content}</div>}
++                />
++              </List.Item>
++            )}
++          />
++        )}
++      </div>
++    </Card>
++  );
++}
+diff --git a/web/src/components/phone/RealtimeTranscriptPanel.tsx b/web/src/components/phone/RealtimeTranscriptPanel.tsx
+new file mode 100644
+index 0000000..153ee89
+--- /dev/null
++++ b/web/src/components/phone/RealtimeTranscriptPanel.tsx
+@@ -0,0 +1,67 @@
++import { useState, useEffect, useRef } from 'react';
++import { Card, Tag, Empty, Switch, Space } from 'antd';
++import { AudioOutlined, UserOutlined, RobotOutlined } from '@ant-design/icons';
++
++interface TranscriptLine {
++  id: string;
++  role: 'agent' | 'customer' | 'system';
++  text: string;
++  timestamp: string;
++  sentiment?: 'positive' | 'neutral' | 'negative';
++}
++
++const roleConfig = {
++  agent:    { label: '坐席', color: 'blue',    icon: <UserOutlined /> },
++  customer: { label: '客户', color: 'green',   icon: <AudioOutlined /> },
++  system:   { label: '系统', color: 'default', icon: <RobotOutlined /> },
++};
++
++const sentimentColor = { positive: '#52c41a', neutral: '#999', negative: '#ff4d4f' };
++
++export default function RealtimeTranscriptPanel() {
++  const [lines, setLines] = useState<TranscriptLine[]>([]);
++  const [autoScroll, setAutoScroll] = useState(true);
++  const bottomRef = useRef<HTMLDivElement>(null);
++
++  // Simulate receiving transcript lines via polling or WebSocket.
++  useEffect(() => {
++    const demo: TranscriptLine[] = [
++      { id: '1', role: 'system', text: '通话已接通', timestamp: new Date().toLocaleTimeString() },
++    ];
++    setLines(demo);
++  }, []);
++
++  useEffect(() => {
++    if (autoScroll) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
++  }, [lines, autoScroll]);
++
++  return (
++    <Card
++      title={<Space><AudioOutlined /> 实时转写</Space>}
++      size="small"
++      extra={<Switch checkedChildren="自动滚动" unCheckedChildren="暂停" checked={autoScroll} onChange={setAutoScroll} />}
++      style={{ height: '100%' }}
++      bodyStyle={{ maxHeight: 400, overflowY: 'auto', padding: '8px 12px' }}
++    >
++      {lines.length === 0 ? (
++        <Empty description="等待通话开始..." image={Empty.PRESENTED_IMAGE_SIMPLE} />
++      ) : (
++        lines.map((line) => {
++          const cfg = roleConfig[line.role];
++          return (
++            <div key={line.id} style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
++              <Tag icon={cfg.icon} color={cfg.color} style={{ flexShrink: 0 }}>{cfg.label}</Tag>
++              <div style={{ flex: 1 }}>
++                <span style={{ color: line.sentiment ? sentimentColor[line.sentiment] : undefined }}>
++                  {line.text}
++                </span>
++                <span style={{ fontSize: 11, color: '#999', marginLeft: 8 }}>{line.timestamp}</span>
++              </div>
++            </div>
++          );
++        })
++      )}
++      <div ref={bottomRef} />
++    </Card>
++  );
++}
+diff --git a/web/src/components/phone/ScreenPopPanel.tsx b/web/src/components/phone/ScreenPopPanel.tsx
+new file mode 100644
+index 0000000..a7883c6
+--- /dev/null
++++ b/web/src/components/phone/ScreenPopPanel.tsx
+@@ -0,0 +1,92 @@
++import { useState, useEffect } from 'react';
++import { Card, Descriptions, Tag, Tabs, Spin, Empty, Space } from 'antd';
++import { UserOutlined, PhoneOutlined, HistoryOutlined } from '@ant-design/icons';
++import api from '../../api/client';
++
++interface CustomerInfo {
++  name: string;
++  phone: string;
++  company: string;
++  level: string;
++  last_contact: string;
++  notes: string;
++  tags: string[];
++  history: { id: number; date: string; type: string; summary: string }[];
++}
++
++export default function ScreenPopPanel({ callerNumber }: { callerNumber?: string }) {
++  const [customer, setCustomer] = useState<CustomerInfo | null>(null);
++  const [loading, setLoading] = useState(false);
++  const [iframeUrl, setIframeUrl] = useState<string>('');
++
++  useEffect(() => {
++    if (!callerNumber) return;
++    setLoading(true);
++    api.get('/screen-pop/lookup', { params: { phone: callerNumber } })
++      .then((res) => {
++        setCustomer(res.data?.customer || null);
++        setIframeUrl(res.data?.iframe_url || '');
++      })
++      .catch(() => {})
++      .finally(() => setLoading(false));
++  }, [callerNumber]);
++
++  if (loading) return <Card size="small"><Spin style={{ display: 'block', padding: 40 }} /></Card>;
++  if (!callerNumber) return null;
++
++  return (
++    <Card title={<Space><UserOutlined /> 来电弹屏</Space>} size="small">
++      <Tabs size="small" items={[
++        {
++          key: 'info',
++          label: <Space><UserOutlined />客户信息</Space>,
++          children: customer ? (
++            <>
++              <Descriptions size="small" column={2} bordered>
++                <Descriptions.Item label="姓名">{customer.name}</Descriptions.Item>
++                <Descriptions.Item label="电话">{customer.phone}</Descriptions.Item>
++                <Descriptions.Item label="公司">{customer.company}</Descriptions.Item>
++                <Descriptions.Item label="等级"><Tag color="blue">{customer.level}</Tag></Descriptions.Item>
++                <Descriptions.Item label="最近联系">{customer.last_contact}</Descriptions.Item>
++                <Descriptions.Item label="标签">
++                  {customer.tags?.map((t) => <Tag key={t}>{t}</Tag>)}
++                </Descriptions.Item>
++              </Descriptions>
++              {customer.notes && (
++                <div style={{ marginTop: 8, padding: 8, background: '#fafafa', borderRadius: 4, fontSize: 13 }}>
++                  {customer.notes}
++                </div>
++              )}
++            </>
++          ) : (
++            <Empty description="未找到客户信息" image={Empty.PRESENTED_IMAGE_SIMPLE} />
++          ),
++        },
++        {
++          key: 'history',
++          label: <Space><HistoryOutlined />历史记录</Space>,
++          children: customer?.history?.length ? (
++            <div style={{ maxHeight: 300, overflowY: 'auto' }}>
++              {customer.history.map((h) => (
++                <div key={h.id} style={{ padding: '6px 0', borderBottom: '1px solid #f0f0f0' }}>
++                  <Space>
++                    <Tag>{h.type}</Tag>
++                    <span style={{ fontSize: 12, color: '#999' }}>{h.date}</span>
++                  </Space>
++                  <div style={{ fontSize: 13, marginTop: 4 }}>{h.summary}</div>
++                </div>
++              ))}
++            </div>
++          ) : (
++            <Empty description="暂无历史" image={Empty.PRESENTED_IMAGE_SIMPLE} />
++          ),
++        },
++        ...(iframeUrl ? [{
++          key: 'iframe',
++          label: <Space><PhoneOutlined />业务系统</Space>,
++          children: <iframe src={iframeUrl} style={{ width: '100%', height: 400, border: 'none' }} title="弹屏" />,
++        }] : []),
++      ]} />
++    </Card>
++  );
++}
+diff --git a/web/src/components/phone/ScriptRecommendPanel.tsx b/web/src/components/phone/ScriptRecommendPanel.tsx
+new file mode 100644
+index 0000000..520e729
+--- /dev/null
++++ b/web/src/components/phone/ScriptRecommendPanel.tsx
+@@ -0,0 +1,62 @@
++import { useState, useEffect } from 'react';
++import { Card, List, Button, Tag, Empty, Space, message } from 'antd';
++import { BulbOutlined, CopyOutlined, LikeOutlined } from '@ant-design/icons';
++import api from '../../api/client';
++
++interface ScriptItem {
++  id: string;
++  title: string;
++  content: string;
++  category: string;
++  confidence: number;
++}
++
++export default function ScriptRecommendPanel({ callId }: { callId?: number }) {
++  const [scripts, setScripts] = useState<ScriptItem[]>([]);
++  const [loading, setLoading] = useState(false);
++
++  useEffect(() => {
++    if (!callId) return;
++    setLoading(true);
++    api.get(`/ai/script-recommend/${callId}`)
++      .then((res) => setScripts(Array.isArray(res.data) ? res.data : res.data?.items || []))
++      .catch(() => {})
++      .finally(() => setLoading(false));
++  }, [callId]);
++
++  const copyText = (text: string) => {
++    navigator.clipboard.writeText(text);
++    message.success('已复制');
++  };
++
++  return (
++    <Card
++      title={<Space><BulbOutlined /> 话术推荐</Space>}
++      size="small"
++      style={{ height: '100%' }}
++      bodyStyle={{ maxHeight: 400, overflowY: 'auto' }}
++    >
++      {scripts.length === 0 ? (
++        <Empty description={loading ? '加载中...' : '暂无推荐'} image={Empty.PRESENTED_IMAGE_SIMPLE} />
++      ) : (
++        <List
++          size="small"
++          dataSource={scripts}
++          renderItem={(item) => (
++            <List.Item
++              actions={[
++                <Button key="copy" size="small" icon={<CopyOutlined />} onClick={() => copyText(item.content)}>复制</Button>,
++                <Button key="like" size="small" icon={<LikeOutlined />} type="text" />,
++              ]}
++            >
++              <List.Item.Meta
++                title={<Space>{item.title}<Tag color="blue">{item.category}</Tag><Tag>{Math.round(item.confidence * 100)}%</Tag></Space>}
++                description={<div style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>{item.content}</div>}
++              />
++            </List.Item>
++          )}
++        />
++      )}
++    </Card>
++  );
++}
+diff --git a/web/src/components/phone/SupervisorPanel.tsx b/web/src/components/phone/SupervisorPanel.tsx
+new file mode 100644
+index 0000000..235b34b
+--- /dev/null
++++ b/web/src/components/phone/SupervisorPanel.tsx
+@@ -0,0 +1,95 @@
++import { useState, useEffect } from 'react';
++import { Card, Table, Tag, Button, Space, Select, message, Badge } from 'antd';
++import { EyeOutlined, AudioOutlined, ThunderboltOutlined, StopOutlined, ReloadOutlined } from '@ant-design/icons';
++import type { ColumnsType } from 'antd/es/table';
++import { callControlApi } from '../../api/endpoints';
++import api from '../../api/client';
++
++interface ActiveCall {
++  id: number;
++  agent_name: string;
++  agent_id: number;
++  customer_phone: string;
++  direction: string;
++  duration: number;
++  status: string;
++  skill_group: string;
++}
++
++export default function SupervisorPanel() {
++  const [calls, setCalls] = useState<ActiveCall[]>([]);
++  const [loading, setLoading] = useState(false);
++  const [filterSkill, setFilterSkill] = useState<string>('');
++
++  const loadCalls = async () => {
++    setLoading(true);
++    try {
++      const res = await api.get('/supervisor/active-calls');
++      setCalls(Array.isArray(res.data) ? res.data : res.data?.items || []);
++    } catch { /* ignore */ }
++    setLoading(false);
++  };
++
++  useEffect(() => { loadCalls(); const t = setInterval(loadCalls, 5000); return () => clearInterval(t); }, []);
++
++  const handleAction = async (callId: number, action: string) => {
++    try {
++      switch (action) {
++        case 'monitor': await callControlApi.monitor(callId); break;
++        case 'whisper': await callControlApi.whisper(callId); break;
++        case 'barge':   await callControlApi.barge(callId); break;
++        case 'intercept': await callControlApi.intercept(callId); break;
++        case 'coach':   await callControlApi.coach(callId); break;
++      }
++      message.success(`${action} 操作成功`);
++    } catch {
++      message.error('操作失败');
++    }
++  };
++
++  const columns: ColumnsType<ActiveCall> = [
++    { title: '坐席', dataIndex: 'agent_name', width: 100 },
++    { title: '客户号码', dataIndex: 'customer_phone', width: 130 },
++    {
++      title: '方向', dataIndex: 'direction', width: 70,
++      render: (v) => <Tag color={v === 'inbound' ? 'blue' : 'green'}>{v === 'inbound' ? '呼入' : '呼出'}</Tag>,
++    },
++    { title: '技能组', dataIndex: 'skill_group', width: 100 },
++    {
++      title: '时长', dataIndex: 'duration', width: 80,
++      render: (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`,
++    },
++    {
++      title: '状态', dataIndex: 'status', width: 80,
++      render: (v) => <Badge status={v === 'talking' ? 'processing' : 'default'} text={v === 'talking' ? '通话中' : v} />,
++    },
++    {
++      title: '操作', key: 'actions', width: 280,
++      render: (_, record) => (
++        <Space size={4}>
++          <Button size="small" icon={<EyeOutlined />} onClick={() => handleAction(record.id, 'monitor')}>监听</Button>
++          <Button size="small" icon={<AudioOutlined />} onClick={() => handleAction(record.id, 'whisper')}>耳语</Button>
++          <Button size="small" icon={<ThunderboltOutlined />} onClick={() => handleAction(record.id, 'barge')} danger>强插</Button>
++          <Button size="small" icon={<StopOutlined />} onClick={() => handleAction(record.id, 'intercept')} danger>强拆</Button>
++        </Space>
++      ),
++    },
++  ];
++
++  const filtered = filterSkill ? calls.filter((c) => c.skill_group === filterSkill) : calls;
++  const skillOptions = [...new Set(calls.map((c) => c.skill_group))].filter(Boolean).map((s) => ({ value: s, label: s }));
++
++  return (
++    <Card
++      title="实时监控"
++      extra={
++        <Space>
++          <Select allowClear placeholder="筛选技能组" options={skillOptions} value={filterSkill || undefined} onChange={(v) => setFilterSkill(v || '')} style={{ width: 150 }} />
++          <Button icon={<ReloadOutlined />} onClick={loadCalls}>刷新</Button>
++        </Space>
++      }
++    >
++      <Table<ActiveCall> columns={columns} dataSource={filtered} rowKey="id" loading={loading} size="small" pagination={false} />
++    </Card>
++  );
++}
+diff --git a/web/src/components/phone/TransferModal.tsx b/web/src/components/phone/TransferModal.tsx
+new file mode 100644
+index 0000000..c75fea0
+--- /dev/null
++++ b/web/src/components/phone/TransferModal.tsx
+@@ -0,0 +1,78 @@
++import { useState } from 'react';
++import { Modal, Tabs, Select, Button, Space, message } from 'antd';
++import { callControlApi, skillGroupApi, agentApi } from '../../api/endpoints';
++
++interface TransferModalProps {
++  open: boolean;
++  callId: number | null;
++  onClose: () => void;
++}
++
++export default function TransferModal({ open, callId, onClose }: TransferModalProps) {
++  const [tab, setTab] = useState('skill');
++  const [target, setTarget] = useState<string>('');
++  const [mode, setMode] = useState<'blind' | 'attended'>('blind');
++  const [skills, setSkills] = useState<{ value: string; label: string }[]>([]);
++  const [agents, setAgents] = useState<{ value: string; label: string }[]>([]);
++
++  const loadOptions = async () => {
++    try {
++      const [skillRes, agentRes] = await Promise.all([skillGroupApi.list(), agentApi.list()]);
++      const skillData = Array.isArray(skillRes.data) ? skillRes.data : skillRes.data?.items || [];
++      const agentData = Array.isArray(agentRes.data) ? agentRes.data : agentRes.data?.items || [];
++      setSkills(skillData.map((s: Record<string, unknown>) => ({ value: String(s.id), label: String(s.name) })));
++      setAgents(agentData.map((a: Record<string, unknown>) => ({ value: String(a.id), label: String(a.display_name || a.name) })));
++    } catch { /* ignore */ }
++  };
++
++  const handleTransfer = async () => {
++    if (!callId || !target) { message.warning('请选择转接目标'); return; }
++    try {
++      const data = tab === 'skill'
++        ? { skill_group_id: Number(target) }
++        : tab === 'agent'
++          ? { agent_id: Number(target) }
++          : { external_number: target };
++
++      if (mode === 'blind') {
++        await callControlApi.blindTransfer(callId, data);
++      } else {
++        await callControlApi.attendedTransfer(callId, data);
++      }
++      message.success('转接成功');
++      onClose();
++    } catch {
++      message.error('转接失败');
++    }
++  };
++
++  return (
++    <Modal title="转接通话" open={open} onCancel={onClose} footer={null} afterOpenChange={(v) => v && loadOptions()}>
++      <Tabs activeKey={tab} onChange={(k) => { setTab(k); setTarget(''); }} items={[
++        { key: 'skill', label: '技能组' },
++        { key: 'agent', label: '坐席' },
++        { key: 'external', label: '外线' },
++      ]} />
++
++      <div style={{ marginBottom: 16 }}>
++        {tab === 'skill' && (
++          <Select placeholder="选择技能组" options={skills} value={target || undefined} onChange={setTarget} style={{ width: '100%' }} showSearch optionFilterProp="label" />
++        )}
++        {tab === 'agent' && (
++          <Select placeholder="选择坐席" options={agents} value={target || undefined} onChange={setTarget} style={{ width: '100%' }} showSearch optionFilterProp="label" />
++        )}
++        {tab === 'external' && (
++          <Select mode="tags" placeholder="输入外线号码" value={target ? [target] : []} onChange={(v) => setTarget(v[0] || '')} style={{ width: '100%' }} />
++        )}
++      </div>
++
++      <Space style={{ display: 'flex', justifyContent: 'flex-end' }}>
++        <Select value={mode} onChange={setMode} options={[
++          { value: 'blind', label: '盲转' },
++          { value: 'attended', label: '咨询转' },
++        ]} style={{ width: 100 }} />
++        <Button type="primary" onClick={handleTransfer}>确定转接</Button>
++      </Space>
++    </Modal>
++  );
++}
+diff --git a/web/src/components/webchat/WebchatWidget.tsx b/web/src/components/webchat/WebchatWidget.tsx
+new file mode 100644
+index 0000000..06c9afd
+--- /dev/null
++++ b/web/src/components/webchat/WebchatWidget.tsx
+@@ -0,0 +1,201 @@
++import { useState, useEffect, useRef, useCallback } from 'react';
++import { Input, Button, Avatar, Badge, Spin } from 'antd';
++import {
++  MessageOutlined, CloseOutlined, SendOutlined, PaperClipOutlined,
++  CustomerServiceOutlined, MinusOutlined,
++} from '@ant-design/icons';
++
++interface ChatMessage {
++  id: string;
++  role: 'customer' | 'agent' | 'system';
++  content: string;
++  timestamp: string;
++  type: 'text' | 'image' | 'file';
++  fileUrl?: string;
++}
++
++interface WebchatWidgetProps {
++  tenantId: string;
++  channelId: string;
++  apiBase?: string;
++  title?: string;
++  greeting?: string;
++  primaryColor?: string;
++}
++
++export default function WebchatWidget({
++  tenantId, channelId, apiBase = '/api/v1', title = '在线客服',
++  greeting = '您好！有什么可以帮您？', primaryColor = '#1677ff',
++}: WebchatWidgetProps) {
++  const [open, setOpen] = useState(false);
++  const [minimized, setMinimized] = useState(false);
++  const [messages, setMessages] = useState<ChatMessage[]>([]);
++  const [input, setInput] = useState('');
++  const [sessionId, setSessionId] = useState<string>('');
++  const [connected, setConnected] = useState(false);
++  const [sending, setSending] = useState(false);
++  const [unread, setUnread] = useState(0);
++  const bottomRef = useRef<HTMLDivElement>(null);
++  const fileInputRef = useRef<HTMLInputElement>(null);
++
++  const scrollToBottom = () => bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
++  useEffect(scrollToBottom, [messages]);
++
++  const initSession = useCallback(async () => {
++    try {
++      const res = await fetch(`${apiBase}/webchat/sessions`, {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({ tenant_id: tenantId, channel_id: channelId }),
++      });
++      const data = await res.json();
++      setSessionId(data.id || data.session_id);
++      setConnected(true);
++      setMessages([{
++        id: 'greeting', role: 'system', content: greeting,
++        timestamp: new Date().toLocaleTimeString(), type: 'text',
++      }]);
++    } catch {
++      setMessages([{
++        id: 'error', role: 'system', content: '连接失败，请稍后再试',
++        timestamp: new Date().toLocaleTimeString(), type: 'text',
++      }]);
++    }
++  }, [tenantId, channelId, apiBase, greeting]);
++
++  useEffect(() => { if (open && !sessionId) initSession(); }, [open, sessionId, initSession]);
++
++  // Poll for new messages
++  useEffect(() => {
++    if (!sessionId || !connected) return;
++    const poll = setInterval(async () => {
++      try {
++        const res = await fetch(`${apiBase}/webchat/sessions/${sessionId}/messages`);
++        const data = await res.json();
++        const msgs: ChatMessage[] = Array.isArray(data) ? data : data?.items || [];
++        if (msgs.length > messages.length) {
++          setMessages(msgs);
++          if (minimized || !open) setUnread((u) => u + msgs.length - messages.length);
++        }
++      } catch { /* ignore */ }
++    }, 3000);
++    return () => clearInterval(poll);
++  }, [sessionId, connected, messages.length, minimized, open, apiBase]);
++
++  const sendMessage = async () => {
++    const text = input.trim();
++    if (!text || !sessionId) return;
++    setSending(true);
++    setInput('');
++    const tempMsg: ChatMessage = {
++      id: `temp_${Date.now()}`, role: 'customer', content: text,
++      timestamp: new Date().toLocaleTimeString(), type: 'text',
++    };
++    setMessages((m) => [...m, tempMsg]);
++    try {
++      await fetch(`${apiBase}/webchat/sessions/${sessionId}/messages`, {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({ content: text, type: 'text' }),
++      });
++    } catch { /* ignore */ }
++    setSending(false);
++  };
++
++  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
++    const file = e.target.files?.[0];
++    if (!file || !sessionId) return;
++    const formData = new FormData();
++    formData.append('file', file);
++    try {
++      await fetch(`${apiBase}/webchat/sessions/${sessionId}/messages`, { method: 'POST', body: formData });
++    } catch { /* ignore */ }
++  };
++
++  // Floating button
++  if (!open) {
++    return (
++      <div
++        style={{
++          position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
++          width: 56, height: 56, borderRadius: '50%', background: primaryColor,
++          display: 'flex', alignItems: 'center', justifyContent: 'center',
++          cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
++        }}
++        onClick={() => { setOpen(true); setUnread(0); }}
++      >
++        <Badge count={unread} offset={[-4, 4]}>
++          <MessageOutlined style={{ fontSize: 24, color: '#fff' }} />
++        </Badge>
++      </div>
++    );
++  }
++
++  // Minimized state
++  if (minimized) {
++    return (
++      <div
++        style={{
++          position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
++          background: primaryColor, color: '#fff', padding: '8px 16px', borderRadius: 24,
++          cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', gap: 8,
++        }}
++        onClick={() => { setMinimized(false); setUnread(0); }}
++      >
++        <Badge count={unread} size="small"><CustomerServiceOutlined style={{ fontSize: 18, color: '#fff' }} /></Badge>
++        <span>{title}</span>
++      </div>
++    );
++  }
++
++  return (
++    <div style={{
++      position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
++      width: 380, height: 520, borderRadius: 12, overflow: 'hidden',
++      boxShadow: '0 8px 32px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column', background: '#fff',
++    }}>
++      {/* Header */}
++      <div style={{ background: primaryColor, color: '#fff', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
++        <CustomerServiceOutlined style={{ fontSize: 20 }} />
++        <span style={{ flex: 1, fontWeight: 500 }}>{title}</span>
++        <MinusOutlined style={{ cursor: 'pointer', fontSize: 16 }} onClick={() => setMinimized(true)} />
++        <CloseOutlined style={{ cursor: 'pointer', fontSize: 16, marginLeft: 8 }} onClick={() => setOpen(false)} />
++      </div>
++
++      {/* Messages */}
++      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
++        {messages.map((msg) => (
++          <div key={msg.id} style={{ marginBottom: 12, display: 'flex', flexDirection: msg.role === 'customer' ? 'row-reverse' : 'row', gap: 8 }}>
++            <Avatar size={32} style={{ background: msg.role === 'agent' ? primaryColor : msg.role === 'customer' ? '#87d068' : '#999', flexShrink: 0 }}>
++              {msg.role === 'agent' ? '客' : msg.role === 'customer' ? '我' : '系'}
++            </Avatar>
++            <div style={{
++              maxWidth: '70%', padding: '8px 12px', borderRadius: 8, fontSize: 14, lineHeight: 1.5,
++              background: msg.role === 'customer' ? primaryColor : '#f0f0f0',
++              color: msg.role === 'customer' ? '#fff' : '#333',
++            }}>
++              {msg.type === 'image' ? <img src={msg.fileUrl} alt="" style={{ maxWidth: '100%', borderRadius: 4 }} /> : msg.content}
++              <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4, textAlign: 'right' }}>{msg.timestamp}</div>
++            </div>
++          </div>
++        ))}
++        <div ref={bottomRef} />
++      </div>
++
++      {/* Input */}
++      <div style={{ padding: '8px 12px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8, alignItems: 'center' }}>
++        <input ref={fileInputRef} type="file" hidden onChange={handleFile} />
++        <Button size="small" type="text" icon={<PaperClipOutlined />} onClick={() => fileInputRef.current?.click()} />
++        <Input
++          value={input}
++          onChange={(e) => setInput(e.target.value)}
++          onPressEnter={sendMessage}
++          placeholder="输入消息..."
++          style={{ flex: 1 }}
++          suffix={sending ? <Spin size="small" /> : undefined}
++        />
++        <Button type="primary" icon={<SendOutlined />} onClick={sendMessage} disabled={!input.trim()} style={{ background: primaryColor }} />
++      </div>
++    </div>
++  );
++}
+diff --git a/web/src/pages/ai/AdvancedAiPage.tsx b/web/src/pages/ai/AdvancedAiPage.tsx
+new file mode 100644
+index 0000000..f07e832
+--- /dev/null
++++ b/web/src/pages/ai/AdvancedAiPage.tsx
+@@ -0,0 +1,204 @@
++import { useState } from 'react';
++import { Card, Tabs, Table, Button, Form, Input, Select, Upload, Space, Tag, message, Modal, Progress, Empty } from 'antd';
++import {
++  AudioOutlined, BarChartOutlined, ExperimentOutlined, UploadOutlined,
++  PlayCircleOutlined, PlusOutlined, ReloadOutlined, RobotOutlined,
++} from '@ant-design/icons';
++import type { ColumnsType } from 'antd/es/table';
++import api from '../../api/client';
++
++// --- Voice Cloning ---
++interface VoiceCloneTask {
++  id: number;
++  name: string;
++  status: 'pending' | 'training' | 'ready' | 'failed';
++  progress: number;
++  created_at: string;
++}
++
++function VoiceCloningTab() {
++  const [tasks, setTasks] = useState<VoiceCloneTask[]>([]);
++  const [loading, setLoading] = useState(false);
++  const [modalOpen, setModalOpen] = useState(false);
++  const [form] = Form.useForm();
++
++  const load = async () => {
++    setLoading(true);
++    try {
++      const res = await api.get('/ai/voice-clone/tasks');
++      setTasks(Array.isArray(res.data) ? res.data : res.data?.items || []);
++    } catch { /* ignore */ }
++    setLoading(false);
++  };
++
++  const handleCreate = async () => {
++    const values = await form.validateFields();
++    try {
++      await api.post('/ai/voice-clone/tasks', values);
++      message.success('训练任务已创建');
++      setModalOpen(false);
++      form.resetFields();
++      load();
++    } catch {
++      message.error('创建失败');
++    }
++  };
++
++  const statusColor: Record<string, string> = { pending: 'default', training: 'processing', ready: 'success', failed: 'error' };
++  const statusLabel: Record<string, string> = { pending: '等待中', training: '训练中', ready: '就绪', failed: '失败' };
++
++  const columns: ColumnsType<VoiceCloneTask> = [
++    { title: '名称', dataIndex: 'name' },
++    {
++      title: '状态', dataIndex: 'status', width: 100,
++      render: (v) => <Tag color={statusColor[v]}>{statusLabel[v] || v}</Tag>,
++    },
++    {
++      title: '进度', dataIndex: 'progress', width: 200,
++      render: (v, record) => record.status === 'training' ? <Progress percent={v} size="small" /> : '-',
++    },
++    { title: '创建时间', dataIndex: 'created_at', width: 160 },
++    {
++      title: '操作', key: 'action', width: 120,
++      render: (_, record) => record.status === 'ready' ? (
++        <Button size="small" icon={<PlayCircleOutlined />} onClick={() => message.info('试听功能开发中')}>试听</Button>
++      ) : null,
++    },
++  ];
++
++  return (
++    <>
++      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
++        <Space>
++          <Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>
++          <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>新建训练</Button>
++        </Space>
++      </div>
++      <Table<VoiceCloneTask> columns={columns} dataSource={tasks} rowKey="id" loading={loading} size="small" pagination={false} />
++      <Modal title="新建声纹复刻任务" open={modalOpen} onOk={handleCreate} onCancel={() => { setModalOpen(false); form.resetFields(); }} destroyOnClose>
++        <Form form={form} layout="vertical" preserve={false}>
++          <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input placeholder="声纹名称" /></Form.Item>
++          <Form.Item name="audio_url" label="训练音频"><Upload maxCount={1}><Button icon={<UploadOutlined />}>上传音频</Button></Upload></Form.Item>
++          <Form.Item name="description" label="描述"><Input.TextArea rows={2} /></Form.Item>
++        </Form>
++      </Modal>
++    </>
++  );
++}
++
++// --- Conversation Analytics ---
++function ConversationAnalyticsTab() {
++  const [result, setResult] = useState<Record<string, unknown> | null>(null);
++  const [loading, setLoading] = useState(false);
++  const [form] = Form.useForm();
++
++  const runAnalysis = async () => {
++    const values = await form.validateFields();
++    setLoading(true);
++    try {
++      const res = await api.post('/ai/conversation-analytics/analyze', values);
++      setResult(res.data);
++    } catch {
++      message.error('分析失败');
++    }
++    setLoading(false);
++  };
++
++  return (
++    <div>
++      <Card title="对话分析" size="small">
++        <Form form={form} layout="vertical">
++          <Form.Item name="type" label="分析类型" rules={[{ required: true }]}>
++            <Select options={[
++              { value: 'intent_mining', label: '意图挖掘' },
++              { value: 'sop_discovery', label: 'SOP 发现' },
++              { value: 'sales_script', label: '金牌话术提取' },
++              { value: 'topic_clustering', label: '话题聚类' },
++            ]} />
++          </Form.Item>
++          <Form.Item name="date_range" label="时间范围">
++            <Select options={[
++              { value: '7d', label: '近 7 天' },
++              { value: '30d', label: '近 30 天' },
++              { value: '90d', label: '近 90 天' },
++            ]} />
++          </Form.Item>
++          <Form.Item name="skill_group_id" label="技能组(可选)"><Input placeholder="技能组ID" /></Form.Item>
++          <Button type="primary" onClick={runAnalysis} loading={loading}>开始分析</Button>
++        </Form>
++      </Card>
++      {result && (
++        <Card title="分析结果" size="small" style={{ marginTop: 16 }}>
++          <pre style={{ maxHeight: 400, overflow: 'auto', background: '#f5f5f5', padding: 12, borderRadius: 4, fontSize: 13 }}>
++            {JSON.stringify(result, null, 2)}
++          </pre>
++        </Card>
++      )}
++    </div>
++  );
++}
++
++// --- Training ---
++function TrainingTab() {
++  const [questions, setQuestions] = useState<{ id: number; question: string; answer: string; score?: number }[]>([]);
++  const [loading, setLoading] = useState(false);
++
++  const generateQuestions = async () => {
++    setLoading(true);
++    try {
++      const res = await api.post('/ai/training/generate-questions', { count: 10 });
++      setQuestions(Array.isArray(res.data) ? res.data : res.data?.items || []);
++    } catch {
++      message.error('生成失败');
++    }
++    setLoading(false);
++  };
++
++  const evaluateCall = async () => {
++    try {
++      const res = await api.post('/ai/training/evaluate', { call_id: 0 });
++      message.success(`评估完成: ${JSON.stringify(res.data?.score || res.data)}`);
++    } catch {
++      message.error('评估失败');
++    }
++  };
++
++  return (
++    <>
++      <Space style={{ marginBottom: 12 }}>
++        <Button type="primary" icon={<ExperimentOutlined />} onClick={generateQuestions} loading={loading}>生成考题</Button>
++        <Button icon={<BarChartOutlined />} onClick={evaluateCall}>模拟通话评估</Button>
++      </Space>
++      {questions.length > 0 ? (
++        <Table
++          size="small"
++          rowKey="id"
++          dataSource={questions}
++          columns={[
++            { title: '#', dataIndex: 'id', width: 50 },
++            { title: '问题', dataIndex: 'question' },
++            { title: '参考答案', dataIndex: 'answer', ellipsis: true },
++            { title: '得分', dataIndex: 'score', width: 80, render: (v) => v ? <Tag color="blue">{v}</Tag> : '-' },
++          ]}
++          pagination={false}
++        />
++      ) : (
++        <Empty description={'点击"生成考题"开始'} image={Empty.PRESENTED_IMAGE_SIMPLE} />
++      )}
++    </>
++  );
++}
++
++// --- Main Page ---
++export default function AdvancedAiPage() {
++  return (
++    <>
++      <h2><RobotOutlined /> 高级 AI</h2>
++      <Tabs items={[
++        { key: 'voice', label: <Space><AudioOutlined />声纹复刻</Space>, children: <VoiceCloningTab /> },
++        { key: 'analytics', label: <Space><BarChartOutlined />对话分析</Space>, children: <ConversationAnalyticsTab /> },
++        { key: 'training', label: <Space><ExperimentOutlined />智能培训</Space>, children: <TrainingTab /> },
++      ]} />
++    </>
++  );
++}
+diff --git a/web/src/pages/campaigns/CampaignLiveDashboard.tsx b/web/src/pages/campaigns/CampaignLiveDashboard.tsx
+new file mode 100644
+index 0000000..c11bcf0
+--- /dev/null
++++ b/web/src/pages/campaigns/CampaignLiveDashboard.tsx
+@@ -0,0 +1,158 @@
++import { useState, useEffect } from 'react';
++import { Card, Row, Col, Statistic, Progress, Table, Tag, Space, Button, Select } from 'antd';
++import {
++  PhoneOutlined, TeamOutlined, CheckCircleOutlined, CloseCircleOutlined,
++  ClockCircleOutlined, ReloadOutlined, DashboardOutlined, ThunderboltOutlined,
++} from '@ant-design/icons';
++import type { ColumnsType } from 'antd/es/table';
++import { campaignApi } from '../../api/endpoints';
++
++interface CampaignStats {
++  total_cases: number;
++  completed: number;
++  connected: number;
++  failed: number;
++  pending: number;
++  in_progress: number;
++  connect_rate: number;
++  abandon_rate: number;
++  avg_duration: number;
++  concurrent: number;
++  agents_active: number;
++  agents_idle: number;
++  elapsed_min: number;
++}
++
++interface AgentStatus {
++  id: number;
++  name: string;
++  status: string;
++  current_case: string;
++  calls_made: number;
++  connected: number;
++}
++
++export default function CampaignLiveDashboard() {
++  const [campaigns, setCampaigns] = useState<{ id: number; name: string; status: string }[]>([]);
++  const [selectedId, setSelectedId] = useState<number | null>(null);
++  const [stats, setStats] = useState<CampaignStats | null>(null);
++  const [agents, setAgents] = useState<AgentStatus[]>([]);
++  const [loading, setLoading] = useState(false);
++
++  useEffect(() => {
++    campaignApi.list().then((res) => {
++      const items = Array.isArray(res.data) ? res.data : res.data?.items || [];
++      const running = items.filter((c: Record<string, unknown>) => c.status === 'running' || c.status === 'paused');
++      setCampaigns(running);
++      if (running.length > 0 && !selectedId) setSelectedId(running[0].id);
++    }).catch(() => {});
++  }, []);
++
++  const loadStats = async () => {
++    if (!selectedId) return;
++    setLoading(true);
++    try {
++      const res = await campaignApi.stats(selectedId);
++      setStats(res.data?.summary || res.data);
++      setAgents(res.data?.agents || []);
++    } catch { /* ignore */ }
++    setLoading(false);
++  };
++
++  useEffect(() => {
++    loadStats();
++    const t = setInterval(loadStats, 5000);
++    return () => clearInterval(t);
++  }, [selectedId]);
++
++  const agentColumns: ColumnsType<AgentStatus> = [
++    { title: '坐席', dataIndex: 'name', width: 100 },
++    {
++      title: '状态', dataIndex: 'status', width: 80,
++      render: (v) => <Tag color={v === 'talking' ? 'blue' : v === 'idle' ? 'green' : 'default'}>{v}</Tag>,
++    },
++    { title: '当前案例', dataIndex: 'current_case', width: 120, ellipsis: true },
++    { title: '已拨', dataIndex: 'calls_made', width: 60 },
++    { title: '接通', dataIndex: 'connected', width: 60 },
++  ];
++
++  const progress = stats ? Math.round((stats.completed / Math.max(stats.total_cases, 1)) * 100) : 0;
++
++  return (
++    <>
++      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
++        <h2 style={{ margin: 0 }}><DashboardOutlined /> 外呼实时大屏</h2>
++        <Space>
++          <Select
++            value={selectedId ?? undefined}
++            onChange={setSelectedId}
++            style={{ width: 200 }}
++            placeholder="选择活动"
++            options={campaigns.map((c) => ({ value: c.id, label: `${c.name} (${c.status})` }))}
++          />
++          <Button icon={<ReloadOutlined />} onClick={loadStats} loading={loading}>刷新</Button>
++        </Space>
++      </div>
++
++      {stats && (
++        <>
++          {/* KPI cards */}
++          <Row gutter={[16, 16]}>
++            <Col span={4}><Card><Statistic title="总案例" value={stats.total_cases} /></Card></Col>
++            <Col span={4}><Card><Statistic title="已完成" value={stats.completed} prefix={<CheckCircleOutlined />} valueStyle={{ color: '#52c41a' }} /></Card></Col>
++            <Col span={4}><Card><Statistic title="接通数" value={stats.connected} prefix={<PhoneOutlined />} valueStyle={{ color: '#1677ff' }} /></Card></Col>
++            <Col span={4}><Card><Statistic title="失败" value={stats.failed} prefix={<CloseCircleOutlined />} valueStyle={{ color: '#ff4d4f' }} /></Card></Col>
++            <Col span={4}><Card><Statistic title="并发数" value={stats.concurrent} prefix={<ThunderboltOutlined />} valueStyle={{ color: '#fa8c16' }} /></Card></Col>
++            <Col span={4}><Card><Statistic title="用时(分)" value={stats.elapsed_min} prefix={<ClockCircleOutlined />} /></Card></Col>
++          </Row>
++
++          {/* Progress and rates */}
++          <Row gutter={16} style={{ marginTop: 16 }}>
++            <Col span={8}>
++              <Card title="完成进度">
++                <Progress type="dashboard" percent={progress} size={160} strokeColor={primaryGradient} />
++                <div style={{ textAlign: 'center', marginTop: 8, color: '#666' }}>
++                  {stats.completed} / {stats.total_cases}
++                </div>
++              </Card>
++            </Col>
++            <Col span={8}>
++              <Card title="接通率 / 放弃率">
++                <Row gutter={16}>
++                  <Col span={12}>
++                    <Progress type="circle" percent={Math.round(stats.connect_rate * 100)} size={120} strokeColor="#52c41a" format={(p) => `${p}%`} />
++                    <div style={{ textAlign: 'center', marginTop: 4 }}>接通率</div>
++                  </Col>
++                  <Col span={12}>
++                    <Progress type="circle" percent={Math.round(stats.abandon_rate * 100)} size={120} strokeColor="#ff4d4f" format={(p) => `${p}%`} />
++                    <div style={{ textAlign: 'center', marginTop: 4 }}>放弃率</div>
++                  </Col>
++                </Row>
++              </Card>
++            </Col>
++            <Col span={8}>
++              <Card title="坐席概况">
++                <Row gutter={16}>
++                  <Col span={12}>
++                    <Statistic title="活跃坐席" value={stats.agents_active} prefix={<TeamOutlined />} valueStyle={{ color: '#1677ff' }} />
++                  </Col>
++                  <Col span={12}>
++                    <Statistic title="空闲坐席" value={stats.agents_idle} prefix={<TeamOutlined />} valueStyle={{ color: '#52c41a' }} />
++                  </Col>
++                </Row>
++                <Statistic title="平均通话(秒)" value={stats.avg_duration} prefix={<ClockCircleOutlined />} style={{ marginTop: 16 }} />
++              </Card>
++            </Col>
++          </Row>
++
++          {/* Agent table */}
++          <Card title="坐席明细" style={{ marginTop: 16 }}>
++            <Table<AgentStatus> columns={agentColumns} dataSource={agents} rowKey="id" size="small" pagination={false} />
++          </Card>
++        </>
++      )}
++    </>
++  );
++}
++
++const primaryGradient = { '0%': '#108ee9', '100%': '#87d068' };
+diff --git a/web/src/pages/dashboard/DashboardPage.tsx b/web/src/pages/dashboard/DashboardPage.tsx
+index fd95287..98a6ccb 100644
+--- a/web/src/pages/dashboard/DashboardPage.tsx
++++ b/web/src/pages/dashboard/DashboardPage.tsx
+@@ -46,6 +46,9 @@ interface FunnelData {
+   ivr_completed: number;
+   to_agent: number;
+   to_bot: number;
++  full_service: number;
++  half_service: number;
++  direct_transfer: number;
+   answered: number;
+   abandoned: number;
+ }
+@@ -124,12 +127,29 @@ export default function DashboardPage() {
+           <Card title="呼叫漏斗">
+             {funnel && (
+               <div>
+-                <Statistic title="总呼入" value={funnel.total_inbound} />
+-                <Statistic title="IVR 完成" value={funnel.ivr_completed} style={{ marginTop: 8 }} />
+-                <Statistic title="转人工" value={funnel.to_agent} style={{ marginTop: 8 }} />
+-                <Statistic title="转机器人" value={funnel.to_bot} style={{ marginTop: 8 }} />
+-                <Statistic title="已接听" value={funnel.answered} style={{ marginTop: 8 }} valueStyle={{ color: '#3f8600' }} />
+-                <Statistic title="放弃" value={funnel.abandoned} style={{ marginTop: 8 }} valueStyle={{ color: '#cf1322' }} />
++                {[
++                  { label: '总呼入', value: funnel.total_inbound, color: '#1677ff' },
++                  { label: 'IVR 完成', value: funnel.ivr_completed, color: '#1890ff' },
++                  { label: '转人工', value: funnel.to_agent, color: '#13c2c2' },
++                  { label: '转机器人', value: funnel.to_bot, color: '#722ed1' },
++                  { label: '全服务', value: funnel.full_service || 0, color: '#2f54eb' },
++                  { label: '半服务', value: funnel.half_service || 0, color: '#faad14' },
++                  { label: '直转', value: funnel.direct_transfer || 0, color: '#eb2f96' },
++                  { label: '已接听', value: funnel.answered, color: '#52c41a' },
++                  { label: '放弃', value: funnel.abandoned, color: '#ff4d4f' },
++                ].map((step, _i, arr) => {
++                  const maxVal = Math.max(...arr.map((a) => a.value), 1);
++                  const widthPct = Math.max((step.value / maxVal) * 100, 20);
++                  return (
++                    <div key={step.label} style={{ marginBottom: 4 }}>
++                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#666', marginBottom: 2 }}>
++                        <span>{step.label}</span>
++                        <span style={{ fontWeight: 600 }}>{step.value}</span>
++                      </div>
++                      <div style={{ width: `${widthPct}%`, height: 20, background: step.color, borderRadius: 4, margin: '0 auto', transition: 'width 0.3s' }} />
++                    </div>
++                  );
++                })}
+               </div>
+             )}
+           </Card>
+diff --git a/web/src/pages/im/SocialChannelPage.tsx b/web/src/pages/im/SocialChannelPage.tsx
+new file mode 100644
+index 0000000..9f6f148
+--- /dev/null
++++ b/web/src/pages/im/SocialChannelPage.tsx
+@@ -0,0 +1,161 @@
++import { useState, useEffect } from 'react';
++import { Table, Tag, Button, Modal, Form, Input, Select, Space, Switch, message, Popconfirm, Badge } from 'antd';
++import {
++  WechatOutlined, WeiboOutlined, PlusOutlined, EditOutlined, DeleteOutlined,
++  ReloadOutlined,
++} from '@ant-design/icons';
++import type { ColumnsType } from 'antd/es/table';
++import api from '../../api/client';
++
++interface SocialChannel {
++  id: number;
++  name: string;
++  platform: 'wechat' | 'weibo';
++  app_id: string;
++  status: 'connected' | 'disconnected' | 'error';
++  enabled: boolean;
++  follower_count: number;
++  last_sync: string;
++  created_at: string;
++}
++
++const platformConfig = {
++  wechat: { label: '微信公众号', icon: <WechatOutlined />, color: '#07c160' },
++  weibo:  { label: '微博',      icon: <WeiboOutlined />,  color: '#ff8200' },
++};
++
++export default function SocialChannelPage() {
++  const [channels, setChannels] = useState<SocialChannel[]>([]);
++  const [loading, setLoading] = useState(false);
++  const [modalOpen, setModalOpen] = useState(false);
++  const [editing, setEditing] = useState<SocialChannel | null>(null);
++  const [form] = Form.useForm();
++
++  const load = async () => {
++    setLoading(true);
++    try {
++      const res = await api.get('/social-channels');
++      setChannels(Array.isArray(res.data) ? res.data : res.data?.items || []);
++    } catch { /* ignore */ }
++    setLoading(false);
++  };
++
++  useEffect(() => { load(); }, []);
++
++  const handleSave = async () => {
++    const values = await form.validateFields();
++    try {
++      if (editing) {
++        await api.put(`/social-channels/${editing.id}`, values);
++        message.success('更新成功');
++      } else {
++        await api.post('/social-channels', values);
++        message.success('创建成功');
++      }
++      setModalOpen(false);
++      form.resetFields();
++      setEditing(null);
++      load();
++    } catch {
++      message.error('操作失败');
++    }
++  };
++
++  const handleDelete = async (id: number) => {
++    try {
++      await api.delete(`/social-channels/${id}`);
++      message.success('已删除');
++      load();
++    } catch {
++      message.error('删除失败');
++    }
++  };
++
++  const handleToggle = async (id: number, enabled: boolean) => {
++    try {
++      await api.put(`/social-channels/${id}`, { enabled });
++      load();
++    } catch {
++      message.error('操作失败');
++    }
++  };
++
++  const columns: ColumnsType<SocialChannel> = [
++    {
++      title: '平台', dataIndex: 'platform', width: 120,
++      render: (v: keyof typeof platformConfig) => {
++        const cfg = platformConfig[v];
++        return <Tag icon={cfg.icon} color={cfg.color}>{cfg.label}</Tag>;
++      },
++    },
++    { title: '名称', dataIndex: 'name' },
++    { title: 'App ID', dataIndex: 'app_id', width: 180, ellipsis: true },
++    {
++      title: '状态', dataIndex: 'status', width: 100,
++      render: (v) => v === 'connected'
++        ? <Badge status="success" text="已连接" />
++        : v === 'error'
++          ? <Badge status="error" text="异常" />
++          : <Badge status="default" text="未连接" />,
++    },
++    {
++      title: '启用', dataIndex: 'enabled', width: 80,
++      render: (v, record) => <Switch checked={v} onChange={(checked) => handleToggle(record.id, checked)} />,
++    },
++    { title: '粉丝数', dataIndex: 'follower_count', width: 80 },
++    { title: '最后同步', dataIndex: 'last_sync', width: 160 },
++    {
++      title: '操作', key: 'actions', width: 160,
++      render: (_, record) => (
++        <Space>
++          <Button size="small" icon={<EditOutlined />} onClick={() => { setEditing(record); form.setFieldsValue(record); setModalOpen(true); }}>编辑</Button>
++          <Popconfirm title="确定删除？" onConfirm={() => handleDelete(record.id)}>
++            <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
++          </Popconfirm>
++        </Space>
++      ),
++    },
++  ];
++
++  return (
++    <>
++      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
++        <h2 style={{ margin: 0 }}>社交渠道管理</h2>
++        <Space>
++          <Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>
++          <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); form.resetFields(); setModalOpen(true); }}>新建</Button>
++        </Space>
++      </div>
++      <Table<SocialChannel> columns={columns} dataSource={channels} rowKey="id" loading={loading} size="middle" pagination={{ pageSize: 20 }} />
++
++      <Modal title={editing ? '编辑渠道' : '新建渠道'} open={modalOpen} onOk={handleSave} onCancel={() => { setModalOpen(false); setEditing(null); form.resetFields(); }} destroyOnClose>
++        <Form form={form} layout="vertical" preserve={false}>
++          <Form.Item name="platform" label="平台" rules={[{ required: true }]}>
++            <Select options={[
++              { value: 'wechat', label: '微信公众号' },
++              { value: 'weibo', label: '微博' },
++            ]} />
++          </Form.Item>
++          <Form.Item name="name" label="名称" rules={[{ required: true }]}>
++            <Input placeholder="渠道名称" />
++          </Form.Item>
++          <Form.Item name="app_id" label="App ID" rules={[{ required: true }]}>
++            <Input placeholder="应用ID" />
++          </Form.Item>
++          <Form.Item name="app_secret" label="App Secret" rules={[{ required: true }]}>
++            <Input.Password placeholder="应用密钥" />
++          </Form.Item>
++          <Form.Item name="token" label="Token">
++            <Input placeholder="验证 Token" />
++          </Form.Item>
++          <Form.Item name="encoding_aes_key" label="EncodingAESKey">
++            <Input placeholder="消息加解密密钥 (43位)" />
++          </Form.Item>
++          <Form.Item name="enabled" label="启用" valuePropName="checked">
++            <Switch />
++          </Form.Item>
++        </Form>
++      </Modal>
++    </>
++  );
++}
+diff --git a/web/src/pages/ivr/IvrFlowEditor.tsx b/web/src/pages/ivr/IvrFlowEditor.tsx
+index 99489d9..e7f99e0 100644
+--- a/web/src/pages/ivr/IvrFlowEditor.tsx
++++ b/web/src/pages/ivr/IvrFlowEditor.tsx
+@@ -1,6 +1,6 @@
+-import { useState, useEffect, useCallback } from 'react';
+-import { Card, Select, Form, Input, InputNumber, Button, Space, Row, Col, message, Tag, Divider } from 'antd';
+-import { PlusOutlined, DeleteOutlined, SaveOutlined } from '@ant-design/icons';
++import { useState, useEffect, useCallback, useRef } from 'react';
++import { Card, Select, Form, Input, InputNumber, Button, Space, Row, Col, message, Tag, Divider, Tooltip } from 'antd';
++import { PlusOutlined, DeleteOutlined, SaveOutlined, ZoomInOutlined, ZoomOutOutlined, UndoOutlined } from '@ant-design/icons';
+ import { ivrFlowApi } from '../../api/endpoints';
+ 
+ const NODE_TYPES = [
+@@ -32,19 +32,42 @@ interface IvrNode {
+   label: string;
+   config: Record<string, unknown>;
+   next: string[];
++  x: number;
++  y: number;
+ }
+ 
++interface CanvasState {
++  offsetX: number;
++  offsetY: number;
++  scale: number;
++}
++
++const NODE_W = 160;
++const NODE_H = 48;
++
+ export default function IvrFlowEditor({ flowId }: { flowId: number }) {
+   const [nodes, setNodes] = useState<IvrNode[]>([]);
+   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+   const [form] = Form.useForm();
++  const [history, setHistory] = useState<IvrNode[][]>([]);
++  const [canvas, setCanvas] = useState<CanvasState>({ offsetX: 0, offsetY: 0, scale: 1 });
++  const [connecting, setConnecting] = useState<string | null>(null);
++  const canvasRef = useRef<HTMLDivElement>(null);
++  const dragRef = useRef<{ nodeId: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
++
++  const pushHistory = (prev: IvrNode[]) => setHistory((h) => [...h.slice(-20), prev]);
+ 
+   const loadFlow = useCallback(async () => {
+     try {
+       const res = await ivrFlowApi.get(flowId);
+       const graph = res.data.graph || res.data.flow_graph;
+       if (graph?.nodes) {
+-        setNodes(graph.nodes);
++        const loaded = graph.nodes.map((n: IvrNode, i: number) => ({
++          ...n,
++          x: n.x ?? 80 + (i % 4) * 200,
++          y: n.y ?? 60 + Math.floor(i / 4) * 100,
++        }));
++        setNodes(loaded);
+       }
+     } catch { /* */ }
+   }, [flowId]);
+@@ -52,12 +75,16 @@ export default function IvrFlowEditor({ flowId }: { flowId: number }) {
+   useEffect(() => { loadFlow(); }, [loadFlow]);
+ 
+   const addNode = (type: string) => {
++    pushHistory(nodes);
+     const id = `node_${Date.now()}`;
+     const typeDef = NODE_TYPES.find((t) => t.value === type);
+-    setNodes([...nodes, { id, type, label: typeDef?.label || type, config: {}, next: [] }]);
++    const x = 80 + (nodes.length % 4) * 200;
++    const y = 60 + Math.floor(nodes.length / 4) * 100;
++    setNodes([...nodes, { id, type, label: typeDef?.label || type, config: {}, next: [], x, y }]);
+   };
+ 
+   const removeNode = (id: string) => {
++    pushHistory(nodes);
+     setNodes(nodes.filter((n) => n.id !== id).map((n) => ({ ...n, next: n.next.filter((nid) => nid !== id) })));
+     if (selectedNode === id) setSelectedNode(null);
+   };
+@@ -75,11 +102,61 @@ export default function IvrFlowEditor({ flowId }: { flowId: number }) {
+     }
+   };
+ 
++  const undo = () => {
++    if (history.length === 0) return;
++    setNodes(history[history.length - 1]);
++    setHistory((h) => h.slice(0, -1));
++  };
++
++  // Drag node on canvas
++  const handleMouseDown = (e: React.MouseEvent, nodeId: string) => {
++    if (connecting) {
++      // Finish connection
++      if (connecting !== nodeId) {
++        pushHistory(nodes);
++        setNodes(nodes.map((n) => n.id === connecting ? { ...n, next: [...new Set([...n.next, nodeId])] } : n));
++      }
++      setConnecting(null);
++      return;
++    }
++    e.stopPropagation();
++    const node = nodes.find((n) => n.id === nodeId);
++    if (!node) return;
++    dragRef.current = { nodeId, startX: e.clientX, startY: e.clientY, origX: node.x, origY: node.y };
++
++    const handleMove = (me: MouseEvent) => {
++      if (!dragRef.current) return;
++      const dx = (me.clientX - dragRef.current.startX) / canvas.scale;
++      const dy = (me.clientY - dragRef.current.startY) / canvas.scale;
++      setNodes((prev) => prev.map((n) => n.id === dragRef.current!.nodeId
++        ? { ...n, x: dragRef.current!.origX + dx, y: dragRef.current!.origY + dy }
++        : n
++      ));
++    };
++    const handleUp = () => {
++      dragRef.current = null;
++      window.removeEventListener('mousemove', handleMove);
++      window.removeEventListener('mouseup', handleUp);
++    };
++    window.addEventListener('mousemove', handleMove);
++    window.addEventListener('mouseup', handleUp);
++  };
++
+   const selected = nodes.find((n) => n.id === selectedNode);
+ 
++  // Render edges as SVG lines
++  const edges: { from: IvrNode; to: IvrNode }[] = [];
++  nodes.forEach((n) => {
++    n.next.forEach((nid) => {
++      const target = nodes.find((t) => t.id === nid);
++      if (target) edges.push({ from: n, to: target });
++    });
++  });
++
+   return (
+-    <Row gutter={16} style={{ minHeight: 500 }}>
+-      <Col span={6}>
++    <Row gutter={16} style={{ minHeight: 560 }}>
++      {/* Node palette */}
++      <Col span={5}>
+         <Card title="节点面板" size="small">
+           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+             {NODE_TYPES.map((t) => (
+@@ -90,34 +167,102 @@ export default function IvrFlowEditor({ flowId }: { flowId: number }) {
+           </div>
+         </Card>
+       </Col>
+-      <Col span={10}>
+-        <Card title="流程图" size="small" extra={<Button icon={<SaveOutlined />} type="primary" onClick={handleSave}>保存</Button>}>
+-          {nodes.length === 0 ? (
+-            <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>点击左侧节点添加到流程</div>
+-          ) : (
+-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
++
++      {/* Canvas */}
++      <Col span={11}>
++        <Card
++          title="流程画布"
++          size="small"
++          extra={
++            <Space size={4}>
++              <Tooltip title="撤销"><Button size="small" icon={<UndoOutlined />} onClick={undo} disabled={history.length === 0} /></Tooltip>
++              <Tooltip title="放大"><Button size="small" icon={<ZoomInOutlined />} onClick={() => setCanvas((c) => ({ ...c, scale: Math.min(c.scale + 0.1, 2) }))} /></Tooltip>
++              <Tooltip title="缩小"><Button size="small" icon={<ZoomOutOutlined />} onClick={() => setCanvas((c) => ({ ...c, scale: Math.max(c.scale - 0.1, 0.4) }))} /></Tooltip>
++              <Button icon={<SaveOutlined />} type="primary" size="small" onClick={handleSave}>保存</Button>
++            </Space>
++          }
++        >
++          <div
++            ref={canvasRef}
++            style={{
++              position: 'relative', height: 480, overflow: 'hidden', background: '#fafafa',
++              backgroundImage: 'radial-gradient(circle, #ddd 1px, transparent 1px)',
++              backgroundSize: '20px 20px', borderRadius: 4, cursor: connecting ? 'crosshair' : 'default',
++            }}
++            onClick={() => { if (connecting) setConnecting(null); }}
++          >
++            <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
++              <g transform={`translate(${canvas.offsetX},${canvas.offsetY}) scale(${canvas.scale})`}>
++                <defs>
++                  <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
++                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#999" />
++                  </marker>
++                </defs>
++                {edges.map((e, i) => {
++                  const x1 = e.from.x + NODE_W / 2;
++                  const y1 = e.from.y + NODE_H;
++                  const x2 = e.to.x + NODE_W / 2;
++                  const y2 = e.to.y;
++                  const midY = (y1 + y2) / 2;
++                  return (
++                    <path
++                      key={i}
++                      d={`M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}`}
++                      fill="none" stroke="#999" strokeWidth={1.5} markerEnd="url(#arrow)"
++                    />
++                  );
++                })}
++              </g>
++            </svg>
++            <div style={{ position: 'absolute', inset: 0, transform: `translate(${canvas.offsetX}px,${canvas.offsetY}px) scale(${canvas.scale})`, transformOrigin: '0 0' }}>
+               {nodes.map((node) => {
+                 const typeDef = NODE_TYPES.find((t) => t.value === node.type);
++                const isSelected = selectedNode === node.id;
+                 return (
+-                  <Card
++                  <div
+                     key={node.id}
+-                    size="small"
+-                    style={{ cursor: 'pointer', border: selectedNode === node.id ? '2px solid #1677ff' : undefined }}
+-                    onClick={() => { setSelectedNode(node.id); form.setFieldsValue(node.config); }}
++                    style={{
++                      position: 'absolute', left: node.x, top: node.y, width: NODE_W,
++                      padding: '6px 10px', background: '#fff', border: `2px solid ${isSelected ? '#1677ff' : '#d9d9d9'}`,
++                      borderRadius: 6, cursor: 'grab', userSelect: 'none', fontSize: 13,
++                      boxShadow: isSelected ? '0 0 8px rgba(22,119,255,0.3)' : '0 1px 3px rgba(0,0,0,0.1)',
++                    }}
++                    onMouseDown={(e) => handleMouseDown(e, node.id)}
++                    onClick={(e) => { e.stopPropagation(); setSelectedNode(node.id); form.setFieldsValue(node.config); }}
+                   >
+-                    <Space>
+-                      <Tag color={typeDef?.color}>{typeDef?.label || node.type}</Tag>
+-                      <span>{node.label}</span>
+-                      {node.next.length > 0 && <Tag>→ {node.next.join(', ')}</Tag>}
+-                      <Button size="small" danger icon={<DeleteOutlined />} onClick={(e) => { e.stopPropagation(); removeNode(node.id); }} />
++                    <Space size={4}>
++                      <Tag color={typeDef?.color} style={{ marginRight: 0, fontSize: 11 }}>{typeDef?.label}</Tag>
++                      <span style={{ fontSize: 12 }}>{node.label !== typeDef?.label ? node.label : ''}</span>
+                     </Space>
+-                  </Card>
++                    {/* Connect handle */}
++                    <div
++                      style={{
++                        position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)',
++                        width: 12, height: 12, borderRadius: '50%', background: connecting === node.id ? '#1677ff' : '#d9d9d9',
++                        border: '2px solid #fff', cursor: 'pointer',
++                      }}
++                      onMouseDown={(e) => { e.stopPropagation(); setConnecting(node.id); }}
++                    />
++                    <div
++                      style={{ position: 'absolute', top: 2, right: 4, cursor: 'pointer', fontSize: 11, color: '#ff4d4f' }}
++                      onClick={(e) => { e.stopPropagation(); removeNode(node.id); }}
++                    >
++                      <DeleteOutlined />
++                    </div>
++                  </div>
+                 );
+               })}
+             </div>
+-          )}
++            {connecting && (
++              <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', background: '#1677ff', color: '#fff', padding: '2px 12px', borderRadius: 4, fontSize: 12 }}>
++                点击目标节点完成连线 (ESC取消)
++              </div>
++            )}
++          </div>
+         </Card>
+       </Col>
++
++      {/* Config panel */}
+       <Col span={8}>
+         <Card title={selected ? `配置: ${selected.label}` : '选择节点'} size="small">
+           {selected ? (
+@@ -130,35 +275,82 @@ export default function IvrFlowEditor({ flowId }: { flowId: number }) {
+                 <>
+                   <Form.Item name="max_digits" label="最大位数"><InputNumber min={1} max={20} /></Form.Item>
+                   <Form.Item name="timeout_sec" label="超时(秒)"><InputNumber min={1} max={30} /></Form.Item>
++                  <Form.Item name="finish_key" label="结束键"><Input placeholder="# 或 *" /></Form.Item>
+                 </>
+               )}
+               {selected.type === 'transfer_to_skill_group' && (
+                 <Form.Item name="skill_group_id" label="技能组ID"><InputNumber /></Form.Item>
+               )}
++              {selected.type === 'transfer_to_agent' && (
++                <Form.Item name="agent_id" label="坐席ID"><InputNumber /></Form.Item>
++              )}
++              {selected.type === 'transfer_to_external' && (
++                <Form.Item name="external_number" label="外线号码"><Input placeholder="外线号码" /></Form.Item>
++              )}
+               {selected.type === 'http_request' && (
+                 <>
+                   <Form.Item name="url" label="URL"><Input /></Form.Item>
+-                  <Form.Item name="method" label="方法"><Select options={[{ value: 'GET' }, { value: 'POST' }]} /></Form.Item>
++                  <Form.Item name="method" label="方法"><Select options={[{ value: 'GET' }, { value: 'POST' }, { value: 'PUT' }]} /></Form.Item>
++                  <Form.Item name="headers" label="请求头(JSON)"><Input.TextArea rows={2} /></Form.Item>
++                  <Form.Item name="body" label="请求体"><Input.TextArea rows={2} /></Form.Item>
+                 </>
+               )}
++              {selected.type === 'json_parser' && (
++                <Form.Item name="json_path" label="JSON Path"><Input placeholder="$.data.result" /></Form.Item>
++              )}
+               {selected.type === 'condition' && (
+                 <Form.Item name="expression" label="条件表达式"><Input placeholder="e.g. ${dtmf} == 1" /></Form.Item>
+               )}
++              {selected.type === 'time_condition' && (
++                <>
++                  <Form.Item name="business_hours_id" label="营业时间ID"><InputNumber /></Form.Item>
++                  <Form.Item name="timezone" label="时区"><Input placeholder="Asia/Shanghai" /></Form.Item>
++                </>
++              )}
++              {selected.type === 'variable_assign' && (
++                <>
++                  <Form.Item name="variable_name" label="变量名"><Input /></Form.Item>
++                  <Form.Item name="variable_value" label="值"><Input /></Form.Item>
++                </>
++              )}
+               {selected.type === 'sms' && (
+-                <Form.Item name="template_id" label="短信模板ID"><Input /></Form.Item>
++                <>
++                  <Form.Item name="template_id" label="短信模板ID"><Input /></Form.Item>
++                  <Form.Item name="sign_name" label="签名"><Input /></Form.Item>
++                </>
++              )}
++              {selected.type === 'voicemail' && (
++                <>
++                  <Form.Item name="max_duration_sec" label="最大录音(秒)"><InputNumber min={5} max={300} /></Form.Item>
++                  <Form.Item name="greeting_audio_id" label="问候语音ID"><Input /></Form.Item>
++                </>
++              )}
++              {selected.type === 'callback' && (
++                <Form.Item name="callback_queue_id" label="回呼队列ID"><InputNumber /></Form.Item>
++              )}
++              {selected.type === 'satisfaction_rating' && (
++                <Form.Item name="survey_type" label="调研类型">
++                  <Select options={[{ value: 'dtmf', label: '按键评分' }, { value: 'voice', label: '语音评分' }]} />
++                </Form.Item>
++              )}
++              {selected.type === 'asr' && (
++                <>
++                  <Form.Item name="language" label="语言"><Input placeholder="zh-CN" /></Form.Item>
++                  <Form.Item name="hotword_group_id" label="热词组ID"><InputNumber /></Form.Item>
++                </>
+               )}
+               <Divider>连线</Divider>
+               <Form.Item label="连接到">
+                 <Select
+                   mode="multiple"
+                   value={selected.next}
+-                  onChange={(vals: string[]) => setNodes(nodes.map((n) => n.id === selected.id ? { ...n, next: vals } : n))}
++                  onChange={(vals: string[]) => { pushHistory(nodes); setNodes(nodes.map((n) => n.id === selected.id ? { ...n, next: vals } : n)); }}
+                   options={nodes.filter((n) => n.id !== selected.id).map((n) => ({ value: n.id, label: `${n.label} (${n.type})` }))}
+                 />
+               </Form.Item>
+             </Form>
+           ) : (
+-            <div style={{ color: '#999', textAlign: 'center', padding: 40 }}>点击流程图中的节点进行配置</div>
++            <div style={{ color: '#999', textAlign: 'center', padding: 40 }}>点击画布中的节点进行配置</div>
+           )}
+         </Card>
+       </Col>

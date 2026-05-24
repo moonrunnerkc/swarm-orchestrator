@@ -1,0 +1,26 @@
+{
+  "id": "replit-agent-byrongamatos-slopsmith-pr332",
+  "agent": {
+    "vendor": "replit-agent",
+    "confidence": "low",
+    "source": "body=replit-agent-footer"
+  },
+  "pr": {
+    "number": 332,
+    "headSha": "68fd94d06f4fe62a670496e90df0b31d7887eff6",
+    "baseSha": "c77d7bdd4f0f3fd8c110cce5f161961da2877e70",
+    "title": "chore: modernize AI tooling (AGENTS.md-first, plugin schema, Claude surfaces)",
+    "body": "## Summary\n\nRestructures contributor-facing AI tooling around the cross-tool **AGENTS.md** standard (read natively by Cursor, Copilot, Codex, Aider, Cline, Continue, Cody, Devin, Replit Agent, and Claude Code). Slims `CLAUDE.md` from 545 → 22 lines via a `@AGENTS.md` import so Claude Code's auto-load convention is preserved without duplicating content. Extracts the plugin-author surface (~300 lines) from `CLAUDE.md` into 10 focused `docs/plugin-*.md` files. Formalizes `plugin.json` with a JSON Schema validated in CI. Adds 2 Claude skills (`plugin-scaffold`, `plugin-validate`), a `plugins/**`-scoped rule, and a `@slopsmith-reviewer` subagent.\n\n- **`AGENTS.md`** (178 lines) — single source of truth: architecture, running the app, testing, conventions, plugin authoring index, first-hour pitfalls, verification, house rules.\n- **`CLAUDE.md`** (22 lines) — `@AGENTS.md` import + `.claude/` surface index.\n- **`docs/`** — 10 new `plugin-*.md` files + `websocket-protocol.md` + `testing-plugins.md`.\n- **`schema/plugin.schema.json`** — Draft 2020-12; license enum mirrors `CONTRIBUTING.md` curated allowlist.\n- **CI** — `.github/workflows/validate-plugins.yml` + `tests/test_plugin_schema.py` (8 parametrized tests).\n- **`.claude/`** — README, settings (hooks off by default), 2 skills, 1 rule, 1 subagent.\n- **`.github/`** — PR template + 3 issue templates (bug/feature/config) + Copilot instructions.\n\n## Why\n\n- Discoverability: plugin authors no longer scroll 300 lines of one file.\n- Tool neutrality: Cursor/Copilot/Aider/etc. read `AGENTS.md` and `docs/**.md` natively; Claude Code keeps its automation surface under `.claude/`.\n- Maintainer-aligned: `specs/001-slopsmith-platform/analyze.md` already requested a versioned plugin schema (line 193).\n- Context budget: `CLAUDE.md` was ~14K tokens of largely plugin-specific content that doesn't apply to most contributor tasks.\n\n## Commits (3, all PGP-signed + DCO-signed)\n\n1. `docs: extract plugin contracts into modular docs and slim CLAUDE.md`\n2. `feat: add cross-tool orientation, CI schema validation, and Claude Code surfaces`\n3. `fix: address PR #332 review feedback`\n\n## Test plan\n\n- [x] `pytest -q` — all backend tests pass (`tests/test_plugin_schema.py` adds 8 parametrized tests)\n- [x] `python -c \"import json,glob,jsonschema; s=json.load(open('schema/plugin.schema.json')); [jsonschema.validate(json.load(open(p)), s) for p in sorted(glob.glob('plugins/*/plugin.json'))]\"` — validates all 3 in-tree manifests (`highway_3d`, `app_tour_library`, `app_tour_settings`)\n- [x] `CLAUDE.md` size: 22 lines / 2 KB (was 545 lines / 50 KB)\n- [x] `AGENTS.md` size: 178 lines / 13 KB\n- [x] Spec-kit untouched: `git diff main... -- .specify/ specs/ .claude/skills/speckit-*` is empty\n- [x] Internal links resolve (no `MISSING:` lines from cross-link grep)\n- [x] License enum subset check: schema enum ⊆ `CONTRIBUTING.md` curated list\n- [x] **Review feedback resolved (13/13):** 12 inline comments from Copilot + CodeRabbit fixed in `68fd94d`; the 1 declined (no-manifests-exit-0) was [retracted by CodeRabbit](https://github.com/byrongamatos/slopsmith/pull/332#discussion_r3268739454) after architectural rationale (in-tree plugins, path-filtered workflow).\n- [x] **`CLAUDE.md` flip rationale:** kept at 22 lines so Claude Code's auto-load convention is preserved; uses Anthropic's [`@AGENTS.md` import syntax](https://docs.claude.com/en/docs/claude-code/memory) to inline the canonical orientation without duplicating content. Deleting `CLAUDE.md` would have lost the auto-load; keeping its prior 545 lines would have guaranteed drift with AGENTS.md.\n- [ ] CI run on PR (validate-plugins.yml + main pytest workflow) — pending GitHub Actions (maintainer approval required for fork PR)\n- [ ] Maintainer review of `AGENTS.md` orientation accuracy\n",
+    "author": "MiguelLZPF",
+    "headRef": "chore/ai-tooling-modernization",
+    "repository": "byrongamatos/slopsmith"
+  },
+  "diffRef": {
+    "repository": "byrongamatos/slopsmith",
+    "headSha": "68fd94d06f4fe62a670496e90df0b31d7887eff6",
+    "baseSha": "c77d7bdd4f0f3fd8c110cce5f161961da2877e70"
+  },
+  "vendoredDiffPath": "unconfirmed/replit-agent/replit-agent-byrongamatos-slopsmith-pr332.diff",
+  "vendoredAt": "2026-05-24T03:14:19.028Z",
+  "collectedAt": "2026-05-24T03:14:19.028Z"
+}

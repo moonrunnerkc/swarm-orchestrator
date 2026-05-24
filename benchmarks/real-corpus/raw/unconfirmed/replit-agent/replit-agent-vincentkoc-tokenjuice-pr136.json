@@ -1,0 +1,26 @@
+{
+  "id": "replit-agent-vincentkoc-tokenjuice-pr136",
+  "agent": {
+    "vendor": "replit-agent",
+    "confidence": "low",
+    "source": "body=replit-agent-footer"
+  },
+  "pr": {
+    "number": 136,
+    "headSha": "facdf18c7bd4871f76e105f8f5cd75c669319529",
+    "baseSha": "d7f2f68cadec1b3b286523863e0abef372e7475a",
+    "title": "feat(replit): add agent instructions integration",
+    "body": "## Summary\n- add a beta `replit` instruction integration that manages a marker-delimited `replit.md` block for Replit Agent terminal-output guidance\n- resolve the default target from `REPLIT_PROJECT_DIR` or the nearest git/project root, and wire install, uninstall, doctor, aggregate doctor, exports, docs, changelog, and CLI host lists\n- harden malformed-marker handling so direct and aggregate doctor report broken Replit blocks consistently before install/uninstall refuse unsafe rewrites\n\n## Validation\n- `pnpm exec vitest run test/hosts/replit.test.ts test/cli/doctor-output.test.ts` (2 files, 12 tests)\n- `pnpm lint`\n- `pnpm exec tsc -p tsconfig.json --noEmit --pretty false`\n- `pnpm build`\n- `pnpm verify` (68 files, 1054 tests)\n- `git diff --check origin/feat/warp-integration...HEAD`\n- privacy scan over changed text files\n- `.agents/skills/autoreview/scripts/autoreview --mode branch --base origin/feat/warp-integration --prompt \"Review the Replit agent instructions integration stacked on Warp after rebasing onto the updated Warp branch and fixing malformed nested Replit marker doctor detection. Focus on Replit rules path/projectDir behavior, install/doctor/uninstall marker handling including malformed markers, aggregate doctor option forwarding, docs/spec accuracy, tests, and regressions to existing rule/instruction hosts. Reject speculative broad rewrites; report concrete bugs only.\"` (clean)\n\n## Review notes\n- autoreview initially found nested/malformed Replit markers could be reported healthy by doctor while install/uninstall refused them; fixed by adding explicit malformed-marker doctor coverage and a nested-marker regression.\n",
+    "author": "vincentkoc",
+    "headRef": "feat/replit-integration",
+    "repository": "vincentkoc/tokenjuice"
+  },
+  "diffRef": {
+    "repository": "vincentkoc/tokenjuice",
+    "headSha": "facdf18c7bd4871f76e105f8f5cd75c669319529",
+    "baseSha": "d7f2f68cadec1b3b286523863e0abef372e7475a"
+  },
+  "vendoredDiffPath": "unconfirmed/replit-agent/replit-agent-vincentkoc-tokenjuice-pr136.diff",
+  "vendoredAt": "2026-05-24T03:13:49.759Z",
+  "collectedAt": "2026-05-24T03:13:49.759Z"
+}

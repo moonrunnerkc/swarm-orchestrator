@@ -1,0 +1,228 @@
+diff --git a/README.md b/README.md
+index 6cc139862..77878abdc 100644
+--- a/README.md
++++ b/README.md
+@@ -37,6 +37,37 @@ message = client.messages.create(
+ print(message.content)
+ ```
+ 
++## File uploads
++
++Request methods that accept `files` use the same tuple format as
++[httpx](https://www.python-httpx.org/advanced/clients/#multipart-file-encoding):
++`("filename", file_or_bytes, "content/type")`.
++
++Skill uploads require each filename to include a single top-level directory that
++contains `SKILL.md`. That directory name must exactly match the `name` field in
++`SKILL.md`. For example, if `SKILL.md` contains `name: greeting`, upload it as
++`greeting/SKILL.md`, not just `SKILL.md`:
++
++```python
++with open("SKILL.md", "rb") as skill_file:
++    client.beta.skills.create(
++        display_title="Greeting skill",
++        files=[("greeting/SKILL.md", skill_file, "text/markdown")],
++    )
++```
++
++For a skill directory on disk, `anthropic.lib.files_from_dir()` can build the
++proper paths for you:
++
++```python
++from anthropic.lib import files_from_dir
++
++client.beta.skills.create(
++    display_title="Greeting skill",
++    files=files_from_dir("greeting"),
++)
++```
++
+ ## Requirements
+ 
+ Python 3.9+
+diff --git a/examples/agents_comprehensive.py b/examples/agents_comprehensive.py
+index 8452257aa..edcd3f183 100644
+--- a/examples/agents_comprehensive.py
++++ b/examples/agents_comprehensive.py
+@@ -19,9 +19,7 @@ def main() -> None:
+ 
+     github_token = os.environ.get("GITHUB_TOKEN")
+     if not github_token:
+-        raise RuntimeError(
+-            "GITHUB_TOKEN is required (use a fine-grained PAT with public-repo read only)"
+-        )
++        raise RuntimeError("GITHUB_TOKEN is required (use a fine-grained PAT with public-repo read only)")
+ 
+     # Create an environment
+     environment = anthropic.beta.environments.create(
+@@ -44,7 +42,8 @@ def main() -> None:
+     )
+     print("Created credential:", credential.id)
+ 
+-    # Upload a custom skill
++    # Upload a custom skill. Skill file paths must be rooted in a directory whose
++    # name matches the `name` field in SKILL.md (`greeting` in this example).
+     skill_md_path = os.path.join(os.path.dirname(__file__), "greeting-SKILL.md")
+     with open(skill_md_path, "rb") as skill_file:
+         skill = anthropic.beta.skills.create(
+@@ -102,9 +101,7 @@ def main() -> None:
+     print("Streaming events:")
+     anthropic.beta.sessions.events.send(
+         session.id,
+-        events=[
+-            {"type": "user.message", "content": [{"type": "text", "text": PROMPT}]}
+-        ],
++        events=[{"type": "user.message", "content": [{"type": "text", "text": PROMPT}]}],
+     )
+ 
+     with anthropic.beta.sessions.events.stream(session.id) as stream:
+@@ -123,11 +120,7 @@ def main() -> None:
+                         }
+                     ],
+                 )
+-            if (
+-                event.type == "session.status_idle"
+-                and event.stop_reason
+-                and event.stop_reason.type == "end_turn"
+-            ):
++            if event.type == "session.status_idle" and event.stop_reason and event.stop_reason.type == "end_turn":
+                 break
+ 
+ 
+diff --git a/src/anthropic/resources/beta/skills/skills.py b/src/anthropic/resources/beta/skills/skills.py
+index b2241a6da..b8ae5df7e 100644
+--- a/src/anthropic/resources/beta/skills/skills.py
++++ b/src/anthropic/resources/beta/skills/skills.py
+@@ -93,7 +93,9 @@ def create(
+           files: Files to upload for the skill.
+ 
+               All files must be in the same top-level directory and must include a SKILL.md
+-              file at the root of that directory.
++              file at the root of that directory. The directory name must exactly match
++              the `name` field in SKILL.md (for example, `greeting/SKILL.md` for
++              `name: greeting`).
+ 
+           betas: Optional header to specify the beta version(s) you want to use.
+ 
+@@ -365,7 +367,9 @@ async def create(
+           files: Files to upload for the skill.
+ 
+               All files must be in the same top-level directory and must include a SKILL.md
+-              file at the root of that directory.
++              file at the root of that directory. The directory name must exactly match
++              the `name` field in SKILL.md (for example, `greeting/SKILL.md` for
++              `name: greeting`).
+ 
+           betas: Optional header to specify the beta version(s) you want to use.
+ 
+diff --git a/src/anthropic/resources/beta/skills/versions.py b/src/anthropic/resources/beta/skills/versions.py
+index ef1be174c..6476381c8 100644
+--- a/src/anthropic/resources/beta/skills/versions.py
++++ b/src/anthropic/resources/beta/skills/versions.py
+@@ -91,7 +91,9 @@ def create(
+           files: Files to upload for the skill.
+ 
+               All files must be in the same top-level directory and must include a SKILL.md
+-              file at the root of that directory.
++              file at the root of that directory. The directory name must exactly match
++              the `name` field in SKILL.md (for example, `greeting/SKILL.md` for
++              `name: greeting`).
+ 
+           betas: Optional header to specify the beta version(s) you want to use.
+ 
+@@ -424,7 +426,9 @@ async def create(
+           files: Files to upload for the skill.
+ 
+               All files must be in the same top-level directory and must include a SKILL.md
+-              file at the root of that directory.
++              file at the root of that directory. The directory name must exactly match
++              the `name` field in SKILL.md (for example, `greeting/SKILL.md` for
++              `name: greeting`).
+ 
+           betas: Optional header to specify the beta version(s) you want to use.
+ 
+diff --git a/src/anthropic/types/beta/skill_create_params.py b/src/anthropic/types/beta/skill_create_params.py
+index d0341f9b8..b2691c6c4 100644
+--- a/src/anthropic/types/beta/skill_create_params.py
++++ b/src/anthropic/types/beta/skill_create_params.py
+@@ -24,7 +24,9 @@ class SkillCreateParams(TypedDict, total=False):
+     """Files to upload for the skill.
+ 
+     All files must be in the same top-level directory and must include a SKILL.md
+-    file at the root of that directory.
++    file at the root of that directory. The directory name must exactly match the
++    `name` field in SKILL.md (for example, `greeting/SKILL.md` for
++    `name: greeting`).
+     """
+ 
+     betas: Annotated[List[AnthropicBetaParam], PropertyInfo(alias="anthropic-beta")]
+diff --git a/src/anthropic/types/beta/skills/version_create_params.py b/src/anthropic/types/beta/skills/version_create_params.py
+index 66bb7680b..a078e32a6 100644
+--- a/src/anthropic/types/beta/skills/version_create_params.py
++++ b/src/anthropic/types/beta/skills/version_create_params.py
+@@ -17,7 +17,9 @@ class VersionCreateParams(TypedDict, total=False):
+     """Files to upload for the skill.
+ 
+     All files must be in the same top-level directory and must include a SKILL.md
+-    file at the root of that directory.
++    file at the root of that directory. The directory name must exactly match the
++    `name` field in SKILL.md (for example, `greeting/SKILL.md` for
++    `name: greeting`).
+     """
+ 
+     betas: Annotated[List[AnthropicBetaParam], PropertyInfo(alias="anthropic-beta")]
+diff --git a/tests/lib/test_files.py b/tests/lib/test_files.py
+new file mode 100644
+index 000000000..62d67320f
+--- /dev/null
++++ b/tests/lib/test_files.py
+@@ -0,0 +1,49 @@
++from __future__ import annotations
++
++from pathlib import Path
++from collections.abc import Iterable
++
++import pytest
++
++from anthropic.lib import files_from_dir, async_files_from_dir
++
++
++def _write_skill_tree(root: Path) -> Path:
++    skill_dir = root / "greeting"
++    (skill_dir / "scripts").mkdir(parents=True)
++    (skill_dir / "SKILL.md").write_text("---\nname: greeting\n---\n", encoding="utf-8")
++    (skill_dir / "scripts" / "hello.py").write_text("print('ahoy')\n", encoding="utf-8")
++    return skill_dir
++
++
++def _bytes_by_name(files: Iterable[object]) -> dict[str, bytes]:
++    result: dict[str, bytes] = {}
++    for file in files:
++        assert isinstance(file, tuple)
++        assert isinstance(file[0], str)
++        assert isinstance(file[1], bytes)
++        result[file[0]] = file[1]
++    return result
++
++
++def test_files_from_dir_preserves_skill_top_level(tmp_path: Path) -> None:
++    skill_dir = _write_skill_tree(tmp_path)
++
++    files = _bytes_by_name(files_from_dir(skill_dir))
++
++    assert files == {
++        "greeting/SKILL.md": b"---\nname: greeting\n---\n",
++        "greeting/scripts/hello.py": b"print('ahoy')\n",
++    }
++
++
++@pytest.mark.asyncio
++async def test_async_files_from_dir_preserves_skill_top_level(tmp_path: Path) -> None:
++    skill_dir = _write_skill_tree(tmp_path)
++
++    files = _bytes_by_name(await async_files_from_dir(skill_dir))
++
++    assert files == {
++        "greeting/SKILL.md": b"---\nname: greeting\n---\n",
++        "greeting/scripts/hello.py": b"print('ahoy')\n",
++    }

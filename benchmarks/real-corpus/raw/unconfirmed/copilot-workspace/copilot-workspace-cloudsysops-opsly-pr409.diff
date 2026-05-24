@@ -1,0 +1,131 @@
+diff --git a/apps/orchestrator/src/__tests__/health-worker-restart.test.ts b/apps/orchestrator/src/__tests__/health-worker-restart.test.ts
+new file mode 100644
+index 00000000..6ec1bd9c
+--- /dev/null
++++ b/apps/orchestrator/src/__tests__/health-worker-restart.test.ts
+@@ -0,0 +1,62 @@
++import { describe, it, expect, vi, beforeEach } from 'vitest';
++
++const mockExeca = vi.fn();
++
++vi.mock('execa', () => ({
++  execa: mockExeca,
++}));
++
++import { buildTenantRestartAttempts, tryDockerRestart } from '../workers/HealthWorker.js';
++
++describe('HealthWorker restart attempts', () => {
++  beforeEach(() => {
++    vi.clearAllMocks();
++  });
++
++  it('builds restart attempts prioritizing direct container restart for n8n', () => {
++    expect(buildTenantRestartAttempts('jkboterolabs', 'n8n')).toEqual([
++      ['restart', 'n8n_jkboterolabs'],
++      ['compose', '--project-name=tenant_jkboterolabs', 'restart', 'n8n'],
++      ['compose', '--project-name=tenant_jkboterolabs', 'restart'],
++    ]);
++  });
++
++  it('returns true when direct container restart succeeds', async () => {
++    mockExeca.mockResolvedValueOnce({ stdout: '' });
++
++    const restarted = await tryDockerRestart('jkboterolabs', 'n8n');
++
++    expect(restarted).toBe(true);
++    expect(mockExeca).toHaveBeenCalledTimes(1);
++    expect(mockExeca).toHaveBeenCalledWith('docker', ['restart', 'n8n_jkboterolabs']);
++  });
++
++  it('falls back to compose restart when direct restart fails', async () => {
++    mockExeca
++      .mockRejectedValueOnce(new Error('container missing'))
++      .mockResolvedValueOnce({ stdout: '' });
++
++    const restarted = await tryDockerRestart('jkboterolabs', 'n8n');
++
++    expect(restarted).toBe(true);
++    expect(mockExeca).toHaveBeenNthCalledWith(1, 'docker', ['restart', 'n8n_jkboterolabs']);
++    expect(mockExeca).toHaveBeenNthCalledWith(2, 'docker', [
++      'compose',
++      '--project-name=tenant_jkboterolabs',
++      'restart',
++      'n8n',
++    ]);
++  });
++
++  it('returns false when all restart attempts fail', async () => {
++    mockExeca
++      .mockRejectedValueOnce(new Error('container missing'))
++      .mockRejectedValueOnce(new Error('compose service missing'))
++      .mockRejectedValueOnce(new Error('compose project missing'));
++
++    const restarted = await tryDockerRestart('jkboterolabs', 'n8n');
++
++    expect(restarted).toBe(false);
++    expect(mockExeca).toHaveBeenCalledTimes(3);
++  });
++});
+diff --git a/apps/orchestrator/src/workers/HealthWorker.ts b/apps/orchestrator/src/workers/HealthWorker.ts
+index 951e9c76..14e005c5 100644
+--- a/apps/orchestrator/src/workers/HealthWorker.ts
++++ b/apps/orchestrator/src/workers/HealthWorker.ts
+@@ -83,14 +83,38 @@ async function resetFailures(redis: ReturnType<typeof createClient>, key: string
+   await redis.del(key);
+ }
+ 
+-async function tryDockerRestart(slug: string): Promise<boolean> {
++const RESTARTABLE_SERVICE_CONTAINERS: Record<string, string> = {
++  n8n: 'n8n',
++  uptime: 'uptime',
++};
++
++export function buildTenantRestartAttempts(slug: string, svc: string): string[][] {
++  const containerPrefix = RESTARTABLE_SERVICE_CONTAINERS[svc];
++  const attempts: string[][] = [];
++
++  if (containerPrefix) {
++    attempts.push(['restart', `${containerPrefix}_${slug}`]);
++    attempts.push(['compose', `--project-name=tenant_${slug}`, 'restart', svc]);
++  }
++
++  attempts.push(['compose', `--project-name=tenant_${slug}`, 'restart']);
++  return attempts;
++}
++
++export async function tryDockerRestart(slug: string, svc: string): Promise<boolean> {
+   const { execa } = await import('execa');
+-  try {
+-    await execa('docker', ['compose', `--project-name=tenant_${slug}`, 'restart']);
+-    return true;
+-  } catch {
+-    return false;
++  const attempts = buildTenantRestartAttempts(slug, svc);
++
++  for (const args of attempts) {
++    try {
++      await execa('docker', args);
++      return true;
++    } catch {
++      continue;
++    }
+   }
++
++  return false;
+ }
+ 
+ async function openGitHubIssue(slug: string, details: string): Promise<void> {
+@@ -153,11 +177,11 @@ async function checkTenant(redis: ReturnType<typeof createClient>, slug: string)
+         await redis.set(lockKey, '1', { EX: RESTART_LOCK_TTL });
+         await notifyDiscord(
+           `⚠️ Tenant unreachable — attempting restart`,
+-          `**${slug}** / \`${svc}\` falló ${failures} veces consecutivas.\nURL: ${url}\nIntentando \`docker compose restart\`…`,
++          `**${slug}** / \`${svc}\` falló ${failures} veces consecutivas.\nURL: ${url}\nIntentando \`docker restart\`…`,
+           'warning'
+         );
+ 
+-        const restarted = await tryDockerRestart(slug);
++        const restarted = await tryDockerRestart(slug, svc);
+         if (restarted) {
+           await notifyDiscord(
+             `🔄 Restart triggered for ${slug}`,

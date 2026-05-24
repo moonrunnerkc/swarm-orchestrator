@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-k1LoW-codex-agent-sdk-go-pr2",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "commit=codex-cli-footer"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "aef544618da5d71413b639d74e6e7f93eaf09627",
+    "baseSha": "4fe92f1ee8c68e95b8e9871735913400cd8e5771",
+    "title": "Add Codex CLI config overrides",
+    "body": "## Summary\r\n  - Add WithConfig(map[string]string) for temporary Codex CLI config overrides\r\n  - Pass overrides to the Codex CLI as repeated -c key=value arguments, matching `codex -c key=value`\r\n  - Sort config keys for deterministic argument ordering in tests\r\n  - Document config override usage in README\r\n\r\n  ## Motivation\r\n  The main use case is overriding Codex CLI config values that are only available through temporary config overrides, especially `model_instructions_file`, without requiring users to modify their persistent Codex config.\r\n\r\n  Example:\r\n\r\n  ```go\r\n  codex.WithOptions(\r\n      codex.WithConfig(map[string]string{\r\n          \"model\":                   \"gpt-5.4\",\r\n          \"model_instructions_file\": \"/path/to/instructions.md\",\r\n      }),\r\n  )\r\n\r\n  This lets SDK users start the Codex app-server with arguments equivalent to:\r\n\r\n  codex -c model=gpt-5.4 -c model_instructions_file=/path/to/instructions.md app-server --listen stdio://\r\n\r\n  ## Tests\r\n\r\n  - go test ./...\r\n  - Smoke-tested WithConfig using model=openai/gpt-5.4 against the real Codex CLI\r\n\r\n ## Reference\r\nhttps://developers.openai.com/codex/config-advanced\r\n",
+    "author": "1c3z",
+    "headRef": "add-config-overrides",
+    "repository": "k1LoW/codex-agent-sdk-go"
+  },
+  "diffRef": {
+    "repository": "k1LoW/codex-agent-sdk-go",
+    "headSha": "aef544618da5d71413b639d74e6e7f93eaf09627",
+    "baseSha": "4fe92f1ee8c68e95b8e9871735913400cd8e5771"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-k1LoW-codex-agent-sdk-go-pr2.diff",
+  "vendoredAt": "2026-05-24T03:12:40.223Z",
+  "collectedAt": "2026-05-24T03:12:40.223Z"
+}

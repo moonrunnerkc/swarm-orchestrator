@@ -1,0 +1,83 @@
+diff --git a/.github/workflows/publish-pypi.yml b/.github/workflows/publish-pypi.yml
+index af6786755..68f20007d 100644
+--- a/.github/workflows/publish-pypi.yml
++++ b/.github/workflows/publish-pypi.yml
+@@ -1,8 +1,11 @@
+-# workflow for re-running publishing to PyPI in case it fails for some reason
+-# you can run this workflow by navigating to https://www.github.com/anthropics/anthropic-sdk-python/actions/workflows/publish-pypi.yml
++# workflow for publishing to PyPI using Trusted Publishing
++# replaces the manual PYPI_TOKEN approach with OIDC-based authentication
++# see: https://docs.pypi.org/trusted-publishers/
+ name: Publish PyPI
++
+ on:
+-  workflow_dispatch:
++  release:
++    types: [published]
+ 
+ jobs:
+   publish:
+@@ -10,6 +13,9 @@ jobs:
+     runs-on: ubuntu-latest
+     environment: production-release
+ 
++    permissions:
++      id-token: write
++
+     steps:
+       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+ 
+@@ -18,8 +24,8 @@ jobs:
+         with:
+           version: '0.9.13'
+ 
++      - name: Build
++        run: uv build
++
+       - name: Publish to PyPI
+-        run: |
+-          bash ./bin/publish-pypi
+-        env:
+-          PYPI_TOKEN: ${{ secrets.ANTHROPIC_PYPI_TOKEN || secrets.PYPI_TOKEN }}
++        uses: pypa/gh-action-pypi-publish@release/v1
+\ No newline at end of file
+diff --git a/src/anthropic/lib/tools/_beta_runner.py b/src/anthropic/lib/tools/_beta_runner.py
+index 039cb4b52..42455c9a3 100644
+--- a/src/anthropic/lib/tools/_beta_runner.py
++++ b/src/anthropic/lib/tools/_beta_runner.py
+@@ -279,8 +279,15 @@ def __run__(self) -> Iterator[RunnerItemT]:
+                     log.debug("Tool call was not requested, exiting from tool runner loop.")
+                     return
+ 
+-                if not self._messages_modified:
+-                    self.append_messages(message, response)
++                # If user has called append_messages() to add additional messages but also
++                # called generate_tool_call_response() (e.g., to log the tool result), we need
++                # to clear the cache so the auto-append happens. Otherwise the tool result
++                # is never added to history and the model re-calls the tool forever.
++                if self._messages_modified:
++                    self._cached_tool_call_response = None
++                    self._messages_modified = False
++
++                self.append_messages(message, response)
+ 
+             self._messages_modified = False
+             self._cached_tool_call_response = None
+@@ -560,8 +567,15 @@ async def __run__(self) -> AsyncIterator[RunnerItemT]:
+                     log.debug("Tool call was not requested, exiting from tool runner loop.")
+                     return
+ 
+-                if not self._messages_modified:
+-                    self.append_messages(message, response)
++                # If user has called append_messages() to add additional messages but also
++                # called generate_tool_call_response() (e.g., to log the tool result), we need
++                # to clear the cache so the auto-append happens. Otherwise the tool result
++                # is never added to history and the model re-calls the tool forever.
++                if self._messages_modified:
++                    self._cached_tool_call_response = None
++                    self._messages_modified = False
++
++                self.append_messages(message, response)
+ 
+             self._messages_modified = False
+             self._cached_tool_call_response = None

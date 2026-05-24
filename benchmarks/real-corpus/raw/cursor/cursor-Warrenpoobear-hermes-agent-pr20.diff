@@ -1,0 +1,591 @@
+diff --git a/.cursor/commands/agent-handoff.md b/.cursor/commands/agent-handoff.md
+new file mode 100644
+index 00000000000..c1f8d8a05b3
+--- /dev/null
++++ b/.cursor/commands/agent-handoff.md
+@@ -0,0 +1,34 @@
++---
++description: Build a read-only handoff bundle for a named Hermes agent
++arguments:
++  - name: agent_name
++    description: Agent name to hand off, e.g. herald or bellringer
++    required: true
++---
++
++# Agent Handoff: {{agent_name}}
++
++## Step 1: Fetch the bounded bundle
++
++1. `town_handoff_bundle(agent_name="{{agent_name}}")`
++2. If the bundle reports `agent.found=false`, fall back to:
++   - `agents_get(name="{{agent_name}}")`
++   - `skills_read(name="{{agent_name}}")`
++
++## Step 2: Check authority and truth layers
++
++- Use SOUL.md / IDENTITY / HEARTBEAT as behavioral truth.
++- Use `AGENT_REGISTRY.json` only as index and discovery metadata.
++- Check latest-state, held-spec, contradiction, and learnings matches in the bundle.
++
++## Step 3: Report for the receiving agent
++
++Summarize:
++- Agent found: `[yes/no]`
++- Behavioral truth path: `[SOUL.md path]`
++- Registry status/lane/authority: `[values]`
++- Heartbeat status: `[fresh/stale/missing]`
++- Relevant held specs or contradictions: `[list or none]`
++- Safe next action: `[specific action]`
++
++Do not write to `.learnings/`, artifacts, registry, or SOUL files through MCP.
+diff --git a/.cursor/commands/cursor-bootstrap.md b/.cursor/commands/cursor-bootstrap.md
+new file mode 100644
+index 00000000000..c4618b90e23
+--- /dev/null
++++ b/.cursor/commands/cursor-bootstrap.md
+@@ -0,0 +1,27 @@
++---
++description: Bootstrap a Cursor agent with bounded Hermes Town context
++---
++
++# Cursor Bootstrap
++
++## Step 1: Start with the compact view
++
++1. `town_brief()` — status, paths, gateway mode, active issues, next MCP calls.
++2. If `town_brief` is unavailable, use `fleet_context_snapshot(summary=True)`.
++
++## Step 2: Decide whether to expand context
++
++- If changing a named agent: run `town_handoff_bundle(agent_name="<agent>")`.
++- If changing a governed spec or pipeline: run `town_handoff_bundle(spec_id="<spec>")`.
++- If health is not `ok`: run `agent_health_summary()`.
++
++## Step 3: Report before editing
++
++Summarize:
++- Source of truth: `[HERMES_AGENTS_DIR/HERMES_REPO/agents/etc.]`
++- Gateway: `[reachable/not reachable]`
++- Missing layers or stale heartbeats: `[list or none]`
++- Held spec flags: `[count and top matches]`
++- Next allowed action: `[specific action]`
++
++Do not write to `.learnings/`, artifacts, registry, or SOUL files through MCP.
+diff --git a/.cursor/commands/gateway-status.md b/.cursor/commands/gateway-status.md
+new file mode 100644
+index 00000000000..146990a1a3b
+--- /dev/null
++++ b/.cursor/commands/gateway-status.md
+@@ -0,0 +1,27 @@
++---
++description: Check whether Hermes MCP is in skills-only or live-ops mode
++---
++
++# Gateway Status
++
++## Step 1: Fetch mode and health
++
++1. `town_brief()`
++2. If more detail is needed: `agent_health_summary()`
++
++## Step 2: Interpret mode
++
++- `gateway.reachable=true`: live ops tools may be usable.
++- `gateway.reachable=false`: skills/context tools are still healthy if `skills_context_available=true`.
++- Messaging send/approval tools require a running gateway and active platform sessions.
++
++## Step 3: Report
++
++Summarize:
++- MCP mode: `[skills_only/live_ops]`
++- Gateway reachable: `[yes/no]`
++- Skills/context available: `[yes/no]`
++- Live ops caveat: `[what is unavailable]`
++- Next action: `[start gateway / continue offline / investigate sessions]`
++
++Do not treat gateway unavailability as a failure of the read-only fleet tools.
+diff --git a/.cursor/commands/held-specs.md b/.cursor/commands/held-specs.md
+new file mode 100644
+index 00000000000..d381cfa776e
+--- /dev/null
++++ b/.cursor/commands/held-specs.md
+@@ -0,0 +1,32 @@
++---
++description: Check active held-spec constraints before governed edits
++arguments:
++  - name: spec_id
++    description: Optional spec identifier to narrow the check
++    required: false
++---
++
++# Held Specs Check: {{spec_id}}
++
++## Step 1: Fetch governed state
++
++1. `knowledge_read(artifact="held_spec_ledger")`
++2. `knowledge_read(artifact="contradiction_ledger")`
++3. If a spec ID is supplied: `town_handoff_bundle(spec_id="{{spec_id}}")`
++
++## Step 2: Determine edit posture
++
++- If the spec appears in held-spec matches: design-only or operator-approved work.
++- If the spec appears in contradiction matches: resolve or escalate before editing.
++- If no match appears: absence in local artifacts is not proof of approval.
++
++## Step 3: Report
++
++Summarize:
++- Spec: `{{spec_id}}`
++- Held matches: `[list or none]`
++- Contradiction matches: `[list or none]`
++- Latest-state matches: `[list or none]`
++- Next allowed action: `[specific action]`
++
++Do not bypass held specifications, regardless of change size.
+diff --git a/.cursor/rules/hermes-fleet.mdc b/.cursor/rules/hermes-fleet.mdc
+index 1ffc3e7c86d..a4a5ae49346 100644
+--- a/.cursor/rules/hermes-fleet.mdc
++++ b/.cursor/rules/hermes-fleet.mdc
+@@ -16,7 +16,7 @@ Prefer one consolidated MCP read when available; otherwise call in order:
+ 1. `town_brief()` or `fleet_context_snapshot(summary=true)` — if present on the Hermes MCP server
+ 2. Else: `agents_list(include_heartbeat=true)` → `learnings_read()` → `knowledge_read(artifact="latest_state")` → `knowledge_read(artifact="held_spec_ledger")`
+ 
+-Before changing a named agent: `skills_read(name="<agent>")` and `agents_get(name="<agent>")`.
++Before changing a named agent: prefer `town_handoff_bundle(agent_name="<agent>")`; otherwise call `skills_read(name="<agent>")` and `agents_get(name="<agent>")`.
+ 
+ ## Two MCP modes (do not conflate)
+ 
+diff --git a/.cursor/rules/mcp-development.mdc b/.cursor/rules/mcp-development.mdc
+index f123cdb55e1..3bc487b52cd 100644
+--- a/.cursor/rules/mcp-development.mdc
++++ b/.cursor/rules/mcp-development.mdc
+@@ -15,7 +15,7 @@ alwaysApply: false
+ ## Architecture
+ 
+ - `mcp_serve.py` — Main MCP server entry point (stdio transport)
+-- `hermes_skills_mcp.py` — Standalone module providing 11 read-only skills/knowledge tools
++- `hermes_skills_mcp.py` — Standalone module providing 12 read-only skills/knowledge tools
+ - `.cursor/mcp.json` — Cursor auto-connects to the server defined here
+ - Transport: stdio (no HTTP, no gateway dependency for skills tools)
+ 
+@@ -23,7 +23,7 @@ alwaysApply: false
+ 
+ | Surface | Module | Tools | Gateway Required |
+ |---------|--------|-------|-----------------|
+-| Skills & Knowledge | `hermes_skills_mcp.py` | 11 read-only | No |
++| Skills & Knowledge | `hermes_skills_mcp.py` | 12 read-only | No |
+ | Messaging & Ops | `mcp_serve.py` core | 10 messaging tools | Yes |
+ 
+ ### Skills tools (read-only, no gateway)
+@@ -33,6 +33,7 @@ alwaysApply: false
+ | `fleet_context_snapshot()` | — | Bounded session bootstrap: mode, paths, registry, memory, knowledge, held-spec flags |
+ | `agent_health_summary()` | — | Compact actionable fleet health anomalies |
+ | `town_brief()` | — | Human-facing Cursor/Town status, source-of-truth paths, and next MCP calls |
++| `town_handoff_bundle(agent_name?, spec_id?)` | optional strings | Bounded agent/spec handoff context bundle |
+ | `skills_list()` | — | All SOUL.md files and repo skills |
+ | `skills_read(name)` | agent/skill name | Full SOUL.md or skill content |
+ | `agents_list(include_heartbeat)` | bool | Registry + optional heartbeat |
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 8dd5076ffe8..9a54fbd35be 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -105,7 +105,7 @@ timezone, locale, and worker count.
+ | `gateway/run.py` | Messaging gateway runner |
+ | `hermes_cli/config.py` | Default config and config migration |
+ | `mcp_serve.py` | MCP server entry point (stdio) |
+-| `hermes_skills_mcp.py` | 11 read-only skills/knowledge MCP tools |
++| `hermes_skills_mcp.py` | 12 read-only skills/knowledge MCP tools |
+ | `agents/AGENT_REGISTRY.json` | Agent index/discovery manifest |
+ | `AGENTS.md` | Full agent fleet documentation |
+ 
+diff --git a/hermes_skills_mcp.py b/hermes_skills_mcp.py
+index c7684a678de..610599c7de4 100644
+--- a/hermes_skills_mcp.py
++++ b/hermes_skills_mcp.py
+@@ -16,10 +16,11 @@
+ Paths resolve via HERMES_AGENTS_DIR (runtime fleet), then HERMES_REPO,
+ then HERMES_HOME — same profile conventions as mcp_serve.py.
+ 
+-Tool surface (11 tools; read-only by design):
++Tool surface (12 tools; read-only by design):
+   fleet_context_snapshot — one-call bounded fleet bootstrap for IDEs
+   agent_health_summary — compact actionable fleet health anomalies
+   town_brief — human-facing Cursor/Town integration brief
++  town_handoff_bundle — bounded agent/spec handoff context bundle
+   knowledge_query — bounded keyword query over knowledge graph artifacts
+   skills_list          — list available agent SOUL.md files and repo skills
+   skills_read          — read a specific skill/SOUL.md document
+@@ -277,6 +278,34 @@ def _find_held_spec_ledger_path() -> Optional[Path]:
+     return None
+ 
+ 
++def _find_contradiction_ledger_path() -> Optional[Path]:
++    artifacts_dir = _get_artifacts_dir()
++    if not artifacts_dir:
++        return None
++    path = artifacts_dir / "ops" / "contradiction_ledger" / "latest.md"
++    if path.exists():
++        return path
++    return None
++
++
++def _matching_lines(content: str, terms: list[str], *, limit: int = 12) -> list[str]:
++    """Return bounded lines matching any non-empty search term."""
++    needles = [term.lower() for term in terms if term]
++    if not needles:
++        return []
++    matches: list[str] = []
++    for raw_line in content.splitlines():
++        line = raw_line.strip()
++        if not line:
++            continue
++        lowered = line.lower()
++        if any(needle in lowered for needle in needles):
++            matches.append(line[:240])
++        if len(matches) >= limit:
++            break
++    return matches
++
++
+ def _extract_held_spec_flags(content: str) -> list[str]:
+     """Return a bounded list of held-spec lines that look operationally active."""
+     flags: list[str] = []
+@@ -616,6 +645,127 @@ def build_town_brief() -> dict:
+     }
+ 
+ 
++def build_town_handoff_bundle(
++    *,
++    agent_name: str = "",
++    spec_id: str = "",
++    include_learnings: bool = True,
++) -> dict:
++    """Build a bounded read-only context bundle for Cursor agent handoffs."""
++    agent_name = str(agent_name or "").strip()
++    spec_id = str(spec_id or "").strip()
++    search_terms = [term for term in (agent_name, spec_id) if term]
++    registry = _registry_agents(_load_agent_registry())
++    agents_dir = _find_agents_dir()
++    latest_state = _bounded_read(_find_latest_state_path())
++    held_ledger = _bounded_read(_find_held_spec_ledger_path())
++    contradiction_ledger = _bounded_read(_find_contradiction_ledger_path())
++    learnings_dir = _get_learnings_dir()
++    hot_learnings = (
++        _bounded_read(learnings_dir / "memory.md", max_chars=2_000)
++        if include_learnings and learnings_dir else
++        {"present": False, "path": str(learnings_dir / "memory.md") if learnings_dir else None, "content": ""}
++    )
++
++    bundle: dict = {
++        "as_of": datetime.now(timezone.utc).isoformat(),
++        "writes_allowed": False,
++        "inputs": {
++            "agent_name": agent_name or None,
++            "spec_id": spec_id or None,
++            "include_learnings": include_learnings,
++        },
++        "source_of_truth": _source_of_truth_label(agents_dir),
++        "paths": {
++            "agents_dir": str(agents_dir) if agents_dir else None,
++            "registry": str(_find_agent_registry()) if _find_agent_registry() else None,
++            "latest_state": latest_state.get("path"),
++            "held_spec_ledger": held_ledger.get("path"),
++            "contradiction_ledger": contradiction_ledger.get("path"),
++            "hot_learnings": hot_learnings.get("path"),
++        },
++        "town": build_town_brief(),
++        "knowledge": {
++            "latest_state": latest_state,
++            "held_spec_ledger": held_ledger,
++            "contradiction_ledger": contradiction_ledger,
++            "matches": {
++                "latest_state": _matching_lines(str(latest_state.get("content") or ""), search_terms),
++                "held_spec_ledger": _matching_lines(str(held_ledger.get("content") or ""), search_terms),
++                "contradiction_ledger": _matching_lines(
++                    str(contradiction_ledger.get("content") or ""),
++                    search_terms,
++                ),
++            },
++        },
++        "learnings": {
++            "hot": hot_learnings,
++            "matches": _matching_lines(str(hot_learnings.get("content") or ""), search_terms),
++        },
++        "next_actions": [
++            "Treat SOUL.md/IDENTITY/HEARTBEAT as behavioral truth for named-agent work.",
++            "Treat AGENT_REGISTRY.json as index/discovery only.",
++            "Check held_spec_ledger and contradiction_ledger before governed edits.",
++            "Do not write to .learnings, artifacts, registry, or SOUL files through MCP.",
++        ],
++    }
++
++    if agent_name:
++        agent: dict = {
++            "name": agent_name,
++            "found": False,
++            "registry": registry.get(agent_name),
++        }
++        soul = _find_soul_md(agent_name)
++        if soul:
++            agent["found"] = True
++            agent["soul_md"] = _bounded_read(soul, max_chars=8_000)
++        heartbeat = _find_heartbeat(agent_name)
++        if heartbeat:
++            agent["found"] = True
++            agent["heartbeat"] = heartbeat
++        if agents_dir:
++            agent_dir = _safe_child_path(agents_dir, agent_name)
++            if agent_dir and agent_dir.is_dir():
++                agent["found"] = True
++                files = []
++                for item in sorted(agent_dir.iterdir()):
++                    if item.name.startswith("."):
++                        continue
++                    files.append({
++                        "name": item.name,
++                        "type": "directory" if item.is_dir() else "file",
++                        "size": item.stat().st_size if item.is_file() else None,
++                        "modified": _file_mtime_iso(item),
++                    })
++                    if len(files) >= _SNAPSHOT_LIST_CAP:
++                        break
++                agent["files"] = files
++        if agent["registry"] is not None:
++            agent["found"] = True
++        if not agent["found"]:
++            agent["error"] = f"Agent not found: {agent_name}"
++        bundle["agent"] = agent
++
++    if spec_id:
++        bundle["spec"] = {
++            "id": spec_id,
++            "held_matches": bundle["knowledge"]["matches"]["held_spec_ledger"],
++            "contradiction_matches": bundle["knowledge"]["matches"]["contradiction_ledger"],
++            "latest_state_matches": bundle["knowledge"]["matches"]["latest_state"],
++            "guardrails": [
++                "If held_matches are present, do not implement constrained changes without operator approval.",
++                "If contradiction_matches are present, resolve or escalate conflicts before editing.",
++                "If no matches are present, absence in local artifacts is not proof of approval.",
++            ],
++        }
++
++    if not agent_name and not spec_id:
++        bundle["warning"] = "No agent_name or spec_id supplied; returning general Town handoff context."
++
++    return bundle
++
++
+ def _find_heartbeat(agent_name: str) -> Optional[dict]:
+     """Find and parse an agent's HEARTBEAT.md for status info."""
+     agents_dir = _find_agents_dir()
+@@ -829,6 +979,31 @@ def town_brief() -> str:
+         """
+         return json.dumps(build_town_brief(), indent=2)
+ 
++    # -- town_handoff_bundle -----------------------------------------------
++
++    @mcp.tool()
++    def town_handoff_bundle(
++        agent_name: str = "",
++        spec_id: str = "",
++        include_learnings: bool = True,
++    ) -> str:
++        """Return a bounded read-only context bundle for Cursor handoffs.
++
++        Use this before handing a named agent or governed spec to another
++        Cursor agent. The bundle packages source-of-truth paths, agent
++        SOUL/registry/heartbeat context, latest-state snippets, held-spec
++        and contradiction matches, and HOT learnings excerpts. It never
++        writes fleet state.
++        """
++        return json.dumps(
++            build_town_handoff_bundle(
++                agent_name=agent_name,
++                spec_id=spec_id,
++                include_learnings=include_learnings,
++            ),
++            indent=2,
++        )
++
+     # -- skills_list -------------------------------------------------------
+ 
+     @mcp.tool()
+@@ -1354,4 +1529,4 @@ def knowledge_query(question: str) -> str:
+             },
+         }, indent=2)
+ 
+-    logger.debug("Registered 11 skills/knowledge MCP tools")
++    logger.debug("Registered 12 skills/knowledge MCP tools")
+diff --git a/mcp_serve.py b/mcp_serve.py
+index 0f45af00388..ac20e5eef41 100644
+--- a/mcp_serve.py
++++ b/mcp_serve.py
+@@ -10,10 +10,10 @@
+   events_poll, events_wait, messages_send, permissions_list_open,
+   permissions_respond, channels_list
+ 
+-Optional skills/knowledge tools (11) when hermes_skills_mcp is available:
+-  fleet_context_snapshot, agent_health_summary, town_brief, skills_list,
+-  skills_read, agents_list, agents_get, knowledge_read, knowledge_query,
+-  learnings_read, artifacts_list
++Optional skills/knowledge tools (12) when hermes_skills_mcp is available:
++  fleet_context_snapshot, agent_health_summary, town_brief,
++  town_handoff_bundle, skills_list, skills_read, agents_list, agents_get,
++  knowledge_read, knowledge_query, learnings_read, artifacts_list
+ 
+ Usage:
+     hermes mcp serve
+@@ -864,8 +864,9 @@ def permissions_respond(
+ 
+     # -- Skills / Knowledge Layer tools ------------------------------------
+     # Registers: fleet_context_snapshot, agent_health_summary, town_brief,
+-    #            skills_list, skills_read, agents_list, agents_get,
+-    #            knowledge_read, knowledge_query, learnings_read, artifacts_list
++    #            town_handoff_bundle, skills_list, skills_read, agents_list,
++    #            agents_get, knowledge_read, knowledge_query, learnings_read,
++    #            artifacts_list
+     try:
+         from hermes_skills_mcp import register_skills_tools
+         register_skills_tools(mcp)
+diff --git a/tests/test_cursor_mcp_config.py b/tests/test_cursor_mcp_config.py
+index 3bd6b117570..43712ddb8d3 100644
+--- a/tests/test_cursor_mcp_config.py
++++ b/tests/test_cursor_mcp_config.py
+@@ -56,6 +56,7 @@ def test_cursor_mcp_doctor_reports_portable_setup(tmp_path, monkeypatch):
+     assert checks["skills_context_tools"]["status"] == "ok"
+     assert checks["agent_registry"]["status"] == "ok"
+     assert "town_brief" in result["skills_context_tools"]
++    assert "town_handoff_bundle" in result["skills_context_tools"]
+     assert result["suggested_cursor_mcp_json"]["mcpServers"]["hermes"]["command"] == (
+         "${workspaceFolder}/hermes-mcp-serve"
+     )
+diff --git a/tests/test_hermes_skills_mcp_snapshot.py b/tests/test_hermes_skills_mcp_snapshot.py
+index 68f226a6271..d99171f77fb 100644
+--- a/tests/test_hermes_skills_mcp_snapshot.py
++++ b/tests/test_hermes_skills_mcp_snapshot.py
+@@ -277,6 +277,48 @@ def test_town_brief_reports_cursor_bootstrap_context(snapshot_env):
+     assert result["gateway"]["skills_context_available"] is True
+ 
+ 
++def test_town_handoff_bundle_packages_agent_and_spec_context(snapshot_env):
++    repo, _home, mcp = snapshot_env
++    agents_dir = repo / "agents"
++    _write_registry(
++        agents_dir,
++        {"alpha": {"lane": "A", "status": "active", "authority": "observe_only"}},
++    )
++    agent_dir = agents_dir / "alpha"
++    agent_dir.mkdir()
++    (agent_dir / "SOUL.md").write_text("# Alpha\nFollow Spec 123.\n", encoding="utf-8")
++    (agent_dir / "HEARTBEAT.md").write_text("ok\n", encoding="utf-8")
++    (repo / ".learnings").mkdir()
++    (repo / ".learnings" / "memory.md").write_text("alpha likes dry runs\n", encoding="utf-8")
++
++    latest = repo / "artifacts" / "ops" / "knowledge_layer"
++    latest.mkdir(parents=True)
++    (latest / "latest_state.md").write_text("Spec 123 active for alpha\n", encoding="utf-8")
++    held = repo / "artifacts" / "ops" / "held_spec_ledger"
++    held.mkdir(parents=True)
++    (held / "latest.md").write_text("HELD: Spec 123 waits on validation\n", encoding="utf-8")
++    contradictions = repo / "artifacts" / "ops" / "contradiction_ledger"
++    contradictions.mkdir(parents=True)
++    (contradictions / "latest.md").write_text(
++        "Spec 123 conflicts with old alpha procedure\n",
++        encoding="utf-8",
++    )
++    tools = _registered_tools(mcp)
++
++    result = json.loads(tools.town_handoff_bundle("alpha", "Spec 123"))
++
++    assert result["writes_allowed"] is False
++    assert result["source_of_truth"] == "HERMES_REPO/agents"
++    assert result["agent"]["found"] is True
++    assert result["agent"]["registry"]["lane"] == "A"
++    assert "Follow Spec 123" in result["agent"]["soul_md"]["content"]
++    assert result["spec"]["held_matches"] == ["HELD: Spec 123 waits on validation"]
++    assert result["spec"]["contradiction_matches"] == [
++        "Spec 123 conflicts with old alpha procedure"
++    ]
++    assert result["learnings"]["matches"] == ["alpha likes dry runs"]
++
++
+ def test_knowledge_query_matches_bounded_graph(snapshot_env):
+     repo, _home, mcp = snapshot_env
+     kg = repo / "artifacts" / "ops" / "knowledge_graph"
+diff --git a/tests/test_mcp_serve.py b/tests/test_mcp_serve.py
+index 8ae789fd158..05f9a5fd116 100644
+--- a/tests/test_mcp_serve.py
++++ b/tests/test_mcp_serve.py
+@@ -949,8 +949,9 @@ def test_respond_nonexistent(self, mcp_server_e2e, _event_loop):
+ 
+ _SKILLS_MCP_TOOLS = frozenset({
+     "fleet_context_snapshot", "agent_health_summary", "town_brief",
+-    "skills_list", "skills_read", "agents_list", "agents_get",
+-    "knowledge_read", "knowledge_query", "learnings_read", "artifacts_list",
++    "town_handoff_bundle", "skills_list", "skills_read", "agents_list",
++    "agents_get", "knowledge_read", "knowledge_query", "learnings_read",
++    "artifacts_list",
+ })
+ 
+ 
+diff --git a/website/docs/user-guide/features/cursor-hermes.md b/website/docs/user-guide/features/cursor-hermes.md
+index c9a95792a99..bf0d88f51c9 100644
+--- a/website/docs/user-guide/features/cursor-hermes.md
++++ b/website/docs/user-guide/features/cursor-hermes.md
+@@ -54,6 +54,7 @@ Hermes MCP is really two products behind one server:
+ | `fleet_context_snapshot` | One-call bounded fleet bootstrap for IDEs |
+ | `agent_health_summary` | Compact actionable health anomalies without the full registry dump |
+ | `town_brief` | Human-facing Town/Cursor status, source-of-truth paths, and next MCP calls |
++| `town_handoff_bundle` | Bounded agent/spec context package for Cursor handoffs |
+ | `skills_list` | Agent SOUL.md dirs + repo `skills/` catalog |
+ | `skills_read` | Read SOUL.md or skill files |
+ | `agents_list` | Registry + optional heartbeat files |
+@@ -70,6 +71,11 @@ For a concise session start, call `town_brief()` first. Use
+ bootstrap data without text blobs, and use the full snapshot only when a task
+ needs learnings or latest-state excerpts.
+ 
++For handoffs between Cursor agents, call `town_handoff_bundle(agent_name=...,
++spec_id=...)` to collect bounded SOUL, registry, heartbeat, latest-state,
++held-spec, contradiction, and HOT learnings context without mutating fleet
++state.
++
+ ### Live ops / gateway mode
+ 
+ **Requires** `hermes gateway` (or an already-running gateway) and populated `HERMES_HOME/sessions/`.
+@@ -130,5 +136,5 @@ A common mature layout:
+ 
+ | Item | Benefit |
+ |------|---------|
+-| Spec-aware edit guards | Prevents governed edits without held-spec and contradiction context |
++| Spec-aware automatic edit guards | Prevents governed edits without held-spec and contradiction context |
+ | Agent dependency graph | Shows Lane A/B/C, pipeline dependencies, and stale heartbeat impact |
+diff --git a/website/docs/user-guide/features/mcp.md b/website/docs/user-guide/features/mcp.md
+index d213550060d..65520591799 100644
+--- a/website/docs/user-guide/features/mcp.md
++++ b/website/docs/user-guide/features/mcp.md
+@@ -562,7 +562,7 @@ Restart Cursor after changing MCP settings. First connection can take several se
+ 
+ ### Available tools
+ 
+-The MCP server exposes **21 tools** when the optional skills module is installed (default in this repo): **10 messaging tools** plus **11 read-only skills/knowledge tools**.
++The MCP server exposes **22 tools** when the optional skills module is installed (default in this repo): **10 messaging tools** plus **12 read-only skills/knowledge tools**.
+ 
+ #### Messaging (10 tools)
+ 
+@@ -581,7 +581,7 @@ Matches OpenClaw's channel bridge surface plus a Hermes-specific channel browser
+ | `permissions_list_open` | List approval requests observed by this MCP bridge process. |
+ | `permissions_respond` | Resolve an approval observed by this MCP bridge process. This is best-effort bridge-local state, not a durable gateway approval API. |
+ 
+-#### Skills and knowledge (11 tools, read-only)
++#### Skills and knowledge (12 tools, read-only)
+ 
+ Registered from `hermes_skills_mcp` when the module is importable (bundled with `hermes-agent` installs). Paths resolve via `HERMES_AGENTS_DIR`, then `HERMES_REPO`, then `HERMES_HOME`. See [Cursor & Hermes](./cursor-hermes.md) for skills-only vs gateway mode and source-of-truth hierarchy.
+ 
+@@ -590,6 +590,7 @@ Registered from `hermes_skills_mcp` when the module is importable (bundled with
+ | `fleet_context_snapshot` | One bounded bootstrap payload for Cursor/IDE clients: mode, paths, registry summary, stale heartbeats, HOT memory excerpt, latest-state digest, held-spec flags, gateway reachability, missing layers, warnings, and source-of-truth hierarchy reference. |
+ | `agent_health_summary` | Compact actionable health summary: missing layers, stale or missing heartbeats, held-spec flag count, gateway reachability, and warnings. |
+ | `town_brief` | Human-facing Cursor/Town status: source-of-truth paths, health counts, held-spec flags, gateway mode, and recommended next MCP calls. |
++| `town_handoff_bundle` | Bounded read-only handoff package for a named agent and/or spec: SOUL, registry, heartbeat, latest-state matches, held-spec matches, contradiction matches, and HOT learnings excerpt. |
+ | `skills_list` | List custom agent `SOUL.md` files and repo skills. |
+ | `skills_read` | Read a skill document or agent `SOUL.md`. |
+ | `agents_list` | List agents from `AGENT_REGISTRY.json` with status summary. |

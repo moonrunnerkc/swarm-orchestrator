@@ -1,0 +1,26 @@
+{
+  "id": "devin-g2void2-byte-garant-pr227",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 227,
+    "headSha": "93cd6bd053d7a79333fd358c379b3be0a4bc2290",
+    "baseSha": "b257ad7b77db54c3ea309cd01ead3f8c32e70d8d",
+    "title": "chore: drop User.deposit_total (P1)",
+    "body": "## Summary\n\nDrops `User.deposit_total` — the admin-write-only \"lifetime deposit aggregate\". Its public read path was retired long ago when the profile's \"Депозит\" badge was repointed at `User.trust_deposit_balance` (the lock-in trust deposit), so the column has been a write-only orphan ever since.\n\nContinental's `deposit_min` search filter was the last remaining reader; it is also removed since the column it filtered against no longer exists.\n\n**Surfaces removed (all in lock-step):**\n\n- `User.deposit_total` ORM column + Alembic drop migration (`c0a5e1f93b27_drop_users_deposit_total.py`, downgrade re-adds the column at `Numeric(28, 8)` default 0 — V5-E-1 documented).\n- `AdminSetStatsIn.deposit_total` field + validator (server now rejects nothing — Pydantic silently drops the unknown key; the response no longer carries the field).\n- `AdminUserListItem.deposit_total` / `AdminUserDetailOut.deposit_total`.\n- `AdminListUsersQuery sort=\"deposit\"` option on both server and client (the query-param `Literal` was narrowed).\n- `GET /api/users?deposit_min=N` filter on `routers/users.py`.\n- `SearchFilterSheet` \"Депозит\" section + `ActiveFilterChips` \"Депозит от N\" chip; `SearchFilters.deposit_min` field; `useUsers` / `UsersQueryKey` / `UsersQueryParams` cleaned up.\n- `AdminUserDetailPage` \"Лайфтайм-депозит\" Detail row + `StatsSection.deposit_total` field; `AdminUsersPage` list row \"Депозит $X\" label switched to \"Траст $X\" (the trust deposit).\n- `bot.texts.profile_summary` and `bot.sections.profile` banner now source the deposit value from `trust_deposit_balance`.\n\nGenerated `frontend/openapi.json` + `src/api/openapi.generated.ts` re-dumped from the live FastAPI schema so the contract-drift CI gate stays green.\n\nTests updated for the new shape; backend (780) + frontend (495) suites pass locally. `pyright backend/app` reports 0 errors.\n\n## Review & Testing Checklist for Human\n\n🟡 yellow — schema-level migration touches a column with admin-side writes, but the read path is already cut over.\n\n- [ ] Run the new migration against a snapshot of production data and confirm the drop completes in seconds; `users` is the only unbounded table in the path so under `AccessExclusiveLock` the window should still be small.\n- [ ] Eyeball the admin user list / detail screens in the running TMA: the `Сделок · ★ · Траст $X` row, the identity-card \"Трастовый депозит\" entry, and the Stats editor should all render — no JS errors from the removed `deposit_total` field.\n- [ ] Verify the bot `/profile` DM still shows the deposit line correctly when a user has a non-zero `trust_deposit_balance` and the banner image renders.\n\n### Notes\n\n- The migration is V5-E-1 (irreversible data loss on downgrade) — the downgrade restores the column shape with `DEFAULT 0` but cannot reconstruct historical per-row aggregate values. Recovery requires a pre-cutover backup.\n- Old TMA bundles that still send `&deposit_min=…` on `GET /api/users` will succeed silently (FastAPI ignores unknown query params); the filter is just a no-op now. No 4xx is raised.\n- This is **P1** of the post-P9/P4-bis/P7/P4 batch (#226 merged). P2 (UserPicker in ReviewCreateSheet) and P3+P6 (admin Sheet TMA + broadcast composer UX) follow as separate PRs; P5+P10 (commission-via-invoice) is deferred per the user's instruction.\n\nLink to Devin session: https://app.devin.ai/sessions/28338854544f494a92c1a1e5b47d466d\nRequested by: @g2void2-byte",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779572584-remove-deposit-total",
+    "repository": "g2void2-byte/garant"
+  },
+  "diffRef": {
+    "repository": "g2void2-byte/garant",
+    "headSha": "93cd6bd053d7a79333fd358c379b3be0a4bc2290",
+    "baseSha": "b257ad7b77db54c3ea309cd01ead3f8c32e70d8d"
+  },
+  "vendoredDiffPath": "devin/devin-g2void2-byte-garant-pr227.diff",
+  "vendoredAt": "2026-05-24T03:05:21.449Z",
+  "collectedAt": "2026-05-24T03:05:21.449Z"
+}

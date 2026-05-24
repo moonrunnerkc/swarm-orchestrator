@@ -1,0 +1,23 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.stripe.md b/src/main/resources/doc/io.kestra.plugin.stripe.md
+new file mode 100644
+index 0000000..8e4a62e
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.stripe.md
+@@ -0,0 +1,17 @@
++# How to use the Stripe plugin
++
++Manage customers, payments, and webhooks in Stripe from Kestra flows.
++
++## Authentication
++
++Set `apiKey` to your Stripe secret key (starts with `sk_`). Store it in a [secret](https://kestra.io/docs/concepts/secret) and apply it globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
++
++## Tasks
++
++**Balance** — `balance.Retrieve` fetches the current account balance.
++
++**Customers** — `customer.Create` creates a customer with `name` and `email` (both required) plus optional `metadata`. `customer.Get` retrieves a customer by `customerId`. `customer.List` returns customers filtered by `email` — bound results with `limit`. `customer.Update` updates `name`, `email`, or `metadata` on a customer by `customerId`. `customer.Delete` removes a customer by `customerId`.
++
++**Payments** — `payment.CreateIntent` creates a payment intent — set `amount`, `currency`, and `customer` (all required). `payment.ConfirmIntent` confirms a payment intent by `paymentIntentId`. `payment.CreateMethod` creates a payment method — set `paymentMethodType` and card details (`cardNumber`, `expMonth`, `expYear`, `cvc`). `payment.AttachMethod` attaches a payment method to a customer via `paymentMethodId` and `customerId`. `payment.DetachMethod` detaches a payment method by `paymentMethodId`. `payment.ListIntents` lists payment intents — filter by `customer`. `payment.ListMethods` lists payment methods for a `customerId` and `paymentMethodType`. `payment.Refund` refunds a charge — set `chargeId` or `paymentIntentId`, and optionally a partial `amount`.
++
++**Webhooks** — `webhook.HandleEvent` verifies and parses an incoming Stripe webhook — set `payload`, `signatureHeader`, and `endpointSecret`.

@@ -1,0 +1,118 @@
+diff --git a/src/AiModelBuilder.cs b/src/AiModelBuilder.cs
+index 9aca374ab5..6dbdfb27f0 100644
+--- a/src/AiModelBuilder.cs
++++ b/src/AiModelBuilder.cs
+@@ -156,6 +156,10 @@ private readonly AiDotNet.Configuration.IAiModelDataPipeline<T, TInput, TOutput>
+     private readonly AiDotNet.Configuration.IAiModelTrainingCore<T, TInput, TOutput> _trainingCore
+         = new AiDotNet.Configuration.AiModelTrainingCore<T, TInput, TOutput>();
+ 
++    // audit-2026-05 phase 2a slice 3 — cross-validation concern.
++    private readonly AiDotNet.Configuration.IAiModelCrossValidation<T, TInput, TOutput> _crossValidation
++        = new AiDotNet.Configuration.AiModelCrossValidation<T, TInput, TOutput>();
++
+     private PreprocessingPipeline<T, TInput, TInput>? _preprocessingPipeline;
+     private PostprocessingPipeline<T, TOutput, TOutput>? _postprocessingPipeline;
+ 
+@@ -5575,7 +5579,8 @@ public IAiModelBuilder<T, TInput, TOutput> ConfigureKnowledgeGraph(
+     /// </remarks>
+     public IAiModelBuilder<T, TInput, TOutput> ConfigureCrossValidation(ICrossValidator<T, TInput, TOutput> crossValidator)
+     {
+-        _crossValidator = crossValidator;
++        _crossValidation.ConfigureCrossValidation(crossValidator);
++        _crossValidator = _crossValidation.CrossValidator;
+         return this;
+     }
+ 
+diff --git a/src/Configuration/AiModelCrossValidation.cs b/src/Configuration/AiModelCrossValidation.cs
+new file mode 100644
+index 0000000000..c7983a696d
+--- /dev/null
++++ b/src/Configuration/AiModelCrossValidation.cs
+@@ -0,0 +1,15 @@
++namespace AiDotNet.Configuration;
++
++/// <summary>
++/// Default implementation of <see cref="IAiModelCrossValidation{T,TInput,TOutput}"/>.
++/// Audit-2026-05 phase-2a slice 3.
++/// </summary>
++public class AiModelCrossValidation<T, TInput, TOutput> : IAiModelCrossValidation<T, TInput, TOutput>
++{
++    /// <inheritdoc/>
++    public ICrossValidator<T, TInput, TOutput>? CrossValidator { get; private set; }
++
++    /// <inheritdoc/>
++    public void ConfigureCrossValidation(ICrossValidator<T, TInput, TOutput> crossValidator)
++        => CrossValidator = crossValidator;
++}
+diff --git a/src/Configuration/IAiModelCrossValidation.cs b/src/Configuration/IAiModelCrossValidation.cs
+new file mode 100644
+index 0000000000..055ab520a9
+--- /dev/null
++++ b/src/Configuration/IAiModelCrossValidation.cs
+@@ -0,0 +1,17 @@
++namespace AiDotNet.Configuration;
++
++/// <summary>
++/// Component that owns the cross-validation configuration for an AI model build. Extracted from
++/// <c>AiModelBuilder</c> as slice 3 of the audit-2026-05 phase-2a DI refactor.
++/// </summary>
++/// <typeparam name="T">Element numeric type.</typeparam>
++/// <typeparam name="TInput">Model input tensor type.</typeparam>
++/// <typeparam name="TOutput">Model output tensor type.</typeparam>
++public interface IAiModelCrossValidation<T, TInput, TOutput>
++{
++    /// <summary>The configured cross-validator, or <c>null</c> if not configured.</summary>
++    ICrossValidator<T, TInput, TOutput>? CrossValidator { get; }
++
++    /// <summary>Sets the cross-validation strategy.</summary>
++    void ConfigureCrossValidation(ICrossValidator<T, TInput, TOutput> crossValidator);
++}
+diff --git a/tests/AiDotNet.Tests/UnitTests/Configuration/AiModelCrossValidationTests.cs b/tests/AiDotNet.Tests/UnitTests/Configuration/AiModelCrossValidationTests.cs
+new file mode 100644
+index 0000000000..f4fbb04482
+--- /dev/null
++++ b/tests/AiDotNet.Tests/UnitTests/Configuration/AiModelCrossValidationTests.cs
+@@ -0,0 +1,43 @@
++using System.Threading.Tasks;
++using AiDotNet.Configuration;
++using AiDotNet.Interfaces;
++using AiDotNet.Tensors.LinearAlgebra;
++using Moq;
++using Xunit;
++
++namespace AiDotNet.Tests.UnitTests.Configuration;
++
++/// <summary>Audit-2026-05 phase-2a slice 3 — cross-validation component isolation tests.</summary>
++public class AiModelCrossValidationTests
++{
++    [Fact(Timeout = 30000)]
++    public async Task InitialState_IsNull()
++    {
++        await Task.Yield();
++        var cv = new AiModelCrossValidation<double, Matrix<double>, Vector<double>>();
++        Assert.Null(cv.CrossValidator);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task Configure_Stores()
++    {
++        await Task.Yield();
++        var cv = new AiModelCrossValidation<double, Matrix<double>, Vector<double>>();
++        var validator = Mock.Of<ICrossValidator<double, Matrix<double>, Vector<double>>>();
++
++        cv.ConfigureCrossValidation(validator);
++
++        Assert.Same(validator, cv.CrossValidator);
++    }
++
++    [Fact(Timeout = 30000)]
++    public async Task Interface_IsImplemented()
++    {
++        await Task.Yield();
++        IAiModelCrossValidation<double, Matrix<double>, Vector<double>> cv
++            = new AiModelCrossValidation<double, Matrix<double>, Vector<double>>();
++        var validator = Mock.Of<ICrossValidator<double, Matrix<double>, Vector<double>>>();
++        cv.ConfigureCrossValidation(validator);
++        Assert.Same(validator, cv.CrossValidator);
++    }
++}

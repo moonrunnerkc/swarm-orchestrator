@@ -1,0 +1,26 @@
+{
+  "id": "devin-hammadb2-newwheels-pr69",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 69,
+    "headSha": "77cfc5a3c5d47e5a91d220cc00dd283929eaddec",
+    "baseSha": "c69e6ae01fa057adaa7ede9009776f78195b2719",
+    "title": "feat: SEO content expansion — 491 pages + 48 resource articles",
+    "body": "## Summary\n\nAdds 539 new content files (491 programmatic SEO pages + 48 resource articles) across 15 content categories, plus the infrastructure to load and render them.\n\n**Infrastructure changes:**\n- `src/lib/programmatic/types.ts` — Added `body?: string` field and new `PageKind` types (`profession`, `question`, `competitor`, `comparison`)\n- `src/content/pages/loader.ts` — New build-time loader that recursively reads hand-written JSON files from `src/content/pages/`\n- `src/lib/programmatic/pages.ts` — `buildAll()` now calls `loadHandWrittenPages()` first so hand-written pages take priority over generators\n- `src/app/[slug]/page.tsx` — Renders `page.body` via `<Markdown>` component when present, falls back to sections array\n\n**Content pages (491 JSON files):**\n| Section | Category | Pages |\n|---------|----------|-------|\n| 2 | Audience (PGWP, trades, gig, disability, etc.) | 33 |\n| 3 | Community (Filipino, South Asian, Somali, etc.) | 25 |\n| 4 | Neighbourhood + quadrant (NE, SE, Saddle Ridge, etc.) | 37 |\n| 5 | Audience × location cross-products | 51 |\n| 6 | Vehicle type × audience | 31 |\n| 7 | Vehicle make + model (Toyota, Honda, Ford, etc.) | 86 |\n| 8 | Make × credit situation | 42 |\n| 9 | Budget ($300/mo, under $20k, zero down, etc.) | 26 |\n| 10 | Profession (nurse, electrician, trucker, etc.) | 39 |\n| 11 | Calculator (bad credit calc, newcomer calc, etc.) | 19 |\n| 12 | Question (how to, can I, what is, etc.) | 52 |\n| 13 | Competitor alternatives | 19 |\n| 14 | Comparisons (A vs B) | 12 |\n| 15 | Seasonal (tax refund, winter tires, etc.) | 6 |\n| 16 | Resource articles | 48 |\n\nEvery page includes:\n- Unique H1, meta title (≤60 chars), meta description (≤160 chars)\n- Answer-first intro paragraph\n- Calgary-specific markdown body content\n- 6 unique FAQs\n- Correct lender matching (Rifco/Westlake/NCF/Equitable per audience)\n- \"6 months covered\" differentiator\n- Related internal links\n\n**Build note:** The build needs `NODE_OPTIONS=\"--max-old-space-size=4096\"` due to the volume of static pages (715 total). You may want to add this to your Vercel build settings.\n\n## Review & Testing Checklist for Human\n\n- [ ] **Spot-check 5-10 pages across different categories** for content quality, lender accuracy, and Calgary-specific relevance — the content is generated from templates so patterns should be consistent but verify the diversity feels genuine\n- [ ] **Verify Vercel build succeeds** — may need `NODE_OPTIONS=--max-old-space-size=4096` in build settings if the default memory limit is insufficient\n- [ ] **Check for slug conflicts** with any pages you've added since the branch was created — the loader deduplicates by slug but hand-written pages should win\n- [ ] **Review competitor/comparison pages** (Section 13-14) for any claims about competitors that could be problematic\n- [ ] **Test a few pages on mobile** to verify the Markdown body renders well in PageShell on small screens\n\n### Notes\n\n- The generator script (`scripts/generate-pages.mjs`) is included so you can regenerate or modify pages. Run `node scripts/generate-pages.mjs` from the repo root.\n- Resource articles at `src/content/resources/generated/` use the existing `GeneratedResourceFile` format and are loaded by the existing generated resource loader.\n- Some resource slugs overlap with hand-written articles (e.g., `new-vs-used-car-calgary`). The dedup in `articles.tsx` ensures hand-written versions take priority.\n- Content body uses templates with Calgary-specific variables. For truly hand-written unique content on high-value pages, you may want to iterate on the templates in the generator script.\n\nLink to Devin session: https://app.devin.ai/sessions/7f8b709c417b4f66acd6abdf2be581cc\nRequested by: @hammadb2",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779584293-seo-content-expansion",
+    "repository": "hammadb2/newwheels"
+  },
+  "diffRef": {
+    "repository": "hammadb2/newwheels",
+    "headSha": "77cfc5a3c5d47e5a91d220cc00dd283929eaddec",
+    "baseSha": "c69e6ae01fa057adaa7ede9009776f78195b2719"
+  },
+  "vendoredDiffPath": "devin/devin-hammadb2-newwheels-pr69.diff",
+  "vendoredAt": "2026-05-24T03:04:26.665Z",
+  "collectedAt": "2026-05-24T03:04:26.665Z"
+}

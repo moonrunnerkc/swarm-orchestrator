@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-oven-sh-bun-pr31293",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "branch=claude/"
+  },
+  "pr": {
+    "number": 31293,
+    "headSha": "8b7d342ab95c63f755e16ab1e283ca9a3d7fbd8e",
+    "baseSha": "f161e0311d56ece228d71de12b7747f9c2591303",
+    "title": "build: enable static SQLite by default on macOS",
+    "body": "### What does this PR do?\n\nChanges the default value of `staticSqlite` from platform-dependent (`!darwin`) to `true` on all platforms.\n\nPreviously, macOS builds dynamically loaded the system `libsqlite3.dylib` at runtime, which meant the actual SQLite version varied by OS version (e.g. 3.51.0 on Sonoma) instead of the bundled 3.53.0. This change ensures consistent SQLite 3.53.0 behavior across macOS, Linux, and Windows.\n\n### How did you verify your code works?\n\n- Verified that `build.ninja` includes `obj/src/jsc/bindings/sqlite/sqlite3.c.o` on macOS without passing `--static-sqlite`.\n- C++ compilation of `sqlite3.c` and Rust compilation both succeed with this default.",
+    "author": "sbfkcel",
+    "headRef": "claude/static-sqlite-macos-default",
+    "repository": "oven-sh/bun"
+  },
+  "diffRef": {
+    "repository": "oven-sh/bun",
+    "headSha": "8b7d342ab95c63f755e16ab1e283ca9a3d7fbd8e",
+    "baseSha": "f161e0311d56ece228d71de12b7747f9c2591303"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-oven-sh-bun-pr31293.diff",
+  "vendoredAt": "2026-05-24T03:23:17.155Z",
+  "collectedAt": "2026-05-24T03:23:17.155Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "devin-pramodthe-MedBrain-pr2",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "0296e9fae34fa2342112efa28510c462182ec135",
+    "baseSha": "6dd6d50744322212173e79ecc0929343f8905792",
+    "title": "Code review fixes: Cypher bug, version pin, idempotent seeds, docs",
+    "body": "## Summary\n\nSelf-critique review of the `context-graph` branch identified four issues:\n\n1. **`graph_utils.py` — Cypher query bug**: `get_subgraph()` referenced an undefined variable `r` in its RETURN clause, which would throw a Neo4j query error at runtime. Fixed to use `reduce(acc = [], rels IN collect(relationships(p)) | acc + rels)` to correctly flatten and return path relationships.\n\n2. **`requirements.txt` — version pin too low**: `langchain>=0.1.0` allows installing LangChain 0.x which does NOT have the `create_agent` function used in `langchain_agent.py`. Bumped to `langchain>=1.0.0`.\n\n3. **`init_sample_data.py` — non-idempotent seed script**: The script used `CREATE` for nodes but also defined a `unique_node_name` constraint, meaning a second run would always fail. Changed all node/relationship creation to `MERGE` + `SET` (matching the pattern already used in `init_healthcare_data.py`).\n\n4. **`SETUP_SUMMARY.md` — stale/incorrect documentation**: Referenced a non-existent `.claude/skills/` directory, listed \"OpenAI API key\" as prerequisite (should be Gemini), and described 4 agent tools that don't exist in the actual `langchain_agent.py` (which has 3 memory tools). Updated to match reality.\n\n## Review & Testing Checklist for Human\n\n- [ ] Verify `get_subgraph()` returns expected nodes + relationships against a live Neo4j instance — the `reduce()` flattening of relationship paths is correct Cypher but worth a manual spot check\n- [ ] Confirm `pip install -r requirements.txt` resolves `langchain>=1.0.0` correctly in a clean venv\n- [ ] Run `python init_sample_data.py` twice against a fresh Neo4j — second run should succeed without errors\n\n### Notes\n\n- The `context-graph` branch is an orphan (no shared history with `main`), so this PR targets `context-graph` directly.\n- All Python files compile and import cleanly; no type checker or linter config exists in the repo so validation was done via `py_compile` and runtime import checks.\n\n\nLink to Devin session: https://app.devin.ai/sessions/9abac372166b4ba496d932ba4d5f56bc\nRequested by: @pthebesfsu-a11y\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/pramodthe/medbrain/pull/2\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779575213-context-graph-fixes",
+    "repository": "pramodthe/MedBrain"
+  },
+  "diffRef": {
+    "repository": "pramodthe/MedBrain",
+    "headSha": "0296e9fae34fa2342112efa28510c462182ec135",
+    "baseSha": "6dd6d50744322212173e79ecc0929343f8905792"
+  },
+  "vendoredDiffPath": "devin/devin-pramodthe-MedBrain-pr2.diff",
+  "vendoredAt": "2026-05-24T03:05:05.062Z",
+  "collectedAt": "2026-05-24T03:05:05.062Z"
+}

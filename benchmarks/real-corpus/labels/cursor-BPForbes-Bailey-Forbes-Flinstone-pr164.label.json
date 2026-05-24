@@ -1,0 +1,7 @@
+{
+  "verdict": "broken",
+  "brokenCategories": ["goal-not-fixed"],
+  "rationale": "The PR ships a new `replit.md` that explicitly states two mandatory rules: (1) `Replit Agent must not set GM=1 or hand-add any row under version/entries/preproduction */` and `Hand-add under preproduction */: Never`; (2) `Never stage or commit userland/shell/version_def.h on same-repo agent feature PRs`. The same PR's diff violates both rules: it directly adds `version/entries/preproduction 4.1.0/4_1_0_replit_support.ver` rather than placing the new `.ver` at the entries root for the CI relocate script to move, and it commits a modified `userland/shell/version_def.h` (changing `VERSION_LINE` from `PRE 4.1.0, BUILD 2` to `PRE 4.1.0, BUILD 3`). The Replit configuration files (`.replit`, `replit.nix`, `docs/replit.md`, `nix/deps.json`, `flake.nix`) themselves look plausible and aligned with the existing AGENTS.md package list, but the PR fails its own stated versioning policy that it is in the act of establishing, so the goal of `bind Replit Agent policy to the same rules` is not met in the diff itself.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T14:00:00.000Z"
+}

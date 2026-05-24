@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Renames `KeyValueStorageAdapter` to `KeyValueStoragePort` and its `load`/`save` methods to `get`/`set` in `src/storage/storageAdapter.ts`, updates the only consumer `src/storage/chromeStorage.ts` to match, and introduces a generic `StorageAdapter<TStored, TWritable>` plus `createKeyedStorageAdapter` helper that the existing `createAppDataStorageAdapter` now delegates to. The new `tsconfig.portable.json` typechecks only `src/core/**`, `src/storage/storageAdapter.ts`, and `src/storage/appRepository.ts` with `types: []` and the ES2021 DOM-free lib so the portable core is provably free of Chrome/DOM dependencies; `package.json` swaps the `build`/`typecheck` scripts from `tsconfig.core.json` to `tsconfig.portable.json` accordingly. `docs/PORTING.md` documents the two-boundary split (`KeyValueStoragePort` vs `AppDataStorageAdapter`) and the new typecheck scope. The `fake-refactor` detector firing appears to be a false positive: the rename is paired with new generic functionality (`createKeyedStorageAdapter`) and a real new tsconfig, not a pure rename-of-rename.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T14:00:00.000Z"
+}

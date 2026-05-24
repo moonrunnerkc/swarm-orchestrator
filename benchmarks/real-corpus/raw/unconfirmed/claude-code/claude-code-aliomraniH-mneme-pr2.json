@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-aliomraniH-mneme-pr2",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "branch=claude/"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "4ee4ec3e536c67d00f197085968214a2223ee580",
+    "baseSha": "2b8ae449fe6b7fc05ad59414e4db5e412657d95c",
+    "title": "Phase 1 complete: capability tests, dual-DB verification, generic DB server",
+    "body": "## Summary\n\n- **Capability test battery** — 64 unit tests pass (up from 37). Added `tests/test_prompt_battery.py` (19 in-process scenarios: all realistic Claude usage patterns, DML rejection, routing correctness for both DBs) and `tests/integration/test_mcp_capabilities.py` (28 live-server tests covering all 8 requirement areas).\n- **Dual-DB verification** — confirmed both `saaz_demo` and `neon_purple_kite` are reachable via MCP. The initial `neon_list_tables` SSL error was a cold-start stale pool connection, not a config problem. neon-purple-kite DB is connected (PostgreSQL 17.10) with an empty public schema; `neon_auth` schema has 9 Neon-managed auth tables.\n- **Generic DB server cleanup** — deleted `neon_mcp/server.py` shim entirely. `db_mcp/server.py` is now the one and only DB server binary. Adding a third database requires zero Python — just env vars and a `.replit` workflow task.\n- **Replit agent prompt** — `docs/REPLIT_AGENT_NEW_DB.md` — a self-contained prompt to paste into Replit Agent to provision, seed, wire, and verify any new database against mneme end-to-end.\n\n## Changes\n\n| File | Change |\n|---|---|\n| `tests/test_prompt_battery.py` | New: 19 in-process Claude usage scenarios |\n| `tests/integration/test_mcp_capabilities.py` | New: 28 live-server capability tests |\n| `neon_mcp/server.py` + `neon_mcp/__init__.py` | **Deleted** — was a 5-line shim, now unnecessary |\n| `.replit` | `Start neon-mcp` workflow now runs `db_mcp.server:app` with inline env vars |\n| `db_mcp/server.py` | Updated docstring: \"Adding a new database (no new files needed)\" recipe |\n| `docs/STATUS.md` | Probe results table, corrected neon findings, updated test counts |\n| `docs/REPLIT_AGENT_NEW_DB.md` | New: Replit Agent prompt for adding any new database |\n\n## Architecture: adding a new database (no Python needed)\n\n```toml\n# .replit — add one task per new DB\n[[workflows.workflow.tasks]]\ntask = \"shell.exec\"\nargs = \"DB_MCP_TOOL_PREFIX=acme DB_MCP_NAME=acme-prod DB_MCP_DATABASE_URL_ENV=DATABASE_URL_ACME uvicorn db_mcp.server:app --host 0.0.0.0 --port 3001\"\nwaitForPort = 3001\n```\n\nThen register in `UPSTREAM_DB_MCP_SERVERS` and `NAMESPACE_ROUTING_KEYWORDS`. Done.\n\n## Replit Agent prompt usage\n\nOpen `docs/REPLIT_AGENT_NEW_DB.md`, replace the `<PLACEHOLDER>` values for your dataset, and paste the inner prompt block into Replit Agent. It walks the agent through all 6 steps:\n1. Provision DB via Replit tooling\n2. Create schema + seed rows\n3. Add `.replit` workflow task (no Python)\n4. Register namespace in env vars\n5. Verify healthz / tools/list / smoke query / audit / DML rejection\n6. Persist entry via `register_database` tool\n\n## Test plan\n\n- [x] `make test` — 64 pass, 18 skip (no DATABASE_URL in CI)\n- [x] Live MCP probe — all saaz tools respond correctly\n- [x] Live MCP probe — all neon tools respond correctly (empty public schema)\n- [x] DML rejected on both DBs (`saaz_query`, `neon_query`)\n- [x] Semantic search ranked correctly (pgvector, 100% embedding coverage)\n- [x] `neon_mcp` package fully removed, no dangling imports\n- [x] `.replit` workflow boots `db_mcp.server:app` with env vars (no shim)\n\nhttps://claude.ai/code/session_01V3UHmTqWKdktLf76J34dAj",
+    "author": "aliomraniH",
+    "headRef": "claude/fervent-franklin-Buo09",
+    "repository": "aliomraniH/mneme"
+  },
+  "diffRef": {
+    "repository": "aliomraniH/mneme",
+    "headSha": "4ee4ec3e536c67d00f197085968214a2223ee580",
+    "baseSha": "2b8ae449fe6b7fc05ad59414e4db5e412657d95c"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-aliomraniH-mneme-pr2.diff",
+  "vendoredAt": "2026-05-24T03:14:12.392Z",
+  "collectedAt": "2026-05-24T03:14:12.392Z"
+}

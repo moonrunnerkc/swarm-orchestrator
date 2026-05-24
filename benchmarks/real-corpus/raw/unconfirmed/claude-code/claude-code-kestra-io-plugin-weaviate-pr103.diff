@@ -1,0 +1,23 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.weaviate.md b/src/main/resources/doc/io.kestra.plugin.weaviate.md
+new file mode 100644
+index 0000000..6f860ed
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.weaviate.md
+@@ -0,0 +1,17 @@
++# How to use the Weaviate plugin
++
++Query, insert, and manage objects and schemas in Weaviate from Kestra flows.
++
++## Authentication
++
++Set `url` to your Weaviate cluster URL (e.g. `http://localhost:8080`). For authenticated clusters, set `apiKey`. Pass additional headers (e.g. for upstream service tokens) via `headers`. Store secrets in [secrets](https://kestra.io/docs/concepts/secret) and apply connection properties globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
++
++## Tasks
++
++`Query` runs a GraphQL `query` string against Weaviate. Control result handling with `fetchType` (default `STORE`).
++
++`BatchCreate` bulk-inserts objects — set `objects` to a `kestra://` URI or an inline list of maps, and `className` to the target class.
++
++`SchemaCreate` creates a Weaviate class — set `className` and optionally `fields` as a map of property name to list of Weaviate data types.
++
++`Delete` removes objects from a `className` — set `objectId` to delete a single object, or `filter` (a map of field-to-value conditions combined with AND) to delete by query.

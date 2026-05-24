@@ -1,0 +1,100 @@
+diff --git a/AUTONOMOUS_IMPROVEMENT_LOG.md b/AUTONOMOUS_IMPROVEMENT_LOG.md
+index 1065cbf..08b4e64 100644
+--- a/AUTONOMOUS_IMPROVEMENT_LOG.md
++++ b/AUTONOMOUS_IMPROVEMENT_LOG.md
+@@ -623,7 +623,49 @@ uv run streamlit run app/main.py  # 앱 실행
+ 
+ ---
+ 
+-## 최종 점수 (Round 23 기준)
++## Round 24 — 사이드바 "도움말" 섹션 분리 + 버튼 셀렉터 정리 (2026-05-19)
++
++- **Branch**: `agent/round-24-sidebar-help-section` (stacked on R23)
++- **Scores (before → after)**:
++  - 기능 완성도: 9 → 9
++  - 사용자 경험: 9 → 9 (도움말 위치 명확화)
++  - 안정성: 9 → 9
++  - 성능: 9 → 9
++  - 코드 품질: 9 → 9 (동작 안 하는 셀렉터 제거)
++  - 완성도: 9 → 9
++- **Lowest area**: 동률 9. R22 추가한 셀렉터 `[data-testid="stButton"][data-key="sidebar_tutorial_replay"]` 는 Streamlit DOM 에 `data-key` 속성이 직접 노출되지 않아 실제 매칭이 일어나지 않음 (의도된 버튼 톤이 적용 안 됨). 또한 "튜토리얼 다시 보기" 버튼이 매칭 반경 radio 직후·footer 직전에 위치해 섹션 경계가 모호.
++
++### Planned improvement (F2 소진)
++1. 셀렉터를 `[data-testid="stSidebar"] [data-testid="stButton"] button` 로 정리. 사이드바 안의 form 외부 일반 버튼이 본 버튼 하나뿐이므로 안전. focus state 도 추가.
++2. 버튼 위에 `st.divider()` + `<p class="sb-ctrl-label">도움말</p>` 명시적 섹션 라벨 추가 → 시각적 경계 분명.
++
++### Files changed
++- `app/components/sidebar.py`
++  - `_SIDEBAR_CSS`: data-key 셀렉터 제거 → 사이드바 일반 stButton 톤으로 통일. transition + focus ring 추가.
++  - `render_sidebar()`: 버튼 직전에 `st.divider()` + "도움말" 섹션 라벨 추가.
++
++### Verification
++- `uv run ruff check --fix .` → All checks passed
++- `uv run ruff format .` → 43 files left unchanged
++- `uv run pyright` → 0 errors, 137 warnings
++- `uv run pytest` → **61 passed** 유지, coverage 64.06%
++
++### Slack 메시지 (요약)
++> Round 24 ✅ 사이드바에 "도움말" 섹션 라벨 추가 + 튜토리얼 재시작 버튼 셀렉터 정리.
++
++### Commit
++- `polish(sidebar): 도움말 섹션 라벨 분리 + 버튼 CSS 셀렉터 정리`
++
++### Notes (다음 라운드 후보 풀)
++- **F1**: 모달 X 닫기 시 1회 한정 유보 — Streamlit dialog 한계 (외부 라이브러리 필요)
++- **C1**: 모바일 KPI 가독성 (이미 720px 미디어쿼리 적용, 추가 폭 검토)
++- **E1**: 캐시 키 hash (사용자 컨펌 권장)
++- **G3 (신규)**: 환영 모달 단계 카드에 작은 "활용 시나리오" 1줄 추가 (FR-01: "Heliocity 한 단지 → 387,000톤" 처럼 PRD 예시 직결) — Round 23 Epiphany 와 시너지
++- 다음 라운드 1순위: **G3 단계 카드 시나리오 인라인** 또는 **C1 모바일 KPI 추가 폭**
++
++---
++
++## 최종 점수 (Round 24 기준)
+ | 영역 | 점수 |
+ |------|------|
+ | 기능 완성도 | 9 |
+diff --git a/app/components/sidebar.py b/app/components/sidebar.py
+index ac7221c..4419f13 100644
+--- a/app/components/sidebar.py
++++ b/app/components/sidebar.py
+@@ -60,7 +60,7 @@
+     margin-top:16px;padding-top:12px;border-top:1px solid #E4E4E0;
+     font-size:10px;color:#888;line-height:1.6;
+ }
+-[data-testid="stSidebar"] [data-testid="stButton"][data-key="sidebar_tutorial_replay"] button {
++[data-testid="stSidebar"] [data-testid="stButton"] button {
+     background:#FFFFFF !important;
+     border:1px solid #E4E4E0 !important;
+     color:#666A70 !important;
+@@ -70,12 +70,18 @@
+     padding:6px 10px !important;
+     box-shadow:none !important;
+     width:100% !important;
++    transition:border-color .12s ease, color .12s ease, background .12s ease;
+ }
+-[data-testid="stSidebar"] [data-testid="stButton"][data-key="sidebar_tutorial_replay"] button:hover {
++[data-testid="stSidebar"] [data-testid="stButton"] button:hover {
+     border-color:#0071E3 !important;
+     color:#0071E3 !important;
+     background:#F5F9FF !important;
+ }
++[data-testid="stSidebar"] [data-testid="stButton"] button:focus {
++    outline:none !important;
++    border-color:#0071E3 !important;
++    box-shadow:0 0 0 2px rgba(0,113,227,.18) !important;
++}
+ /* 사이드바 검색 input border — hover 없이도 항상 보이도록 검정 톤 */
+ [data-testid="stSidebar"] [data-testid="stTextInput"] div[data-baseweb="input"],
+ [data-testid="stSidebar"] [data-testid="stTextInput"] > div > div {
+@@ -169,6 +175,11 @@ def render_sidebar(suppliers: pd.DataFrame) -> tuple[int, str]:
+             label_visibility="collapsed",
+         )  # type: ignore[assignment]  # st.radio returns Any; guaranteed int from options list
+ 
++        st.divider()
++        st.markdown(
++            "<p class='sb-ctrl-label'>도움말</p>",
++            unsafe_allow_html=True,
++        )
+         if st.button(
+             "튜토리얼 다시 보기",
+             key="sidebar_tutorial_replay",

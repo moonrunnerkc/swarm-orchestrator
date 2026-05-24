@@ -1,0 +1,55 @@
+diff --git a/src/main/java/io/kestra/plugin/databricks/job/CreateJob.java b/src/main/java/io/kestra/plugin/databricks/job/CreateJob.java
+index 7a56e16..74e608f 100644
+--- a/src/main/java/io/kestra/plugin/databricks/job/CreateJob.java
++++ b/src/main/java/io/kestra/plugin/databricks/job/CreateJob.java
+@@ -57,7 +57,10 @@
+         )
+     }
+ )
+-@Schema(title = "Create a Databricks job and run it. Set `waitForCompletion` to the desired maximum duration if you want the task to wait for the job completion (e.g., `PT1H` to wait up to one hour).")
++@Schema(
++    title = "Create a Databricks job and run it.",
++    description = "Set `waitForCompletion` to the desired maximum duration if you want the task to wait for the job completion (e.g., `PT1H` to wait up to one hour)."
++)
+ public class CreateJob extends AbstractTask implements RunnableTask<CreateJob.Output> {
+     @Schema(title = "The name of the job.")
+     private Property<String> jobName;
+diff --git a/src/main/java/io/kestra/plugin/databricks/job/SubmitRun.java b/src/main/java/io/kestra/plugin/databricks/job/SubmitRun.java
+index def9207..8e9f6fd 100644
+--- a/src/main/java/io/kestra/plugin/databricks/job/SubmitRun.java
++++ b/src/main/java/io/kestra/plugin/databricks/job/SubmitRun.java
+@@ -55,7 +55,10 @@
+             """
+     )
+ })
+-@Schema(title = "Submit a Databricks run. Optionally, set `waitForCompletion` to a desired maximum duration to wait for the run completion.")
++@Schema(
++    title = "Submit a Databricks run.",
++    description = "Optionally, set `waitForCompletion` to a desired maximum duration to wait for the run completion."
++)
+ public class SubmitRun  extends AbstractTask implements RunnableTask<SubmitRun.Output> {
+     @Schema(title = "The name of the run.")
+     private Property<String> runName;
+diff --git a/src/main/resources/doc/io.kestra.plugin.databricks.md b/src/main/resources/doc/io.kestra.plugin.databricks.md
+new file mode 100644
+index 0000000..0afa36b
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.databricks.md
+@@ -0,0 +1,17 @@
++# How to use the Databricks plugin
++
++Run jobs, manage clusters, execute SQL, and move files on Databricks from Kestra flows.
++
++## Authentication
++
++Set `host` to your Databricks workspace URL and configure `authentication` with the appropriate credential type. For personal access token auth, set `authentication.token`. For OAuth M2M, set `authentication.clientId` and `authentication.clientSecret`. For Azure-hosted workspaces, use `authentication.azureClientId`, `authentication.azureClientSecret`, and `authentication.azureTenantId`. Alternatively, point `configFile` to a Databricks CLI configuration file. Store all secrets in [secrets](https://kestra.io/docs/concepts/secret) and apply connection properties globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
++
++## Tasks
++
++`job.CreateJob` creates a Databricks job — set `jobName` and `jobTasks` (a list of task settings). `job.SubmitRun` submits a one-off run without creating a persistent job — set `runName` and `runTasks`. Both accept `waitForCompletion` to block until the run finishes. Each task entry supports multiple execution types: `NotebookTaskSetting` (`notebookPath`), `SparkPythonTaskSetting` (`pythonFile`), `SparkJarTaskSetting` (`jarUri`, `mainClassName`), `SqlTaskSetting` (`warehouseId`, `queryId`), `DbtTaskSetting` (`commands`, `warehouseId`), and `PipelineTaskSetting` (`pipelineId`). Attach libraries to any task via a `libraries` list (JAR, PyPI, Maven, wheel, or egg).
++
++`cluster.CreateCluster` provisions a cluster — set `clusterName`, `sparkVersion`, and `nodeTypeId`. Use `numWorkers` for a fixed size or `minWorkers`/`maxWorkers` for autoscaling. Set `autoTerminationMinutes` to terminate idle clusters automatically. `cluster.DeleteCluster` removes a cluster by `clusterId`.
++
++`sql.Query` runs a SQL query against a Databricks SQL warehouse — set `host`, `httpPath`, `accessToken`, and `sql`. Optionally scope to a `catalog` and `schema`. Results are streamed to internal storage.
++
++`dbfs.Upload` uploads a file from Kestra internal storage to DBFS — set `from` (a `kestra://` URI) and `to` (the DBFS destination path). `dbfs.Download` retrieves a file from DBFS by `from` path.

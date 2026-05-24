@@ -1,0 +1,26 @@
+{
+  "id": "devin-polarisxb-taiji-yijing-pr1",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "6ab1625a15a7db16a8fc9c111b972740482bdbe2",
+    "baseSha": "b6e6044c3b0dd218530c3457cae3318a853110a1",
+    "title": "feat(yao-locator): 爻位定位问卷 — phase locator for matched hexagrams",
+    "body": "## Summary\n\n实现 README 第二项待办「爻位定位问卷（identify which phase）」。用户匹配到一卦后（或在卦详情页里），可以通过勾选与自身处境相符的 indicators，得出自己最可能处在哪一爻。\n\n**设计哲学**：祛魅但不取消——透明（按爻名显式分组）、确定性（同样输入 → 同样输出，无随机）、识别跨爻（卡在两阶段之间本身就是诊断信号）。\n\n### 新增\n\n- `lib/yao-locator.ts` — 纯函数 `scoreYao(yao, selected)` 返回 6 爻得分排名 + Top 1 + 跨爻提示\n  - `ratio = hits / total` 避免 indicator 数量不一致带来的不公平\n  - 跨爻识别阈值：次高 `ratio ≥ Top 1 × 0.8` **且** 次高 `ratio ≥ 0.3`（双门槛防止\"少量勾选\"假阳性）\n  - 平局 tiebreak：取 position 较高者；全 0 输入默认 `topPosition = 1`\n- `components/yao-locator/IndicatorChecklist.tsx` — 按爻名显式分组的多选清单\n- `components/yao-locator/LocatorResult.tsx` — 6 爻横向条形图 + Top 1 详读（义理释读 / 典型场景 / 可执行建议）+ 跨爻提示\n- `components/yao-locator/YaoLocator.tsx` — 容器：状态管理 + 提交切换 + 重置\n- `__tests__/yao-locator.test.ts` — 13 个用例覆盖：比例公平 / tiebreak / 跨爻触发与不触发的边界 / 空选 / 重复 indicator 去重 / 空 indicators 数组 / Set 插入顺序无关确定性\n\n### 修改\n\n- `components/MatchCard.tsx`：仅在 `rank === 1`（最匹配的那一卦）的「六爻 · 事之六阶」Section 里插入 `<YaoLocator>`，rank 2/3 不展示避免噪音\n- `app/hexagram/[id]/page.tsx`：在 `YaoTimeline` 之前插入 `<YaoLocator>`\n\n### 不在本 PR 范围内（YAGNI / 留给后续）\n\n- localStorage 持久化（留给「征」模块统一做）\n- 跨卦的通用阶段定位器（不绑定具体卦）\n- 把 Top 1 自动高亮到 `YaoTimeline`\n- 盲选模式开关\n- 把问卷结果反哺给 matcher（提升 phase 特征精度）\n\n### 设计文档\n\n详见 `docs/superpowers/specs/2026-05-24-yao-locator-design.md` 和 `docs/superpowers/plans/2026-05-24-yao-locator.md`。\n\n## Review & Testing Checklist for Human\n\n风险：🟡 yellow —— 纯前端、无 API、无 schema 变更、无新依赖；交互逻辑简单，但跨爻阈值是产品判断（0.8 / 0.3）需要人感觉一下。\n\n- [ ] **跨爻阈值是否合适**：用乾卦勾选不同组合，看是否在你预期的\"卡在两爻之间\"场景下触发了跨爻提示；如果太敏感/不敏感，可调 `CROSS_YAO_RATIO_THRESHOLD`（默认 0.8）和 `CROSS_YAO_MIN_SECOND_RATIO`（默认 0.3）\n- [ ] **视觉是否融入**：横向 bar、Top 1 详读、跨爻提示行——和现有 `card-classical` / 朱砂金色调是否一致；在浅色和深色屏幕上分别看一下\n- [ ] **MatchCard 集成**：只在 rank 1 出现是否符合预期；首页输入「我在大厂工作了 5 年，想辞职创业」之后，展开第壹卦，应该在「六爻 · 事之六阶」上方看到问卷\n- [ ] **详情页集成**：访问 `/hexagram/1`，问卷应该在「六爻阶段图」上方，逻辑独立于主流程\n\n### Test plan\n\n```bash\nnpm install\nnpm run test       # 101/101 pass（含 13 个新增）\nnpm run typecheck  # clean\nnpm run lint       # 无新增 warning\nnpm run build      # 10 个静态页生成成功\nnpm run dev\n```\n\n手动验证：\n1. 打开 http://localhost:3000，提交任意情境（例如\"我在大厂工作了 5 年，想辞职创业\"）\n2. 展开第壹卦（默认展开）→ 滚到「六爻 · 事之六阶」Section\n3. 应看到「阶段定位 · 你在「乾」的第几阶？」问卷；rank 2/3 卡不应有\n4. 勾选乾·初九的几条 indicator + 乾·九五的几条 → 点「定位 →」→ 验证 6 条 bar + Top 1 详读 + 跨爻提示\n5. 点「重新选择」回到选择视图，原勾选保留可微调\n6. 访问 http://localhost:3000/hexagram/1，问卷应在「六爻阶段图」之前显示\n\n### Notes\n\n- 没有引入 `@testing-library/react`，组件测试留作未来。当前测试聚焦在 `scoreYao` 的纯逻辑上（覆盖 13 个 case），UI 走 build + 手动验证。\n- 项目使用 husky pre-commit hook，已通过 `npm install` 的 `prepare` 钩子自动激活；本 PR 的所有 commit 都经过 `lint-staged` 自动格式化。\n\nLink to Devin session: https://app.devin.ai/sessions/7dd2cdf0f31c48ab8055b134e8ee6079\nRequested by: @polarisxb",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779592678-yao-locator",
+    "repository": "polarisxb/taiji-yijing"
+  },
+  "diffRef": {
+    "repository": "polarisxb/taiji-yijing",
+    "headSha": "6ab1625a15a7db16a8fc9c111b972740482bdbe2",
+    "baseSha": "b6e6044c3b0dd218530c3457cae3318a853110a1"
+  },
+  "vendoredDiffPath": "devin/devin-polarisxb-taiji-yijing-pr1.diff",
+  "vendoredAt": "2026-05-24T03:34:14.167Z",
+  "collectedAt": "2026-05-24T03:34:14.167Z"
+}

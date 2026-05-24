@@ -1,0 +1,537 @@
+diff --git a/backend/supabase/migrations/20260524000001_list_club_reservations.sql b/backend/supabase/migrations/20260524000001_list_club_reservations.sql
+new file mode 100644
+index 0000000..11b8a22
+--- /dev/null
++++ b/backend/supabase/migrations/20260524000001_list_club_reservations.sql
+@@ -0,0 +1,61 @@
++-- Migration: 20260524000001_list_club_reservations.sql
++-- Adds a SECURITY DEFINER RPC function that returns all active reservations for
++-- a club's resources within a given time window. Approved club members may call
++-- this function to populate the reservation grid on the club detail page.
++-- The function bypasses RLS (which would otherwise restrict members to seeing
++-- only their own reservations) while re-implementing the membership check.
++
++create or replace function public.list_club_reservations(
++  p_club_id uuid,
++  p_from    timestamptz,
++  p_to      timestamptz
++)
++returns table (
++  id            uuid,
++  resource_id   uuid,
++  membership_id uuid,
++  starts_at     timestamptz,
++  ends_at       timestamptz,
++  status        public.reservation_status,
++  callsign      text,
++  display_name  text
++)
++language plpgsql
++stable
++security definer
++set search_path = ''
++as $$
++declare
++  v_caller_id uuid;
++begin
++  v_caller_id := (select auth.uid());
++
++  if v_caller_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  -- Only approved club members (including admins) may view the grid.
++  if not public.is_club_member(p_club_id) then
++    raise exception 'You are not an approved member of this club';
++  end if;
++
++  return query
++    select
++      rsv.id,
++      rsv.resource_id,
++      rsv.membership_id,
++      rsv.starts_at,
++      rsv.ends_at,
++      rsv.status,
++      u.callsign,
++      u.display_name
++    from public.reservations rsv
++    join public.memberships  m   on m.id       = rsv.membership_id
++    join public.users        u   on u.id        = m.user_id
++    join public.resources    res on res.id      = rsv.resource_id
++    where res.club_id   = p_club_id
++      and rsv.status    = 'active'
++      and rsv.starts_at < p_to
++      and rsv.ends_at   > p_from;
++end;
++$$;
+diff --git a/web/src/app/app/clubs/club-detail/club-detail.html b/web/src/app/app/clubs/club-detail/club-detail.html
+index 27bfbd3..cdf4399 100644
+--- a/web/src/app/app/clubs/club-detail/club-detail.html
++++ b/web/src/app/app/clubs/club-detail/club-detail.html
+@@ -11,6 +11,32 @@
+     <h1 class="app-page__title">{{ club.name }}</h1>
+     <p class="club-id">ID: {{ club.id }}</p>
+ 
++    <section class="schedule-section">
++      <h2>Schedule</h2>
++
++      <div class="date-nav">
++        <button matButton (click)="prevDay()" aria-label="Previous day">&larr;</button>
++        <span class="date-label">{{ selectedDateLabel() }}</span>
++        <button matButton (click)="nextDay()" aria-label="Next day">&rarr;</button>
++      </div>
++
++      @if (reservationsError(); as reservationsError) {
++        <p role="alert" class="error-message">{{ reservationsError }}</p>
++      }
++
++      @if (reservationError(); as reservationError) {
++        <p role="alert" class="error-message">{{ reservationError }}</p>
++      }
++
++      <app-reservation-grid
++        [resources]="activeResources()"
++        [reservations]="reservations() ?? []"
++        [selectedDate]="selectedDate()"
++        [isSubmitting]="isCreatingReservation()"
++        (slotClick)="onSlotClick($event)"
++      />
++    </section>
++
+     <section class="resources-section">
+       <h2>Resources / Stations</h2>
+ 
+diff --git a/web/src/app/app/clubs/club-detail/club-detail.scss b/web/src/app/app/clubs/club-detail/club-detail.scss
+index aefb3ce..ad7267b 100644
+--- a/web/src/app/app/clubs/club-detail/club-detail.scss
++++ b/web/src/app/app/clubs/club-detail/club-detail.scss
+@@ -3,11 +3,23 @@
+   font: var(--mat-sys-body-small);
+ }
+ 
++.schedule-section,
+ .resources-section,
+ .create-resource-section {
+   margin-top: 1.5rem;
+ }
+ 
++.date-nav {
++  display: flex;
++  align-items: center;
++  gap: 0.5rem;
++  margin-bottom: 1rem;
++}
++
++.date-label {
++  font: var(--mat-sys-title-small);
++}
++
+ .create-resource-form {
+   display: flex;
+   flex-direction: column;
+diff --git a/web/src/app/app/clubs/club-detail/club-detail.ts b/web/src/app/app/clubs/club-detail/club-detail.ts
+index 872848e..827afe4 100644
+--- a/web/src/app/app/clubs/club-detail/club-detail.ts
++++ b/web/src/app/app/clubs/club-detail/club-detail.ts
+@@ -1,4 +1,4 @@
+-import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
++import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
+ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+ import { MatButtonModule } from '@angular/material/button';
+ import { MatFormFieldModule } from '@angular/material/form-field';
+@@ -6,7 +6,8 @@ import { MatInputModule } from '@angular/material/input';
+ import { MatListModule } from '@angular/material/list';
+ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+ import { ActivatedRoute, RouterLink } from '@angular/router';
+-import { Club, ClubService, Resource } from '../../../club.service';
++import { Club, ClubReservation, ClubService, Resource } from '../../../club.service';
++import { ReservationGridComponent } from './reservation-grid/reservation-grid';
+ 
+ @Component({
+   selector: 'app-club-detail',
+@@ -18,6 +19,7 @@ import { Club, ClubService, Resource } from '../../../club.service';
+     MatListModule,
+     MatProgressSpinnerModule,
+     RouterLink,
++    ReservationGridComponent,
+   ],
+   templateUrl: './club-detail.html',
+   styleUrl: './club-detail.scss',
+@@ -32,6 +34,25 @@ export class ClubDetailPage implements OnInit {
+   protected readonly createResourceError = signal<string | null>(null);
+   protected readonly isLoading = signal(true);
+   protected readonly errorMessage = signal<string | null>(null);
++
++  protected readonly selectedDate = signal<Date>(this.localMidnightToday());
++  protected readonly reservations = signal<ClubReservation[] | null>(null);
++  protected readonly reservationsError = signal<string | null>(null);
++  protected readonly isCreatingReservation = signal(false);
++  protected readonly reservationError = signal<string | null>(null);
++
++  protected readonly selectedDateLabel = computed(() => {
++    return this.selectedDate().toLocaleDateString(undefined, {
++      weekday: 'long',
++      year: 'numeric',
++      month: 'long',
++      day: 'numeric',
++    });
++  });
++
++  /** Active resources only, for display in the reservation grid. */
++  protected readonly activeResources = computed(() => (this.resources() ?? []).filter((r) => r.is_active));
++
+   protected readonly form = new FormGroup({
+     name: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
+     description: new FormControl('', { nonNullable: true }),
+@@ -40,14 +61,15 @@ export class ClubDetailPage implements OnInit {
+ 
+   private readonly clubService = inject(ClubService);
+   private readonly route = inject(ActivatedRoute);
++  private clubId = '';
+ 
+   async ngOnInit(): Promise<void> {
+-    const id = this.route.snapshot.paramMap.get('id') ?? '';
++    this.clubId = this.route.snapshot.paramMap.get('id') ?? '';
+ 
+     const [clubResult, resourcesResult, isAdminResult] = await Promise.all([
+-      this.clubService.getClub(id),
+-      this.clubService.listClubResources(id),
+-      this.clubService.isClubAdmin(id),
++      this.clubService.getClub(this.clubId),
++      this.clubService.listClubResources(this.clubId),
++      this.clubService.isClubAdmin(this.clubId),
+     ]);
+ 
+     this.club.set(clubResult.data);
+@@ -57,6 +79,34 @@ export class ClubDetailPage implements OnInit {
+     this.isClubAdmin.set(isAdminResult.data);
+ 
+     this.isLoading.set(false);
++
++    await this.loadReservations();
++  }
++
++  protected prevDay(): void {
++    const d = this.selectedDate();
++    this.selectedDate.set(new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1));
++    void this.loadReservations();
++  }
++
++  protected nextDay(): void {
++    const d = this.selectedDate();
++    this.selectedDate.set(new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1));
++    void this.loadReservations();
++  }
++
++  protected async onSlotClick(event: { resourceId: string; startsAt: Date; endsAt: Date }): Promise<void> {
++    this.reservationError.set(null);
++    this.isCreatingReservation.set(true);
++    const { error } = await this.clubService.createReservation(event.resourceId, event.startsAt, event.endsAt);
++    this.isCreatingReservation.set(false);
++
++    if (error) {
++      this.reservationError.set(error);
++      return;
++    }
++
++    await this.loadReservations();
+   }
+ 
+   protected async submitResource(): Promise<void> {
+@@ -97,4 +147,18 @@ export class ClubDetailPage implements OnInit {
+       this.form.reset({ name: '', description: '', blockSizeMinutes: 60 });
+     }
+   }
++
++  private async loadReservations(): Promise<void> {
++    const date = this.selectedDate();
++    const from = new Date(date.getFullYear(), date.getMonth(), date.getDate()); // local midnight
++    const to = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1); // next local midnight
++    const result = await this.clubService.listClubReservations(this.clubId, from, to);
++    this.reservations.set(result.data);
++    this.reservationsError.set(result.error);
++  }
++
++  private localMidnightToday(): Date {
++    const now = new Date();
++    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
++  }
+ }
+diff --git a/web/src/app/app/clubs/club-detail/reservation-grid/reservation-grid.html b/web/src/app/app/clubs/club-detail/reservation-grid/reservation-grid.html
+new file mode 100644
+index 0000000..f338ea3
+--- /dev/null
++++ b/web/src/app/app/clubs/club-detail/reservation-grid/reservation-grid.html
+@@ -0,0 +1,34 @@
++@if (!resources().length) {
++  <p class="no-resources">No active resources to display.</p>
++} @else {
++  <div class="grid-scroll">
++    <table class="reservation-grid">
++      <thead>
++        <tr>
++          <th class="time-col">{{ timezoneAbbr() }}</th>
++          @for (resource of resources(); track resource.id) {
++            <th class="resource-col">{{ resource.name }}</th>
++          }
++        </tr>
++      </thead>
++      <tbody>
++        @for (slot of timeSlots(); track slot.label) {
++          <tr [class.past-row]="!isSlotFuture(slot)">
++            <td class="time-cell">{{ slot.label }}</td>
++            @for (resource of resources(); track resource.id) {
++              <td class="slot-cell" [class.unaligned]="!isSlotAligned(resource, slot)">
++                @if (getReservationForCell(resource, slot); as reservation) {
++                  <span class="reservation-chip">{{ getOwnerLabel(reservation) }}</span>
++                } @else if (isSlotAligned(resource, slot) && isSlotFuture(slot)) {
++                  <button matButton (click)="onSlotClick(resource, slot)" [disabled]="isSubmitting()" class="open-slot-btn">
++                    open
++                  </button>
++                }
++              </td>
++            }
++          </tr>
++        }
++      </tbody>
++    </table>
++  </div>
++}
+diff --git a/web/src/app/app/clubs/club-detail/reservation-grid/reservation-grid.scss b/web/src/app/app/clubs/club-detail/reservation-grid/reservation-grid.scss
+new file mode 100644
+index 0000000..701ef59
+--- /dev/null
++++ b/web/src/app/app/clubs/club-detail/reservation-grid/reservation-grid.scss
+@@ -0,0 +1,70 @@
++.no-resources {
++  color: var(--mat-sys-on-surface-variant);
++}
++
++.grid-scroll {
++  overflow-x: auto;
++}
++
++.reservation-grid {
++  border-collapse: collapse;
++  width: 100%;
++  min-width: 400px;
++
++  th,
++  td {
++    padding: 0.25rem 0.5rem;
++    text-align: center;
++    border-bottom: 1px solid var(--mat-sys-outline-variant);
++  }
++
++  .time-col {
++    text-align: left;
++    white-space: nowrap;
++    font: var(--mat-sys-label-medium);
++    color: var(--mat-sys-on-surface-variant);
++    min-width: 3.5rem;
++  }
++
++  .resource-col {
++    font: var(--mat-sys-label-medium);
++    min-width: 120px;
++  }
++
++  .time-cell {
++    text-align: left;
++    white-space: nowrap;
++    font: var(--mat-sys-body-small);
++    color: var(--mat-sys-on-surface-variant);
++  }
++
++  .slot-cell {
++    padding: 0.2rem 0.4rem;
++  }
++
++  .past-row {
++    opacity: 0.45;
++
++    .time-cell {
++      color: var(--mat-sys-on-surface-variant);
++    }
++  }
++
++  .unaligned {
++    background-color: var(--mat-sys-surface-container);
++  }
++}
++
++.reservation-chip {
++  display: inline-block;
++  padding: 0.2rem 0.6rem;
++  border-radius: 1rem;
++  background-color: var(--mat-sys-primary-container);
++  color: var(--mat-sys-on-primary-container);
++  font: var(--mat-sys-label-medium);
++  white-space: nowrap;
++}
++
++.open-slot-btn {
++  width: 100%;
++}
+diff --git a/web/src/app/app/clubs/club-detail/reservation-grid/reservation-grid.ts b/web/src/app/app/clubs/club-detail/reservation-grid/reservation-grid.ts
+new file mode 100644
+index 0000000..a2bef02
+--- /dev/null
++++ b/web/src/app/app/clubs/club-detail/reservation-grid/reservation-grid.ts
+@@ -0,0 +1,92 @@
++import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
++import { MatButtonModule } from '@angular/material/button';
++import { ClubReservation, Resource } from '../../../../club.service';
++
++interface TimeSlot {
++  startsAt: Date;
++  label: string;
++}
++
++@Component({
++  selector: 'app-reservation-grid',
++  imports: [MatButtonModule],
++  templateUrl: './reservation-grid.html',
++  styleUrl: './reservation-grid.scss',
++  changeDetection: ChangeDetectionStrategy.OnPush,
++})
++export class ReservationGridComponent {
++  readonly resources = input.required<Resource[]>();
++  readonly reservations = input.required<ClubReservation[]>();
++  /** Local midnight of the day to display. */
++  readonly selectedDate = input.required<Date>();
++  readonly isSubmitting = input(false);
++  readonly slotClick = output<{ resourceId: string; startsAt: Date; endsAt: Date }>();
++
++  /**
++   * Row interval in minutes: the minimum block_size_minutes across all resources.
++   * This ensures every resource has at least one valid slot per row.
++   */
++  protected readonly rowIntervalMinutes = computed(() => {
++    const resources = this.resources();
++    if (!resources.length) return 60;
++    return resources.reduce((min, r) => Math.min(min, r.block_size_minutes), resources[0].block_size_minutes);
++  });
++
++  protected readonly timeSlots = computed((): TimeSlot[] => {
++    const date = this.selectedDate();
++    const intervalMs = this.rowIntervalMinutes() * 60 * 1000;
++    // Use local midnight so the grid covers the user's calendar day.
++    const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
++    const dayEnd = dayStart + 24 * 60 * 60 * 1000;
++    const slots: TimeSlot[] = [];
++    for (let t = dayStart; t < dayEnd; t += intervalMs) {
++      const d = new Date(t);
++      const hh = d.getHours().toString().padStart(2, '0');
++      const mm = d.getMinutes().toString().padStart(2, '0');
++      slots.push({ startsAt: d, label: `${hh}:${mm}` });
++    }
++    return slots;
++  });
++
++  /** Short timezone abbreviation to display in the time column header (e.g. "MDT", "EST"). */
++  protected readonly timezoneAbbr = computed((): string => {
++    const ref = this.timeSlots()[0]?.startsAt ?? new Date();
++    const parts = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' }).formatToParts(ref);
++    return parts.find((p) => p.type === 'timeZoneName')?.value ?? 'Local';
++  });
++
++  protected getReservationForCell(resource: Resource, slot: TimeSlot): ClubReservation | null {
++    const slotStart = slot.startsAt.getTime();
++    const slotEnd = slotStart + this.rowIntervalMinutes() * 60 * 1000;
++    return (
++      this.reservations().find((r) => {
++        if (r.resource_id !== resource.id) return false;
++        const resStart = new Date(r.starts_at).getTime();
++        const resEnd = new Date(r.ends_at).getTime();
++        return resStart < slotEnd && resEnd > slotStart;
++      }) ?? null
++    );
++  }
++
++  /** Returns true when slot.startsAt falls on a block boundary for this resource. */
++  protected isSlotAligned(resource: Resource, slot: TimeSlot): boolean {
++    const epochSeconds = slot.startsAt.getTime() / 1000;
++    return epochSeconds % (resource.block_size_minutes * 60) === 0;
++  }
++
++  /** Returns true when the slot has not yet ended (includes the currently-active block). */
++  protected isSlotFuture(slot: TimeSlot): boolean {
++    const slotEnd = slot.startsAt.getTime() + this.rowIntervalMinutes() * 60 * 1000;
++    return slotEnd > Date.now();
++  }
++
++  protected getOwnerLabel(reservation: ClubReservation): string {
++    return reservation.callsign ?? reservation.display_name ?? 'Reserved';
++  }
++
++  protected onSlotClick(resource: Resource, slot: TimeSlot): void {
++    const startsAt = slot.startsAt;
++    const endsAt = new Date(startsAt.getTime() + resource.block_size_minutes * 60 * 1000);
++    this.slotClick.emit({ resourceId: resource.id, startsAt, endsAt });
++  }
++}
+diff --git a/web/src/app/club.service.ts b/web/src/app/club.service.ts
+index 3d1aaf0..c1be5bb 100644
+--- a/web/src/app/club.service.ts
++++ b/web/src/app/club.service.ts
+@@ -26,6 +26,17 @@ export interface CreateResourceInput {
+   isActive?: boolean;
+ }
+ 
++export interface ClubReservation {
++  id: string;
++  resource_id: string;
++  membership_id: string;
++  starts_at: string;
++  ends_at: string;
++  status: string;
++  callsign: string | null;
++  display_name: string | null;
++}
++
+ @Injectable({ providedIn: 'root' })
+ export class ClubService {
+   private readonly auth = inject(AuthService);
+@@ -108,4 +119,40 @@ export class ClubService {
+ 
+     return { data: data as Resource | null, error: error?.message ?? null };
+   }
++
++  async listClubReservations(
++    clubId: string,
++    from: Date,
++    to: Date,
++  ): Promise<{ data: ClubReservation[] | null; error: string | null }> {
++    if (!this.supabase) {
++      return { data: null, error: 'Supabase is not configured.' };
++    }
++
++    const { data, error } = await this.supabase.rpc('list_club_reservations', {
++      p_club_id: clubId,
++      p_from: from.toISOString(),
++      p_to: to.toISOString(),
++    });
++
++    return { data: data as ClubReservation[] | null, error: error?.message ?? null };
++  }
++
++  async createReservation(
++    resourceId: string,
++    startsAt: Date,
++    endsAt: Date,
++  ): Promise<{ data: { id: string } | null; error: string | null }> {
++    if (!this.supabase) {
++      return { data: null, error: 'Supabase is not configured.' };
++    }
++
++    const { data, error } = await this.supabase.rpc('create_reservation', {
++      p_resource_id: resourceId,
++      p_starts_at: startsAt.toISOString(),
++      p_ends_at: endsAt.toISOString(),
++    });
++
++    return { data: data as { id: string } | null, error: error?.message ?? null };
++  }
+ }

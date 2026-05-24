@@ -1,0 +1,26 @@
+{
+  "id": "devin-divord97-ccc-pr14",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 14,
+    "headSha": "ed92e23d6a8553f8869b236f645d915686b66c69",
+    "baseSha": "5eb72a0d9e501e523a5723358d7b9412245e21a1",
+    "title": "feat: Complete frontend implementation — 40+ pages, all Phase 0-10 UI",
+    "body": "## Summary\n\nComplete React/TypeScript frontend implementation for the CCC contact center platform, covering all Phase 0-10 functionality with 40+ page routes.\n\n**Tech Stack:** Vite + React 18 + TypeScript + Ant Design 5 + Zustand + Axios + React Router\n\n**Architecture:**\n- `src/api/client.ts` — Axios instance with JWT interceptors (auto 401→login redirect)\n- `src/api/endpoints.ts` — 170+ backend API endpoint wrappers organized by bounded context\n- `src/stores/auth.ts` — Zustand auth store with localStorage persistence\n- `src/components/common/CrudPage.tsx` — Reusable CRUD component (table + modal + search + delete confirmation)\n- `src/components/layout/AppLayout.tsx` — Collapsible sidebar nav + header dropdown\n\n**Pages (62 files, +9575 lines):**\n\n| Category | Pages |\n|---|---|\n| Auth | Login (JWT) |\n| Dashboard | Real-time overview (18 metrics, agent status table, call funnel) |\n| Agent Mgmt | Agent list, Skill groups (with member management) |\n| IVR | Flow list (publish/lock/clone/rollback/versions), DAG editor (20 node types) |\n| Telephony | Phone numbers, Call records (filters/detail drawer/IVR tracking/recording player), Voicemails |\n| Campaigns | CRUD (4 dialing modes), case import, live statistics modal |\n| IM | Session management (chat UI with message list), Channel configuration |\n| CRM | Customer list/CRUD/batch import |\n| Tickets | Ticket list/detail/comments, Templates (draft→published) |\n| Knowledge | Categories + Articles (full-text search) |\n| Reports | Agent, Group agent, Skill group, B2B, Internal call, Status log (all with date filters + CSV export) |\n| AI | Digital employees/scenes, QA (rules/schemes/results/appeals/review), ASR hotwords, Performance scorecards, Annotations (task lifecycle), LLM gateway |\n| Settings | Tenant, Break reasons, Disposition codes, Business hours, Custom fields, Call tags, Screen pop, Webhooks, SMS config, Quick replies, CSAT config, Audio files |\n| Platform | Tenant management (CRUD), Audit logs |\n| My Workbench | Overview stats, profile, password change, state reset |\n\n**Build verification:**\n- `tsc --noEmit` — zero TypeScript errors\n- `vite build` — production build passes (1.47MB bundle)\n\n## Review & Testing Checklist for Human\n\n- [ ] Run `cd web && npm install && npm run build` — verify zero errors\n- [ ] Run `npm run dev` — verify dev server starts, navigate to `/login`\n- [ ] Verify sidebar navigation covers all expected modules per v5.2 spec\n- [ ] Verify API endpoint wrappers in `src/api/endpoints.ts` match the Go backend handler routes\n- [ ] Test login flow with the Go backend running — JWT token stored, redirects to dashboard\n- [ ] Spot-check 3-5 CRUD pages (e.g., agents, skill groups, call records) — create/edit/delete modals work\n\n**Recommended test plan:**\n1. Start Go backend: `go run cmd/server/main.go`\n2. Start frontend: `cd web && npm run dev`\n3. Login → Dashboard → navigate all sidebar items → verify pages load without console errors\n4. Test one full CRUD flow (e.g., create agent → edit → delete)\n\n### Notes\n- The IVR editor is a simplified DAG editor (list-based with node config panels). A full canvas drag-drop editor (e.g., with React Flow) can be added as a future enhancement.\n- Bundle is 1.47MB (uncompressed) / 452KB gzipped — code splitting can be added later via dynamic imports.\n- All pages gracefully handle API errors (catch blocks) since the backend may not be running during frontend development.\n\nLink to Devin session: https://app.devin.ai/sessions/35e328fa681447e98fa82466c8f69b99\nRequested by: @divord97\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/divord97/ccc/pull/14\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779577488-frontend-implementation",
+    "repository": "divord97/ccc"
+  },
+  "diffRef": {
+    "repository": "divord97/ccc",
+    "headSha": "ed92e23d6a8553f8869b236f645d915686b66c69",
+    "baseSha": "5eb72a0d9e501e523a5723358d7b9412245e21a1"
+  },
+  "vendoredDiffPath": "devin/devin-divord97-ccc-pr14.diff",
+  "vendoredAt": "2026-05-24T03:04:50.347Z",
+  "collectedAt": "2026-05-24T03:04:50.347Z"
+}

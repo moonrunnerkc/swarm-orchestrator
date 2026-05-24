@@ -1,0 +1,540 @@
+diff --git a/00_authority/DECISION_LOG.md b/00_authority/DECISION_LOG.md
+index cf0017b..8409623 100644
+--- a/00_authority/DECISION_LOG.md
++++ b/00_authority/DECISION_LOG.md
+@@ -1,7 +1,7 @@
+ ---
+ title: Decision log
+-date: 2026-05-23
+-version: 24
++date: 2026-05-24
++version: 25
+ status: draft
+ ---
+ 
+@@ -13,6 +13,14 @@ One entry per decision. Keep it short. Link out to supporting docs.
+ 
+ ## Entries
+ 
++### 2026-05-24 — Ops Audit Framework: commit Perplexity research as operating framework with ADR stubs
++
++- **Decision**: Commit the Perplexity-synthesised ops audit and operating framework to `00_authority/OPS_AUDIT_FRAMEWORK.md` as candidate authority. Create `docs/adr/` directory with 6 ADR stubs for open architecture decisions flagged in the audit. Correct the audit's claim that `visual-polish-system` and `visual-polish-systemdot` are archived (verified active via `git ls-remote`).
++- **Why**: Ewan requested "make that real" — the audit exists as a research document but has no home in the governed workspace. Committing it as candidate authority makes it actionable by agents. ADR stubs close the loop on 6 unresolved architecture questions. The correction on repo status prevents agents from treating active repos as read-only.
++- **Where encoded**: `00_authority/OPS_AUDIT_FRAMEWORK.md` v1, `docs/adr/ADR-001` through `ADR-006`, `00_authority/MANIFEST.md` v69, this entry.
++- **Status**: candidate (pending Ewan review).
++- **Signed-by**: Devon | 2026-05-24 | devin-bfbc7fe01e7c43dda8cbbb7f9d4a73ec
++
+ ### 2026-05-23 — Version Control Hosting: remain on GitHub SaaS
+ 
+ - **Decision**: Remain on GitHub for repository hosting and CI/CD pipelines instead of migrating to a self-hosted Gitea/Forgejo instance.
+diff --git a/00_authority/MANIFEST.md b/00_authority/MANIFEST.md
+index 763a271..1304883 100644
+--- a/00_authority/MANIFEST.md
++++ b/00_authority/MANIFEST.md
+@@ -1,7 +1,7 @@
+ ---
+ title: Governed workspace manifest (authoritative inventory)
+-date: 2026-05-23
+-version: 68
++date: 2026-05-24
++version: 69
+ status: draft
+ ---
+ 
+@@ -85,6 +85,14 @@ not the GitHub slug. Do not guess another pattern under this org for this lane.
+ - `02_build/INFRASTRUCTURE.md` (canonical infrastructure manifest — single source of truth for all 40 containers, services, scheduled jobs, and server specs on Amplified Core)
+ - `.github/CODEOWNERS` (GitHub CODEOWNERS — requires `@ewanbramley` review for `00_authority/**` and `01_truth/**` changes; no default owner)
+ - `.cursor/rules/stateless-handover-kaizen.mdc` `[LOGIC TO BE CONFIRMED]` (mechanical enforcement of existing handover policy; not a separate policy spine)
++- `00_authority/OPS_AUDIT_FRAMEWORK.md` `[LOGIC TO BE CONFIRMED]` (ops audit and operating framework — source-of-truth map, repo snapshot, git/PR rules, execution loop, wide-blinkers/fixed-ceilings, product gates, open ADRs; source: Perplexity synthesis verified by Devon against live GitHub metadata; AMP-TBD)
++- `docs/adr/README.md` `[LOGIC TO BE CONFIRMED]` (ADR convention and index)
++- `docs/adr/ADR-001-graph-vector-direction.md` `[LOGIC TO BE CONFIRMED]` (accepted — PostgreSQL + AGE + pgvector; closes ops audit open item)
++- `docs/adr/ADR-002-marketing-engine-integration.md` `[LOGIC TO BE CONFIRMED]` (proposed — three codebases touching marketing, needs Ewan decision)
++- `docs/adr/ADR-003-executor-routing.md` `[LOGIC TO BE CONFIRMED]` (proposed — Cove vs Cursor vs Devin routing)
++- `docs/adr/ADR-004-beast-deploy-ownership.md` `[LOGIC TO BE CONFIRMED]` (proposed — who owns deploys to Beast)
++- `docs/adr/ADR-005-kaizen-rename.md` `[LOGIC TO BE CONFIRMED]` (proposed — kaizen-surface-loop repo not found, needs clarification)
++- `docs/adr/ADR-006-problem-receipt-location.md` `[LOGIC TO BE CONFIRMED]` (proposed — where receipts live: Vellum, Linear, GitHub, or all three)
+ - `.cursor/hooks.json` `[LOGIC TO BE CONFIRMED]` (**No hooks** — `"hooks": {}`. **TESTING NEED:** reinstatement gate → `.cursor/HOOKS_TESTING_NEED.md`; history → `03_shadow/2026-04-16_stop-hook_followup-checklist-loop_bug-report.md` § Final resolution)
+ - `.cursor/hooks/stateless-handover-stop.py` `[LOGIC TO BE CONFIRMED]` (**Dormant / testing only** — **not invoked** while `hooks` is empty; do not treat as enforcement)
+ 
+@@ -182,6 +190,15 @@ not the GitHub slug. Do not guess another pattern under this org for this lane.
+ 
+ ## Changelog
+ 
++### v69 — 2026-05-24
++
++- Added `00_authority/OPS_AUDIT_FRAMEWORK.md` — ops audit and operating framework from Perplexity research, verified against live GitHub metadata.
++- Created `docs/adr/` directory with README and 6 ADR stubs for open architecture decisions flagged in the ops audit.
++- Corrected ops audit claim that `visual-polish-system` and `visual-polish-systemdot` are archived (both are active with branches, verified via `git ls-remote`).
++- Updated `00_authority/DECISION_LOG.md` to version 25.
++
++Signed-by: Devon | 2026-05-24 | devin-bfbc7fe01e7c43dda8cbbb7f9d4a73ec
++
+ ### v68 — 2026-05-23
+ 
+ - Updated `00_authority/DECISION_LOG.md` to version 24, recording the decision to remain on GitHub SaaS for version control hosting and CI/CD pipelines.
+diff --git a/00_authority/OPS_AUDIT_FRAMEWORK.md b/00_authority/OPS_AUDIT_FRAMEWORK.md
+new file mode 100644
+index 0000000..7a15825
+--- /dev/null
++++ b/00_authority/OPS_AUDIT_FRAMEWORK.md
+@@ -0,0 +1,160 @@
++---
++title: Ops audit and operating framework
++date: 2026-05-24
++version: 1
++status: candidate
++provenance: "Perplexity research synthesis, verified against live GitHub metadata by Devon. Live GitHub state is MEASURED at collection time. Brain/session findings are STRUCTURED unless directly verified."
++---
++
++<!-- markdownlint-disable-file MD013 -->
++
++# Amplified Partners Ops Audit and Future Framework
++
++## Evidence Tiers Used
++
++| Tier | Meaning in this report | Examples |
++|---|---|---|
++| MEASURED | Verified against live system metadata during the audit | Repo existence, default branches, archive status, open PR snapshot |
++| STRUCTURED | Found in prior brain/session research or explicit operating doctrine | GitHub/Linear/Vellum roles, Vellum write-authority rule, no-code-before-verification |
++| INFERRED | Consistent with evidence, but not explicitly specified | Agent commits only on feature branches, PR-first discipline where branch protection exists |
++| UNRESOLVED | Not found in live GitHub metadata or accessible prior research | Exact Cove-vs-Cursor rule, Beast deploy owner, exact branch naming pattern |
++
++## Current Source-of-Truth Map
++
++| System | Role | Current rule |
++|---|---|---|
++| GitHub | Source of truth for code, versioned docs, and approved policy artefacts | Treat repo HEAD and protected branches as the current code baseline |
++| Linear | Work ledger and coordination surface | Every commit or material change should link to a Linear ticket |
++| Vellum | Write-authority and governance outlet | Production writes and significant decisions require Vellum-style receipt or proceed/hold/revise/escalate packet |
++| Brain / MCP | Context, memory, and research substrate | Use it for discovery, then reset against current repo/runtime state |
++| Beast | Runtime/source-material host | Do not claim runtime truth without live verification |
++| Cursor / Cove / Devin | Implementation agents | Executor choice remains policy-dependent; reversible repo work is allowed only within fixed ceilings |
++| Perplexity | Research, critique, orchestration, and report synthesis | Can coordinate and verify, but should not bypass Vellum or production gates |
++
++## Repository Snapshot (MEASURED 2026-05-24)
++
++| Repo | Default branch | Status | Operational interpretation |
++|---|---|---|---|
++| `clean-build` | `main` | Active | Canonical governed workspace for authority files and build artefacts |
++| `marketing-engine` | `main` | Active | Audit before replacing, wrapping, porting, or deprecating |
++| `crm` | `main` | Active | Canonical CRM repo name is lowercase `crm` |
++| `vellum` | `main` | Active | Governance/write-authority layer |
++| `amplified-knowledge-mcp` | `main` | Active | Brain/MCP interface; graph/vector direction still needs ADR |
++| `visual-polish-systemdot` | `main` | Active | Has active branches — NOT archived despite prior report claim |
++| `visual-polish-system` | `main` | Active | Has active branches — NOT archived despite prior report claim |
++| `cove-orchestrator` | — | Not found | Do not reference as active repo without verification |
++| `kaizen-surface-loop` | — | Not found | Rename target not confirmed |
++
++**Correction from Perplexity report:** `visual-polish-systemdot` and `visual-polish-system` were reported as "Archived" but both have active branches (verified 2026-05-24 via `git ls-remote`). They are not archived.
++
++## Git and PR Rules (MEASURED where noted)
++
++| Area | Current answer | Confidence |
++|---|---|---|
++| Default base branch | `main` on all verified repos | MEASURED |
++| Branch naming regex | `^(cove\|devin\|devon\|clawd\|cassian\|antigravity\|openclaw\|dependabot\|release\|feature\|fix\|chore\|hotfix\|docs\|refactor\|test\|ci)/.+` | MEASURED (from `pr-validation.yml`) |
++| Required checks (clean-build) | `Linear ticket reference`, `Branch name convention` | MEASURED |
++| Required checks (crm) | Same pattern (`Linear ticket reference`, `Branch name convention`) | STRUCTURED |
++| PR review (clean-build) | CODEOWNERS requires `@ewanbramley` for `00_authority/**` and `01_truth/**` | MEASURED |
++| DeepSeek Five Rods review | Runs on all non-draft PRs to `clean-build`; auto-merge on pass | MEASURED |
++| Copilot review | Configured via `.github/copilot-review-instructions.md` on `clean-build` | MEASURED |
++| Dependabot | Weekly Monday 09:00 UTC, `github-actions` ecosystem, 5 PR limit | MEASURED |
++| Linear sync | PR lifecycle syncs to Linear ticket (opened → In Review, merged → note) | MEASURED |
++| Push policy | Do not infer direct push to main even if technically possible | STRUCTURED |
++
++## Operating Framework for Future Work
++
++### Default Execution Loop
++
++1. State the plan before acting.
++2. Link the work to Linear or a session-pack ticket.
++3. Verify source-of-truth material before touching code.
++4. Do the smallest reversible step.
++5. Run the relevant checks.
++6. Write a Vellum-style receipt or handoff.
++7. Compare plan versus actual result.
++8. Record blockers, deltas, and next action.
++
++### Before Coding
++
++Every substantial implementation task should produce or update:
++
++- Source map verification (which repos, which branches, which runtime state)
++- Brain/prior-research reset (what was found, what is stale)
++- Contradictions and blockers log
++- Relevant ADRs where architecture is unresolved
++- First implementation ticket breakdown
++
++Do not code if the source map, runtime path, or architecture decision is unclear and material to the task.
++
++### Wide Blinkers, Fixed Ceilings
++
++**Allowed without re-asking (inside an agreed repo):**
++
++- Read-only Git/GitHub inspection
++- Local diffs, logs, branches, status, fetches
++- Tests, lint, type checks, builds, local validation
++- Installing project dependencies into project-local environments
++- Editing files on feature branches
++- Drafting docs in `03_shadow`, session packs, research folders, ADR drafts
++- Background research and parallel assessment agents
++
++**Always ask or escalate first:**
++
++- `git push`, `git push --force`, `git reset --hard`, `git clean -fd`
++- Commits (unless explicitly authorised)
++- Production SSH or destructive Docker operations
++- Database destructive writes
++- `.env`, credentials, IAM, or vault changes
++- Marketing sends, social posts, landing-page publishes, public content
++- `03_shadow` to `01_truth` promotion
++- P0 epistemic signoff
++- Any action touching secrets, PII, production, or external users
++
++## Product and Governance Gates
++
++| Gate | Rule |
++|---|---|
++| Marketing publish | No send/post/publish without approval, consent verification, and Vellum decision packet |
++| Brevo/email | SPF, DKIM, DMARC, suppression, consent source, and warm-up must be verified before real sends |
++| Synthetic content | Disclosure rules must be checked before publishing AI-generated testimonials, ads, case studies, or video |
++| `03_shadow` to `01_truth` | Human-held until explicit delegation exists |
++| P0 | Halt, log, escalate; no silent promotion or self-signoff |
++| Secrets | Never touch without explicit vault path and approval |
++| PII | Keep separate by design; no PII in logs, generated content, or marketing tables unless explicitly authorised and protected |
++
++## Architecture Decisions Still Open
++
++| Decision | Why it matters | ADR stub |
++|---|---|---|
++| Graph/vector layer | Conflicting signals across FalkorDB, Qdrant, Neo4j, PostgreSQL, Apache AGE, pgvector | `docs/adr/ADR-001-graph-vector-direction.md` |
++| Marketing-engine integration | Active TypeScript work may conflict with Python-first marketing implementation | `docs/adr/ADR-002-marketing-engine-integration.md` |
++| Executor routing (Cove vs Cursor vs Devin) | Prior research names different agents as primary executor in different contexts | `docs/adr/ADR-003-executor-routing.md` |
++| Beast deploy ownership | Runtime verification not established | `docs/adr/ADR-004-beast-deploy-ownership.md` |
++| Kaizen rename | `kaizen-surface-loop` not found as a repo | `docs/adr/ADR-005-kaizen-rename.md` |
++| Problem receipt location | Vellum receipt doctrine exists, exact file path/owner unresolved | `docs/adr/ADR-006-problem-receipt-location.md` |
++
++## Reusable Audit Template
++
++```text
++TIER:
++DATE:
++SCOPE:
++
++1. Live system snapshot (repos, branches, PRs, checks, runtime)
++2. Prior doctrine (source-of-truth rules, agent roles, gates, decisions)
++3. Reconciliation (confirms, contradicts, stales, unresolved)
++4. Action rules (allowed, ask first, blocked until ADR, blocked until human)
++5. Next tickets (verification, ADRs, implementation, governance)
++```
++
++## Changelog
++
++### v1 — 2026-05-24
++
++- Initial commit. Sourced from Perplexity research synthesis, verified against live GitHub metadata by Devon.
++- Repository status verified via `git ls-remote` for all 9 named repos.
++- Corrected `visual-polish-system` and `visual-polish-systemdot` status from "Archived" to "Active."
++- Branch naming regex extracted from `pr-validation.yml`.
++
++Signed-by: Devon | 2026-05-24 | devin-bfbc7fe01e7c43dda8cbbb7f9d4a73ec
+diff --git a/docs/adr/ADR-001-graph-vector-direction.md b/docs/adr/ADR-001-graph-vector-direction.md
+new file mode 100644
+index 0000000..4c0b017
+--- /dev/null
++++ b/docs/adr/ADR-001-graph-vector-direction.md
+@@ -0,0 +1,40 @@
++---
++title: "ADR-001: Graph/vector layer direction"
++date: 2026-05-24
++status: accepted
++decision: "PostgreSQL + Apache AGE (graph) + pgvector/HNSW (vector). One engine."
++---
++
++# ADR-001: Graph/Vector Layer Direction
++
++## Status
++
++**Accepted.** Already decided and documented in `00_authority/DATA_ARCHITECTURE.md` v1 (Devon-973e, 2026-05-08) and Knowledge Note `note-17e5ce67451946879460475f6b9cecb2`.
++
++This ADR exists to close the loop flagged in the ops audit. The decision is made.
++
++## Decision
++
++PostgreSQL + Apache AGE (graph) + pgvector with HNSW indexing (vector). One database engine, three capabilities, no separate processes.
++
++## Deprecated
++
++- FalkorDB → replaced by Apache AGE
++- Qdrant → replaced by pgvector
++
++## Migration Status
++
++All migrations planned, not yet executed:
++- FalkorDB → AGE: 9,000 nodes across 4 graphs
++- Qdrant → pgvector: 57,434 embeddings (384-dim)
++- Token-proxy semantic cache → pgvector table
++
++## Consequences
++
++- No new work uses FalkorDB or Qdrant
++- Existing FalkorDB/Qdrant code is legacy — migrate or flag
++- `amplified-knowledge-mcp` needs updating to target AGE + pgvector
++
++---
++
++*Devon | 2026-05-24 | devin-bfbc7fe01e7c43dda8cbbb7f9d4a73ec*
+diff --git a/docs/adr/ADR-002-marketing-engine-integration.md b/docs/adr/ADR-002-marketing-engine-integration.md
+new file mode 100644
+index 0000000..3ed6776
+--- /dev/null
++++ b/docs/adr/ADR-002-marketing-engine-integration.md
+@@ -0,0 +1,40 @@
++---
++title: "ADR-002: Marketing engine integration direction"
++date: 2026-05-24
++status: proposed
++decision: "[DECISION REQUIRED]"
++---
++
++# ADR-002: Marketing Engine Integration Direction
++
++## Status
++
++**Proposed.** Needs Ewan decision.
++
++## Context
++
++`marketing-engine` is an active TypeScript/Python repo with content generation, atomisation, and distribution pipelines. `amplified-machine/core` also has marketing-related routes and integrations (Brevo, Remotion, ElevenLabs). `crm/app/marketing_machine` has a third implementation.
++
++Three codebases touching marketing. Which is canonical?
++
++## Options
++
++1. **`marketing-engine` is canonical.** Port any unique features from `amplified-machine` and `crm` into it. Single repo for all marketing automation.
++2. **`amplified-machine` absorbs marketing.** Marketing-engine becomes a thin API client. Machine repo owns the pipeline.
++3. **Coexist with clear boundaries.** Marketing-engine owns content generation/distribution. CRM owns client-specific personalization. Machine owns orchestration. Define the API contracts between them.
++
++## Consequences
++
++Option 1: one codebase, simpler, but requires a migration.
++Option 2: bigger repo, more coupling, but single deployment.
++Option 3: most flexible, but requires explicit API contracts and avoids drift.
++
++## Open Questions
++
++- Which repo has the most recent working implementation?
++- Is the TypeScript work in marketing-engine ahead of the Python work in amplified-machine?
++- Does Ewan want to consolidate or keep separation?
++
++---
++
++*Devon | 2026-05-24 | devin-bfbc7fe01e7c43dda8cbbb7f9d4a73ec*
+diff --git a/docs/adr/ADR-003-executor-routing.md b/docs/adr/ADR-003-executor-routing.md
+new file mode 100644
+index 0000000..b8a1d48
+--- /dev/null
++++ b/docs/adr/ADR-003-executor-routing.md
+@@ -0,0 +1,38 @@
++---
++title: "ADR-003: Executor routing (Cove vs Cursor vs Devin)"
++date: 2026-05-24
++status: proposed
++decision: "[DECISION REQUIRED]"
++---
++
++# ADR-003: Executor Routing
++
++## Status
++
++**Proposed.** Needs Ewan decision.
++
++## Context
++
++Prior research names different agents as primary executor in different contexts:
++- **Devon (Devin)** — cloud-native, always-on scheduled sessions, Beast SSH access, Linear governor
++- **Antigravity (Cursor)** — COO and Business Arbiter, full terminal authority, local on M5
++- **Stoa (Claude Code)** — Plumb agent for truth-checking and drift detection
++- **Comet** — research and orchestration
++
++No explicit routing rule exists for "given task type X, which agent executes?" The `00_authority/AGENT_ROUTING.md` is `[LOGIC TO BE CONFIRMED]`.
++
++## Options
++
++1. **Explicit routing table.** Task type → agent mapping. Research → Perplexity. Infrastructure → Devon. Design → Antigravity. Governance → Stoa.
++2. **Baton rotation.** No fixed routing. The baton holder for the current decision picks the executor. Orchestra model.
++3. **Capability-based.** Agent advertises capabilities via Vellum. Orchestrate layer matches task to capability. Dynamic.
++
++## Consequences
++
++Option 1: simple but rigid. New task types need a routing update.
++Option 2: aligned with the Orchestra model. Requires baton tracking to work.
++Option 3: most flexible but requires the Orchestrate layer to exist first.
++
++---
++
++*Devon | 2026-05-24 | devin-bfbc7fe01e7c43dda8cbbb7f9d4a73ec*
+diff --git a/docs/adr/ADR-004-beast-deploy-ownership.md b/docs/adr/ADR-004-beast-deploy-ownership.md
+new file mode 100644
+index 0000000..0dac0dd
+--- /dev/null
++++ b/docs/adr/ADR-004-beast-deploy-ownership.md
+@@ -0,0 +1,37 @@
++---
++title: "ADR-004: Beast deploy ownership"
++date: 2026-05-24
++status: proposed
++decision: "[DECISION REQUIRED]"
++---
++
++# ADR-004: Beast Deploy Ownership
++
++## Status
++
++**Proposed.** Needs runtime verification and Ewan decision.
++
++## Context
++
++Beast (`135.181.161.131`, Hetzner M5, 96 cores, 252GB RAM) hosts ~40 containers. Devon has SSH access via `beastkey`. But "who owns deploys" is unresolved:
++
++- Devon runs scheduled health checks (AMP-141, AMP-147)
++- Antigravity has agent directories on Beast (`/opt/amplified/antigravity/`)
++- Vellum is deployed to Beast (port 8400) — deployed by Devon in this session
++- `02_build/INFRASTRUCTURE.md` documents containers but not deploy ownership
++
++## Options
++
++1. **Devon owns all deploys.** Single point of coordination. All pushes to Beast go through Devon sessions.
++2. **Agent-owned services.** Each agent owns their service: Devon owns Vellum, Enforcer. AG owns the Machine. Ewan owns LiteLLM config.
++3. **Git-driven deploys.** Merge to main triggers deploy via GitHub Actions. No agent manually SSHs. Beast pulls from Git.
++
++## Consequences
++
++Option 1: simplest but creates a bottleneck on Devon sessions.
++Option 2: distributed but requires clear service ownership registry.
++Option 3: most robust but requires CI/CD pipeline to Beast (currently absent).
++
++---
++
++*Devon | 2026-05-24 | devin-bfbc7fe01e7c43dda8cbbb7f9d4a73ec*
+diff --git a/docs/adr/ADR-005-kaizen-rename.md b/docs/adr/ADR-005-kaizen-rename.md
+new file mode 100644
+index 0000000..2feadab
+--- /dev/null
++++ b/docs/adr/ADR-005-kaizen-rename.md
+@@ -0,0 +1,36 @@
++---
++title: "ADR-005: Kaizen surface loop rename"
++date: 2026-05-24
++status: proposed
++decision: "[DECISION REQUIRED]"
++---
++
++# ADR-005: Kaizen Surface Loop Rename
++
++## Status
++
++**Proposed.** Needs clarification from Ewan.
++
++## Context
++
++Prior research references `kaizen-surface-loop` as a repo name. Verified 2026-05-24: no such repo exists under `Amplified-Partners` or `ewan-dot`. `git ls-remote` returns "not found."
++
++Kaizen concepts exist in:
++- `clean-build/00_authority/BRAIN_ARCHITECTURE.md` — Kaizen monitoring (surprise heuristic, four-tradition science)
++- `clean-build/03_shadow/` — Kaizen probes
++- `visual-polish-systemdot` — Kaizen loop for UI refinement
++- `corpus-raw` — `kaizen-business-specification.md` in archive
++
++## Options
++
++1. **Don't create it.** Kaizen lives inside `clean-build` as part of the governed workspace. No separate repo needed.
++2. **Create it.** Dedicated repo for the Kaizen surface loop as a standalone service.
++3. **Rename an existing repo.** If `kaizen-surface-loop` was meant to be a rename of an existing repo, identify which one.
++
++## Open Question
++
++Was `kaizen-surface-loop` intended as a new repo, a rename, or a concept that doesn't need its own repo?
++
++---
++
++*Devon | 2026-05-24 | devin-bfbc7fe01e7c43dda8cbbb7f9d4a73ec*
+diff --git a/docs/adr/ADR-006-problem-receipt-location.md b/docs/adr/ADR-006-problem-receipt-location.md
+new file mode 100644
+index 0000000..b99481a
+--- /dev/null
++++ b/docs/adr/ADR-006-problem-receipt-location.md
+@@ -0,0 +1,55 @@
++---
++title: "ADR-006: Problem receipt location"
++date: 2026-05-24
++status: proposed
++decision: "[DECISION REQUIRED]"
++---
++
++# ADR-006: Problem Receipt Location
++
++## Status
++
++**Proposed.** Needs Ewan decision.
++
++## Context
++
++The ops audit and operating framework require a "Vellum-style receipt" for every unit of work. The receipt doctrine exists but the exact format, file path, and owner are unresolved.
++
++Receipts could live in:
++- **Vellum** — entries on the ledger (hash-chained, attributed, immutable)
++- **Linear** — ticket comments
++- **GitHub** — PR descriptions (plan-execution mirror)
++- **`clean-build/03_shadow/job-wrapups/`** — markdown files
++
++## Options
++
++1. **Vellum is canonical.** Every receipt is a Vellum entry. Linear and GitHub get links to the Vellum entry. Single source of truth.
++2. **Triple-write.** Receipt goes to Vellum, Linear, and GitHub. Redundant but visible everywhere.
++3. **GitHub PR is the receipt.** The plan-execution mirror in the PR description IS the receipt. Vellum gets a hash of the PR for audit chain.
++
++## Recommendation
++
++OPINION 80%: Option 1. Vellum is the governance surface — receipts belong there. Linear and GitHub are execution surfaces that link to the Vellum receipt. This is consistent with the source-of-truth map: Vellum = write-authority.
++
++## Receipt Format (Proposed)
++
++```json
++{
++    "entry_type": "decision",
++    "author": "<agent>",
++    "content": "<one-line summary of what was done>",
++    "epistemic_tier": "<tier of the work output>",
++    "metadata": {
++        "type": "receipt",
++        "linear_ticket": "AMP-NNN",
++        "github_pr": "org/repo#NN",
++        "plan_hash": "<sha256 of the plan>",
++        "execution_hash": "<sha256 of the execution log>",
++        "delta": "<one-line description of plan vs actual>"
++    }
++}
++```
++
++---
++
++*Devon | 2026-05-24 | devin-bfbc7fe01e7c43dda8cbbb7f9d4a73ec*
+diff --git a/docs/adr/README.md b/docs/adr/README.md
+new file mode 100644
+index 0000000..b5df61b
+--- /dev/null
++++ b/docs/adr/README.md
+@@ -0,0 +1,12 @@
++# Architecture Decision Records
++
++ADRs capture significant architecture decisions with context, alternatives, and consequences.
++
++**Format:** `ADR-NNN-kebab-slug.md`
++**Status lifecycle:** `proposed` → `accepted` → `superseded` (or `rejected`)
++
++Each ADR is indexed in `00_authority/MANIFEST.md` once accepted.
++
++---
++
++*Devon | 2026-05-24 | devin-bfbc7fe01e7c43dda8cbbb7f9d4a73ec*

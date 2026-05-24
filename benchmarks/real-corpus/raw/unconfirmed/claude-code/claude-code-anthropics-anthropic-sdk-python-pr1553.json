@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1553",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1553,
+    "headSha": "c9ae17024560fd32df0a3532be90ac57e3046d92",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824",
+    "title": "fix(bedrock): detect region from AWS_DEFAULT_REGION and aws_profile arg",
+    "body": "The `_infer_region` function in `src/anthropic/lib/bedrock/_client.py` only checked `AWS_REGION` and ignored the standard `AWS_DEFAULT_REGION` environment variable, and did not pass the `aws_profile` argument to the boto3 session, so a non-default profile's region was never picked up. This PR adds `AWS_DEFAULT_REGION` as a fallback after `AWS_REGION`, updates `_infer_region` to accept and forward `aws_profile` to `boto3.Session`, and threads that argument through both `AnthropicBedrock` and `AsyncAnthropicBedrock`. Run `pytest tests/lib/test_bedrock.py` to verify the new `test_region_infer_from_aws_default_region_env` and `test_region_infer_from_aws_profile_arg` tests pass alongside the existing suite.\n\nFixes #892",
+    "author": "JiwaniZakir",
+    "headRef": "fix/issue-892",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "c9ae17024560fd32df0a3532be90ac57e3046d92",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1553.diff",
+  "vendoredAt": "2026-05-24T03:17:20.393Z",
+  "collectedAt": "2026-05-24T03:17:20.393Z"
+}

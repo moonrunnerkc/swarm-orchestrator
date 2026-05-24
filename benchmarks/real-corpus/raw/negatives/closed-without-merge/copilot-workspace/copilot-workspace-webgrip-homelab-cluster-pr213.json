@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-webgrip-homelab-cluster-pr213",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 213,
+    "headSha": "8eb4c7ddbc877e37f7950a3172425e51a65384eb",
+    "baseSha": "988c30760ef642a4c74d7af9cab0e21022c64cba",
+    "title": "chore(review): add Copilot risk assessment for envoy-gateway v1.7.0 → v1.8.0 (PR #211)",
+    "body": "Automated Renovate review for PR #211 updating `mirror.gcr.io/envoyproxy/gateway-helm` from v1.7.0 to v1.8.0 — a minor release with security fixes, behavioral changes, and several bugfixes directly relevant to this cluster's configuration.\n\n## Review highlights\n\n- **Verdict:** 🟡 Yellow Caution — Merge after checks\n- **Scope:** Single-line diff in `bootstrap/helmfile.d/00-crds.yaml`; the Flux `OCIRepository` already targets v1.8.0 with a pinned digest, so controller upgrade triggers on next reconcile\n- **Security:** Two Go/dep CVE bumps ([#8669](https://github.com/envoyproxy/gateway/pull/8669), [#8709](https://github.com/envoyproxy/gateway/pull/8709)) — CVE IDs not detailed in release body\n- **RBAC fix (directly relevant):** Helm secrets RBAC corrected for `GatewayNamespace` deploy mode ([#8706](https://github.com/envoyproxy/gateway/pull/8706)) — this repo uses exactly that mode\n- **Behavior change:** HTTP/3 disabled when client TLS is active ([#8583](https://github.com/envoyproxy/gateway/pull/8583)); this cluster's `ClientTrafficPolicy` has `http3: {}` globally\n- **Auth fix:** Client certificates not delivered when exclusively referenced by SecurityPolicy JWT/OIDC or ExtAuth backends ([#8654](https://github.com/envoyproxy/gateway/pull/8654), [#8711](https://github.com/envoyproxy/gateway/pull/8711))\n- **Log format change:** JSON encoder now uses abbreviated field keys ([#8555](https://github.com/envoyproxy/gateway/pull/8555)) — may affect log-based alerting in PrometheusRules/dashboards",
+    "author": "Copilot",
+    "headRef": "copilot/review-renovate-agent-211",
+    "repository": "webgrip/homelab-cluster"
+  },
+  "diffRef": {
+    "repository": "webgrip/homelab-cluster",
+    "headSha": "8eb4c7ddbc877e37f7950a3172425e51a65384eb",
+    "baseSha": "988c30760ef642a4c74d7af9cab0e21022c64cba"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/copilot-workspace/copilot-workspace-webgrip-homelab-cluster-pr213.diff",
+  "vendoredAt": "2026-05-24T04:28:41.258Z",
+  "collectedAt": "2026-05-24T04:28:41.258Z"
+}

@@ -1,0 +1,27 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.ldap.md b/src/main/resources/doc/io.kestra.plugin.ldap.md
+new file mode 100644
+index 0000000..cac6ae3
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.ldap.md
+@@ -0,0 +1,21 @@
++# How to use the LDAP plugin
++
++Add, modify, delete, and search LDAP directory entries, and convert between LDIF and ION formats, from Kestra flows.
++
++## Authentication
++
++Set `hostname` (required), `port` (required), `userDn` (required), and `password` (required) on every connection task. The default `authMethod` is `simple` (username/password bind). For Kerberos/GSSAPI authentication, set `authMethod` to `GSSAPI` and optionally configure `kdc`, `realm`, and `saslAllowedQoP`. Configure SSL/TLS via the `sslOptions` object. Store secrets in [secrets](https://kestra.io/docs/concepts/secret) and apply connection properties globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
++
++## Tasks
++
++`Add` adds one or more LDAP entries — set `inputs` (required, list of `kestra://` URIs pointing to LDIF files).
++
++`Modify` modifies existing LDAP entries — set `inputs` (required, list of `kestra://` URIs pointing to LDIF files with modify changeType records).
++
++`Delete` deletes LDAP entries — set `inputs` (required, list of `kestra://` URIs pointing to LDIF files with delete changeType records).
++
++`Search` searches the directory — optionally set `baseDn` (default `ou=system`), `filter` (default `(objectclass=*)`), `attributes` (default all user attributes), `sub` (search scope, default `SUB`), `sizeLimit`, and `pageSize`. The output includes `uri` (ION file of matching entries).
++
++`LdifToIon` converts one or more LDIF files to ION format — set `inputs` (required, list of `kestra://` URIs). The output includes `urisList` (list of converted ION file URIs).
++
++`IonToLdif` converts one or more ION files back to LDIF format — set `inputs` (required, list of `kestra://` URIs). The output includes `urisList` (list of converted LDIF file URIs).

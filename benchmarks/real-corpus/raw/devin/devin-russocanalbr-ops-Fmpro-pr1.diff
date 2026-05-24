@@ -1,0 +1,678 @@
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000..d98fe30
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,15 @@
++QUOTEX_EMAIL=seu_email
++QUOTEX_PASSWORD=sua_senha
++MISTRAL_API_KEY=sua_chave_mistral
++# Ou múltiplas chaves: MISTRAL_API_KEYS=chave1,chave2
++IA_PROVIDER=mistral
++MODO_CONTA=PRACTICE
++DURACAO_TRADE=60
++ANTECIPAR_ENTRADA_SEGUNDOS=5
++PAYOUT_MINIMO=80
++VALOR_PADRAO=100
++MODO_ENTRADA=FIXA
++RISCO_PERCENTUAL_BANCA=1
++STOP_WIN_DIARIO=300
++STOP_LOSS_DIARIO=300
++SOROS_MAX_NIVEIS=2
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..97d188a
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,6 @@
++.venv/
++__pycache__/
++*.pyc
++.env
++.env.*
++!.env.example
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..f7fad85
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,34 @@
++# Fmpro
++
++Robô Quotex com IA opcional e filtros locais de Price Action.
++
++## Setup
++
++```bash
++python3 -m venv .venv
++. .venv/bin/activate
++pip install -r requirements.txt
++cp .env.example .env
++```
++
++Preencha `.env` com suas credenciais e chaves. Não commite `.env`.
++
++## Rodar
++
++```bash
++. .venv/bin/activate
++set -a
++. .env
++set +a
++python main.py
++```
++
++## Controles importantes
++
++- `ANTECIPAR_ENTRADA_SEGUNDOS=5`: espera a janela da vela e envia a ordem 5s antes do fechamento.
++- `PAYOUT_MINIMO=80`: bloqueia entradas abaixo de 80%.
++- `STOP_WIN_DIARIO` / `STOP_LOSS_DIARIO`: trava o robô ao bater meta/perda do dia.
++- `MODO_ENTRADA=FIXA`, `PERCENTUAL` ou `SOROS`; Soros é limitado por `SOROS_MAX_NIVEIS` com teto de 2.
++- Martingale ilimitado não é usado.
++
++Aviso: automação em opções binárias envolve risco financeiro; não há garantia de lucro.
+diff --git a/main.py b/main.py
+index eeca6d8..48b574b 100644
+--- a/main.py
++++ b/main.py
+@@ -1,16 +1,18 @@
+ """
+-Bot Quotex – IA Mistral (ou Gemini/Claude) + indicadores locais
++Bot Quotex – IA Mistral/Gemini/Ollama + Price Action local.
+ - Verificação ativa de streams
+-- Fallback robusto
+-- 20 ativos, 45s
++- Filtro macro/micro, payout, ATR, stop diário e Soros limitado
++- Entrada sincronizada com a vela e ID completo da operação
+ """
+ 
+ import asyncio
+ import json
+ import logging
++import os
+ import sys
+ import time
+ import re
++from dataclasses import dataclass
+ from datetime import datetime, timezone, timedelta
+ from typing import Dict, List, Any, Optional
+ 
+@@ -19,25 +21,39 @@
+ from pyquotex.types import ReconnectPolicy
+ 
+ # ========== CONFIGURAÇÕES ==========
+-EMAIL = "russocanalbr@gmail.com"
+-PASSWORD = "NiNo14122001$"
++EMAIL = os.getenv("QUOTEX_EMAIL", "")
++PASSWORD = os.getenv("QUOTEX_PASSWORD", "")
+ 
+ # Escolha UMA IA: "mistral", "gemini" ou "local"
+-IA_PROVIDER = "mistral"  # mude para "gemini" ou "local" se quiser
+-MISTRAL_API_KEY = "RPGqCtvRcOlf52Gb3t1cOSBJ5ZEWTM6L"
+-MISTRAL_KEYS = [MISTRAL_API_KEY, "bkqlUgWgaFBX16tEv7Za7ov1Qy3KL9yc"]
++IA_PROVIDER = os.getenv("IA_PROVIDER", "mistral").lower()
++MISTRAL_KEYS = [
++    key.strip()
++    for key in os.getenv("MISTRAL_API_KEYS", os.getenv("MISTRAL_API_KEY", "")).split(",")
++    if key.strip()
++]
+ # Gemini (opcional)
+-GEMINI_API_KEY = "SUA_CHAVE_GEMINI_AQUI"  # obtenha em makersuite.google.com/app/apikey
++GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+ # Local Ollama (endereço padrão)
+-OLLAMA_URL = "http://localhost:11434/api/generate"
+-OLLAMA_MODEL = "llama3"  # ou "mistral", "phi3"
+-
+-INTERVALO_ANALISE = 0.5
+-INTERVALO_IA = 5
+-INTERVALO_MINIMO_TRADE = 18
+-VALOR_PADRAO = 100.0
+-CONFIANCA_MINIMA = 0.85
+-DURACAO_TRADE = 45
++OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
++OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
++
++INTERVALO_ANALISE = float(os.getenv("INTERVALO_ANALISE", "0.5"))
++INTERVALO_IA = float(os.getenv("INTERVALO_IA", "5"))
++INTERVALO_MINIMO_TRADE = int(os.getenv("INTERVALO_MINIMO_TRADE", "18"))
++VALOR_PADRAO = float(os.getenv("VALOR_PADRAO", "100"))
++CONFIANCA_MINIMA = float(os.getenv("CONFIANCA_MINIMA", "0.85"))
++DURACAO_TRADE = int(os.getenv("DURACAO_TRADE", "60"))
++ANTECIPAR_ENTRADA_SEGUNDOS = float(os.getenv("ANTECIPAR_ENTRADA_SEGUNDOS", "5"))
++MODO_CONTA = os.getenv("MODO_CONTA", "PRACTICE")
++PAYOUT_MINIMO = float(os.getenv("PAYOUT_MINIMO", "80"))
++STOP_WIN_DIARIO = float(os.getenv("STOP_WIN_DIARIO", "300"))
++STOP_LOSS_DIARIO = float(os.getenv("STOP_LOSS_DIARIO", "300"))
++MODO_ENTRADA = os.getenv("MODO_ENTRADA", "FIXA").upper()
++RISCO_PERCENTUAL_BANCA = float(os.getenv("RISCO_PERCENTUAL_BANCA", "1"))
++SOROS_MAX_NIVEIS = min(int(os.getenv("SOROS_MAX_NIVEIS", "2")), 2)
++ATR_MINIMO_PERCENTUAL = float(os.getenv("ATR_MINIMO_PERCENTUAL", "0.01"))
++ATR_MAXIMO_PERCENTUAL = float(os.getenv("ATR_MAXIMO_PERCENTUAL", "0.45"))
++PAVIO_MAXIMO_RATIO = float(os.getenv("PAVIO_MAXIMO_RATIO", "0.65"))
+ TIMEZONE_BR = timezone(timedelta(hours=-3))
+ TOP_ATIVOS = 20
+ TIMEOUT_STREAMS = 5  # segundos sem preço -> re-assina
+@@ -51,6 +67,16 @@
+ cache_ia = {"timestamp": 0, "decisao": None}
+ current_key_index = 0
+ 
++
++@dataclass
++class TradeStats:
++    lucro_dia: float = 0.0
++    soros_nivel: int = 0
++    soros_lucro: float = 0.0
++
++
++trade_stats = TradeStats()
++
+ def horario_br() -> str:
+     return datetime.now(TIMEZONE_BR).strftime("%H:%M:%S")
+ 
+@@ -74,6 +100,152 @@ def calcular_rsi(prices: List[float], periodo: int = 7) -> float:
+     rs = media_ganho / media_perda
+     return 100 - (100 / (1 + rs))
+ 
++def agregar_ticks_em_candles(ticks: List[Any], periodo: int) -> List[Dict[str, float]]:
++    buckets: Dict[int, List[float]] = {}
++    for tick in ticks:
++        if not isinstance(tick, dict) or "price" not in tick:
++            continue
++        timestamp = float(tick.get("time", tick.get("timestamp", time.time())))
++        if timestamp > 10_000_000_000:
++            timestamp = timestamp / 1000
++        bucket = int(timestamp // periodo) * periodo
++        buckets.setdefault(bucket, []).append(float(tick["price"]))
++    candles = []
++    for bucket, prices in sorted(buckets.items()):
++        candles.append({
++            "open": prices[0],
++            "close": prices[-1],
++            "high": max(prices),
++            "low": min(prices),
++            "time": float(bucket),
++        })
++    return candles
++
++def candle_body(candle: Dict[str, float]) -> float:
++    return abs(candle["close"] - candle["open"])
++
++def candle_range(candle: Dict[str, float]) -> float:
++    return max(candle["high"] - candle["low"], 1e-9)
++
++def calcular_atr_percentual(candles: List[Dict[str, float]], periodo: int = 5) -> float:
++    if len(candles) < periodo:
++        return 0.0
++    recentes = candles[-periodo:]
++    atr = sum(candle_range(c) for c in recentes) / len(recentes)
++    preco = recentes[-1]["close"] or 1.0
++    return (atr / preco) * 100
++
++def mercado_indeciso(candles: List[Dict[str, float]]) -> bool:
++    if len(candles) < 5:
++        return True
++    indecisas = 0
++    for candle in candles[-5:]:
++        total = candle_range(candle)
++        upper = candle["high"] - max(candle["open"], candle["close"])
++        lower = min(candle["open"], candle["close"]) - candle["low"]
++        if upper / total > PAVIO_MAXIMO_RATIO and lower / total > PAVIO_MAXIMO_RATIO:
++            indecisas += 1
++    return indecisas >= 2
++
++def detectar_estrutura(candles: List[Dict[str, float]], lookback: int = 8) -> str:
++    if len(candles) < lookback:
++        return "neutral"
++    recentes = candles[-lookback:]
++    highs = [c["high"] for c in recentes]
++    lows = [c["low"] for c in recentes]
++    if highs[-1] > highs[-3] > highs[-5] and lows[-1] > lows[-3] > lows[-5]:
++        return "bull"
++    if highs[-1] < highs[-3] < highs[-5] and lows[-1] < lows[-3] < lows[-5]:
++        return "bear"
++    first_close = recentes[0]["close"]
++    last_close = recentes[-1]["close"]
++    variation = (last_close - first_close) / first_close if first_close else 0
++    if variation > 0.0005:
++        return "bull"
++    if variation < -0.0005:
++        return "bear"
++    return "neutral"
++
++def mapear_zonas(candles: List[Dict[str, float]], janela: int = 20) -> Dict[str, float]:
++    recentes = candles[-janela:] if len(candles) >= janela else candles
++    if not recentes:
++        return {"support": 0.0, "resistance": 0.0, "range": 0.0}
++    support = min(c["low"] for c in recentes)
++    resistance = max(c["high"] for c in recentes)
++    return {
++        "support": support,
++        "resistance": resistance,
++        "range": max(resistance - support, 1e-9),
++    }
++
++def perto_de_zona(preco: float, zona: float, amplitude: float) -> bool:
++    tolerancia = max(amplitude * 0.12, preco * 0.00015)
++    return abs(preco - zona) <= tolerancia
++
++def detectar_gatilho_price_action(
++        candles_micro: List[Dict[str, float]],
++        zonas: Dict[str, float],
++        macro_trend: str,
++) -> Optional[Dict[str, Any]]:
++    if len(candles_micro) < 4 or macro_trend not in {"bull", "bear"}:
++        return None
++    atual = candles_micro[-1]
++    anterior = candles_micro[-2]
++    total = candle_range(atual)
++    body = candle_body(atual)
++    upper = atual["high"] - max(atual["open"], atual["close"])
++    lower = min(atual["open"], atual["close"]) - atual["low"]
++    preco = atual["close"]
++    suporte = zonas["support"]
++    resistencia = zonas["resistance"]
++    amplitude = zonas["range"]
++
++    bullish_rejection = (
++        macro_trend == "bull"
++        and perto_de_zona(preco, suporte, amplitude)
++        and lower / total >= 0.45
++        and atual["close"] > atual["open"]
++    )
++    bearish_rejection = (
++        macro_trend == "bear"
++        and perto_de_zona(preco, resistencia, amplitude)
++        and upper / total >= 0.45
++        and atual["close"] < atual["open"]
++    )
++    bullish_engulf = (
++        macro_trend == "bull"
++        and atual["close"] > atual["open"]
++        and anterior["close"] < anterior["open"]
++        and atual["close"] > anterior["open"]
++        and atual["open"] <= anterior["close"]
++    )
++    bearish_engulf = (
++        macro_trend == "bear"
++        and atual["close"] < atual["open"]
++        and anterior["close"] > anterior["open"]
++        and atual["close"] < anterior["open"]
++        and atual["open"] >= anterior["close"]
++    )
++    force = body / total
++    breakout_call = (
++        macro_trend == "bull"
++        and anterior["close"] > resistencia
++        and perto_de_zona(preco, resistencia, amplitude)
++        and atual["close"] >= atual["open"]
++    )
++    breakout_put = (
++        macro_trend == "bear"
++        and anterior["close"] < suporte
++        and perto_de_zona(preco, suporte, amplitude)
++        and atual["close"] <= atual["open"]
++    )
++
++    if bullish_rejection or bullish_engulf or breakout_call:
++        return {"direction": "call", "trigger": "price_action_call", "score": 0.92 if force > 0.55 else 0.87}
++    if bearish_rejection or bearish_engulf or breakout_put:
++        return {"direction": "put", "trigger": "price_action_put", "score": 0.92 if force > 0.55 else 0.87}
++    return None
++
+ def calcular_macd_rapido(prices: List[float], fast=6, slow=13, signal=4) -> Dict[str, Any]:
+     if len(prices) < slow + signal:
+         return {"macd": 0, "signal": 0, "histogram": 0, "trend": "neutral"}
+@@ -108,12 +280,25 @@ def detectar_rompimento(prices: List[float], janela: int = 6) -> Dict[str, Any]:
+         return {"breakout": "low", "strength": (min_janela - recente[-1]) / min_janela}
+     return {"breakout": "none", "strength": 0}
+ 
+-def calcular_indicadores(precos: List[float], tick_volume: int = 0) -> Dict[str, Any]:
++def calcular_indicadores(
++        precos: List[float],
++        tick_volume: int = 0,
++        candles_micro: Optional[List[Dict[str, float]]] = None,
++        candles_macro: Optional[List[Dict[str, float]]] = None,
++) -> Dict[str, Any]:
+     macd = calcular_macd_rapido(precos)
+     rompimento = detectar_rompimento(precos)
+     rsi = calcular_rsi(precos, periodo=7)
+     volatilidade = (max(precos[-6:]) - min(precos[-6:])) / precos[-6] if len(precos) >= 6 else 0
+     variacao_3s = (precos[-1] - precos[-3]) / precos[-3] if len(precos) >= 3 else 0
++    candles_micro = candles_micro or []
++    candles_macro = candles_macro or candles_micro
++    macro_trend = detectar_estrutura(candles_macro)
++    micro_trend = detectar_estrutura(candles_micro, lookback=6)
++    zonas = mapear_zonas(candles_macro)
++    atr_percentual = calcular_atr_percentual(candles_micro)
++    indecisao = mercado_indeciso(candles_micro)
++    gatilho = detectar_gatilho_price_action(candles_micro, zonas, macro_trend)
+     return {
+         "macd": macd,
+         "breakout": rompimento,
+@@ -123,14 +308,25 @@ def calcular_indicadores(precos: List[float], tick_volume: int = 0) -> Dict[str,
+         "volatilidade": volatilidade * 100,
+         "tick_volume": tick_volume,
+         "forca_rompimento": rompimento["strength"],
+-        "trend": "bull" if macd["trend"] == "bull" or rompimento["breakout"] == "high" else "bear" if macd["trend"] == "bear" or rompimento["breakout"] == "low" else "neutral"
++        "trend": "bull" if macd["trend"] == "bull" or rompimento["breakout"] == "high" else "bear" if macd["trend"] == "bear" or rompimento["breakout"] == "low" else "neutral",
++        "macro_trend": macro_trend,
++        "micro_trend": micro_trend,
++        "zonas": zonas,
++        "atr_percentual": atr_percentual,
++        "mercado_indeciso": indecisao,
++        "price_action": gatilho,
+     }
+ 
+ def decisao_local(analises: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+     melhores = []
+     for nome, d in analises.items():
+         conf, direcao = 0.0, None
+-        if (d["breakout"]["breakout"] == "high" and d["macd"]["trend"] == "bull" and
++        if d["mercado_indeciso"] or d["atr_percentual"] < ATR_MINIMO_PERCENTUAL or d["atr_percentual"] > ATR_MAXIMO_PERCENTUAL:
++            continue
++        price_action = d.get("price_action")
++        if price_action and d["macro_trend"] == d["micro_trend"]:
++            conf, direcao = price_action["score"], price_action["direction"]
++        elif (d["breakout"]["breakout"] == "high" and d["macd"]["trend"] == "bull" and
+             d["rsi"] < 70 and d["variacao_3s"] > 0.1 and d["forca_rompimento"] > 0.0006):
+             conf, direcao = 0.90, "call"
+         elif (d["breakout"]["breakout"] == "low" and d["macd"]["trend"] == "bear" and
+@@ -158,8 +354,10 @@ async def consultar_mistral(analises: Dict[str, Dict[str, Any]]) -> Dict[str, An
+     current_key_index = (current_key_index + 1) % len(MISTRAL_KEYS)
+ 
+     prompt = (
+-        f"Operações de {DURACAO_TRADE}s. Retorne APENAS JSON: "
++        f"Operações de {DURACAO_TRADE}s em opções binárias. Retorne APENAS JSON: "
+         "{\"asset\":\"nome\",\"direction\":\"call/put\",\"confidence\":0.85+}\n"
++        "Regra: opere só alinhado com macro_trend e micro_trend, em zona de suporte/resistência, "
++        "com price_action válido, ATR saudável, payout >= 80 e sem mercado_indeciso.\n"
+         "Dados:\n"
+     )
+     for nome, d in list(analises.items())[:12]:
+@@ -167,7 +365,9 @@ async def consultar_mistral(analises: Dict[str, Dict[str, Any]]) -> Dict[str, An
+             f"{nome}: preço {d['ultimo_preco']:.5f}, var3s {d['variacao_3s']:.2f}%, "
+             f"vol {d['volatilidade']:.2f}%, ticks {d['tick_volume']}, "
+             f"MACD {d['macd']['trend']} hist {d['macd']['histogram']:.5f}, "
+-            f"romp {d['breakout']['breakout']} força {d['breakout']['strength']:.4f}, RSI {d['rsi']}\n"
++            f"romp {d['breakout']['breakout']} força {d['breakout']['strength']:.4f}, RSI {d['rsi']}, "
++            f"macro {d['macro_trend']}, micro {d['micro_trend']}, ATR {d['atr_percentual']:.3f}%, "
++            f"indeciso {d['mercado_indeciso']}, PA {d['price_action']}\n"
+         )
+     prompt += "Nenhuma oportunidade -> {\"asset\": null}"
+ 
+@@ -219,7 +419,7 @@ async def consultar_gemini(analises: Dict[str, Dict[str, Any]]) -> Dict[str, Any
+         if json_match:
+             decisao = json.loads(json_match.group())
+             return decisao
+-    except:
++    except Exception:
+         pass
+     return {"fallback": True}
+ 
+@@ -237,37 +437,117 @@ async def consultar_local(analises: Dict[str, Dict[str, Any]]) -> Dict[str, Any]
+                 if json_match:
+                     decisao = json.loads(json_match.group())
+                     return decisao
+-        except:
++        except Exception:
+             pass
+     return {"fallback": True}
+ 
+ # Ponto de entrada da IA
+ async def consultar_ia(analises: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+-    if IA_PROVIDER == "gemini" and GEMINI_API_KEY != "SUA_CHAVE_GEMINI_AQUI":
++    if IA_PROVIDER == "gemini" and GEMINI_API_KEY:
+         return await consultar_gemini(analises)
+     elif IA_PROVIDER == "local":
+         return await consultar_local(analises)
++    elif IA_PROVIDER == "mistral" and not MISTRAL_KEYS:
++        return {"fallback": True}
+     else:
+         return await consultar_mistral(analises)
+ 
+-# ------------------- EXECUÇÃO DE TRADE (igual antes) -------------------
++def obter_payout(quotex: Quotex, asset: str) -> float:
++    payout = None
++    try:
++        payout = quotex.get_payout_by_asset(asset, "1")
++    except Exception as exc:
++        print(f"⚠️ {asset}: erro ao consultar payout: {exc}")
++    if isinstance(payout, dict):
++        payout = payout.get("1M") or payout.get("5M")
++    try:
++        payout_float = float(payout)
++    except (TypeError, ValueError):
++        return 0.0
++    return payout_float * 100 if payout_float <= 1 else payout_float
++
++def risco_travado() -> bool:
++    if trade_stats.lucro_dia >= STOP_WIN_DIARIO:
++        print(f"🛑 Stop Win diário atingido: R${trade_stats.lucro_dia:.2f}")
++        return True
++    if trade_stats.lucro_dia <= -abs(STOP_LOSS_DIARIO):
++        print(f"🛑 Stop Loss diário atingido: R${trade_stats.lucro_dia:.2f}")
++        return True
++    return False
++
++async def calcular_valor_entrada(quotex: Quotex) -> float:
++    if MODO_ENTRADA == "SOROS" and trade_stats.soros_nivel > 0:
++        return round(VALOR_PADRAO + max(trade_stats.soros_lucro, 0), 2)
++    if MODO_ENTRADA == "PERCENTUAL":
++        try:
++            saldo = await quotex.get_balance()
++            return round(max(saldo * (RISCO_PERCENTUAL_BANCA / 100), 1), 2)
++        except Exception:
++            return VALOR_PADRAO
++    return VALOR_PADRAO
++
++def segundos_para_fechamento(periodo: int) -> float:
++    return periodo - (time.time() % periodo)
++
++async def aguardar_janela_de_entrada(asset: str, periodo: int) -> None:
++    alvo = max(ANTECIPAR_ENTRADA_SEGUNDOS, 0.2)
++    while True:
++        restante = segundos_para_fechamento(periodo)
++        if restante <= alvo:
++            print(f"⏱️ {asset}: entrada em {restante:.1f}s antes do fechamento da vela")
++            return
++        print(f"\r⏳ {asset}: aguardando janela | faltam {restante:.1f}s", end="", flush=True)
++        await asyncio.sleep(min(1.0, max(restante - alvo, 0.2)))
++
++def extrair_order_id(response: Any, quotex: Quotex) -> Optional[str]:
++    candidatos = []
++    if isinstance(response, dict):
++        candidatos.extend([
++            response.get("id"),
++            response.get("ticket"),
++            response.get("order_id"),
++            response.get("orderId"),
++        ])
++        data = response.get("data")
++        if isinstance(data, dict):
++            candidatos.extend([data.get("id"), data.get("ticket")])
++    if quotex.api:
++        candidatos.extend([quotex.api.buy_id, quotex.api.pending_id])
++    for candidato in candidatos:
++        if candidato is not None and str(candidato).strip():
++            return str(candidato)
++    return None
++
++# ------------------- EXECUÇÃO DE TRADE -------------------
+ async def executar_trade(quotex: Quotex, asset: str, direction: str, amount: float):
++    if risco_travado():
++        return False
++
+     agora = time.time()
+     ultimo = ultimo_trade_por_ativo.get(asset, 0)
+     if agora - ultimo < INTERVALO_MINIMO_TRADE:
+         print(f"⏳ {asset}: aguardando {INTERVALO_MINIMO_TRADE - (agora - ultimo):.0f}s")
+         return False
+ 
++    payout = obter_payout(quotex, asset)
++    if payout < PAYOUT_MINIMO:
++        print(f"🚫 {asset}: payout {payout:.1f}% abaixo do mínimo {PAYOUT_MINIMO:.1f}%")
++        return False
++
+     dir_lower = direction.lower()
+-    print(f"\n🚀 {DURACAO_TRADE}s: {asset} {dir_lower.upper()} | R${amount:.2f} | {horario_br()}")
++    await aguardar_janela_de_entrada(asset, DURACAO_TRADE)
++    print(f"\n🚀 {DURACAO_TRADE}s: {asset} {dir_lower.upper()} | R${amount:.2f} | payout {payout:.1f}% | {horario_br()}")
+ 
+     try:
+         quotex.api.buy_id = None
+         quotex.api.slots.buy_confirm.clear()
+         success, response = await quotex.buy(amount, asset, dir_lower, DURACAO_TRADE, time_mode="TIME")
+         if success:
+-            order_id = response.get('id') or quotex.api.buy_id
+-            print(f"✅ Ordem {order_id} enviada")
++            order_id = extrair_order_id(response, quotex)
++            if not order_id:
++                print(f"❌ Ordem confirmada sem ID completo: {response}")
++                return False
++            print(f"✅ Ordem enviada | ID completo: {order_id}")
+             ultimo_trade_por_ativo[asset] = agora
+             asyncio.create_task(acompanhar_trade(quotex, order_id, asset))
+             return True
+@@ -276,10 +556,11 @@ async def executar_trade(quotex: Quotex, asset: str, direction: str, amount: flo
+             return False
+     except Exception as e:
+         print(f"❌ Exceção: {e}")
+-        if quotex.api.buy_id:
+-            print(f"⚠️ Possível ordem: {quotex.api.buy_id}")
++        order_id = extrair_order_id({}, quotex)
++        if order_id:
++            print(f"⚠️ Possível ordem detectada | ID completo: {order_id}")
+             ultimo_trade_por_ativo[asset] = agora
+-            asyncio.create_task(acompanhar_trade(quotex, quotex.api.buy_id, asset))
++            asyncio.create_task(acompanhar_trade(quotex, order_id, asset))
+             return True
+         return False
+ 
+@@ -294,27 +575,38 @@ async def acompanhar_trade(quotex: Quotex, order_id: str, asset: str):
+         print()
+         await asyncio.sleep(2)
+         win, profit = await quotex.check_win(order_id)
++        trade_stats.lucro_dia += float(profit)
++        if MODO_ENTRADA == "SOROS":
++            if win == "win" and trade_stats.soros_nivel < SOROS_MAX_NIVEIS:
++                trade_stats.soros_nivel += 1
++                trade_stats.soros_lucro = max(float(profit), 0)
++            else:
++                trade_stats.soros_nivel = 0
++                trade_stats.soros_lucro = 0.0
+         if win == "win":
+-            print(f"✅ {asset} => WIN! Lucro: R${profit:.2f} | {horario_br()}")
++            print(f"✅ {asset} => WIN! ID {order_id} | Lucro: R${profit:.2f} | Dia: R${trade_stats.lucro_dia:.2f} | {horario_br()}")
+         else:
+-            print(f"❌ {asset} => LOSS! Prejuízo: R${profit:.2f} | {horario_br()}")
++            print(f"❌ {asset} => LOSS! ID {order_id} | Resultado: R${profit:.2f} | Dia: R${trade_stats.lucro_dia:.2f} | {horario_br()}")
+     except Exception as e:
+         print(f"⚠️ Erro acompanhando {asset}: {e}")
+ 
+ # ------------------- MAIN (com verificação de streams) -------------------
+ async def main():
+     global cache_ia
++    if not EMAIL or not PASSWORD:
++        print("❌ Configure QUOTEX_EMAIL e QUOTEX_PASSWORD no ambiente antes de iniciar.")
++        return
+     while True:
+         quotex = None
+         try:
+-            print("\n🔄 Inicializando Quotex (45s, 20 ativos, IA=" + IA_PROVIDER + ")...")
++            print(f"\n🔄 Inicializando Quotex ({DURACAO_TRADE}s, 20 ativos, IA={IA_PROVIDER})...")
+             quotex = Quotex(
+                 email=EMAIL,
+                 password=PASSWORD,
+                 host="qxbroker.com",
+                 lang="pt",
+                 asset_default="EURUSD",
+-                period_default=45,
++                period_default=DURACAO_TRADE,
+                 reconnect_policy=ReconnectPolicy(enabled=False)
+             )
+ 
+@@ -326,12 +618,11 @@ async def main():
+                 continue
+ 
+             print("✅ Conectado!")
++            quotex.set_account_mode(MODO_CONTA)
+             saldo = await quotex.get_balance()
+-            print(f"💰 Saldo DEMO: R$ {saldo:.2f}")
++            print(f"💰 Saldo {MODO_CONTA.upper()}: R$ {saldo:.2f}")
+ 
+-            await quotex.api.get_instruments()
+-            await asyncio.sleep(2)
+-            ativos = quotex.api.instruments
++            ativos = await quotex.get_instruments()
+             ativos_otc = [a for a in ativos if "otc" in str(a).lower()]
+             if not ativos_otc:
+                 print("❌ Nenhum ativo OTC.")
+@@ -341,7 +632,7 @@ async def main():
+             def get_rank(a):
+                 try:
+                     return float(a[24]) if len(a) > 24 else 0
+-                except:
++                except Exception:
+                     return 0
+             top_n = sorted(ativos_otc, key=get_rank, reverse=True)[:TOP_ATIVOS]
+             nomes_top = [a[1] if isinstance(a, list) and len(a) > 1 else str(a) for a in top_n]
+@@ -362,6 +653,8 @@ def get_rank(a):
+             print("🟢 Bot rodando (Ctrl+C para parar)\n")
+ 
+             historico: Dict[str, List[float]] = {nome: [] for nome in nomes_top}
++            candles_5s: Dict[str, List[Dict[str, float]]] = {nome: [] for nome in nomes_top}
++            candles_macro: Dict[str, List[Dict[str, float]]] = {nome: [] for nome in nomes_top}
+             volume_ticks: Dict[str, int] = {nome: 0 for nome in nomes_top}
+             ultimo_tamanho: Dict[str, int] = {nome: 0 for nome in nomes_top}
+             ultimo_ciclo_local = 0
+@@ -393,6 +686,8 @@ def get_rank(a):
+                     if precos:
+                         lista = [p["price"] for p in precos]
+                         historico[nome] = lista[-40:] if len(lista) > 40 else lista
++                        candles_5s[nome] = agregar_ticks_em_candles(precos, 5)[-80:]
++                        candles_macro[nome] = agregar_ticks_em_candles(precos, 60)[-80:]
+                         tamanho = len(lista)
+                         if tamanho > ultimo_tamanho.get(nome, 0):
+                             volume_ticks[nome] = volume_ticks.get(nome, 0) + (tamanho - ultimo_tamanho[nome])
+@@ -406,7 +701,12 @@ def get_rank(a):
+                     analises = {}
+                     for nome, pl in historico.items():
+                         if len(pl) >= 10:
+-                            analises[nome] = calcular_indicadores(pl, volume_ticks.get(nome, 0))
++                            analises[nome] = calcular_indicadores(
++                                pl,
++                                volume_ticks.get(nome, 0),
++                                candles_5s.get(nome),
++                                candles_macro.get(nome),
++                            )
+ 
+                     if not analises:
+                         print("⌛ Aguardando dados (preços)...")
+@@ -429,7 +729,8 @@ def get_rank(a):
+                         confidence = decisao["confidence"]
+                         if asset in nomes_top and direction in ["call", "put"]:
+                             print(f"\n🎯 OPORTUNIDADE: {asset} {direction.upper()} | Confiança {confidence:.0%}")
+-                            await executar_trade(quotex, asset, direction, VALOR_PADRAO)
++                            valor = await calcular_valor_entrada(quotex)
++                            await executar_trade(quotex, asset, direction, valor)
+                         else:
+                             print(f"\n⚠️ Ativo inválido: {asset}")
+ 
+diff --git a/requirements.txt b/requirements.txt
+index e19bf04..13224f5 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -3,11 +3,9 @@ flask-socketio
+ eventlet
+ websocket-client
+ requests
+-pandas
+-numpy
+ colorama
+ python-dotenv
+ aiohttp
+ httpx
+ websockets
+-pyquotex
+\ No newline at end of file
++git+https://github.com/cleitonleonel/pyquotex.git@5e85fcb6bb378681f73b7df34e9caa7d0e6298d7

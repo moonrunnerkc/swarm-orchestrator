@@ -1,0 +1,65 @@
+diff --git a/aider/versioncheck.py b/aider/versioncheck.py
+index ac511a0227a..f9c92e9b314 100644
+--- a/aider/versioncheck.py
++++ b/aider/versioncheck.py
+@@ -12,6 +12,15 @@
+ VERSION_CHECK_FNAME = Path.home() / ".aider" / "caches" / "versioncheck"
+ 
+ 
++def _touch_version_check_file(io=None, verbose=False):
++    try:
++        VERSION_CHECK_FNAME.parent.mkdir(parents=True, exist_ok=True)
++        VERSION_CHECK_FNAME.touch()
++    except OSError as err:
++        if verbose and io:
++            io.tool_warning(f"Unable to write version check cache: {err}")
++
++
+ def install_from_main_branch(io):
+     """
+     Install the latest version of aider from the main branch of the GitHub repository.
+@@ -84,15 +93,14 @@ def check_version(io, just_check=False, verbose=False):
+             io.tool_output(f"Current version: {current_version}")
+             io.tool_output(f"Latest version: {latest_version}")
+ 
+-        is_update_available = packaging.version.parse(latest_version) > packaging.version.parse(
+-            current_version
+-        )
++        is_update_available = packaging.version.parse(
++            latest_version
++        ) > packaging.version.parse(current_version)
+     except Exception as err:
+         io.tool_error(f"Error checking pypi for new version: {err}")
+         return False
+     finally:
+-        VERSION_CHECK_FNAME.parent.mkdir(parents=True, exist_ok=True)
+-        VERSION_CHECK_FNAME.touch()
++        _touch_version_check_file(io, verbose)
+ 
+     ###
+     # is_update_available = True
+diff --git a/tests/basic/test_versioncheck.py b/tests/basic/test_versioncheck.py
+new file mode 100644
+index 00000000000..71fde0eb284
+--- /dev/null
++++ b/tests/basic/test_versioncheck.py
+@@ -0,0 +1,19 @@
++from unittest.mock import Mock, patch
++
++from aider import versioncheck
++
++
++def test_check_version_ignores_unwritable_cache_path(tmp_path, monkeypatch):
++    blocked_parent = tmp_path / "blocked"
++    blocked_parent.write_text("", encoding="utf-8")
++    monkeypatch.setattr(
++        versioncheck, "VERSION_CHECK_FNAME", blocked_parent / "versioncheck"
++    )
++
++    io = Mock()
++    with patch("requests.get", side_effect=RuntimeError("offline")):
++        assert versioncheck.check_version(io) is False
++
++    io.tool_error.assert_called_once_with(
++        "Error checking pypi for new version: offline"
++    )

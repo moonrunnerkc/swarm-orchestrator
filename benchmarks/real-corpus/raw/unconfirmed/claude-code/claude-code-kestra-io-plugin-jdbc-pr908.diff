@@ -1,0 +1,1812 @@
+diff --git a/plugin-jdbc-arrow-flight/src/main/java/io/kestra/plugin/jdbc/arrowflight/Queries.java b/plugin-jdbc-arrow-flight/src/main/java/io/kestra/plugin/jdbc/arrowflight/Queries.java
+index d6157da9..d7544795 100644
+--- a/plugin-jdbc-arrow-flight/src/main/java/io/kestra/plugin/jdbc/arrowflight/Queries.java
++++ b/plugin-jdbc-arrow-flight/src/main/java/io/kestra/plugin/jdbc/arrowflight/Queries.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple Apache Arrow Flight SQL queries."
++    title = "Execute multiple SQL statements using Apache Arrow Flight SQL",
++    description = "Runs multiple SQL statements using Apache Arrow Flight SQL protocol for high-performance data transfer. Arrow Flight uses columnar data format and gRPC for efficient communication. Supports parameterized queries, transactions (default enabled), and all fetch modes. Default fetchSize is 10,000 rows."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-arrow-flight/src/main/java/io/kestra/plugin/jdbc/arrowflight/Query.java b/plugin-jdbc-arrow-flight/src/main/java/io/kestra/plugin/jdbc/arrowflight/Query.java
+index df84e256..7ebbe47c 100644
+--- a/plugin-jdbc-arrow-flight/src/main/java/io/kestra/plugin/jdbc/arrowflight/Query.java
++++ b/plugin-jdbc-arrow-flight/src/main/java/io/kestra/plugin/jdbc/arrowflight/Query.java
+@@ -27,7 +27,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run an Apache Arrow Flight SQL query."
++    title = "Execute a SQL query using Apache Arrow Flight SQL",
++    description = "Runs a SQL statement using Apache Arrow Flight SQL protocol for high-performance data transfer. Arrow Flight uses columnar data format and gRPC for efficient communication. Supports parameterized queries, transactions with afterSQL, and all fetch modes (FETCH, FETCH_ONE, STORE). Default fetchSize is 10,000 rows."
+ )
+ @Plugin(
+     examples = {
+@@ -44,7 +45,7 @@
+                     url: jdbc:arrow-flight-sql://localhost:31010/?useEncryption=false
+                     username: "{{ secret('ARROWFLIGHT_USERNAME') }}"
+                     password: "{{ secret('ARROWFLIGHT_PASSWORD') }}"
+-                    sql: select * FROM departments
++                    sql: SELECT * FROM departments
+                     fetchType: FETCH
+                 """
+         ),
+@@ -58,10 +59,10 @@
+                 tasks:
+                   - id: query
+                     type: io.kestra.plugin.jdbc.arrowflight.Query
+-                    url: jdbc:arrow-flight-sql://dremio-coordinator:32010/?schema=postgres.public
++                    url: jdbc:arrow-flight-sql://dremio-coordinator:32010/?schema=postgres.public&useEncryption=false
+                     username: "{{ secret('DREMIO_USERNAME') }}"
+                     password: "{{ secret('DREMIO_PASSWORD') }}"
+-                    sql: select * FROM departments
++                    sql: SELECT * FROM departments
+                     fetchType: FETCH
+                 """
+         )
+diff --git a/plugin-jdbc-arrow-flight/src/main/java/io/kestra/plugin/jdbc/arrowflight/Trigger.java b/plugin-jdbc-arrow-flight/src/main/java/io/kestra/plugin/jdbc/arrowflight/Trigger.java
+index 040ddd31..25f58583 100644
+--- a/plugin-jdbc-arrow-flight/src/main/java/io/kestra/plugin/jdbc/arrowflight/Trigger.java
++++ b/plugin-jdbc-arrow-flight/src/main/java/io/kestra/plugin/jdbc/arrowflight/Trigger.java
+@@ -23,7 +23,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed Arrow Flight SQL query returns a non-empty result set."
++    title = "Wait for query results on Apache Arrow Flight SQL and trigger flow",
++    description = "Periodically polls a database using Apache Arrow Flight SQL protocol by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+@@ -50,7 +51,8 @@
+                     password: "{{ secret('DREMIO_PASSWORD') }}"
+                     url: jdbc:arrow-flight-sql://dremio-coordinator:32010/?schema=postgres.public
+                     interval: "PT5M"
+-                    sql: "SELECT * FROM my_table"
++                    sql: "SELECT id, status FROM my_table WHERE status = 'NEW'"
++                    afterSQL: "UPDATE my_table SET status = 'PROCESSED' WHERE status = 'NEW'"
+                     fetchType: FETCH
+                 """
+         )
+diff --git a/plugin-jdbc-as400/src/main/java/io/kestra/plugin/jdbc/as400/Queries.java b/plugin-jdbc-as400/src/main/java/io/kestra/plugin/jdbc/as400/Queries.java
+index 254c7053..34724471 100644
+--- a/plugin-jdbc-as400/src/main/java/io/kestra/plugin/jdbc/as400/Queries.java
++++ b/plugin-jdbc-as400/src/main/java/io/kestra/plugin/jdbc/as400/Queries.java
+@@ -30,7 +30,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple AS400 database queries."
++    title = "Execute multiple SQL statements against IBM AS/400 (iSeries)",
++    description = "Runs multiple SQL statements separated by semicolons, either sequentially or within a transaction. Supports parameterized queries and all fetch modes. Set transaction to false to disable transactional behavior (default is true). Default fetchSize is 10,000 rows for STORE mode. Based on DB2 implementation."
+ )
+ @Plugin(
+     examples = {
+@@ -47,7 +48,7 @@
+                     url: jdbc:as400://127.0.0.1:50000/
+                     username: "{{ secret('AS400_USERNAME') }}"
+                     password: "{{ secret('AS400_PASSWORD') }}"
+-                    sql: select * from employee; select * from laptops;
++                    sql: SELECT * FROM employee; SELECT * FROM laptops;
+                     fetchType: FETCH
+                 """
+         )
+diff --git a/plugin-jdbc-as400/src/main/java/io/kestra/plugin/jdbc/as400/Query.java b/plugin-jdbc-as400/src/main/java/io/kestra/plugin/jdbc/as400/Query.java
+index b751e990..5d58631d 100644
+--- a/plugin-jdbc-as400/src/main/java/io/kestra/plugin/jdbc/as400/Query.java
++++ b/plugin-jdbc-as400/src/main/java/io/kestra/plugin/jdbc/as400/Query.java
+@@ -31,12 +31,13 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query an AS400 database."
++    title = "Execute a single SQL query against IBM AS/400 (iSeries)",
++    description = "Runs one SQL statement and fetches results. Supports parameterized queries, transactions with afterSQL, and multiple fetch modes (FETCH, FETCH_ONE, STORE). Default fetchSize is 10,000 rows for STORE mode. Based on DB2 implementation."
+ )
+ @Plugin(
+     examples = {
+         @Example(
+-            title = "Send a SQL query to a AS400 Database and fetch a row as output.",
++            title = "Send a SQL query to an AS400 Database and fetch a row as output.",
+             full = true,
+             code = """
+                 id: as400_query
+@@ -48,7 +49,7 @@
+                     url: jdbc:as400://127.0.0.1:50000/
+                     username: "{{ secret('AS400_USERNAME') }}"
+                     password: "{{ secret('AS400_PASSWORD') }}"
+-                    sql: select * from as400_types
++                    sql: SELECT * FROM as400_types
+                     fetchType: FETCH_ONE
+                 """
+         )
+diff --git a/plugin-jdbc-as400/src/main/java/io/kestra/plugin/jdbc/as400/Trigger.java b/plugin-jdbc-as400/src/main/java/io/kestra/plugin/jdbc/as400/Trigger.java
+index ad1c97ee..1330ab9b 100644
+--- a/plugin-jdbc-as400/src/main/java/io/kestra/plugin/jdbc/as400/Trigger.java
++++ b/plugin-jdbc-as400/src/main/java/io/kestra/plugin/jdbc/as400/Trigger.java
+@@ -23,7 +23,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed AS400 database query returns a non-empty result set."
++    title = "Wait for query results on IBM AS/400 (iSeries) and trigger flow",
++    description = "Periodically polls an AS/400 database by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling. Based on DB2 implementation."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-clickhouse/src/main/java/io/kestra/plugin/jdbc/clickhouse/BulkInsert.java b/plugin-jdbc-clickhouse/src/main/java/io/kestra/plugin/jdbc/clickhouse/BulkInsert.java
+index a1ea2acc..ebca517e 100644
+--- a/plugin-jdbc-clickhouse/src/main/java/io/kestra/plugin/jdbc/clickhouse/BulkInsert.java
++++ b/plugin-jdbc-clickhouse/src/main/java/io/kestra/plugin/jdbc/clickhouse/BulkInsert.java
+@@ -24,12 +24,12 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Bulk-insert new rows into a ClickHouse database."
++    title = "Bulk insert rows into ClickHouse with JDBC batch"
+ )
+ @Plugin(
+     examples = {
+         @Example(
+-            title = "Insert rows from another table to a Clickhouse database using asynchronous inserts.",
++            title = "Insert rows from another table to ClickHouse with async inserts",
+             full = true,
+             code = """
+                 id: clickhouse_bulk_insert
+@@ -50,7 +50,7 @@
+                 """
+         ),
+         @Example(
+-            title = "Insert data into specific columns via a SQL query to a ClickHouse database using asynchronous inserts.",
++            title = "Insert into selected columns using async inserts",
+             full = true,
+             code = """
+                 id: clickhouse_bulk_insert
+@@ -71,7 +71,7 @@
+                 """
+         ),
+         @Example(
+-            title = "Insert data into specific columns via a SQL query to a ClickHouse database using asynchronous inserts.",
++            title = "Auto-generate INSERT using table column discovery",
+             full = true,
+             code = """
+                 id: clickhouse_bulk_insert
+diff --git a/plugin-jdbc-clickhouse/src/main/java/io/kestra/plugin/jdbc/clickhouse/Queries.java b/plugin-jdbc-clickhouse/src/main/java/io/kestra/plugin/jdbc/clickhouse/Queries.java
+index 053b595d..b3d81b2a 100644
+--- a/plugin-jdbc-clickhouse/src/main/java/io/kestra/plugin/jdbc/clickhouse/Queries.java
++++ b/plugin-jdbc-clickhouse/src/main/java/io/kestra/plugin/jdbc/clickhouse/Queries.java
+@@ -23,7 +23,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple ClickHouse queries."
++    title = "Execute multiple SQL statements against ClickHouse",
++    description = "Runs multiple SQL statements separated by semicolons in ClickHouse columnar database. Supports parameterized queries, transactions (default enabled), and all fetch modes. Set transaction to false to disable transactional behavior. Default fetchSize is 10,000 rows for STORE mode."
+ )
+ @Plugin(
+     examples = {
+@@ -40,7 +41,7 @@
+                     url: jdbc:clickhouse://127.0.0.1:56982/
+                     username: "{{ secret('CLICKHOUSE_USERNAME') }}"
+                     password: "{{ secret('CLICKHOUSE_PASSWORD') }}"
+-                    sql: select * from employee; select * from laptop;
++                    sql: SELECT * FROM employee; SELECT * FROM laptop;
+                     fetchType: STORE
+                 """
+         )
+diff --git a/plugin-jdbc-clickhouse/src/main/java/io/kestra/plugin/jdbc/clickhouse/Query.java b/plugin-jdbc-clickhouse/src/main/java/io/kestra/plugin/jdbc/clickhouse/Query.java
+index 7f158fa3..1d693377 100644
+--- a/plugin-jdbc-clickhouse/src/main/java/io/kestra/plugin/jdbc/clickhouse/Query.java
++++ b/plugin-jdbc-clickhouse/src/main/java/io/kestra/plugin/jdbc/clickhouse/Query.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query a ClickHouse database."
++    title = "Execute a single SQL query against ClickHouse",
++    description = "Runs one SQL statement and fetches results from ClickHouse columnar database. Supports parameterized queries, transactions with afterSQL, and multiple fetch modes (FETCH, FETCH_ONE, STORE). Default fetchSize is 10,000 rows for STORE mode."
+ )
+ @Plugin(
+     examples = {
+@@ -43,7 +44,7 @@
+                     url: jdbc:clickhouse://127.0.0.1:56982/
+                     username: "{{ secret('CLICKHOUSE_USERNAME') }}"
+                     password: "{{ secret('CLICKHOUSE_PASSWORD') }}"
+-                    sql: select * from clickhouse_types
++                    sql: SELECT * FROM clickhouse_types
+                     fetchType: STORE
+                 """
+         ),
+diff --git a/plugin-jdbc-clickhouse/src/main/java/io/kestra/plugin/jdbc/clickhouse/Trigger.java b/plugin-jdbc-clickhouse/src/main/java/io/kestra/plugin/jdbc/clickhouse/Trigger.java
+index 87ea0ce3..2df8738b 100644
+--- a/plugin-jdbc-clickhouse/src/main/java/io/kestra/plugin/jdbc/clickhouse/Trigger.java
++++ b/plugin-jdbc-clickhouse/src/main/java/io/kestra/plugin/jdbc/clickhouse/Trigger.java
+@@ -23,7 +23,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed ClickHouse query returns a non-empty result set."
++    title = "Wait for query results on ClickHouse and trigger flow",
++    description = "Periodically polls a ClickHouse database by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-db2/src/main/java/io/kestra/plugin/jdbc/db2/Queries.java b/plugin-jdbc-db2/src/main/java/io/kestra/plugin/jdbc/db2/Queries.java
+index 29be3312..8bdeb5b3 100644
+--- a/plugin-jdbc-db2/src/main/java/io/kestra/plugin/jdbc/db2/Queries.java
++++ b/plugin-jdbc-db2/src/main/java/io/kestra/plugin/jdbc/db2/Queries.java
+@@ -27,7 +27,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple DB2 queries."
++    title = "Execute multiple SQL statements against IBM DB2",
++    description = "Runs multiple SQL statements separated by semicolons, either sequentially or within a transaction. Supports parameterized queries and all fetch modes. Set transaction to false to disable transactional behavior (default is true). Default fetchSize is 10,000 rows for STORE mode."
+ )
+ @Plugin(
+     examples = {
+@@ -44,7 +45,7 @@
+                     url: jdbc:db2://127.0.0.1:50000/
+                     username: "{{ secret('DB2_USERNAME') }}"
+                     password: "{{ secret('DB2_PASSWORD') }}"
+-                    sql: select * from employee; select * from laptop;
++                    sql: SELECT * FROM employee; SELECT * FROM laptop;
+                     fetchType: FETCH
+                 """
+         )
+diff --git a/plugin-jdbc-db2/src/main/java/io/kestra/plugin/jdbc/db2/Query.java b/plugin-jdbc-db2/src/main/java/io/kestra/plugin/jdbc/db2/Query.java
+index a317fcd9..948f8496 100644
+--- a/plugin-jdbc-db2/src/main/java/io/kestra/plugin/jdbc/db2/Query.java
++++ b/plugin-jdbc-db2/src/main/java/io/kestra/plugin/jdbc/db2/Query.java
+@@ -24,7 +24,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query a DB2 database."
++    title = "Execute a single SQL query against IBM DB2",
++    description = "Runs one SQL statement and fetches results. Supports parameterized queries, transactions with afterSQL, and multiple fetch modes (FETCH, FETCH_ONE, STORE). Default fetchSize is 10,000 rows for STORE mode."
+ )
+ @Plugin(
+     examples = {
+@@ -41,7 +42,7 @@
+                     url: jdbc:db2://127.0.0.1:50000/
+                     username: "{{ secret('DB2_USERNAME') }}"
+                     password: "{{ secret('DB2_PASSWORD') }}"
+-                    sql: select * from db2_types
++                    sql: SELECT * FROM db2_types
+                     fetchType: FETCH_ONE
+                 """
+         )
+diff --git a/plugin-jdbc-db2/src/main/java/io/kestra/plugin/jdbc/db2/Trigger.java b/plugin-jdbc-db2/src/main/java/io/kestra/plugin/jdbc/db2/Trigger.java
+index 0142ea4e..f62bd1c9 100644
+--- a/plugin-jdbc-db2/src/main/java/io/kestra/plugin/jdbc/db2/Trigger.java
++++ b/plugin-jdbc-db2/src/main/java/io/kestra/plugin/jdbc/db2/Trigger.java
+@@ -20,7 +20,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed DB2 query returns a non-empty result set."
++    title = "Wait for query results on IBM DB2 and trigger flow",
++    description = "Periodically polls a DB2 database by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-dremio/src/main/java/io/kestra/plugin/jdbc/dremio/Queries.java b/plugin-jdbc-dremio/src/main/java/io/kestra/plugin/jdbc/dremio/Queries.java
+index 8b33fff1..aa69dae5 100644
+--- a/plugin-jdbc-dremio/src/main/java/io/kestra/plugin/jdbc/dremio/Queries.java
++++ b/plugin-jdbc-dremio/src/main/java/io/kestra/plugin/jdbc/dremio/Queries.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple queries on a Dremio data lake."
++    title = "Execute multiple SQL statements using Dremio",
++    description = "Runs multiple SQL statements using Dremio data lakehouse platform. Supports querying data lakes, databases, and cloud storage. Supports parameterized queries, transactions (default enabled), and all fetch modes. Default fetchSize is 10,000 rows."
+ )
+ @Plugin(
+     examples = {
+@@ -43,8 +44,8 @@
+                     url: jdbc:dremio:direct=sql.dremio.cloud:443;ssl=true;PROJECT_ID=sampleProjectId;
+                     username: dremio_token
+                     password: samplePersonalAccessToken
+-                    sql: select * FROM source.database.table; select * FROM source.database.table;
+-                    fetchType: FETCH_ONE
++                    sql: SELECT * FROM source.database.table; SELECT * FROM source.database.table;
++                    fetchType: FETCH
+                 """
+         )
+     },
+diff --git a/plugin-jdbc-dremio/src/main/java/io/kestra/plugin/jdbc/dremio/Query.java b/plugin-jdbc-dremio/src/main/java/io/kestra/plugin/jdbc/dremio/Query.java
+index cccc09cc..d8c323b0 100644
+--- a/plugin-jdbc-dremio/src/main/java/io/kestra/plugin/jdbc/dremio/Query.java
++++ b/plugin-jdbc-dremio/src/main/java/io/kestra/plugin/jdbc/dremio/Query.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query a Dremio data lake."
++    title = "Execute a SQL query using Dremio",
++    description = "Runs a SQL statement using Dremio data lakehouse platform. Supports querying data lakes, databases, and cloud storage. Supports parameterized queries, transactions with afterSQL, and all fetch modes (FETCH, FETCH_ONE, STORE). Default fetchSize is 10,000 rows."
+ )
+ @Plugin(
+     examples = {
+@@ -43,7 +44,7 @@
+                     url: jdbc:dremio:direct=sql.dremio.cloud:443;ssl=true;PROJECT_ID=sampleProjectId;
+                     username: dremio_token
+                     password: samplePersonalAccessToken
+-                    sql: select * FROM source.database.table
++                    sql: SELECT * FROM source.database.table
+                     fetchType: FETCH_ONE
+                 """
+         )
+diff --git a/plugin-jdbc-dremio/src/main/java/io/kestra/plugin/jdbc/dremio/Trigger.java b/plugin-jdbc-dremio/src/main/java/io/kestra/plugin/jdbc/dremio/Trigger.java
+index 032dcad7..e301748d 100644
+--- a/plugin-jdbc-dremio/src/main/java/io/kestra/plugin/jdbc/dremio/Trigger.java
++++ b/plugin-jdbc-dremio/src/main/java/io/kestra/plugin/jdbc/dremio/Trigger.java
+@@ -23,7 +23,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed Dremio query returns a non-empty result set."
++    title = "Wait for query results on Dremio and trigger flow",
++    description = "Periodically polls Dremio by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-druid/src/main/java/io/kestra/plugin/jdbc/druid/Queries.java b/plugin-jdbc-druid/src/main/java/io/kestra/plugin/jdbc/druid/Queries.java
+index f15f9a8d..4820ee9a 100644
+--- a/plugin-jdbc-druid/src/main/java/io/kestra/plugin/jdbc/druid/Queries.java
++++ b/plugin-jdbc-druid/src/main/java/io/kestra/plugin/jdbc/druid/Queries.java
+@@ -25,7 +25,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-        title = "Run multiple Apache Druid queries."
++        title = "Execute multiple SQL statements against Apache Druid",
++        description = "Runs multiple SQL statements against Apache Druid real-time analytics database. Optimized for fast aggregations and time-series queries. Supports parameterized queries, transactions (default enabled), and all fetch modes. Default fetchSize is 10,000 rows."
+ )
+ @Plugin(
+     examples = {
+@@ -41,7 +42,7 @@
+                     type: io.kestra.plugin.jdbc.druid.Queries
+                     url: jdbc:avatica:remote:url=http://localhost:8888/druid/v2/sql/avatica/;transparent_reconnection=true
+                     sql: |
+-                      SELECT * FROM wikiticker; SELECT * FROM product;
++                      SELECT * FROM wikiticker WHERE __time >= TIMESTAMP '2023-01-01 00:00:00'; SELECT * FROM product LIMIT 1000;
+                     fetchType: STORE
+                 """
+         )
+diff --git a/plugin-jdbc-druid/src/main/java/io/kestra/plugin/jdbc/druid/Query.java b/plugin-jdbc-druid/src/main/java/io/kestra/plugin/jdbc/druid/Query.java
+index be7c2d8b..03bc29e1 100644
+--- a/plugin-jdbc-druid/src/main/java/io/kestra/plugin/jdbc/druid/Query.java
++++ b/plugin-jdbc-druid/src/main/java/io/kestra/plugin/jdbc/druid/Query.java
+@@ -25,7 +25,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-        title = "Query an Apache Druid database."
++        title = "Execute a SQL query against Apache Druid",
++        description = "Runs a SQL statement against Apache Druid real-time analytics database. Optimized for fast aggregations and time-series queries. Supports parameterized queries, transactions with afterSQL, and all fetch modes (FETCH, FETCH_ONE, STORE). Default fetchSize is 10,000 rows."
+ )
+ @Plugin(
+     examples = {
+@@ -43,6 +44,7 @@
+                     sql: |
+                       SELECT *
+                       FROM wikiticker
++                      WHERE __time >= TIMESTAMP '2023-01-01 00:00:00'
+                     fetchType: STORE
+                 """
+         )
+diff --git a/plugin-jdbc-druid/src/main/java/io/kestra/plugin/jdbc/druid/Trigger.java b/plugin-jdbc-druid/src/main/java/io/kestra/plugin/jdbc/druid/Trigger.java
+index f6790247..c7387da7 100644
+--- a/plugin-jdbc-druid/src/main/java/io/kestra/plugin/jdbc/druid/Trigger.java
++++ b/plugin-jdbc-druid/src/main/java/io/kestra/plugin/jdbc/druid/Trigger.java
+@@ -23,7 +23,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed Druid query returns a non-empty result set."
++    title = "Wait for query results on Apache Druid and trigger flow",
++    description = "Periodically polls an Apache Druid database by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-duckdb/src/main/java/io/kestra/plugin/jdbc/duckdb/Queries.java b/plugin-jdbc-duckdb/src/main/java/io/kestra/plugin/jdbc/duckdb/Queries.java
+index b12c8dfd..a6cdc07e 100644
+--- a/plugin-jdbc-duckdb/src/main/java/io/kestra/plugin/jdbc/duckdb/Queries.java
++++ b/plugin-jdbc-duckdb/src/main/java/io/kestra/plugin/jdbc/duckdb/Queries.java
+@@ -38,7 +38,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple DuckDB queries."
++    title = "Execute multiple SQL statements against DuckDB",
++    description = "Runs multiple SQL statements in DuckDB embedded analytical database. Supports reading from CSV, Parquet, and JSON files directly. Can work with in-memory databases or persistent database files. Supports parameterized queries, transactions (default enabled), and all fetch modes. Can output the database file to internal storage."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-duckdb/src/main/java/io/kestra/plugin/jdbc/duckdb/Query.java b/plugin-jdbc-duckdb/src/main/java/io/kestra/plugin/jdbc/duckdb/Query.java
+index 43ba2207..543a1f3c 100644
+--- a/plugin-jdbc-duckdb/src/main/java/io/kestra/plugin/jdbc/duckdb/Query.java
++++ b/plugin-jdbc-duckdb/src/main/java/io/kestra/plugin/jdbc/duckdb/Query.java
+@@ -38,7 +38,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query a DuckDB database."
++    title = "Execute a single SQL query against DuckDB",
++    description = "Runs one SQL statement in DuckDB embedded analytical database. Supports reading from CSV, Parquet, and JSON files directly. Can work with in-memory databases or persistent database files. Supports parameterized queries, transactions with afterSQL, and all fetch modes. Can output the database file to internal storage."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-duckdb/src/main/java/io/kestra/plugin/jdbc/duckdb/Trigger.java b/plugin-jdbc-duckdb/src/main/java/io/kestra/plugin/jdbc/duckdb/Trigger.java
+index 709c8211..9b2be6b2 100644
+--- a/plugin-jdbc-duckdb/src/main/java/io/kestra/plugin/jdbc/duckdb/Trigger.java
++++ b/plugin-jdbc-duckdb/src/main/java/io/kestra/plugin/jdbc/duckdb/Trigger.java
+@@ -23,7 +23,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed DuckDB query returns a non-empty result set."
++    title = "Wait for query results on DuckDB and trigger flow",
++    description = "Periodically polls a DuckDB database by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-hana/src/main/java/io/kestra/plugin/jdbc/hana/Queries.java b/plugin-jdbc-hana/src/main/java/io/kestra/plugin/jdbc/hana/Queries.java
+index b5c68c80..bd9ccee9 100644
+--- a/plugin-jdbc-hana/src/main/java/io/kestra/plugin/jdbc/hana/Queries.java
++++ b/plugin-jdbc-hana/src/main/java/io/kestra/plugin/jdbc/hana/Queries.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple SAP HANA queries."
++    title = "Execute multiple SQL statements against SAP HANA",
++    description = "Runs multiple SQL statements against SAP HANA in-memory database. Optimized for real-time analytics and transactional workloads. Supports parameterized queries, transactions (default enabled), and all fetch modes. Default fetchSize is 10,000 rows."
+ )
+ @Plugin(
+     examples = {
+@@ -43,7 +44,7 @@
+                     url: jdbc:sap://127.0.0.1:39015/?databaseName=SYSTEMDB
+                     username: "{{ secret('HANA_USERNAME') }}"
+                     password: "{{ secret('HANA_PASSWORD') }}"
+-                     sql: |
++                    sql: |
+                       SELECT * FROM table1;
+                       SELECT * FROM table2;
+                     fetchType: FETCH
+diff --git a/plugin-jdbc-hana/src/main/java/io/kestra/plugin/jdbc/hana/Query.java b/plugin-jdbc-hana/src/main/java/io/kestra/plugin/jdbc/hana/Query.java
+index 21c4661c..fad7aa84 100644
+--- a/plugin-jdbc-hana/src/main/java/io/kestra/plugin/jdbc/hana/Query.java
++++ b/plugin-jdbc-hana/src/main/java/io/kestra/plugin/jdbc/hana/Query.java
+@@ -26,7 +26,8 @@
+ @ToString
+ @EqualsAndHashCode
+ @Schema(
+-    title = "Execute a SELECT query on SAP HANA."
++    title = "Execute a single SQL query against SAP HANA",
++    description = "Runs one SQL statement against SAP HANA in-memory database. Optimized for real-time analytics and transactional workloads. Supports parameterized queries, transactions with afterSQL, and multiple fetch modes (FETCH, FETCH_ONE, STORE). Default fetchSize is 10,000 rows."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-hana/src/main/java/io/kestra/plugin/jdbc/hana/Trigger.java b/plugin-jdbc-hana/src/main/java/io/kestra/plugin/jdbc/hana/Trigger.java
+index f2616ec5..49185e2e 100644
+--- a/plugin-jdbc-hana/src/main/java/io/kestra/plugin/jdbc/hana/Trigger.java
++++ b/plugin-jdbc-hana/src/main/java/io/kestra/plugin/jdbc/hana/Trigger.java
+@@ -20,7 +20,8 @@
+ @ToString
+ @EqualsAndHashCode
+ @Schema(
+-    title = "Trigger when a SAP HANA query returns rows."
++    title = "Wait for query results on SAP HANA and trigger flow",
++    description = "Periodically polls a SAP HANA database by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-mariadb/src/main/java/io/kestra/plugin/jdbc/mariadb/Queries.java b/plugin-jdbc-mariadb/src/main/java/io/kestra/plugin/jdbc/mariadb/Queries.java
+index f44a51c9..325c3a3a 100644
+--- a/plugin-jdbc-mariadb/src/main/java/io/kestra/plugin/jdbc/mariadb/Queries.java
++++ b/plugin-jdbc-mariadb/src/main/java/io/kestra/plugin/jdbc/mariadb/Queries.java
+@@ -30,7 +30,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple MariaDB queries."
++    title = "Execute multiple SQL statements against MariaDB",
++    description = "Runs multiple SQL statements separated by semicolons. To enable multi-statement execution, add `allowMultiQueries=true` to the JDBC URL. Supports parameterized queries, transactions (default enabled), and all fetch modes. Default fetchSize is 10,000 rows. Supports LOAD DATA LOCAL INFILE via inputFile property."
+ )
+ @Plugin(
+     examples = {
+@@ -44,7 +45,7 @@
+                   - id: test_queries_insert
+                     type: io.kestra.plugin.jdbc.mariadb.Queries
+                     fetchType: FETCH
+-                    url: jdbc:mariadb://mariadb:3306/kestra
++                    url: jdbc:mariadb://mariadb:3306/kestra?allowMultiQueries=true
+                     username: "${{secret('MARIADB_USERNAME')}}"
+                     password: "${{secret('MARIADB_PASSWORD')}}"
+                     sql: "{{ read('populate.sql') }}"
+@@ -73,8 +74,8 @@
+ public class Queries extends AbstractJdbcQueries implements MariaDbConnectionInterface {
+ 
+     @Schema(
+-        title = "Add input file to be loaded with `LOAD DATA LOCAL`.",
+-        description = "The file must be from Kestra's internal storage"
++        title = "Input file for LOAD DATA LOCAL INFILE operations",
++        description = "URI to a file in Kestra's internal storage (kestra://). Used with MariaDB's LOAD DATA LOCAL INFILE statement to efficiently load CSV or delimited files into tables"
+     )
+     @PluginProperty(dynamic = true)
+     protected String inputFile;
+diff --git a/plugin-jdbc-mariadb/src/main/java/io/kestra/plugin/jdbc/mariadb/Query.java b/plugin-jdbc-mariadb/src/main/java/io/kestra/plugin/jdbc/mariadb/Query.java
+index aaa5bbc8..c7e1bdf3 100644
+--- a/plugin-jdbc-mariadb/src/main/java/io/kestra/plugin/jdbc/mariadb/Query.java
++++ b/plugin-jdbc-mariadb/src/main/java/io/kestra/plugin/jdbc/mariadb/Query.java
+@@ -34,7 +34,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query a MariaDB database."
++    title = "Execute a single SQL query against MariaDB",
++    description = "Runs one SQL statement and fetches results. Supports parameterized queries, transactions with afterSQL, and multiple fetch modes (FETCH, FETCH_ONE, STORE). Default fetchSize is 10,000 rows for STORE mode. Supports LOAD DATA LOCAL INFILE via inputFile property for efficient CSV loading."
+ )
+ @Plugin(
+     examples = {
+@@ -69,7 +70,7 @@
+ 
+                   - id: query
+                     type: io.kestra.plugin.jdbc.mariadb.Query
+-                    url: jdbc:mariadb://127.0.0.1:3306/
++                    url: jdbc:mariadb://127.0.0.1:3306/products?allowLoadLocalInfile=true
+                     username: mariadb_user
+                     password: mariadb_password
+                     inputFile: "{{ outputs.http_download.uri }}"
+@@ -80,6 +81,7 @@
+                       ENCLOSED BY '"'
+                       LINES TERMINATED BY '\\n'
+                       IGNORE 1 ROWS;
++                    fetchType: NONE
+                 """
+         )
+     },
+@@ -94,8 +96,8 @@
+ )
+ public class Query extends AbstractJdbcQuery implements MariaDbConnectionInterface {
+     @Schema(
+-        title = "Add input file to be loaded with `LOAD DATA LOCAL`.",
+-        description = "The file must be from Kestra's internal storage"
++        title = "Input file for LOAD DATA LOCAL INFILE operations",
++        description = "URI to a file in Kestra's internal storage (kestra://). Used with MariaDB's LOAD DATA LOCAL INFILE statement to efficiently load CSV or delimited files into tables"
+     )
+     @PluginProperty(dynamic = true)
+     protected String inputFile;
+diff --git a/plugin-jdbc-mariadb/src/main/java/io/kestra/plugin/jdbc/mariadb/Trigger.java b/plugin-jdbc-mariadb/src/main/java/io/kestra/plugin/jdbc/mariadb/Trigger.java
+index bed5e9ab..fe7a3c26 100644
+--- a/plugin-jdbc-mariadb/src/main/java/io/kestra/plugin/jdbc/mariadb/Trigger.java
++++ b/plugin-jdbc-mariadb/src/main/java/io/kestra/plugin/jdbc/mariadb/Trigger.java
+@@ -21,7 +21,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed MariaDB query returns a non-empty result set."
++    title = "Wait for query results on MariaDB and trigger flow",
++    description = "Periodically polls a MariaDB database by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-mysql/src/main/java/io/kestra/plugin/jdbc/mysql/Batch.java b/plugin-jdbc-mysql/src/main/java/io/kestra/plugin/jdbc/mysql/Batch.java
+index 4e7fd0db..75976522 100644
+--- a/plugin-jdbc-mysql/src/main/java/io/kestra/plugin/jdbc/mysql/Batch.java
++++ b/plugin-jdbc-mysql/src/main/java/io/kestra/plugin/jdbc/mysql/Batch.java
+@@ -25,7 +25,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run a MySQL batch-query."
++    title = "Bulk insert rows into MySQL using prepared statements",
++    description = "Reads ION-formatted data from Kestra internal storage and performs high-performance batch inserts using JDBC batch operations. Data is processed in chunks (default 1,000 rows) to optimize memory and performance. Uses generateSimpleParameterMetadata=true connection property for improved compatibility. Supports auto-commit for databases without transaction support."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-mysql/src/main/java/io/kestra/plugin/jdbc/mysql/Queries.java b/plugin-jdbc-mysql/src/main/java/io/kestra/plugin/jdbc/mysql/Queries.java
+index 7372b75b..53449acb 100644
+--- a/plugin-jdbc-mysql/src/main/java/io/kestra/plugin/jdbc/mysql/Queries.java
++++ b/plugin-jdbc-mysql/src/main/java/io/kestra/plugin/jdbc/mysql/Queries.java
+@@ -34,7 +34,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple MySQL queries."
++    title = "Execute multiple SQL statements against MySQL",
++    description = "Runs multiple SQL statements separated by semicolons. To enable multi-statement execution, add `allowMultiQueries=true` to the JDBC URL. Supports parameterized queries, transactions (default enabled), and all fetch modes. For STORE mode, uses streaming to minimize memory. Supports LOAD DATA LOCAL INFILE via inputFile property."
+ )
+ @Plugin(
+     examples = {
+@@ -48,7 +49,7 @@
+                   - id: test_queries_insert
+                     type: io.kestra.plugin.jdbc.mysql.Queries
+                     fetchType: FETCH
+-                    url: jdbc:mysql://mysql:3306/kestra
++                    url: jdbc:mysql://mysql:3306/kestra?allowMultiQueries=true
+                     username: "${{secret('MYSQL_USERNAME')}}"
+                     password: "${{secret('MYSQL_PASSWORD')}}"
+                     sql: "{{ read('populate.sql') }}"
+@@ -77,8 +78,8 @@
+ public class Queries extends AbstractJdbcQueries implements MySqlConnectionInterface {
+ 
+     @Schema(
+-        title = "Add input file to be loaded with `LOAD DATA LOCAL`.",
+-        description = "The file must be from Kestra's internal storage"
++        title = "Input file for LOAD DATA LOCAL INFILE operations",
++        description = "URI to a file in Kestra's internal storage (kestra://). Used with MySQL's LOAD DATA LOCAL INFILE statement to efficiently load CSV or delimited files into tables"
+     )
+     @PluginProperty(dynamic = true)
+     protected String inputFile;
+diff --git a/plugin-jdbc-mysql/src/main/java/io/kestra/plugin/jdbc/mysql/Query.java b/plugin-jdbc-mysql/src/main/java/io/kestra/plugin/jdbc/mysql/Query.java
+index 87b83f37..e7d55006 100644
+--- a/plugin-jdbc-mysql/src/main/java/io/kestra/plugin/jdbc/mysql/Query.java
++++ b/plugin-jdbc-mysql/src/main/java/io/kestra/plugin/jdbc/mysql/Query.java
+@@ -30,7 +30,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query a MySQL database."
++    title = "Execute a single SQL query against MySQL",
++    description = "Runs one SQL statement and fetches results. Supports parameterized queries, transactions with afterSQL, and multiple fetch modes (FETCH, FETCH_ONE, STORE). For STORE mode, uses streaming (Integer.MIN_VALUE fetchSize) to minimize memory usage. Supports LOAD DATA LOCAL INFILE via inputFile property."
+ )
+ @Plugin(
+     examples = {
+@@ -65,7 +66,7 @@
+ 
+                   - id: query
+                     type: io.kestra.plugin.jdbc.mysql.Query
+-                    url: jdbc:mysql://127.0.0.1:3306/
++                    url: jdbc:mysql://127.0.0.1:3306/products?allowLoadLocalInfile=true
+                     username: mysql_user
+                     password: mysql_password
+                     inputFile: "{{ outputs.http_download.uri }}"
+@@ -90,8 +91,8 @@
+ )
+ public class Query extends AbstractJdbcQuery implements MySqlConnectionInterface {
+     @Schema(
+-        title = "Add input file to be loaded with `LOAD DATA LOCAL`.",
+-        description = "The file must be from Kestra's internal storage"
++        title = "Input file for LOAD DATA LOCAL INFILE operations",
++        description = "URI to a file in Kestra's internal storage (kestra://). Used with MySQL's LOAD DATA LOCAL INFILE statement to efficiently load CSV or delimited files into tables"
+     )
+     @PluginProperty(dynamic = true)
+     protected String inputFile;
+diff --git a/plugin-jdbc-mysql/src/main/java/io/kestra/plugin/jdbc/mysql/Trigger.java b/plugin-jdbc-mysql/src/main/java/io/kestra/plugin/jdbc/mysql/Trigger.java
+index 50767776..c5ea2287 100644
+--- a/plugin-jdbc-mysql/src/main/java/io/kestra/plugin/jdbc/mysql/Trigger.java
++++ b/plugin-jdbc-mysql/src/main/java/io/kestra/plugin/jdbc/mysql/Trigger.java
+@@ -21,7 +21,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed MySQL query returns a non-empty result set."
++    title = "Wait for query results on MySQL and trigger flow",
++    description = "Periodically polls a MySQL database by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-oracle/src/main/java/io/kestra/plugin/jdbc/oracle/Batch.java b/plugin-jdbc-oracle/src/main/java/io/kestra/plugin/jdbc/oracle/Batch.java
+index 8f186771..42019325 100644
+--- a/plugin-jdbc-oracle/src/main/java/io/kestra/plugin/jdbc/oracle/Batch.java
++++ b/plugin-jdbc-oracle/src/main/java/io/kestra/plugin/jdbc/oracle/Batch.java
+@@ -24,7 +24,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run an Oracle batch-query."
++    title = "Bulk insert rows into Oracle Database using prepared statements",
++    description = "Reads ION-formatted data from Kestra internal storage and performs high-performance batch inserts using JDBC batch operations. Data is processed in chunks (default 1,000 rows) to optimize memory and performance. Supports auto-commit for databases without transaction support. Handles NULL values explicitly to avoid ORA-17041 errors."
+ )
+ @Plugin(
+     examples = {
+@@ -44,7 +45,7 @@
+                     sql: |
+                       SELECT *
+                       FROM xref
+-                      LIMIT 1500;
++                      FETCH FIRST 1500 ROWS ONLY;
+                     fetchType: STORE
+ 
+                   - id: update
+@@ -73,7 +74,7 @@ insert into xref values( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )
+                     sql: |
+                       SELECT *
+                       FROM xref
+-                      LIMIT 1500;
++                      FETCH FIRST 1500 ROWS ONLY;
+                     fetchType: STORE
+ 
+                   - id: update
+diff --git a/plugin-jdbc-oracle/src/main/java/io/kestra/plugin/jdbc/oracle/Queries.java b/plugin-jdbc-oracle/src/main/java/io/kestra/plugin/jdbc/oracle/Queries.java
+index 0386fcae..b6abfaaf 100644
+--- a/plugin-jdbc-oracle/src/main/java/io/kestra/plugin/jdbc/oracle/Queries.java
++++ b/plugin-jdbc-oracle/src/main/java/io/kestra/plugin/jdbc/oracle/Queries.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple Oracle queries."
++    title = "Execute multiple SQL statements against Oracle Database",
++    description = "Runs multiple SQL statements separated by semicolons, either sequentially or within a transaction. Supports parameterized queries and all fetch modes. Set transaction to false to disable transactional behavior (default is true). Default fetchSize is 10,000 rows for STORE mode."
+ )
+ @Plugin(
+     examples = {
+@@ -43,7 +44,7 @@
+                     url: jdbc:oracle:thin:@localhost:49161:XE
+                     username: oracle_user
+                     password: oracle_password
+-                    sql: select * from employee; select * from laptop;
++                    sql: SELECT * FROM employee; SELECT * FROM laptop;
+                     fetchType: FETCH
+                 """
+         )
+diff --git a/plugin-jdbc-oracle/src/main/java/io/kestra/plugin/jdbc/oracle/Query.java b/plugin-jdbc-oracle/src/main/java/io/kestra/plugin/jdbc/oracle/Query.java
+index 4f3000e7..362f0361 100644
+--- a/plugin-jdbc-oracle/src/main/java/io/kestra/plugin/jdbc/oracle/Query.java
++++ b/plugin-jdbc-oracle/src/main/java/io/kestra/plugin/jdbc/oracle/Query.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query an Oracle database."
++    title = "Execute a single SQL query against Oracle Database",
++    description = "Runs one SQL statement and fetches results. Supports parameterized queries, transactions with afterSQL, and multiple fetch modes (FETCH, FETCH_ONE, STORE). Default fetchSize is 10,000 rows for STORE mode."
+ )
+ @Plugin(
+     examples = {
+@@ -43,7 +44,7 @@
+                     url: jdbc:oracle:thin:@localhost:49161:XE
+                     username: oracle_user
+                     password: oracle_password
+-                    sql: select * from source
++                    sql: SELECT * FROM source
+                     fetchType: FETCH
+ 
+                   - id: generate_update
+diff --git a/plugin-jdbc-oracle/src/main/java/io/kestra/plugin/jdbc/oracle/Trigger.java b/plugin-jdbc-oracle/src/main/java/io/kestra/plugin/jdbc/oracle/Trigger.java
+index 2f8948c1..3165730e 100644
+--- a/plugin-jdbc-oracle/src/main/java/io/kestra/plugin/jdbc/oracle/Trigger.java
++++ b/plugin-jdbc-oracle/src/main/java/io/kestra/plugin/jdbc/oracle/Trigger.java
+@@ -23,7 +23,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed Oracle query returns a non-empty result set."
++    title = "Wait for query results on Oracle Database and trigger flow",
++    description = "Periodically polls an Oracle database by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-pinot/src/main/java/io/kestra/plugin/jdbc/pinot/Queries.java b/plugin-jdbc-pinot/src/main/java/io/kestra/plugin/jdbc/pinot/Queries.java
+index e74c2cf7..a404db6e 100644
+--- a/plugin-jdbc-pinot/src/main/java/io/kestra/plugin/jdbc/pinot/Queries.java
++++ b/plugin-jdbc-pinot/src/main/java/io/kestra/plugin/jdbc/pinot/Queries.java
+@@ -25,7 +25,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple Apache Pinot queries."
++    title = "Execute multiple SQL statements against Apache Pinot",
++    description = "Runs multiple SQL statements against Apache Pinot real-time OLAP database. Optimized for low-latency analytics on streaming and batch data. Supports parameterized queries, transactions (default enabled), and all fetch modes. Default fetchSize is 10,000 rows."
+ )
+ @Plugin(
+     examples = {
+@@ -42,8 +43,8 @@
+                     username: "{{ secret('PINOT_USERNAME') }}"
+                     password: "{{ secret('PINOT_PASSWORD') }}"
+                     sql: |
+-                      SELECT * FROM airlineStats;
+-                      SELECT * FROM airlineStats;
++                      SELECT * FROM airlineStats WHERE __time >= 1672531200000;
++                      SELECT * FROM airlineStats LIMIT 1000;
+                     fetchType: FETCH
+                 """
+         )
+diff --git a/plugin-jdbc-pinot/src/main/java/io/kestra/plugin/jdbc/pinot/Query.java b/plugin-jdbc-pinot/src/main/java/io/kestra/plugin/jdbc/pinot/Query.java
+index 40524aa8..f6b47c85 100644
+--- a/plugin-jdbc-pinot/src/main/java/io/kestra/plugin/jdbc/pinot/Query.java
++++ b/plugin-jdbc-pinot/src/main/java/io/kestra/plugin/jdbc/pinot/Query.java
+@@ -25,7 +25,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query an Apache Pinot database."
++    title = "Execute a SQL query against Apache Pinot",
++    description = "Runs a SQL statement against Apache Pinot real-time OLAP database. Optimized for low-latency analytics on streaming and batch data. Supports parameterized queries, transactions with afterSQL, and all fetch modes (FETCH, FETCH_ONE, STORE). Default fetchSize is 10,000 rows."
+ )
+ @Plugin(
+     examples = {
+@@ -44,6 +45,7 @@
+                     sql: |
+                       SELECT *
+                       FROM airlineStats
++                      WHERE __time >= 1672531200000 -- 2023-01-01T00:00:00Z in millis
+                     fetchType: FETCH
+                 """
+         )
+diff --git a/plugin-jdbc-pinot/src/main/java/io/kestra/plugin/jdbc/pinot/Trigger.java b/plugin-jdbc-pinot/src/main/java/io/kestra/plugin/jdbc/pinot/Trigger.java
+index 6b1fb798..3ca6925e 100644
+--- a/plugin-jdbc-pinot/src/main/java/io/kestra/plugin/jdbc/pinot/Trigger.java
++++ b/plugin-jdbc-pinot/src/main/java/io/kestra/plugin/jdbc/pinot/Trigger.java
+@@ -23,7 +23,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed Pinot query returns a non-empty result set."
++    title = "Wait for query results on Apache Pinot and trigger flow",
++    description = "Periodically polls an Apache Pinot database by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-postgres/src/main/java/io/kestra/plugin/jdbc/postgresql/Batch.java b/plugin-jdbc-postgres/src/main/java/io/kestra/plugin/jdbc/postgresql/Batch.java
+index 1ffe9d6f..88d744fb 100644
+--- a/plugin-jdbc-postgres/src/main/java/io/kestra/plugin/jdbc/postgresql/Batch.java
++++ b/plugin-jdbc-postgres/src/main/java/io/kestra/plugin/jdbc/postgresql/Batch.java
+@@ -25,7 +25,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run a PostgreSQL batch-query."
++    title = "Bulk insert rows into PostgreSQL using prepared statements",
++    description = "Reads ION-formatted data from Kestra internal storage and performs high-performance batch inserts using JDBC batch operations. Data is processed in chunks (default 1,000 rows) to optimize memory and performance. Supports auto-commit for databases without transaction support."
+ )
+ @Plugin(
+     examples = {
+@@ -83,7 +84,7 @@ insert into xref values( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )
+                     url: jdbc:postgresql://prod:5433/
+                     username: "{{ secret('POSTGRES_USERNAME') }}"
+                     password: "{{ secret('POSTGRES_PASSWORD') }}"
+-                    table: xre
++                    table: xref
+                 """
+         ),
+         @Example(
+diff --git a/plugin-jdbc-postgres/src/main/java/io/kestra/plugin/jdbc/postgresql/Queries.java b/plugin-jdbc-postgres/src/main/java/io/kestra/plugin/jdbc/postgresql/Queries.java
+index 7e6caedd..02800f82 100644
+--- a/plugin-jdbc-postgres/src/main/java/io/kestra/plugin/jdbc/postgresql/Queries.java
++++ b/plugin-jdbc-postgres/src/main/java/io/kestra/plugin/jdbc/postgresql/Queries.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple PostgreSQL queries."
++    title = "Execute multiple SQL statements against PostgreSQL",
++    description = "Runs multiple SQL statements separated by semicolons, either sequentially or within a transaction. Supports parameterized queries and all fetch modes. Set transaction to false to disable transactional behavior (default is true). Default fetchSize is 10,000 rows for STORE mode."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-postgres/src/main/java/io/kestra/plugin/jdbc/postgresql/Query.java b/plugin-jdbc-postgres/src/main/java/io/kestra/plugin/jdbc/postgresql/Query.java
+index 91117b27..cf33cd92 100644
+--- a/plugin-jdbc-postgres/src/main/java/io/kestra/plugin/jdbc/postgresql/Query.java
++++ b/plugin-jdbc-postgres/src/main/java/io/kestra/plugin/jdbc/postgresql/Query.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query a PostgreSQL database."
++    title = "Execute a single SQL query against PostgreSQL",
++    description = "Runs one SQL statement and fetches results. Supports parameterized queries, transactions with afterSQL, and multiple fetch modes (FETCH, FETCH_ONE, STORE). Default fetchSize is 10,000 rows for STORE mode."
+ )
+ @Plugin(
+     examples = {
+@@ -43,7 +44,7 @@
+                     url: jdbc:postgresql://127.0.0.1:56982/
+                     username: "{{ secret('POSTGRES_USERNAME') }}"
+                     password: "{{ secret('POSTGRES_PASSWORD') }}"
+-                    sql: select concert_id, available, a, b, c, d, play_time, library_record, floatn_test, double_test, real_test, numeric_test, date_type, time_type, timez_type, timestamp_type, timestampz_type, interval_type, pay_by_quarter, schedule, json_type, blob_type from pgsql_types
++                    sql: SELECT concert_id, available, a, b, c, d, play_time, library_record, floatn_test, double_test, real_test, numeric_test, date_type, time_type, timez_type, timestamp_type, timestampz_type, interval_type, pay_by_quarter, schedule, json_type, blob_type FROM pgsql_types
+                     fetchType: FETCH
+ 
+                   - id: use_fetched_data
+diff --git a/plugin-jdbc-postgres/src/main/java/io/kestra/plugin/jdbc/postgresql/Trigger.java b/plugin-jdbc-postgres/src/main/java/io/kestra/plugin/jdbc/postgresql/Trigger.java
+index db017a62..6f6b4eb1 100644
+--- a/plugin-jdbc-postgres/src/main/java/io/kestra/plugin/jdbc/postgresql/Trigger.java
++++ b/plugin-jdbc-postgres/src/main/java/io/kestra/plugin/jdbc/postgresql/Trigger.java
+@@ -21,7 +21,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed PostgreSQL query returns a non-empty result set."
++    title = "Wait for query results on PostgreSQL and trigger flow",
++    description = "Periodically polls a PostgreSQL database by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+@@ -48,7 +49,8 @@
+                     url: jdbc:postgresql://127.0.0.1:56982/
+                     username: pg_user
+                     password: pg_password
+-                    sql: "SELECT * FROM my_table"
++                    sql: "SELECT id, status FROM my_table WHERE status = 'NEW'"
++                    afterSQL: "UPDATE my_table SET status = 'PROCESSED' WHERE status = 'NEW'"
+                     fetchType: FETCH
+                 """
+         )
+diff --git a/plugin-jdbc-redshift/src/main/java/io/kestra/plugin/jdbc/redshift/Queries.java b/plugin-jdbc-redshift/src/main/java/io/kestra/plugin/jdbc/redshift/Queries.java
+index 632c616b..8d9926f3 100644
+--- a/plugin-jdbc-redshift/src/main/java/io/kestra/plugin/jdbc/redshift/Queries.java
++++ b/plugin-jdbc-redshift/src/main/java/io/kestra/plugin/jdbc/redshift/Queries.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple Redshift queries."
++    title = "Execute multiple SQL statements against Amazon Redshift",
++    description = "Runs multiple SQL statements separated by semicolons in Amazon Redshift cloud data warehouse. Redshift natively supports multi-statement execution. Supports parameterized queries, transactions (default enabled), and all fetch modes. Default fetchSize is 10,000 rows."
+ )
+ @Plugin(
+     examples = {
+@@ -43,7 +44,7 @@
+                        url: jdbc:redshift://123456789.eu-central-1.redshift-serverless.amazonaws.com:5439/dev
+                        username: "{{ secret('REDSHIFT_USERNAME') }}"
+                        password: "{{ secret('REDSHIFT_PASSWORD') }}"
+-                       sql: select count(*) from employee; select count(*) from laptop;
++                       sql: SELECT count(*) FROM employee; SELECT count(*) FROM laptop;
+                        fetchType: FETCH_ONE
+                    """
+         )
+diff --git a/plugin-jdbc-redshift/src/main/java/io/kestra/plugin/jdbc/redshift/Query.java b/plugin-jdbc-redshift/src/main/java/io/kestra/plugin/jdbc/redshift/Query.java
+index 63a3b19f..840df33d 100644
+--- a/plugin-jdbc-redshift/src/main/java/io/kestra/plugin/jdbc/redshift/Query.java
++++ b/plugin-jdbc-redshift/src/main/java/io/kestra/plugin/jdbc/redshift/Query.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query a Redshift database."
++    title = "Execute a single SQL query against Amazon Redshift",
++    description = "Runs one SQL statement and fetches results from Amazon Redshift cloud data warehouse. Supports parameterized queries, transactions with afterSQL, and multiple fetch modes (FETCH, FETCH_ONE, STORE). Default fetchSize is 10,000 rows for STORE mode."
+ )
+ @Plugin(
+     examples = {
+@@ -43,7 +44,7 @@
+                        url: jdbc:redshift://123456789.eu-central-1.redshift-serverless.amazonaws.com:5439/dev
+                        username: "{{ secret('REDSHIFT_USERNAME') }}"
+                        password: "{{ secret('REDSHIFT_PASSWORD') }}"
+-                       sql: select * from redshift_types
++                       sql: SELECT * FROM redshift_types
+                        fetchType: FETCH_ONE
+                    """
+         )
+diff --git a/plugin-jdbc-redshift/src/main/java/io/kestra/plugin/jdbc/redshift/Trigger.java b/plugin-jdbc-redshift/src/main/java/io/kestra/plugin/jdbc/redshift/Trigger.java
+index 2a86632b..89547d69 100644
+--- a/plugin-jdbc-redshift/src/main/java/io/kestra/plugin/jdbc/redshift/Trigger.java
++++ b/plugin-jdbc-redshift/src/main/java/io/kestra/plugin/jdbc/redshift/Trigger.java
+@@ -23,7 +23,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed Redshift query returns a non-empty result set."
++    title = "Wait for query results on Amazon Redshift and trigger flow",
++    description = "Periodically polls an Amazon Redshift cloud data warehouse by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-snowflake/src/main/java/io/kestra/plugin/jdbc/snowflake/Queries.java b/plugin-jdbc-snowflake/src/main/java/io/kestra/plugin/jdbc/snowflake/Queries.java
+index 0e7843e3..1a4de51a 100644
+--- a/plugin-jdbc-snowflake/src/main/java/io/kestra/plugin/jdbc/snowflake/Queries.java
++++ b/plugin-jdbc-snowflake/src/main/java/io/kestra/plugin/jdbc/snowflake/Queries.java
+@@ -29,7 +29,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple Snowflake queries."
++    title = "Execute multiple SQL statements against Snowflake",
++    description = "Runs multiple SQL statements separated by semicolons in Snowflake cloud data warehouse. Snowflake natively supports multi-statement execution. Supports parameterized queries, transactions (default enabled), and all fetch modes. Default fetchSize is 10,000 rows."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-snowflake/src/main/java/io/kestra/plugin/jdbc/snowflake/Query.java b/plugin-jdbc-snowflake/src/main/java/io/kestra/plugin/jdbc/snowflake/Query.java
+index 49fe042c..726a62f8 100644
+--- a/plugin-jdbc-snowflake/src/main/java/io/kestra/plugin/jdbc/snowflake/Query.java
++++ b/plugin-jdbc-snowflake/src/main/java/io/kestra/plugin/jdbc/snowflake/Query.java
+@@ -30,7 +30,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query a Snowflake database."
++    title = "Execute a single SQL query against Snowflake",
++    description = "Runs one SQL statement and fetches results in Snowflake cloud data warehouse. Supports parameterized queries, transactions with afterSQL, and multiple fetch modes (FETCH, FETCH_ONE, STORE). Default fetchSize is 10,000 rows for STORE mode."
+ )
+ @Plugin(
+     examples = {
+@@ -47,7 +48,7 @@
+                     url: jdbc:snowflake://<account_identifier>.snowflakecomputing.com
+                     username: snowflake_user
+                     password: snowflake_password
+-                    sql: select * from demo_db.public.customers
++                    sql: SELECT * FROM demo_db.public.customers
+                     fetchType: FETCH
+ 
+                   - id: generate_update
+@@ -55,7 +56,7 @@
+                     url: jdbc:snowflake://<account_identifier>.snowflakecomputing.com
+                     username: snowflake_user
+                     password: snowflake_password
+-                    sql: "INSERT INTO demo_db.public.customers_new (year_month, store_code, update_date) values {% for row in outputs.update.rows %} ({{ row.year_month }}, {{ row.store_code }}, TO_DATE('{{ row.date }}', 'MONTH DD, YYYY') ) {% if not loop.last %}, {% endif %}; {% endfor %}"
++                    sql: "INSERT INTO demo_db.public.customers_new (year_month, store_code, update_date) values {% for row in outputs.select.rows %} ({{ row.year_month }}, {{ row.store_code }}, TO_DATE('{{ row.date }}', 'MONTH DD, YYYY') ) {% if not loop.last %}, {% endif %} {% endfor %}"
+                 """
+         )
+     },
+diff --git a/plugin-jdbc-snowflake/src/main/java/io/kestra/plugin/jdbc/snowflake/Trigger.java b/plugin-jdbc-snowflake/src/main/java/io/kestra/plugin/jdbc/snowflake/Trigger.java
+index 81065db0..2a1464d8 100644
+--- a/plugin-jdbc-snowflake/src/main/java/io/kestra/plugin/jdbc/snowflake/Trigger.java
++++ b/plugin-jdbc-snowflake/src/main/java/io/kestra/plugin/jdbc/snowflake/Trigger.java
+@@ -24,7 +24,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed Snowflake query returns a non-empty result set."
++    title = "Wait for query results on Snowflake and trigger flow",
++    description = "Periodically polls a Snowflake cloud data warehouse by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-sqlite/src/main/java/io/kestra/plugin/jdbc/sqlite/Queries.java b/plugin-jdbc-sqlite/src/main/java/io/kestra/plugin/jdbc/sqlite/Queries.java
+index 8bdc8d8d..7f5f7192 100644
+--- a/plugin-jdbc-sqlite/src/main/java/io/kestra/plugin/jdbc/sqlite/Queries.java
++++ b/plugin-jdbc-sqlite/src/main/java/io/kestra/plugin/jdbc/sqlite/Queries.java
+@@ -32,7 +32,7 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple SQLite queries.",
++    title = "Execute multiple SQL statements against SQLite",
+     description = """
+         Executes multiple SQL statements sequentially against a SQLite database,
+         optionally within a single transaction.
+@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS pgsql_types (
+                     url: jdbc:sqlite:myfile.db
+                     sqliteFile: "{{ outputs.init_db.databaseUri }}"
+                     outputDbFile: true
+-                    sql: select * from pgsql_types
++                    sql: SELECT * FROM pgsql_types
+                     fetchType: FETCH
+ 
+                   - id: use_fetched_data
+diff --git a/plugin-jdbc-sqlite/src/main/java/io/kestra/plugin/jdbc/sqlite/Query.java b/plugin-jdbc-sqlite/src/main/java/io/kestra/plugin/jdbc/sqlite/Query.java
+index e18b11fd..281884ea 100644
+--- a/plugin-jdbc-sqlite/src/main/java/io/kestra/plugin/jdbc/sqlite/Query.java
++++ b/plugin-jdbc-sqlite/src/main/java/io/kestra/plugin/jdbc/sqlite/Query.java
+@@ -33,7 +33,7 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query a SQLite database.",
++    title = "Execute a single SQL query against SQLite",
+     description = """
+         Executes a single SQL query against a SQLite database.
+ 
+diff --git a/plugin-jdbc-sqlite/src/main/java/io/kestra/plugin/jdbc/sqlite/Trigger.java b/plugin-jdbc-sqlite/src/main/java/io/kestra/plugin/jdbc/sqlite/Trigger.java
+index a1a208a5..8cb721dd 100644
+--- a/plugin-jdbc-sqlite/src/main/java/io/kestra/plugin/jdbc/sqlite/Trigger.java
++++ b/plugin-jdbc-sqlite/src/main/java/io/kestra/plugin/jdbc/sqlite/Trigger.java
+@@ -21,7 +21,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed SQLite query returns a non-empty result set."
++    title = "Wait for query results on SQLite and trigger flow",
++    description = "Periodically polls a SQLite database by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-sqlserver/src/main/java/io/kestra/plugin/jdbc/sqlserver/Batch.java b/plugin-jdbc-sqlserver/src/main/java/io/kestra/plugin/jdbc/sqlserver/Batch.java
+index 4501c3d4..9a6d2869 100644
+--- a/plugin-jdbc-sqlserver/src/main/java/io/kestra/plugin/jdbc/sqlserver/Batch.java
++++ b/plugin-jdbc-sqlserver/src/main/java/io/kestra/plugin/jdbc/sqlserver/Batch.java
+@@ -24,7 +24,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run a Microsoft SQL Server batch-query."
++    title = "Bulk insert rows into Microsoft SQL Server using prepared statements",
++    description = "Reads ION-formatted data from Kestra internal storage and performs high-performance batch inserts using JDBC batch operations. Data is processed in chunks (default 1,000 rows) to optimize memory and performance. Supports auto-commit for databases without transaction support."
+ )
+ @Plugin(
+     examples = {
+@@ -42,9 +43,8 @@
+                     username: "{{ secret('SQL_USERNAME') }}"
+                     password: "{{ secret('SQL_PASSWORD') }}"
+                     sql: |
+-                      SELECT *
+-                      FROM xref
+-                      LIMIT 1500;
++                      SELECT TOP (1500) *
++                      FROM xref;
+                     fetchType: STORE
+ 
+                   - id: update
+@@ -71,12 +71,11 @@ insert into xref values( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )
+                     username: sql_server_user
+                     password: sql_server_passwd
+                     sql: |
+-                      SELECT *
+-                      FROM xref
+-                      LIMIT 1500;
++                      SELECT TOP (1500) *
++                      FROM xref;
+                     fetchType: STORE
+ 
+-                  - id: update",
++                  - id: update
+                     type: io.kestra.plugin.jdbc.sqlserver.Batch
+                     from: "{{ outputs.query.uri }}"
+                     url: jdbc:sqlserver://prod:41433;trustServerCertificate=true
+diff --git a/plugin-jdbc-sqlserver/src/main/java/io/kestra/plugin/jdbc/sqlserver/Queries.java b/plugin-jdbc-sqlserver/src/main/java/io/kestra/plugin/jdbc/sqlserver/Queries.java
+index 0a1a966b..95498ae9 100644
+--- a/plugin-jdbc-sqlserver/src/main/java/io/kestra/plugin/jdbc/sqlserver/Queries.java
++++ b/plugin-jdbc-sqlserver/src/main/java/io/kestra/plugin/jdbc/sqlserver/Queries.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple Microsoft SQL Server queries."
++    title = "Execute multiple SQL statements against Microsoft SQL Server",
++    description = "Runs multiple SQL statements separated by semicolons, either sequentially or within a transaction. Supports parameterized queries and all fetch modes. Set transaction to false to disable transactional behavior (default is true). Default fetchSize is 10,000 rows for STORE mode."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-sqlserver/src/main/java/io/kestra/plugin/jdbc/sqlserver/Query.java b/plugin-jdbc-sqlserver/src/main/java/io/kestra/plugin/jdbc/sqlserver/Query.java
+index afbb69e0..1717bc46 100644
+--- a/plugin-jdbc-sqlserver/src/main/java/io/kestra/plugin/jdbc/sqlserver/Query.java
++++ b/plugin-jdbc-sqlserver/src/main/java/io/kestra/plugin/jdbc/sqlserver/Query.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query a Microsoft SQL Server database."
++    title = "Execute a single SQL query against Microsoft SQL Server",
++    description = "Runs one SQL statement and fetches results. Supports parameterized queries, transactions with afterSQL, and multiple fetch modes (FETCH, FETCH_ONE, STORE). Default fetchSize is 10,000 rows for STORE mode."
+ )
+ @Plugin(
+     examples = {
+@@ -51,7 +52,7 @@
+                     url: jdbc:sqlserver://localhost:41433;trustServerCertificate=true
+                     username: "{{ secret('SQL_USERNAME') }}"
+                     password: "{{ secret('SQL_PASSWORD') }}"
+-                    sql: "{% for row in outputs.update.rows %} INSERT INTO destination (year_month, store_code, update_date) values ({{row.year_month}}, {{row.store_code}}, '{{row.date}}'); {% endfor %}"
++                    sql: "{% for row in outputs.select.rows %} INSERT INTO destination (year_month, store_code, update_date) values ({{ row.year_month }}, {{ row.store_code }}, '{{ row.date }}'); {% endfor %}"
+                 """
+         )
+     },
+diff --git a/plugin-jdbc-sqlserver/src/main/java/io/kestra/plugin/jdbc/sqlserver/Trigger.java b/plugin-jdbc-sqlserver/src/main/java/io/kestra/plugin/jdbc/sqlserver/Trigger.java
+index 9b5da39d..880bb924 100644
+--- a/plugin-jdbc-sqlserver/src/main/java/io/kestra/plugin/jdbc/sqlserver/Trigger.java
++++ b/plugin-jdbc-sqlserver/src/main/java/io/kestra/plugin/jdbc/sqlserver/Trigger.java
+@@ -23,7 +23,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed Microsoft SQL Server query returns a non-empty result set."
++    title = "Wait for query results on Microsoft SQL Server and trigger flow",
++    description = "Periodically polls a SQL Server database by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+@@ -50,7 +51,8 @@
+                     url: jdbc:sqlserver://localhost:41433;trustServerCertificate=true
+                     username: "{{ secret('SQL_USERNAME') }}"
+                     password: "{{ secret('SQL_PASSWORD') }}"
+-                    sql: "SELECT * FROM my_table"
++                    sql: "SELECT id, status FROM my_table WHERE status = 'NEW'"
++                    afterSQL: "UPDATE my_table SET status = 'PROCESSED' WHERE status = 'NEW'"
+                     fetchType: FETCH
+                 """
+         )
+diff --git a/plugin-jdbc-sybase/src/main/java/io/kestra/plugin/jdbc/sybase/Queries.java b/plugin-jdbc-sybase/src/main/java/io/kestra/plugin/jdbc/sybase/Queries.java
+index c4803888..94a1ab5d 100644
+--- a/plugin-jdbc-sybase/src/main/java/io/kestra/plugin/jdbc/sybase/Queries.java
++++ b/plugin-jdbc-sybase/src/main/java/io/kestra/plugin/jdbc/sybase/Queries.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple Sybase database queries."
++    title = "Execute multiple SQL statements against Sybase ASE",
++    description = "Runs multiple SQL statements separated by semicolons. Sybase ASE natively supports multi-statement execution. Supports parameterized queries, transactions (default enabled), and all fetch modes. Default fetchSize is 10,000 rows for STORE mode."
+ )
+ @Plugin(
+     examples = {
+@@ -43,7 +44,7 @@
+                        url: jdbc:sybase:Tds:127.0.0.1:5000/
+                        username: "{{ secret('SYBASE_USERNAME') }}"
+                        password: "{{ secret('SYBASE_PASSWORD') }}"
+-                       sql: select count(*) from employee, select count(*) from laptop;
++                       sql: SELECT count(*) FROM employee; SELECT count(*) FROM laptop;
+                        fetchType: FETCH_ONE
+                    """
+         )
+diff --git a/plugin-jdbc-sybase/src/main/java/io/kestra/plugin/jdbc/sybase/Query.java b/plugin-jdbc-sybase/src/main/java/io/kestra/plugin/jdbc/sybase/Query.java
+index 7f51dc53..3a9438a0 100644
+--- a/plugin-jdbc-sybase/src/main/java/io/kestra/plugin/jdbc/sybase/Query.java
++++ b/plugin-jdbc-sybase/src/main/java/io/kestra/plugin/jdbc/sybase/Query.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query a Sybase database."
++    title = "Execute a single SQL query against Sybase ASE",
++    description = "Runs one SQL statement and fetches results. Supports parameterized queries, transactions with afterSQL, and multiple fetch modes (FETCH, FETCH_ONE, STORE). Default fetchSize is 10,000 rows for STORE mode."
+ )
+ @Plugin(
+     examples = {
+@@ -43,7 +44,7 @@
+                        url: jdbc:sybase:Tds:127.0.0.1:5000/
+                        username: "{{ secret('SYBASE_USERNAME') }}"
+                        password: "{{ secret('SYBASE_PASSWORD') }}"
+-                       sql: select * from syb_types
++                       sql: SELECT * FROM syb_types
+                        fetchType: FETCH_ONE
+                    """
+         )
+diff --git a/plugin-jdbc-sybase/src/main/java/io/kestra/plugin/jdbc/sybase/Trigger.java b/plugin-jdbc-sybase/src/main/java/io/kestra/plugin/jdbc/sybase/Trigger.java
+index dbceee55..f8f143d8 100644
+--- a/plugin-jdbc-sybase/src/main/java/io/kestra/plugin/jdbc/sybase/Trigger.java
++++ b/plugin-jdbc-sybase/src/main/java/io/kestra/plugin/jdbc/sybase/Trigger.java
+@@ -21,7 +21,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed Sybase query returns a non-empty result set."
++    title = "Wait for query results on Sybase ASE and trigger flow",
++    description = "Periodically polls a Sybase ASE database by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-trino/src/main/java/io/kestra/plugin/jdbc/trino/Query.java b/plugin-jdbc-trino/src/main/java/io/kestra/plugin/jdbc/trino/Query.java
+index bf00200c..b1c2dbfe 100644
+--- a/plugin-jdbc-trino/src/main/java/io/kestra/plugin/jdbc/trino/Query.java
++++ b/plugin-jdbc-trino/src/main/java/io/kestra/plugin/jdbc/trino/Query.java
+@@ -26,8 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query a data lake using Trino query engine.",
+-    description = "Make sure NOT to include semicolon at the end of your SQL query. Adding semicolon at the end will result in an error. If you want to test this integration, search for Trino in Blueprints - you'll find detailed instructions there."
++    title = "Execute a SQL query using Trino query engine",
++    description = "Runs a SQL statement using Trino distributed SQL query engine. Supports querying data lakes, databases, and various data sources. WARNING: Do NOT include a semicolon at the end of your SQL query - it will result in an error. Supports parameterized queries and all fetch modes. Default fetchSize is 10,000 rows."
+ )
+ @Plugin(
+     examples = {
+@@ -49,7 +49,6 @@ select orderpriority as priority, sum(totalprice) as total
+                          from tpch.tiny.orders
+                          group by orderpriority
+                          order by orderpriority
+-                       fetchType: FETCH
+                        fetchType: STORE
+ 
+                      - id: csv_report
+diff --git a/plugin-jdbc-trino/src/main/java/io/kestra/plugin/jdbc/trino/Trigger.java b/plugin-jdbc-trino/src/main/java/io/kestra/plugin/jdbc/trino/Trigger.java
+index 10243f67..b395814e 100644
+--- a/plugin-jdbc-trino/src/main/java/io/kestra/plugin/jdbc/trino/Trigger.java
++++ b/plugin-jdbc-trino/src/main/java/io/kestra/plugin/jdbc/trino/Trigger.java
+@@ -23,7 +23,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed Trino query returns a non-empty result set."
++    title = "Wait for query results on Trino and trigger flow",
++    description = "Periodically polls Trino by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. WARNING: Do NOT include a semicolon at the end of your SQL query. Supports parameterized queries and afterSQL. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-vectorwise/src/main/java/io/kestra/plugin/jdbc/vectorwise/Batch.java b/plugin-jdbc-vectorwise/src/main/java/io/kestra/plugin/jdbc/vectorwise/Batch.java
+index eb0e6ad0..6e447460 100644
+--- a/plugin-jdbc-vectorwise/src/main/java/io/kestra/plugin/jdbc/vectorwise/Batch.java
++++ b/plugin-jdbc-vectorwise/src/main/java/io/kestra/plugin/jdbc/vectorwise/Batch.java
+@@ -24,7 +24,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run a Vectorwise database batch-query."
++    title = "Bulk insert rows into Vectorwise using prepared statements",
++    description = "Reads ION-formatted data from Kestra internal storage and performs high-performance batch inserts using JDBC batch operations. Data is processed in chunks (default 1,000 rows) to optimize memory and performance. Optimized for Vectorwise's columnar storage. Supports auto-commit for databases without transaction support."
+ )
+ @Plugin(
+     examples = {
+@@ -59,30 +60,30 @@
+         @Example(
+             title = "Fetch rows from a table and bulk insert to another one without using sql query.",
+             full = true,
+-            code = {
+-                "id: vectorwise_batch_query",
+-                "namespace: company.team",
+-                "",
+-                "tasks:",
+-                "  - id: query",
+-                "    type: io.kestra.plugin.jdbc.vectorwise.Query",
+-                "    url: jdbc:vectorwise://dev:port/base",
+-                "    username: admin",
+-                "    password: admin_passwd",
+-                "    sql: |",
+-                "      SELECT *",
+-                "      FROM xref",
+-                "      LIMIT 1500;",
+-                "    fetchType: STORE",
+-                "",
+-                "  - id: update",
+-                "    type: io.kestra.plugin.jdbc.vectorwise.Batch",
+-                "    from: \"{{ outputs.query.uri }}\"",
+-                "    url: jdbc:vectorwise://prod:port/base",
+-                "    username: admin",
+-                "    password: admin_passwd",
+-                "    table: xref",
+-            }
++            code = """
++                id: vectorwise_batch_query
++                namespace: company.team
++
++                tasks:
++                  - id: query
++                    type: io.kestra.plugin.jdbc.vectorwise.Query
++                    url: jdbc:vectorwise://dev:port/base
++                    username: admin
++                    password: admin_passwd
++                    sql: |
++                      SELECT *
++                      FROM xref
++                      LIMIT 1500;
++                    fetchType: STORE
++
++                  - id: update
++                    type: io.kestra.plugin.jdbc.vectorwise.Batch
++                    from: "{{ outputs.query.uri }}"
++                    url: jdbc:vectorwise://prod:port/base
++                    username: admin
++                    password: admin_passwd
++                    table: xref
++            """
+         )
+     },
+     metrics = {
+@@ -121,4 +122,3 @@ public void registerDriver() throws SQLException {
+     }
+ }
+ 
+-
+diff --git a/plugin-jdbc-vectorwise/src/main/java/io/kestra/plugin/jdbc/vectorwise/Queries.java b/plugin-jdbc-vectorwise/src/main/java/io/kestra/plugin/jdbc/vectorwise/Queries.java
+index dfaf7985..47ff4560 100644
+--- a/plugin-jdbc-vectorwise/src/main/java/io/kestra/plugin/jdbc/vectorwise/Queries.java
++++ b/plugin-jdbc-vectorwise/src/main/java/io/kestra/plugin/jdbc/vectorwise/Queries.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple Vectorwise database queries."
++    title = "Execute multiple SQL statements against Vectorwise",
++    description = "Runs multiple SQL statements against Actian Vector (formerly Vectorwise) columnar analytics database. Optimized for analytical workloads and high-performance queries. Supports parameterized queries, transactions (default enabled), and all fetch modes. Default fetchSize is 10,000 rows."
+ )
+ @Plugin(
+     examples = {
+@@ -43,7 +44,7 @@
+                        url: jdbc:vectorwise://url:port/base
+                        username: "{{ secret('VECTORWISE_USERNAME') }}"
+                        password: "{{ secret('VECTORWISE_PASSWORD') }}"
+-                       sql: select count(*) from employee; select count(*) from laptop;
++                       sql: SELECT count(*) FROM employee; SELECT count(*) FROM laptop;
+                        fetchType: FETCH_ONE
+                    """
+         )
+diff --git a/plugin-jdbc-vectorwise/src/main/java/io/kestra/plugin/jdbc/vectorwise/Query.java b/plugin-jdbc-vectorwise/src/main/java/io/kestra/plugin/jdbc/vectorwise/Query.java
+index 5f929625..8640e266 100644
+--- a/plugin-jdbc-vectorwise/src/main/java/io/kestra/plugin/jdbc/vectorwise/Query.java
++++ b/plugin-jdbc-vectorwise/src/main/java/io/kestra/plugin/jdbc/vectorwise/Query.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query a Vectorwise database."
++    title = "Execute a single SQL query against Vectorwise",
++    description = "Runs one SQL statement against Actian Vector (formerly Vectorwise) columnar analytics database. Optimized for analytical workloads and high-performance queries. Supports parameterized queries, transactions with afterSQL, and multiple fetch modes (FETCH, FETCH_ONE, STORE). Default fetchSize is 10,000 rows."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-vectorwise/src/main/java/io/kestra/plugin/jdbc/vectorwise/Trigger.java b/plugin-jdbc-vectorwise/src/main/java/io/kestra/plugin/jdbc/vectorwise/Trigger.java
+index 2dabaa7c..34d69344 100644
+--- a/plugin-jdbc-vectorwise/src/main/java/io/kestra/plugin/jdbc/vectorwise/Trigger.java
++++ b/plugin-jdbc-vectorwise/src/main/java/io/kestra/plugin/jdbc/vectorwise/Trigger.java
+@@ -23,7 +23,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed Vectorwise query returns a non-empty result set."
++    title = "Wait for query results on Vectorwise and trigger flow",
++    description = "Periodically polls a Vectorwise database by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-vertica/src/main/java/io/kestra/plugin/jdbc/vertica/Batch.java b/plugin-jdbc-vertica/src/main/java/io/kestra/plugin/jdbc/vertica/Batch.java
+index 9e721b41..dae5fa63 100644
+--- a/plugin-jdbc-vertica/src/main/java/io/kestra/plugin/jdbc/vertica/Batch.java
++++ b/plugin-jdbc-vertica/src/main/java/io/kestra/plugin/jdbc/vertica/Batch.java
+@@ -24,7 +24,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run a Vertica database batch-query."
++    title = "Bulk insert rows into Vertica using prepared statements",
++    description = "Reads ION-formatted data from Kestra internal storage and performs high-performance batch inserts using JDBC batch operations. Data is processed in chunks (default 1,000 rows) to optimize memory and performance. Optimized for Vertica's columnar storage. Supports auto-commit for databases without transaction support."
+ )
+ @Plugin(
+     examples = {
+@@ -45,7 +46,6 @@
+                          SELECT *
+                          FROM xref
+                          LIMIT 1500;
+-                       fetchType: FETCH
+                        fetchType: STORE
+ 
+                      - id: update
+@@ -58,33 +58,32 @@
+                    """
+         ),
+         @Example(
+-            title = "Fetch rows from a table and bulk insert to another one, without using sql query.",
++            title = "Fetch rows from a table and bulk insert to another one, without writing the INSERT statement.",
+             full = true,
+-            code = {
+-                "id: vertica_batch_query",
+-                "namespace: company.team",
+-                "",
+-                "tasks:",
+-                "  - id: query",
+-                "    type: io.kestra.plugin.jdbc.vertica.Query",
+-                "    url: jdbc:vertica://dev:56982/db",
+-                "    username: vertica_user",
+-                "    password: vertica_passwd",
+-                "    sql: |",
+-                "      SELECT *",
+-                "      FROM xref",
+-                "      LIMIT 1500;",
+-                "    fetchType: FETCH",
+-                "    fetchType: STORE",
+-                "",
+-                "  - id: update",
+-                "    type: io.kestra.plugin.jdbc.vertica.Batch",
+-                "    from: \"{{ outputs.query.uri }}\"",
+-                "    url: jdbc:vertica://prod:56982/db",
+-                "    username: vertica_user",
+-                "    password: vertica_passwd",
+-                "    table: xref",
+-            }
++            code = """
++                id: vertica_batch_query
++                namespace: company.team
++
++                tasks:
++                  - id: query
++                    type: io.kestra.plugin.jdbc.vertica.Query
++                    url: jdbc:vertica://dev:56982/db
++                    username: vertica_user
++                    password: vertica_passwd
++                    sql: |
++                      SELECT *
++                      FROM xref
++                      LIMIT 1500;
++                    fetchType: STORE
++
++                  - id: update
++                    type: io.kestra.plugin.jdbc.vertica.Batch
++                    from: "{{ outputs.query.uri }}"
++                    url: jdbc:vertica://prod:56982/db
++                    username: vertica_user
++                    password: vertica_passwd
++                    table: xref
++            """
+         )
+     },
+     metrics = {
+diff --git a/plugin-jdbc-vertica/src/main/java/io/kestra/plugin/jdbc/vertica/Queries.java b/plugin-jdbc-vertica/src/main/java/io/kestra/plugin/jdbc/vertica/Queries.java
+index 4926daae..589c4e22 100644
+--- a/plugin-jdbc-vertica/src/main/java/io/kestra/plugin/jdbc/vertica/Queries.java
++++ b/plugin-jdbc-vertica/src/main/java/io/kestra/plugin/jdbc/vertica/Queries.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Run multiple Vertica database queries."
++    title = "Execute multiple SQL statements against Vertica",
++    description = "Runs multiple SQL statements against Vertica columnar analytics database. Optimized for analytical workloads and data warehousing. Supports parameterized queries, transactions (default enabled), and all fetch modes. Default fetchSize is 10,000 rows."
+ )
+ @Plugin(
+     examples = {
+@@ -38,13 +39,13 @@
+                    namespace: company.team
+ 
+                    tasks:
+-                     - id: queries
+-                       type: io.kestra.plugin.jdbc.vertica.Queries
+-                       url: jdbc:vertica://127.0.0.1:56982/db
+-                       username: "{{ secret('VERTICA_USERNAME') }}"
+-                       password: "{{ secret('VERTICA_PASSWORD') }}"
+-                       sql: select * from customer
+-                       fetchType: FETCH_ONE
++                    - id: queries
++                      type: io.kestra.plugin.jdbc.vertica.Queries
++                      url: jdbc:vertica://127.0.0.1:56982/db
++                      username: "{{ secret('VERTICA_USERNAME') }}"
++                      password: "{{ secret('VERTICA_PASSWORD') }}"
++                      sql: SELECT * FROM customer
++                      fetchType: FETCH_ONE
+                    """
+         )
+     },
+diff --git a/plugin-jdbc-vertica/src/main/java/io/kestra/plugin/jdbc/vertica/Query.java b/plugin-jdbc-vertica/src/main/java/io/kestra/plugin/jdbc/vertica/Query.java
+index 7d3bfe35..b449a01f 100644
+--- a/plugin-jdbc-vertica/src/main/java/io/kestra/plugin/jdbc/vertica/Query.java
++++ b/plugin-jdbc-vertica/src/main/java/io/kestra/plugin/jdbc/vertica/Query.java
+@@ -26,7 +26,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Query a Vertica database."
++    title = "Execute a single SQL query against Vertica",
++    description = "Runs one SQL statement against Vertica columnar analytics database. Optimized for analytical workloads and data warehousing. Supports parameterized queries, transactions with afterSQL, and multiple fetch modes (FETCH, FETCH_ONE, STORE). Default fetchSize is 10,000 rows."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc-vertica/src/main/java/io/kestra/plugin/jdbc/vertica/Trigger.java b/plugin-jdbc-vertica/src/main/java/io/kestra/plugin/jdbc/vertica/Trigger.java
+index 0dc05ef0..012696a1 100644
+--- a/plugin-jdbc-vertica/src/main/java/io/kestra/plugin/jdbc/vertica/Trigger.java
++++ b/plugin-jdbc-vertica/src/main/java/io/kestra/plugin/jdbc/vertica/Trigger.java
+@@ -23,7 +23,8 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Trigger a flow if a periodically executed Vertica query returns a non-empty result set."
++    title = "Wait for query results on Vertica and trigger flow",
++    description = "Periodically polls a Vertica database by executing a SQL query at the specified interval (default 60 seconds). Triggers a downstream flow execution when the query returns one or more rows. Supports parameterized queries and afterSQL for marking processed rows. Use fetchType to control result handling."
+ )
+ @Plugin(
+     examples = {
+diff --git a/plugin-jdbc/src/main/java/io/kestra/plugin/jdbc/AbstractJdbcBaseQuery.java b/plugin-jdbc/src/main/java/io/kestra/plugin/jdbc/AbstractJdbcBaseQuery.java
+index 38c7a5b5..1abf577a 100644
+--- a/plugin-jdbc/src/main/java/io/kestra/plugin/jdbc/AbstractJdbcBaseQuery.java
++++ b/plugin-jdbc/src/main/java/io/kestra/plugin/jdbc/AbstractJdbcBaseQuery.java
+@@ -45,20 +45,19 @@ public abstract class AbstractJdbcBaseQuery extends Task implements JdbcQueryInt
+     private Property<String> timeZoneId;
+ 
+     @Schema(
+-        title = "SQL statement(s) to execute.",
++        title = "SQL statement(s) to execute",
+         description = """
+-            Runs one or more SQL statements depending on the task type.
+-            Query tasks support a single SQL statement, while Queries tasks can run multiple statements separated by semicolons."""
++            Runs one or more SQL statements rendered with flow variables.
++            Query tasks accept a single statement; Queries tasks can execute multiple statements separated by semicolons"""
+     )
+     @NotNull
+     protected Property<String> sql;
+ 
+     @Schema(
+-        title = "SQL to execute atomically after trigger query.",
++        title = "SQL to execute after main query in same transaction",
+         description = """
+-            Optional SQL executed in the same transaction as the main trigger query.
+-            Typically updates processing flags to prevent duplicate processing.
+-            Both sql and afterSQL queries commit together, ensuring consistency."""
++            Optional SQL executed in the same transaction after the main statement.
++            Useful for marking rows as processed to avoid duplicates; only a single statement is allowed. Commit covers both sql and afterSQL"""
+     )
+     protected Property<String> afterSQL;
+ 
+@@ -83,13 +82,25 @@ public abstract class AbstractJdbcBaseQuery extends Task implements JdbcQueryInt
+     @Deprecated(since = "0.19.0", forRemoval = true)
+     private boolean fetch = false;
+ 
++    @Schema(
++        title = "Result fetching mode",
++        description = "FETCH returns all rows, FETCH_ONE returns the first row only, STORE streams rows to internal storage (ION), NONE returns no data. Default: NONE"
++    )
+     @NotNull
+     @Builder.Default
+     protected Property<FetchType> fetchType = Property.ofValue(FetchType.NONE);
+ 
++    @Schema(
++        title = "Number of rows to fetch per database round trip",
++        description = "Controls JDBC fetch size for STORE mode. Default: 10,000 rows; use Integer.MIN_VALUE for MySQL streaming. Ignored for FETCH and FETCH_ONE"
++    )
+     @Builder.Default
+     protected Property<Integer> fetchSize = Property.ofValue(10000);
+ 
++    @Schema(
++        title = "Named parameter bindings for SQL query",
++        description = "Map of parameter names to values. Use :name placeholders rendered then bound as prepared-statement parameters; supports nulls and typed values"
++    )
+     protected Property<Map<String, Object>> parameters;
+ 
+     @Builder.Default
+@@ -272,27 +283,27 @@ protected void kill(Connection connection) {
+     @Getter
+     public static class Output implements io.kestra.core.models.tasks.Output {
+         @Schema(
+-            title = "Map containing the first row of fetched data.",
+-            description = "Only populated if `fetchOne` parameter is set to true."
++            title = "First row of fetched data",
++            description = "Only populated when fetchType is FETCH_ONE"
+         )
+         @JsonInclude
+         private final Map<String, Object> row;
+ 
+         @Schema(
+-            title = "List of map containing rows of fetched data.",
+-            description = "Only populated if `fetch` parameter is set to true."
++            title = "List of all fetched rows",
++            description = "Only populated when fetchType is FETCH"
+         )
+         private final List<Map<String, Object>> rows;
+ 
+         @Schema(
+-            title = "The URI of the result file on Kestra's internal storage (.ion file / Amazon Ion formatted text file).",
+-            description = "Only populated if `store` is set to true."
++            title = "URI of stored results in internal storage",
++            description = "Only populated when fetchType is STORE; file is stored in internal storage using ION format"
+         )
+         private final URI uri;
+ 
+         @Schema(
+-            title = "The number of rows fetched.",
+-            description = "Only populated if `store` or `fetch` parameter is set to true."
++            title = "Number of rows fetched",
++            description = "Only populated when fetchType is FETCH or STORE"
+         )
+         private final Long size;
+     }
+diff --git a/plugin-jdbc/src/main/java/io/kestra/plugin/jdbc/AbstractJdbcBatch.java b/plugin-jdbc/src/main/java/io/kestra/plugin/jdbc/AbstractJdbcBatch.java
+index ae3e295c..174bbd4b 100644
+--- a/plugin-jdbc/src/main/java/io/kestra/plugin/jdbc/AbstractJdbcBatch.java
++++ b/plugin-jdbc/src/main/java/io/kestra/plugin/jdbc/AbstractJdbcBatch.java
+@@ -45,40 +45,40 @@ public abstract class AbstractJdbcBatch extends Task implements RunnableTask<Abs
+ 
+     @NotNull
+     @Schema(
+-        title = "Source file URI"
++        title = "Input file from internal storage",
++        description = "URI of the source file (kestra://) containing rows to insert"
+     )
+     @PluginProperty(internalStorageURI = true)
+     private Property<String> from;
+ 
+     @Schema(
+-        title = "Insert query to be executed.",
++        title = "Parameterized INSERT statement to execute",
+         description = """
+-            The query must have as many question marks as the number of columns in the table.
+-            Example: 'INSERT INTO <table_name> VALUES( ? , ? , ? )' for 3 columns.
+-            In case you do not want all columns, you need to specify it in the query in the columns property
+-            Example: 'INSERT INTO <table_name> (id, name) VALUES( ? , ? )' for inserting data into 2 columns: 'id' and 'name'.
++            Prepared INSERT with ? placeholders for each bound column.
++            Example: INSERT INTO <table_name> VALUES (?, ?, ?) for three columns; use column list if inserting a subset
+             """
+     )
+     private Property<String> sql;
+ 
+     @Schema(
+-        title = "The size of chunk for every bulk request."
++        title = "Batch size per executeBatch call",
++        description = "Number of rows sent per JDBC batch before commit; default 1,000"
+     )
+     @Builder.Default
+     @NotNull
+     private Property<Integer> chunk = Property.ofValue(1000);
+ 
+     @Schema(
+-        title = "The columns to be inserted.",
+-        description = "If not provided, `?` count need to match the `from` number of columns."
++        title = "Columns bound to placeholders",
++        description = "Ordered column names matching ? placeholders; if omitted, placeholder count must match all columns in the input row"
+     )
+     private Property<List<String>> columns;
+ 
+     @Schema(
+-        title = "The table from which column names will be retrieved.",
++        title = "Table used to auto-discover columns",
+         description = """
+-            This property specifies the table name which will be used to retrieve the columns for the inserted values.
+-            You can use it instead of specifying manually the columns in the `columns` property. In this case, the `sql` property can also be omitted, an INSERT statement would be generated automatically.
++            Retrieves column names from the given table when `columns` is empty.
++            If `sql` is also omitted, an INSERT statement is generated automatically using the discovered columns
+             """
+     )
+     private Property<String> table;
+@@ -260,10 +260,10 @@ public void kill() {
+     @Builder
+     @Getter
+     public static class Output implements io.kestra.core.models.tasks.Output {
+-        @Schema(title = "The rows count.")
++        @Schema(title = "Total rows read")
+         private final Long rowCount;
+ 
+-        @Schema(title = "The updated rows count.")
++        @Schema(title = "Rows inserted or updated")
+         private final Integer updatedCount;
+     }
+ 
+diff --git a/plugin-jdbc/src/main/java/io/kestra/plugin/jdbc/JdbcConnectionInterface.java b/plugin-jdbc/src/main/java/io/kestra/plugin/jdbc/JdbcConnectionInterface.java
+index 672824b6..3641bc6d 100644
+--- a/plugin-jdbc/src/main/java/io/kestra/plugin/jdbc/JdbcConnectionInterface.java
++++ b/plugin-jdbc/src/main/java/io/kestra/plugin/jdbc/JdbcConnectionInterface.java
+@@ -20,14 +20,14 @@
+ 
+ public interface JdbcConnectionInterface {
+     @Schema(
+-        title = "The JDBC URL to connect to the database."
++        title = "The JDBC URL to connect to the database"
+     )
+     @NotNull
+     @PluginProperty(group = "connection")
+     Property<String> getUrl();
+ 
+     @Schema(
+-        title = "The database user."
++        title = "The database user"
+     )
+     @PluginProperty(group = "connection")
+     Property<String> getUsername();
+diff --git a/plugin-jdbc/src/main/java/io/kestra/plugin/jdbc/JdbcQueryInterface.java b/plugin-jdbc/src/main/java/io/kestra/plugin/jdbc/JdbcQueryInterface.java
+index 7ea2e771..2c1b5c8b 100644
+--- a/plugin-jdbc/src/main/java/io/kestra/plugin/jdbc/JdbcQueryInterface.java
++++ b/plugin-jdbc/src/main/java/io/kestra/plugin/jdbc/JdbcQueryInterface.java
+@@ -11,7 +11,7 @@
+ 
+ public interface JdbcQueryInterface extends JdbcStatementInterface {
+     @Schema(
+-        title = "The SQL query to run."
++        title = "The SQL query to run"
+     )
+     Property<String> getSql();
+ 
+@@ -43,7 +43,7 @@ public interface JdbcQueryInterface extends JdbcStatementInterface {
+     boolean isFetchOne();
+ 
+     @Schema(
+-        title = "Number of rows that should be fetched.",
++        title = "Number of rows that should be fetched",
+         description = "Gives the JDBC driver a hint as to the number of rows that should be fetched from the database " +
+             "when more rows are needed for this ResultSet object. If the fetch size specified is zero, the JDBC driver " +
+             "ignores the value and is free to make its own best guess as to what the fetch size should be. Ignored if " +
+@@ -52,7 +52,7 @@ public interface JdbcQueryInterface extends JdbcStatementInterface {
+     Property<Integer> getFetchSize();
+ 
+     @Schema(
+-            title = "The way you want to store data.",
++            title = "The way you want to store data",
+             description = "FETCH_ONE - output the first row.\n"
+                     + "FETCH - output all rows as output variable.\n"
+                     + "STORE - store all rows to a file.\n"
+diff --git a/plugin-jdbc/src/main/resources/doc/io.kestra.plugin.jdbc.md b/plugin-jdbc/src/main/resources/doc/io.kestra.plugin.jdbc.md
+new file mode 100644
+index 00000000..9a1ebbf6
+--- /dev/null
++++ b/plugin-jdbc/src/main/resources/doc/io.kestra.plugin.jdbc.md
+@@ -0,0 +1,19 @@
++# How to use the JDBC plugin
++
++Run SQL queries, execute batch inserts, and trigger flows from query results across 17+ databases including MySQL, PostgreSQL, Snowflake, DuckDB, and more.
++
++## Common properties
++
++Set `url`, `username`, and `password` directly on each task. Use [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults) to avoid repeating connection details across tasks in the same flow. Store credentials in [secrets](https://kestra.io/docs/concepts/secret).
++
++## Tasks
++
++`Query` executes a single SQL statement. Control output with `fetchType`: `FETCH_ONE` returns the first row as a map, `FETCH` returns all rows as a list, `STORE` streams rows to a file in internal storage (best for large result sets), and `NONE` discards results. Use `parameters` for named bindings (`:paramName` syntax) and `afterSQL` to run a follow-up statement in the same transaction — useful for marking rows as processed after reading them.
++
++`Queries` executes multiple semicolon-separated statements in a single operation. With `transaction: true` (the default), a failure rolls back all statements.
++
++`Batch` bulk-inserts rows from a Kestra internal storage file into a table. Set `from` to the source file URI and either `sql` (a parameterized INSERT with `?` placeholders) or `table` to auto-generate the statement. Tune throughput with `chunk` (rows per batch commit, default 1000).
++
++`Trigger` polls a database on a schedule and starts one execution per batch of matching rows — use it to react to new records in a queue or staging table.
++
++Select the task class for your database — for example `io.kestra.plugin.jdbc.mysql.Query` for MySQL or `io.kestra.plugin.jdbc.postgres.Query` for PostgreSQL. Each database-specific submodule exposes the same task interface with additional driver-level options where applicable.

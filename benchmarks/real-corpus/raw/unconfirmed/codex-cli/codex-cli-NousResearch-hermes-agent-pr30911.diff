@@ -1,0 +1,1985 @@
+diff --git a/agent/account_usage.py b/agent/account_usage.py
+index be03646021e..930272e2df3 100644
+--- a/agent/account_usage.py
++++ b/agent/account_usage.py
+@@ -7,7 +7,7 @@
+ import httpx
+ 
+ from agent.anthropic_adapter import _is_oauth_token, resolve_anthropic_token
+-from hermes_cli.auth import _read_codex_tokens, resolve_codex_runtime_credentials
++from agent.auth.codex import resolve_codex_credentials
+ from hermes_cli.runtime_provider import resolve_runtime_provider
+ 
+ 
+@@ -125,19 +125,16 @@ def _resolve_codex_usage_url(base_url: str) -> str:
+ 
+ 
+ def _fetch_codex_account_usage() -> Optional[AccountUsageSnapshot]:
+-    creds = resolve_codex_runtime_credentials(refresh_if_expiring=True)
+-    token_data = _read_codex_tokens()
+-    tokens = token_data.get("tokens") or {}
+-    account_id = str(tokens.get("account_id", "") or "").strip() or None
++    creds = resolve_codex_credentials(refresh_if_expiring=True)
+     headers = {
+-        "Authorization": f"Bearer {creds['api_key']}",
++        "Authorization": f"Bearer {creds.access_token}",
+         "Accept": "application/json",
+         "User-Agent": "codex-cli",
+     }
+-    if account_id:
+-        headers["ChatGPT-Account-Id"] = account_id
++    if creds.account_id:
++        headers["ChatGPT-Account-Id"] = creds.account_id
+     with httpx.Client(timeout=15.0) as client:
+-        response = client.get(_resolve_codex_usage_url(creds.get("base_url", "")), headers=headers)
++        response = client.get(_resolve_codex_usage_url(creds.base_url), headers=headers)
+         response.raise_for_status()
+     payload = response.json() or {}
+     rate_limit = payload.get("rate_limit") or {}
+diff --git a/agent/auth/__init__.py b/agent/auth/__init__.py
+new file mode 100644
+index 00000000000..6f77e4f4316
+--- /dev/null
++++ b/agent/auth/__init__.py
+@@ -0,0 +1,20 @@
++"""Per-provider runtime credential resolvers.
++
++Each module in this package owns the *resolution* logic for one
++provider — composing the disk/refresh primitives in
++:mod:`hermes_cli.auth` into a single function that the rest of the
++codebase calls. Provider-specific store ownership contracts live in
++the per-provider docstrings.
++"""
++
++from agent.auth.codex import (
++    CodexCredentialSource,
++    CodexCredentials,
++    resolve_codex_credentials,
++)
++
++__all__ = [
++    "CodexCredentialSource",
++    "CodexCredentials",
++    "resolve_codex_credentials",
++]
+diff --git a/agent/auth/codex.py b/agent/auth/codex.py
+new file mode 100644
+index 00000000000..f89fee331d5
+--- /dev/null
++++ b/agent/auth/codex.py
+@@ -0,0 +1,301 @@
++"""Unified Codex credential resolver.
++
++Auth Stores — Ownership Contract
++================================
++There are two Codex credential stores on disk. They MUST stay
++separate. Do NOT copy one to the other and do NOT have Hermes write
++back to the Codex CLI's store.
++
++- ``~/.codex/auth.json`` — **owned by the Codex CLI** (and the VS
++  Code extension that shares its identity). Codex CLI refreshes
++  tokens here. Hermes is allowed to **read** it — borrow access
++  tokens until they expire. Hermes is NEVER allowed to write to it.
++  Reason: refresh-token race — if Hermes refreshes and writes back
++  while the Codex CLI is also refreshing, one of them ends up holding
++  a revoked token.
++
++- ``~/.hermes/auth.json`` — **owned by Hermes**. Hermes' own auth
++  subsystem (``hermes auth login codex``) writes here. Hermes
++  refreshes its own tokens here.
++
++This resolver respects the contract: read both, write neither
++(except via Hermes' own refresh flow into ``~/.hermes/auth.json``).
++The borrow path returns the live access token only — the refresh
++token from the Codex CLI store is intentionally not exposed past the
++borrow point so no code path can accidentally feed it into Hermes'
++refresh-and-save machinery.
++
++Future maintainers: do NOT "promote" the borrowed token into the
++Hermes store automatically. The user crosses that boundary
++explicitly via ``hermes auth login codex``, which is the only place
++that imports from the Codex CLI store and writes to the Hermes
++store.
++
++Resolution chain
++----------------
++1. ``HERMES_CODEX_ACCESS_TOKEN`` env override — developer escape
++   hatch. No refresh, no expiry check, no disk I/O. Skips both
++   stores entirely.
++2. ``~/.hermes/auth.json`` via :func:`_read_codex_tokens` under
++   :func:`_auth_store_lock`. Refresh-when-expiring is gated by
++   ``refresh_if_expiring`` and always serialised under the lock so
++   concurrent callers do not race the single-use refresh token.
++3. ``~/.codex/auth.json`` read-only borrow via
++   :func:`_import_codex_cli_tokens` when (a) the Hermes store yielded
++   no tokens at all, (b) ``allow_codex_cli_fallback`` is True, and
++   (c) the borrowed access token is not expired (the importer
++   already rejects expired tokens).
++
++Refresh failures from the Hermes store (e.g.,
++``refresh_token_reused``, ``invalid_grant``) are surfaced loudly to
++the caller — they do NOT fall through to the borrow path. The user
++needs the actionable re-auth guidance; silently borrowing would
++mask a broken Hermes session.
++"""
++from __future__ import annotations
++
++import os
++from dataclasses import dataclass
++from datetime import datetime, timezone
++from typing import Any, Dict, Literal, Optional
++
++# Module-level reference rather than ``from ... import`` so tests that
++# monkeypatch ``hermes_cli.auth.<symbol>`` propagate into this resolver
++# at call time. Resolver-local helpers (``_codex_access_token_is_expiring``
++# etc.) that aren't typically patched are imported by name below.
++from hermes_cli import auth as _hermes_auth
++from hermes_cli.auth import (
++    AUTH_LOCK_TIMEOUT_SECONDS,
++    AuthError,
++    CODEX_ACCESS_TOKEN_REFRESH_SKEW_SECONDS,
++    DEFAULT_CODEX_BASE_URL,
++    _auth_store_lock,
++    _codex_access_token_is_expiring,
++)
++
++ENV_CODEX_ACCESS_TOKEN = "HERMES_CODEX_ACCESS_TOKEN"
++ENV_CODEX_BASE_URL = "HERMES_CODEX_BASE_URL"
++ENV_CODEX_REFRESH_TIMEOUT_SECONDS = "HERMES_CODEX_REFRESH_TIMEOUT_SECONDS"
++
++# Error codes that indicate the Hermes auth store has no usable tokens
++# at all (as opposed to refresh-time failures, which should surface).
++_HERMES_STORE_EMPTY_CODES = frozenset(
++    {
++        "codex_auth_missing",
++        "codex_auth_invalid_shape",
++        "codex_auth_missing_access_token",
++        "codex_auth_missing_refresh_token",
++    }
++)
++
++# Double-checked-locking window for ``force_refresh``. When concurrent
++# callers contend on ``_auth_store_lock``, a second caller that arrives
++# within this many seconds of the previous refresh's persisted timestamp
++# returns the freshly-stored token instead of spending the (single-use)
++# refresh token a second time. Keeps the lock honest under concurrent
++# 401-retry storms.
++_FORCE_REFRESH_DCL_WINDOW_SECONDS = 5.0
++
++
++CodexCredentialSource = Literal[
++    "env",
++    "hermes-auth-store",
++    "codex-cli-borrow",
++]
++
++
++@dataclass(frozen=True)
++class CodexCredentials:
++    """Resolved Codex runtime credentials.
++
++    The dict produced by :meth:`as_runtime_dict` matches the legacy
++    ``resolve_codex_runtime_credentials`` return shape so the new
++    resolver drops into existing call sites without changes.
++    """
++
++    access_token: str
++    base_url: str
++    source: CodexCredentialSource
++    last_refresh: Optional[str]
++    account_id: Optional[str]
++    auth_mode: Literal["chatgpt"] = "chatgpt"
++
++    def as_runtime_dict(self) -> Dict[str, Any]:
++        return {
++            "provider": "openai-codex",
++            "base_url": self.base_url,
++            "api_key": self.access_token,
++            "source": self.source,
++            "last_refresh": self.last_refresh,
++            "auth_mode": self.auth_mode,
++        }
++
++
++def _resolve_base_url() -> str:
++    override = os.getenv(ENV_CODEX_BASE_URL, "").strip().rstrip("/")
++    return override or DEFAULT_CODEX_BASE_URL
++
++
++def _extract_account_id(tokens: Any) -> Optional[str]:
++    if not isinstance(tokens, dict):
++        return None
++    candidate = tokens.get("account_id")
++    if isinstance(candidate, str):
++        cleaned = candidate.strip()
++        return cleaned or None
++    return None
++
++
++def _last_refresh_within_dcl_window(last_refresh: Any) -> bool:
++    """True if ``last_refresh`` is recent enough that concurrent
++    ``force_refresh`` callers should skip their own HTTP refresh.
++
++    See ``_FORCE_REFRESH_DCL_WINDOW_SECONDS`` for the rationale.
++    """
++    if not isinstance(last_refresh, str):
++        return False
++    text = last_refresh.strip()
++    if not text:
++        return False
++    if text.endswith("Z"):
++        text = text[:-1] + "+00:00"
++    try:
++        ts = datetime.fromisoformat(text)
++    except ValueError:
++        return False
++    if ts.tzinfo is None:
++        ts = ts.replace(tzinfo=timezone.utc)
++    delta = (datetime.now(timezone.utc) - ts).total_seconds()
++    return 0 <= delta <= _FORCE_REFRESH_DCL_WINDOW_SECONDS
++
++
++def _resolve_from_hermes_store(
++    *,
++    force_refresh: bool,
++    refresh_if_expiring: bool,
++    refresh_skew_seconds: int,
++) -> CodexCredentials:
++    """Read the Hermes Codex store, optionally refreshing under the lock."""
++    data = _hermes_auth._read_codex_tokens()
++    tokens = dict(data["tokens"])
++    access_token = str(tokens.get("access_token", "") or "").strip()
++    refresh_timeout_seconds = float(
++        os.getenv(ENV_CODEX_REFRESH_TIMEOUT_SECONDS, "20")
++    )
++
++    should_refresh = bool(force_refresh)
++    if (not should_refresh) and refresh_if_expiring:
++        should_refresh = _codex_access_token_is_expiring(
++            access_token, refresh_skew_seconds
++        )
++
++    if should_refresh:
++        lock_timeout = max(
++            float(AUTH_LOCK_TIMEOUT_SECONDS),
++            refresh_timeout_seconds + 5.0,
++        )
++        with _auth_store_lock(timeout_seconds=lock_timeout):
++            # Re-read under the lock so a concurrent refresher's result is
++            # observed before we decide to spend the single-use refresh
++            # token ourselves.
++            data = _hermes_auth._read_codex_tokens(_lock=False)
++            tokens = dict(data["tokens"])
++            access_token = str(tokens.get("access_token", "") or "").strip()
++
++            # Under-lock recheck. ``force_refresh`` respects a short DCL
++            # window so concurrent force-refresh callers serialize into a
++            # single HTTP refresh — the second caller observes the just-
++            # written tokens and returns them instead of spending the
++            # (single-use) refresh token again.
++            do_refresh = False
++            if force_refresh:
++                do_refresh = not _last_refresh_within_dcl_window(
++                    data.get("last_refresh")
++                )
++            elif refresh_if_expiring:
++                do_refresh = _codex_access_token_is_expiring(
++                    access_token, refresh_skew_seconds
++                )
++
++            if do_refresh:
++                tokens = _hermes_auth._refresh_codex_auth_tokens(
++                    tokens, refresh_timeout_seconds
++                )
++                access_token = str(
++                    tokens.get("access_token", "") or ""
++                ).strip()
++
++    return CodexCredentials(
++        access_token=access_token,
++        base_url=_resolve_base_url(),
++        source="hermes-auth-store",
++        last_refresh=data.get("last_refresh"),
++        account_id=_extract_account_id(tokens),
++    )
++
++
++def _resolve_from_codex_cli_borrow() -> Optional[CodexCredentials]:
++    """Borrow a live access token from the Codex CLI store, or return None.
++
++    ``_import_codex_cli_tokens`` already rejects expired tokens and
++    never writes back to ``~/.codex/auth.json``. A non-None return
++    implies a usable access token. We deliberately do NOT persist the
++    borrowed token into the Hermes auth store — see the ownership
++    contract at the top of this module.
++    """
++    borrowed = _hermes_auth._import_codex_cli_tokens()
++    if not borrowed:
++        return None
++    access_token = str(borrowed.get("access_token", "") or "").strip()
++    if not access_token:
++        return None
++    return CodexCredentials(
++        access_token=access_token,
++        base_url=_resolve_base_url(),
++        source="codex-cli-borrow",
++        last_refresh=None,
++        account_id=_extract_account_id(borrowed),
++    )
++
++
++def resolve_codex_credentials(
++    *,
++    force_refresh: bool = False,
++    refresh_if_expiring: bool = True,
++    allow_codex_cli_fallback: bool = True,
++    refresh_skew_seconds: int = CODEX_ACCESS_TOKEN_REFRESH_SKEW_SECONDS,
++) -> CodexCredentials:
++    """Resolve Codex OAuth credentials via the unified fallback chain.
++
++    See the module docstring for the full ownership contract and
++    chain rationale. Raises :class:`AuthError` when no source yields
++    a usable access token.
++    """
++    env_token = os.environ.get(ENV_CODEX_ACCESS_TOKEN, "").strip()
++    if env_token:
++        return CodexCredentials(
++            access_token=env_token,
++            base_url=_resolve_base_url(),
++            source="env",
++            last_refresh=None,
++            account_id=None,
++        )
++
++    try:
++        return _resolve_from_hermes_store(
++            force_refresh=force_refresh,
++            refresh_if_expiring=refresh_if_expiring,
++            refresh_skew_seconds=refresh_skew_seconds,
++        )
++    except AuthError as exc:
++        if not allow_codex_cli_fallback:
++            raise
++        if exc.code not in _HERMES_STORE_EMPTY_CODES:
++            # Refresh-time failures (refresh_token_reused, invalid_grant,
++            # transport errors, etc.) must surface so the user sees the
++            # actionable re-auth guidance instead of a silent borrow.
++            raise
++        borrowed = _resolve_from_codex_cli_borrow()
++        if borrowed is None:
++            raise
++        return borrowed
+diff --git a/agent/auxiliary_client.py b/agent/auxiliary_client.py
+index 89dc7d935b4..bfe168e6752 100644
+--- a/agent/auxiliary_client.py
++++ b/agent/auxiliary_client.py
+@@ -1349,13 +1349,20 @@ def _resolve_xai_oauth_for_aux() -> Optional[Tuple[str, str]]:
+ 
+ 
+ def _read_codex_access_token() -> Optional[str]:
+-    """Read a valid, non-expired Codex OAuth access token from Hermes auth store.
+-
+-    If a credential pool exists but currently has no selectable runtime entry
+-    (for example all pool slots are marked exhausted), fall back to the
+-    profile's auth.json token instead of hard-failing. This keeps explicit
+-    fallback-to-Codex working when the pool state is stale but the stored OAuth
+-    token is still valid.
++    """Return a usable Codex OAuth access token, or None.
++
++    The pool-first short-circuit stays because pool entries are
++    runtime-aware (rotated, exhausted-state-tracked). When no pool entry
++    is selectable, delegate to the unified resolver in
++    :mod:`agent.auth.codex` — same chain as the main agent path
++    (env override → Hermes auth store → read-only Codex CLI borrow), but
++    converted to a silent ``None`` on failure so the auxiliary client's
++    fall-through providers still get a turn.
++
++    Expiry guard: the resolver is called with ``refresh_if_expiring=False``
++    (compression should not block on a token refresh round-trip), so we
++    re-check the access token's exp claim here and return None if it's
++    already expired — the legacy contract for this entry point.
+     """
+     pool_present, entry = _select_pool_entry("openai-codex")
+     if pool_present:
+@@ -1364,31 +1371,29 @@ def _read_codex_access_token() -> Optional[str]:
+             return token
+ 
+     try:
+-        from hermes_cli.auth import _read_codex_tokens
+-        data = _read_codex_tokens()
+-        tokens = data.get("tokens", {})
+-        access_token = tokens.get("access_token")
+-        if not isinstance(access_token, str) or not access_token.strip():
+-            return None
+-
+-        # Check JWT expiry — expired tokens block the auto chain and
+-        # prevent fallback to working providers (e.g. Anthropic).
+-        try:
+-            import base64
+-            payload = access_token.split(".")[1]
+-            payload += "=" * (-len(payload) % 4)
+-            claims = json.loads(base64.urlsafe_b64decode(payload))
+-            exp = claims.get("exp", 0)
+-            if exp and time.time() > exp:
+-                logger.debug("Codex access token expired (exp=%s), skipping", exp)
+-                return None
+-        except Exception:
+-            pass  # Non-JWT token or decode error — use as-is
+-
+-        return access_token.strip()
++        from agent.auth.codex import resolve_codex_credentials
++        from hermes_cli.auth import AuthError, _codex_access_token_is_expiring
+     except Exception as exc:
++        logger.debug("Could not import Codex resolver: %s", exc)
++        return None
++
++    try:
++        creds = resolve_codex_credentials(
++            refresh_if_expiring=False,
++            allow_codex_cli_fallback=True,
++        )
++    except AuthError as exc:
+         logger.debug("Could not read Codex auth for auxiliary client: %s", exc)
+         return None
++    token = creds.access_token.strip()
++    if not token:
++        return None
++    # Skew=0: only reject tokens that have *already* expired. Tokens
++    # near-expiry still work for the duration of one compression call.
++    if _codex_access_token_is_expiring(token, 0):
++        logger.debug("Codex access token expired, skipping")
++        return None
++    return token
+ 
+ 
+ def _resolve_api_key_provider() -> Tuple[Optional[OpenAI], Optional[str]]:
+diff --git a/gateway/run.py b/gateway/run.py
+index c658cf8f430..4871aa0191d 100644
+--- a/gateway/run.py
++++ b/gateway/run.py
+@@ -952,6 +952,36 @@ def _reload_runtime_env_preserving_config_authority() -> None:
+ logger = logging.getLogger(__name__)
+ 
+ 
++def _log_boot_announcement(log) -> None:
++    # Surfaces drift between this gateway's pinned profile and the
++    # sticky-default file that bare `hermes` invocations resolve via.
++    try:
++        hh = os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
++        hh_path = Path(hh)
++        default_root = Path.home() / ".hermes"
++        if hh_path == default_root:
++            profile_name = "default"
++        elif hh_path.parent.name == "profiles":
++            profile_name = hh_path.name
++        else:
++            profile_name = hh
++        active_file = default_root / "active_profile"
++        if active_file.exists():
++            try:
++                active_contents = active_file.read_text().strip() or "(empty)"
++            except (UnicodeDecodeError, OSError):
++                active_contents = "(unreadable)"
++        else:
++            active_contents = "(missing)"
++        log.info(
++            "[hermes] starting profile=%s home=%s pid=%d active_profile_file=%s",
++            profile_name, hh, os.getpid(), active_contents,
++        )
++    except Exception:
++        # Never let the boot announcement break gateway startup.
++        pass
++
++
+ # Sentinel placed into _running_agents immediately when a session starts
+ # processing, *before* any await.  Prevents a second message for the same
+ # session from bypassing the "already running" guard during the async gap
+@@ -3170,7 +3200,7 @@ async def _notify_active_sessions_of_shutdown(self) -> None:
+         action = "restarting" if self._restart_requested else "shutting down"
+         hint = (
+             "Your current task will be interrupted. "
+-            "Send any message after restart and I'll try to resume where you left off."
++            "If it was mid-turn, I'll try to resume automatically after restart and report back here."
+             if self._restart_requested
+             else "Your current task will be interrupted."
+         )
+@@ -3659,6 +3689,16 @@ async def start(self) -> bool:
+         Returns True if at least one adapter connected successfully.
+         """
+         logger.info("Starting Hermes Gateway...")
++        try:
++            from hermes_cli.profiles import get_active_profile_name as _gpn
++            _boot_profile = _gpn() or "default"
++        except Exception:
++            _boot_profile = "default"
++        logger.info(
++            "Gateway profile=%s home=%s hermes_home_env=%s",
++            _boot_profile, str(get_hermes_home()),
++            "set" if os.environ.get("HERMES_HOME") else "unset",
++        )
+         try:
+             self._gateway_loop = asyncio.get_running_loop()
+         except RuntimeError:
+@@ -4093,6 +4133,8 @@ async def start(self) -> bool:
+             "platforms": [p.value for p in self.adapters.keys()],
+         })
+         
++        _log_boot_announcement(logger)
++
+         if connected_count > 0:
+             logger.info("Gateway running with %s platform(s)", connected_count)
+         
+@@ -14129,7 +14171,10 @@ async def _send_restart_notification(self) -> Optional[tuple[str, str, Optional[
+             metadata = {"thread_id": thread_id} if thread_id else None
+             result = await adapter.send(
+                 str(chat_id),
+-                "♻ Gateway restarted successfully. Your session continues.",
++                (
++                    "♻ Gateway restarted successfully. I'm back online. "
++                    "If a turn was interrupted, it will auto-resume; otherwise I'm idle."
++                ),
+                 metadata=metadata,
+             )
+             # adapter.send() catches provider errors (e.g. "Chat not found")
+diff --git a/hermes_cli/auth.py b/hermes_cli/auth.py
+index 5fd3676bdd3..0b10db82d5f 100644
+--- a/hermes_cli/auth.py
++++ b/hermes_cli/auth.py
+@@ -3351,43 +3351,22 @@ def resolve_codex_runtime_credentials(
+     refresh_if_expiring: bool = True,
+     refresh_skew_seconds: int = CODEX_ACCESS_TOKEN_REFRESH_SKEW_SECONDS,
+ ) -> Dict[str, Any]:
+-    """Resolve runtime credentials from Hermes's own Codex token store."""
+-    data = _read_codex_tokens()
+-    tokens = dict(data["tokens"])
+-    access_token = str(tokens.get("access_token", "") or "").strip()
+-    refresh_timeout_seconds = float(os.getenv("HERMES_CODEX_REFRESH_TIMEOUT_SECONDS", "20"))
+-
+-    should_refresh = bool(force_refresh)
+-    if (not should_refresh) and refresh_if_expiring:
+-        should_refresh = _codex_access_token_is_expiring(access_token, refresh_skew_seconds)
+-    if should_refresh:
+-        # Re-read under lock to avoid racing with other Hermes processes
+-        with _auth_store_lock(timeout_seconds=max(float(AUTH_LOCK_TIMEOUT_SECONDS), refresh_timeout_seconds + 5.0)):
+-            data = _read_codex_tokens(_lock=False)
+-            tokens = dict(data["tokens"])
+-            access_token = str(tokens.get("access_token", "") or "").strip()
+-
+-            should_refresh = bool(force_refresh)
+-            if (not should_refresh) and refresh_if_expiring:
+-                should_refresh = _codex_access_token_is_expiring(access_token, refresh_skew_seconds)
+-
+-            if should_refresh:
+-                tokens = _refresh_codex_auth_tokens(tokens, refresh_timeout_seconds)
+-                access_token = str(tokens.get("access_token", "") or "").strip()
++    """Resolve runtime credentials for the Codex provider.
+ 
+-    base_url = (
+-        os.getenv("HERMES_CODEX_BASE_URL", "").strip().rstrip("/")
+-        or DEFAULT_CODEX_BASE_URL
+-    )
++    Backwards-compatible dict shim over the unified resolver. The
++    chain (env override → Hermes auth store → read-only Codex CLI
++    borrow) and the ownership contract live in ``agent/auth/codex.py``;
++    this function exists so historical callers keep compiling.
++    """
++    # Imported lazily so the unified resolver (which imports primitives
++    # from this module) cannot induce an import cycle.
++    from agent.auth.codex import resolve_codex_credentials
+ 
+-    return {
+-        "provider": "openai-codex",
+-        "base_url": base_url,
+-        "api_key": access_token,
+-        "source": "hermes-auth-store",
+-        "last_refresh": data.get("last_refresh"),
+-        "auth_mode": "chatgpt",
+-    }
++    return resolve_codex_credentials(
++        force_refresh=force_refresh,
++        refresh_if_expiring=refresh_if_expiring,
++        refresh_skew_seconds=refresh_skew_seconds,
++    ).as_runtime_dict()
+ 
+ 
+ # =============================================================================
+diff --git a/hermes_cli/doctor.py b/hermes_cli/doctor.py
+index df75ac68664..ee5f003634d 100644
+--- a/hermes_cli/doctor.py
++++ b/hermes_cli/doctor.py
+@@ -207,6 +207,31 @@ def _fail_and_issue(text: str, detail: str, fix: str, issues: list[str]) -> None
+     issues.append(fix)
+ 
+ 
++def _report_codex_credential_source() -> None:
++    """Show which store the unified Codex resolver would pick right now.
++
++    Diagnostic-only: must not raise. The borrow source ("codex-cli-borrow")
++    gets a WARN line because the user almost certainly wants to import the
++    token into the Hermes store rather than keep depending on Codex CLI's
++    file across upgrades.
++    """
++    try:
++        from agent.auth.codex import resolve_codex_credentials
++
++        creds = resolve_codex_credentials(refresh_if_expiring=False)
++    except Exception:
++        return
++    source = creds.source
++    check_info(f"Source: {source}")
++    if source == "codex-cli-borrow":
++        check_warn(
++            "Codex token borrowed from ~/.codex/auth.json",
++            "(Hermes is using a borrowed Codex CLI access token. "
++            "Run `hermes auth login codex` to import it into the Hermes "
++            "store and remove the dependency on ~/.codex/auth.json.)",
++        )
++
++
+ def _check_gateway_service_linger(issues: list[str]) -> None:
+     """Warn when a systemd user gateway service will stop after logout."""
+     try:
+@@ -821,10 +846,16 @@ def run_doctor(args):
+         codex_status = get_codex_auth_status()
+         if codex_status.get("logged_in"):
+             check_ok("OpenAI Codex auth", "(logged in)")
++            _report_codex_credential_source()
+         else:
+             check_warn("OpenAI Codex auth", "(not logged in)")
+             if codex_status.get("error"):
+                 check_info(codex_status["error"])
++            # Even when the Hermes store is empty, the unified resolver
++            # can borrow a live access token from ~/.codex/auth.json. Show
++            # the user when that's happening — silent borrowing is exactly
++            # what we want diagnostics to expose.
++            _report_codex_credential_source()
+             # Native OAuth uses Hermes' own device-code flow — the Codex CLI is
+             # only needed to import existing tokens from ~/.codex/auth.json.
+             # Attach the hint to the Codex auth row so it doesn't read as
+diff --git a/hermes_cli/gateway.py b/hermes_cli/gateway.py
+index 3af87830cf3..8b8204021aa 100644
+--- a/hermes_cli/gateway.py
++++ b/hermes_cli/gateway.py
+@@ -563,8 +563,8 @@ def find_profile_gateway_processes(
+ 
+ def _gateway_run_args_for_profile(profile: str) -> list[str]:
+     args = [get_python_path(), "-m", "hermes_cli.main"]
+-    if profile != "default":
+-        args.extend(["--profile", profile])
++    # Always emit --profile for symmetry: removes silent special-case, eases debugging
++    args.extend(["--profile", profile])
+     args.extend(["gateway", "run", "--replace"])
+     return args
+ 
+@@ -5003,6 +5003,103 @@ def _is_progress(status: str) -> bool:
+     print()
+ 
+ 
++# =============================================================================
++# revive-all: manual recovery for down gateways across all profiles
++# =============================================================================
++
++def _cmd_gateway_revive_all(args):
++    """Revive all profile gateways that are not currently running."""
++    import time
++    from hermes_cli.profiles import list_profiles, _check_gateway_running
++    from hermes_cli._subprocess_compat import windows_detach_popen_kwargs
++
++    print("Reviving gateways across all profiles…")
++
++    profiles = list_profiles()
++    if not profiles:
++        print("  (no profiles found)")
++        return
++
++    results = []
++    for prof in profiles:
++        profile_home = prof.path
++        running = _check_gateway_running(profile_home)
++
++        if running:
++            pid_display = ""
++            try:
++                from gateway.status import get_running_pid
++                pid = get_running_pid(profile_home / "gateway.pid", cleanup_stale=False)
++                if pid is not None:
++                    pid_display = f"pid={pid}"
++            except Exception:
++                pass
++            label = f"✓ already running ({pid_display})" if pid_display else "✓ already running"
++            print(f"  {prof.name:<12} {label}")
++            results.append(True)
++        else:
++            print(f"  {prof.name:<12} ▲ launching…", end="", flush=True)
++
++            launch_env = os.environ.copy()
++            if not prof.is_default:
++                launch_env["HERMES_HOME"] = str(profile_home)
++
++            log_dir = profile_home / "logs"
++            log_dir.mkdir(parents=True, exist_ok=True)
++            log_file_path = log_dir / "gateway.log"
++
++            cmd = _gateway_run_args_for_profile(prof.name)
++            start_t = time.monotonic()
++            launch_ok = True
++            try:
++                with open(log_file_path, "a") as _lf:
++                    subprocess.Popen(
++                        cmd,
++                        stdout=_lf,
++                        stderr=_lf,
++                        env=launch_env,
++                        **windows_detach_popen_kwargs(),
++                    )
++            except OSError as e:
++                print(f" ✗ failed to launch: {e}")
++                results.append(False)
++                launch_ok = False
++
++            if not launch_ok:
++                continue
++
++            time.sleep(3)
++            elapsed = time.monotonic() - start_t
++
++            now_running = _check_gateway_running(profile_home)
++            if now_running:
++                pid_display = ""
++                try:
++                    from gateway.status import get_running_pid
++                    pid = get_running_pid(profile_home / "gateway.pid", cleanup_stale=False)
++                    if pid is not None:
++                        pid_display = f"pid={pid}"
++                except Exception:
++                    pass
++                if pid_display:
++                    print(f" ✓ up ({pid_display}, took {elapsed:.1f}s)")
++                else:
++                    print(f" ✓ up (took {elapsed:.1f}s)")
++                results.append(True)
++            else:
++                log_display = str(log_file_path).replace(str(Path.home()), "~")
++                print(f" ✗ failed to start (see {log_display})")
++                results.append(False)
++
++    healthy = sum(results)
++    total = len(results)
++    print()
++    print(f"Result: {healthy}/{total} healthy")
++
++    if healthy < total:
++        sys.exit(1)
++
++
+ # =============================================================================
+ # Main Command Handler
+ # =============================================================================
+@@ -5447,3 +5544,6 @@ def _gateway_command_inner(args):
+             print("Legacy unit migration only applies to systemd-based Linux hosts.")
+             return
+         remove_legacy_hermes_units(interactive=not yes, dry_run=dry_run)
++
++    elif subcmd == "revive-all":
++        _cmd_gateway_revive_all(args)
+diff --git a/hermes_cli/main.py b/hermes_cli/main.py
+index 27d24f7eb63..1f56b507830 100644
+--- a/hermes_cli/main.py
++++ b/hermes_cli/main.py
+@@ -180,6 +180,40 @@ def _require_tty(command_name: str) -> None:
+ # The flag is stripped from sys.argv so argparse never sees it.
+ # Falls back to ~/.hermes/active_profile for sticky default.
+ # ---------------------------------------------------------------------------
++_BARE_HERMES_WARNING_EMITTED = False
++
++
++def _maybe_warn_bare_hermes(profile_name: str, hermes_home_was_set: bool) -> None:
++    """Emit a one-shot stderr warning when bare `hermes` silently resolves
++    to a non-default profile via the active_profile sticky default.
++
++    Suppressed when:
++      * already fired this process
++      * resolved profile is 'default' (no-op anyway)
++      * HERMES_HOME was already set before we ran (caller pinned it
++        explicitly — e.g. launchd plists)
++      * HERMES_QUIET_BARE_WARNING=1 in env (escape hatch for CI/scripts)
++    """
++    global _BARE_HERMES_WARNING_EMITTED
++    if _BARE_HERMES_WARNING_EMITTED:
++        return
++    if profile_name == "default":
++        return
++    if hermes_home_was_set:
++        return
++    if os.environ.get("HERMES_QUIET_BARE_WARNING") == "1":
++        return
++    _BARE_HERMES_WARNING_EMITTED = True
++    msg = (
++        f"⚠️  [hermes] No --profile flag; resolving via active_profile → {profile_name}.\n"
++        f"    Set --profile {profile_name} explicitly to silence this warning, or\n"
++        f"    `hermes profile use default` to switch the sticky default back."
++    )
++    if sys.stderr.isatty():
++        msg = "\033[33m" + msg + "\033[0m"
++    print(msg, file=sys.stderr, flush=True)
++
++
+ def _apply_profile_override() -> None:
+     """Pre-parse --profile/-p and set HERMES_HOME before module imports."""
+     argv = sys.argv[1:]
+@@ -253,6 +287,9 @@ def _apply_profile_override() -> None:
+             )
+             return
+         os.environ["HERMES_HOME"] = hermes_home
++        # consume == 0 marks the active_profile fallback path (vs. -p/--profile)
++        if consume == 0:
++            _maybe_warn_bare_hermes(profile_name, bool(hermes_home_env))
+         # Strip the flag from argv so argparse doesn't choke
+         if consume > 0:
+             for i, arg in enumerate(argv):
+@@ -9933,6 +9970,7 @@ def cmd_profile(args):
+             else:
+                 dist = "—"
+             print(f"{marker}{name:<15} {model:<28} {gw:<12} {alias:<12} {dist}")
++        print(" ◆ = active profile")
+         print()
+ 
+     elif action == "use":
+@@ -11296,6 +11334,17 @@ def _dispatch_secrets(args):  # noqa: ANN001
+         help="Skip the confirmation prompt",
+     )
+ 
++    # gateway revive-all
++    gateway_subparsers.add_parser(
++        "revive-all",
++        help="Revive all profile gateways that are not currently running",
++        description=(
++            "Check every profile's gateway and launch any that are down. "
++            "Safe to run when launchd's auto-restart didn't fire or pidfiles "
++            "are corrupt. Does not use launchctl."
++        ),
++    )
++
+     # =========================================================================
+     # proxy command — local OpenAI-compatible proxy that attaches the user's
+     # OAuth-authenticated provider credentials to outbound requests. Lets
+diff --git a/hermes_cli/profiles.py b/hermes_cli/profiles.py
+index aa33d9182b8..8e3db55cede 100644
+--- a/hermes_cli/profiles.py
++++ b/hermes_cli/profiles.py
+@@ -475,7 +475,46 @@ def _check_gateway_running(profile_dir: Path) -> bool:
+     """Check if a gateway is running for a given profile directory."""
+     try:
+         from gateway.status import get_running_pid
+-        return get_running_pid(profile_dir / "gateway.pid", cleanup_stale=False) is not None
++        pid = get_running_pid(profile_dir / "gateway.pid", cleanup_stale=False)
++        if pid is not None:
++            return True
++    except Exception:
++        pass
++    # Fallback: pidfile missing/stale — scan ps for an active gateway with this profile.
++    # Do not use host process state inside pytest: live developer gateways can
++    # otherwise make isolated temp profiles look running.
++    if os.environ.get("PYTEST_CURRENT_TEST"):
++        return False
++    # Only do this for the real on-disk Hermes home/profiles, not pytest temp homes:
++    # a live `--profile default` gateway on the developer machine must not make an
++    # isolated temp default profile look running.
++    try:
++        import subprocess
++        default_home = _get_default_hermes_home().resolve()
++        resolved_dir = profile_dir.resolve()
++        profiles_root = default_home / "profiles"
++        if resolved_dir == default_home:
++            profile_name = "default"
++        elif resolved_dir.parent == profiles_root:
++            profile_name = resolved_dir.name
++        else:
++            return False
++        result = subprocess.run(
++            ["ps", "-ax", "-o", "command="],
++            capture_output=True, text=True, timeout=2,
++        )
++        for line in result.stdout.splitlines():
++            if "hermes_cli.main" not in line:
++                continue
++            try:
++                import shlex
++                parts = shlex.split(line)
++            except ValueError:
++                parts = line.split()
++            for i, part in enumerate(parts[:-1]):
++                if part == "--profile" and parts[i + 1] == profile_name:
++                    return True
++        return False
+     except Exception:
+         return False
+ 
+diff --git a/hermes_cli/status.py b/hermes_cli/status.py
+index 5629da03fe3..00cbfa4dbdc 100644
+--- a/hermes_cli/status.py
++++ b/hermes_cli/status.py
+@@ -563,6 +563,97 @@ def _resolve_env(env_ref) -> str:
+         except OSError:
+             pass
+ 
++        # Per-profile gateway status
++        print()
++        print(color("◆ Gateways", Colors.CYAN, Colors.BOLD))
++        try:
++            import time as _time
++            from hermes_cli.profiles import list_profiles as _list_profiles
++            from gateway.status import get_running_pid as _get_running_pid
++            _gw_profiles = _list_profiles()
++            for _prof in _gw_profiles:
++                _profile_home = _prof.path
++                _log_file = _profile_home / "logs" / "gateway.log"
++
++                # Try pidfile first
++                _pid = None
++                _pidfile_missing = False
++                try:
++                    _pid = _get_running_pid(_profile_home / "gateway.pid", cleanup_stale=False)
++                except Exception:
++                    pass
++                if _pid is None:
++                    _pidfile_missing = True
++
++                # ps-aux fallback: running without a valid pidfile
++                _ps_fallback = False
++                if _pid is None:
++                    try:
++                        _ps_result = subprocess.run(
++                            ["ps", "-ax", "-o", "pid=,command="],
++                            capture_output=True, text=True, timeout=2,
++                        )
++                        for _ps_line in _ps_result.stdout.splitlines():
++                            if "hermes_cli.main" not in _ps_line:
++                                continue
++                            try:
++                                _fields = _ps_line.strip().split(maxsplit=1)
++                                _candidate_pid = int(_fields[0])
++                                _cmdline = _fields[1] if len(_fields) > 1 else ""
++                            except (ValueError, IndexError):
++                                continue
++                            try:
++                                import shlex as _shlex
++                                _parts = _shlex.split(_cmdline)
++                            except ValueError:
++                                _parts = _cmdline.split()
++                            for _i, _part in enumerate(_parts[:-1]):
++                                if _part == "--profile" and _parts[_i + 1] == _prof.name:
++                                    _pid = _candidate_pid
++                                    _ps_fallback = True
++                                    break
++                            if _ps_fallback:
++                                break
++                    except Exception:
++                        pass
++
++                _gw_running = _pid is not None
++
++                # Log age from mtime
++                _log_age_str = ""
++                try:
++                    if _log_file.exists():
++                        _age_secs = int(_time.time() - _log_file.stat().st_mtime)
++                        if _age_secs < 60:
++                            _log_age_str = f"log_age={_age_secs}s"
++                        elif _age_secs < 3600:
++                            _log_age_str = f"log_age={_age_secs // 60}m"
++                        else:
++                            _log_age_str = f"log_age={_age_secs // 3600}h"
++                except Exception:
++                    pass
++
++                # Home path with ~ abbreviation
++                try:
++                    _home_display = str(_profile_home).replace(str(Path.home()), "~")
++                except Exception:
++                    _home_display = str(_profile_home)
++
++                # Compose line
++                _gw_status = (color("✓ running", Colors.GREEN) if _gw_running
++                              else color("✗ stopped", Colors.RED))
++                _line_parts = [_gw_status]
++                if _pid is not None:
++                    _line_parts.append(f"pid={_pid}")
++                if _log_age_str:
++                    _line_parts.append(_log_age_str)
++                _line_parts.append(f"home={_home_display}")
++                print(f"  {_prof.name:<12} {'  '.join(_line_parts)}")
++                if _ps_fallback and _pidfile_missing:
++                    print(f"               {color('⚠ pidfile missing, detected via ps-aux fallback', Colors.YELLOW)}")
++        except Exception as _gw_err:
++            print(f"  (error: {_gw_err})")
++
+     print()
+     print(color("─" * 60, Colors.DIM))
+     print(color("  Run 'hermes doctor' for detailed diagnostics", Colors.DIM))
+diff --git a/plugins/model-providers/gemini/__init__.py b/plugins/model-providers/gemini/__init__.py
+index 0812f07ba5f..05ff6119814 100644
+--- a/plugins/model-providers/gemini/__init__.py
++++ b/plugins/model-providers/gemini/__init__.py
+@@ -36,6 +36,28 @@ def build_extra_body(
+         base_url = context.get("base_url") or self.base_url
+ 
+         raw_thinking_config = _build_gemini_thinking_config(model, reasoning_config)
++
++        # Apply thinking_budget from providers.<name>.extra_body config if set.
++        # Only merge when thinking is being enabled (not when explicitly disabled).
++        try:
++            from hermes_cli.config import load_config
++            _cfg_extra = (
++                load_config().get("providers", {}).get(self.name, {}) or {}
++            ).get("extra_body") or {}
++            _budget = _cfg_extra.get("thinking_budget") if isinstance(_cfg_extra, dict) else None
++            if _budget is not None:
++                _budget = int(_budget)
++        except Exception:
++            _budget = None
++
++        if (
++            _budget is not None
++            and raw_thinking_config
++            and raw_thinking_config.get("includeThoughts") is not False
++        ):
++            raw_thinking_config = dict(raw_thinking_config)
++            raw_thinking_config["thinkingBudget"] = _budget
++
+         if not raw_thinking_config:
+             return {}
+ 
+diff --git a/tests/agent/test_auth_codex.py b/tests/agent/test_auth_codex.py
+new file mode 100644
+index 00000000000..4cf25ac9f10
+--- /dev/null
++++ b/tests/agent/test_auth_codex.py
+@@ -0,0 +1,462 @@
++"""Tests for the unified Codex credential resolver.
++
++The matrix below is the contract the resolver enforces:
++
++A. env override beats Hermes auth store beats Codex CLI borrow
++B. only ~/.codex/auth.json populated -> resolver borrows, compression
++   entry point returns the borrowed token instead of None (the bug)
++C. only ~/.hermes/auth.json populated -> resolver reads Hermes store,
++   compression entry point returns the Hermes token
++D. borrow path never writes to disk
++E. allow_codex_cli_fallback=False rejects the borrow even when Codex
++   CLI has a valid token
++F. concurrent force_refresh callers serialize into a single HTTP
++   refresh under _auth_store_lock + DCL window
++G. (in tests/plugins/image_gen/test_openai_codex_provider.py) image-gen
++   plugin sees is_available()=True when only ~/.codex/auth.json exists
++H. expired Codex CLI borrow is rejected
++I. env override skips expiry check entirely
++J. resolve_codex_runtime_credentials shim returns the legacy dict shape
++   under each source branch
++"""
++
++from __future__ import annotations
++
++import base64
++import json
++import os
++import threading
++import time
++from pathlib import Path
++from typing import Optional
++
++import pytest
++
++from agent.auth.codex import (
++    CodexCredentials,
++    ENV_CODEX_ACCESS_TOKEN,
++    resolve_codex_credentials,
++)
++from hermes_cli.auth import (
++    AuthError,
++    DEFAULT_CODEX_BASE_URL,
++    resolve_codex_runtime_credentials,
++)
++
++
++# ── Fixtures ────────────────────────────────────────────────────────────────
++
++
++def _jwt_with_exp(exp_epoch: int, *, extra_claims: Optional[dict] = None) -> str:
++    payload = {"exp": exp_epoch}
++    if extra_claims:
++        payload.update(extra_claims)
++    encoded = (
++        base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8"))
++        .rstrip(b"=")
++        .decode("utf-8")
++    )
++    return f"h.{encoded}.s"
++
++
++def _write_hermes_store(
++    hermes_home: Path,
++    *,
++    access_token: str = "hermes-access",
++    refresh_token: str = "hermes-refresh",
++    last_refresh: str = "2026-02-26T00:00:00Z",
++    account_id: Optional[str] = "hermes-acct",
++) -> Path:
++    """Write a Codex provider state into ``$HERMES_HOME/auth.json``."""
++    hermes_home.mkdir(parents=True, exist_ok=True)
++    tokens = {
++        "access_token": access_token,
++        "refresh_token": refresh_token,
++    }
++    if account_id is not None:
++        tokens["account_id"] = account_id
++    auth_store = {
++        "version": 1,
++        "active_provider": "openai-codex",
++        "providers": {
++            "openai-codex": {
++                "tokens": tokens,
++                "last_refresh": last_refresh,
++                "auth_mode": "chatgpt",
++            },
++        },
++    }
++    auth_file = hermes_home / "auth.json"
++    auth_file.write_text(json.dumps(auth_store, indent=2))
++    return auth_file
++
++
++def _write_empty_hermes_store(hermes_home: Path) -> Path:
++    hermes_home.mkdir(parents=True, exist_ok=True)
++    auth_file = hermes_home / "auth.json"
++    auth_file.write_text(json.dumps({"version": 1, "providers": {}}))
++    return auth_file
++
++
++def _write_codex_cli_store(
++    codex_home: Path,
++    *,
++    access_token: Optional[str] = None,
++    refresh_token: str = "cli-refresh",
++    account_id: Optional[str] = "cli-acct",
++) -> Path:
++    """Write a Codex-CLI-shaped ``auth.json`` into ``$CODEX_HOME``."""
++    if access_token is None:
++        access_token = _jwt_with_exp(int(time.time()) + 3600)
++    codex_home.mkdir(parents=True, exist_ok=True)
++    tokens = {
++        "access_token": access_token,
++        "refresh_token": refresh_token,
++    }
++    if account_id is not None:
++        tokens["account_id"] = account_id
++    auth_path = codex_home / "auth.json"
++    auth_path.write_text(json.dumps({"tokens": tokens}))
++    return auth_path
++
++
++@pytest.fixture
++def stores(tmp_path, monkeypatch):
++    """Return (hermes_home, codex_home) with both pointing at tempdirs.
++
++    No content written by default — each test populates exactly the
++    stores it wants exercising.
++    """
++    hermes_home = tmp_path / "hermes"
++    codex_home = tmp_path / "codex-cli"
++    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
++    monkeypatch.setenv("CODEX_HOME", str(codex_home))
++    # The HERMES_CODEX_ACCESS_TOKEN env override matches the _TOKEN
++    # suffix so the global conftest already clears it; pin to be sure.
++    monkeypatch.delenv(ENV_CODEX_ACCESS_TOKEN, raising=False)
++    return hermes_home, codex_home
++
++
++# ── A. precedence ──────────────────────────────────────────────────────────
++
++
++def test_a_env_override_beats_hermes_store(stores, monkeypatch):
++    hermes_home, codex_home = stores
++    _write_hermes_store(hermes_home, access_token="from-hermes")
++    _write_codex_cli_store(codex_home, access_token=_jwt_with_exp(int(time.time()) + 3600))
++    monkeypatch.setenv(ENV_CODEX_ACCESS_TOKEN, "from-env")
++
++    creds = resolve_codex_credentials()
++
++    assert creds.source == "env"
++    assert creds.access_token == "from-env"
++    assert creds.last_refresh is None
++    assert creds.account_id is None
++    assert creds.base_url == DEFAULT_CODEX_BASE_URL
++
++
++def test_a_hermes_store_beats_codex_cli_borrow(stores):
++    hermes_home, codex_home = stores
++    _write_hermes_store(hermes_home, access_token="from-hermes")
++    _write_codex_cli_store(codex_home, access_token=_jwt_with_exp(int(time.time()) + 3600))
++
++    creds = resolve_codex_credentials()
++
++    assert creds.source == "hermes-auth-store"
++    assert creds.access_token == "from-hermes"
++
++
++def test_a_codex_cli_borrow_when_only_source(stores):
++    hermes_home, codex_home = stores
++    _write_empty_hermes_store(hermes_home)
++    cli_token = _jwt_with_exp(int(time.time()) + 3600)
++    _write_codex_cli_store(codex_home, access_token=cli_token)
++
++    creds = resolve_codex_credentials()
++
++    assert creds.source == "codex-cli-borrow"
++    assert creds.access_token == cli_token
++
++
++# ── B. compression path now succeeds with only Codex CLI store ─────────────
++
++
++def test_b_only_codex_cli_main_and_compression_both_succeed(stores):
++    hermes_home, codex_home = stores
++    _write_empty_hermes_store(hermes_home)
++    cli_token = _jwt_with_exp(int(time.time()) + 3600)
++    _write_codex_cli_store(codex_home, access_token=cli_token)
++
++    # Main path
++    main_creds = resolve_codex_credentials()
++    assert main_creds.source == "codex-cli-borrow"
++    assert main_creds.access_token == cli_token
++
++    # Compression entry point — the original bug surface.
++    from agent.auxiliary_client import _read_codex_access_token
++
++    compression_token = _read_codex_access_token()
++    assert compression_token == cli_token
++
++
++# ── C. only Hermes store — both paths succeed ──────────────────────────────
++
++
++def test_c_only_hermes_store_main_and_compression_both_succeed(stores):
++    hermes_home, codex_home = stores
++    _write_hermes_store(hermes_home, access_token="hermes-tok")
++    # Codex CLI store deliberately absent.
++
++    main_creds = resolve_codex_credentials()
++    assert main_creds.source == "hermes-auth-store"
++    assert main_creds.access_token == "hermes-tok"
++
++    from agent.auxiliary_client import _read_codex_access_token
++
++    assert _read_codex_access_token() == "hermes-tok"
++
++
++# ── D. borrow path never writes to disk ────────────────────────────────────
++
++
++def test_d_borrow_path_does_not_write_to_disk(stores, monkeypatch):
++    hermes_home, codex_home = stores
++    _write_empty_hermes_store(hermes_home)
++    cli_token = _jwt_with_exp(int(time.time()) + 3600)
++    cli_auth_path = _write_codex_cli_store(codex_home, access_token=cli_token)
++
++    save_calls = {"n": 0}
++
++    def _spy_save_codex_tokens(*args, **kwargs):
++        save_calls["n"] += 1
++
++    monkeypatch.setattr(
++        "hermes_cli.auth._save_codex_tokens", _spy_save_codex_tokens
++    )
++
++    cli_mtime_before = cli_auth_path.stat().st_mtime_ns
++    hermes_auth_path = hermes_home / "auth.json"
++    hermes_mtime_before = hermes_auth_path.stat().st_mtime_ns
++
++    creds = resolve_codex_credentials()
++
++    assert creds.source == "codex-cli-borrow"
++    assert save_calls["n"] == 0, (
++        "Borrow path must never call _save_codex_tokens — that would "
++        "leak a Codex-CLI-owned refresh token into the Hermes store."
++    )
++    assert cli_auth_path.stat().st_mtime_ns == cli_mtime_before, (
++        "Borrow path must not touch ~/.codex/auth.json on disk."
++    )
++    assert hermes_auth_path.stat().st_mtime_ns == hermes_mtime_before
++
++
++# ── E. allow_codex_cli_fallback=False rejects the borrow ───────────────────
++
++
++def test_e_allow_codex_cli_fallback_false_rejects_borrow(stores):
++    hermes_home, codex_home = stores
++    _write_empty_hermes_store(hermes_home)
++    _write_codex_cli_store(codex_home, access_token=_jwt_with_exp(int(time.time()) + 3600))
++
++    with pytest.raises(AuthError):
++        resolve_codex_credentials(allow_codex_cli_fallback=False)
++
++
++# ── F. concurrent refresh serialises into a single HTTP refresh ────────────
++
++
++def test_f_concurrent_force_refresh_serialises_to_single_http_call(
++    stores, monkeypatch
++):
++    hermes_home, _ = stores
++    _write_hermes_store(
++        hermes_home,
++        access_token=_jwt_with_exp(int(time.time()) - 30),
++        refresh_token="rt-initial",
++        last_refresh="2026-02-26T00:00:00Z",
++    )
++
++    refresh_calls = {"n": 0}
++    refresh_lock = threading.Lock()
++    barrier = threading.Barrier(2)
++    refreshed_access = _jwt_with_exp(int(time.time()) + 3600)
++
++    def _fake_pure_refresh(access_token, refresh_token, *, timeout_seconds=20.0):
++        with refresh_lock:
++            refresh_calls["n"] += 1
++        # Sleep slightly so the second thread is guaranteed to be
++        # waiting on the auth-store lock when this returns.
++        time.sleep(0.15)
++        return {
++            "access_token": refreshed_access,
++            "refresh_token": "rt-rotated",
++        }
++
++    monkeypatch.setattr(
++        "hermes_cli.auth.refresh_codex_oauth_pure", _fake_pure_refresh
++    )
++
++    results: dict = {}
++
++    def _worker(tag):
++        barrier.wait()
++        results[tag] = resolve_codex_credentials(force_refresh=True)
++
++    t1 = threading.Thread(target=_worker, args=("a",))
++    t2 = threading.Thread(target=_worker, args=("b",))
++    t1.start()
++    t2.start()
++    t1.join(timeout=10)
++    t2.join(timeout=10)
++
++    assert refresh_calls["n"] == 1, (
++        f"Concurrent force_refresh must dedupe under _auth_store_lock; "
++        f"saw {refresh_calls['n']} HTTP refreshes."
++    )
++    assert results["a"].access_token == refreshed_access
++    assert results["b"].access_token == refreshed_access
++
++
++# ── H. expired Codex CLI borrow is rejected ────────────────────────────────
++
++
++def test_h_expired_codex_cli_borrow_is_rejected(stores):
++    hermes_home, codex_home = stores
++    _write_empty_hermes_store(hermes_home)
++    expired_token = _jwt_with_exp(int(time.time()) - 60)
++    _write_codex_cli_store(codex_home, access_token=expired_token)
++
++    with pytest.raises(AuthError):
++        resolve_codex_credentials()
++
++
++# ── I. env override skips expiry check entirely ────────────────────────────
++
++
++def test_i_env_override_skips_expiry_check(stores, monkeypatch):
++    hermes_home, codex_home = stores
++    _write_empty_hermes_store(hermes_home)
++    # Codex CLI store absent too — env override is the only source.
++    expired_token = _jwt_with_exp(int(time.time()) - 60)
++    monkeypatch.setenv(ENV_CODEX_ACCESS_TOKEN, expired_token)
++
++    creds = resolve_codex_credentials()
++
++    assert creds.source == "env"
++    assert creds.access_token == expired_token
++    assert creds.last_refresh is None
++
++
++# ── J. shim returns legacy dict shape under each source branch ─────────────
++
++
++def test_j_shim_dict_shape_for_hermes_store(stores):
++    hermes_home, _ = stores
++    _write_hermes_store(hermes_home, access_token="hermes-tok")
++
++    runtime = resolve_codex_runtime_credentials()
++
++    assert runtime["provider"] == "openai-codex"
++    assert runtime["api_key"] == "hermes-tok"
++    assert runtime["base_url"] == DEFAULT_CODEX_BASE_URL
++    assert runtime["source"] == "hermes-auth-store"
++    assert runtime["auth_mode"] == "chatgpt"
++    assert "last_refresh" in runtime
++
++
++def test_j_shim_dict_shape_for_codex_cli_borrow(stores):
++    hermes_home, codex_home = stores
++    _write_empty_hermes_store(hermes_home)
++    cli_token = _jwt_with_exp(int(time.time()) + 3600)
++    _write_codex_cli_store(codex_home, access_token=cli_token)
++
++    runtime = resolve_codex_runtime_credentials()
++
++    assert runtime["provider"] == "openai-codex"
++    assert runtime["api_key"] == cli_token
++    assert runtime["source"] == "codex-cli-borrow"
++    assert runtime["last_refresh"] is None
++    assert runtime["auth_mode"] == "chatgpt"
++
++
++def test_j_shim_dict_shape_for_env_override(stores, monkeypatch):
++    monkeypatch.setenv(ENV_CODEX_ACCESS_TOKEN, "env-tok")
++
++    runtime = resolve_codex_runtime_credentials()
++
++    assert runtime["provider"] == "openai-codex"
++    assert runtime["api_key"] == "env-tok"
++    assert runtime["source"] == "env"
++    assert runtime["last_refresh"] is None
++    assert runtime["auth_mode"] == "chatgpt"
++
++
++# ── Misc: account_id propagation ───────────────────────────────────────────
++
++
++def test_account_id_exposed_from_hermes_store(stores):
++    hermes_home, _ = stores
++    _write_hermes_store(hermes_home, account_id="acct-from-hermes")
++
++    creds = resolve_codex_credentials()
++
++    assert creds.account_id == "acct-from-hermes"
++
++
++def test_account_id_exposed_from_codex_cli_borrow(stores):
++    hermes_home, codex_home = stores
++    _write_empty_hermes_store(hermes_home)
++    _write_codex_cli_store(
++        codex_home,
++        access_token=_jwt_with_exp(int(time.time()) + 3600),
++        account_id="acct-from-cli",
++    )
++
++    creds = resolve_codex_credentials()
++
++    assert creds.account_id == "acct-from-cli"
++
++
++def test_account_id_none_for_env_override(stores, monkeypatch):
++    monkeypatch.setenv(ENV_CODEX_ACCESS_TOKEN, "env-tok")
++
++    creds = resolve_codex_credentials()
++
++    assert creds.account_id is None
++
++
++# ── Refresh-failure surfaces (does not fall back to borrow silently) ───────
++
++
++def test_refresh_failure_does_not_silently_borrow(stores, monkeypatch):
++    """When Hermes store refresh fails, we want the user to see the
++    actionable re-auth message — not a silent fallback to a borrowed
++    Codex CLI token that masks the broken Hermes session.
++    """
++    hermes_home, codex_home = stores
++    _write_hermes_store(
++        hermes_home,
++        access_token=_jwt_with_exp(int(time.time()) - 30),
++        refresh_token="rt-doomed",
++    )
++    _write_codex_cli_store(
++        codex_home,
++        access_token=_jwt_with_exp(int(time.time()) + 3600),
++    )
++
++    def _boom(*args, **kwargs):
++        raise AuthError(
++            "Codex refresh token was already consumed",
++            provider="openai-codex",
++            code="refresh_token_reused",
++            relogin_required=True,
++        )
++
++    monkeypatch.setattr(
++        "hermes_cli.auth.refresh_codex_oauth_pure", _boom
++    )
++
++    with pytest.raises(AuthError) as exc:
++        resolve_codex_credentials()
++    assert exc.value.code == "refresh_token_reused"
+diff --git a/tests/agent/test_auxiliary_client.py b/tests/agent/test_auxiliary_client.py
+index 221d2725a91..329c51adf41 100644
+--- a/tests/agent/test_auxiliary_client.py
++++ b/tests/agent/test_auxiliary_client.py
+@@ -129,6 +129,9 @@ def test_missing_returns_none(self, tmp_path, monkeypatch):
+         hermes_home.mkdir(parents=True, exist_ok=True)
+         (hermes_home / "auth.json").write_text(json.dumps({"version": 1, "providers": {}}))
+         monkeypatch.setenv("HERMES_HOME", str(hermes_home))
++        # Pin CODEX_HOME so the resolver's borrow fallback can't escape
++        # to a developer's real ~/.codex/auth.json on the host.
++        monkeypatch.setenv("CODEX_HOME", str(tmp_path / "absent-codex-cli"))
+         with patch("agent.auxiliary_client._select_pool_entry", return_value=(False, None)):
+             result = _read_codex_access_token()
+         assert result is None
+@@ -145,23 +148,26 @@ def test_empty_token_returns_none(self, tmp_path, monkeypatch):
+             },
+         }))
+         monkeypatch.setenv("HERMES_HOME", str(hermes_home))
++        monkeypatch.setenv("CODEX_HOME", str(tmp_path / "absent-codex-cli"))
+         result = _read_codex_access_token()
+         assert result is None
+ 
+-    def test_malformed_json_returns_none(self, tmp_path):
++    def test_malformed_json_returns_none(self, tmp_path, monkeypatch):
+         codex_dir = tmp_path / ".codex"
+         codex_dir.mkdir()
+         (codex_dir / "auth.json").write_text("{bad json")
+-        with patch("agent.auxiliary_client.Path.home", return_value=tmp_path):
+-            result = _read_codex_access_token()
++        # CODEX_HOME points the borrow at this malformed file; Hermes
++        # store is the auto-tempdir from the global conftest (empty).
++        monkeypatch.setenv("CODEX_HOME", str(codex_dir))
++        result = _read_codex_access_token()
+         assert result is None
+ 
+-    def test_missing_tokens_key_returns_none(self, tmp_path):
++    def test_missing_tokens_key_returns_none(self, tmp_path, monkeypatch):
+         codex_dir = tmp_path / ".codex"
+         codex_dir.mkdir()
+         (codex_dir / "auth.json").write_text(json.dumps({"other": "data"}))
+-        with patch("agent.auxiliary_client.Path.home", return_value=tmp_path):
+-            result = _read_codex_access_token()
++        monkeypatch.setenv("CODEX_HOME", str(codex_dir))
++        result = _read_codex_access_token()
+         assert result is None
+ 
+ 
+@@ -187,6 +193,9 @@ def test_expired_jwt_returns_none(self, tmp_path, monkeypatch):
+             },
+         }))
+         monkeypatch.setenv("HERMES_HOME", str(hermes_home))
++        # Block the borrow fallback so the expired-JWT semantics are
++        # what's actually under test here.
++        monkeypatch.setenv("CODEX_HOME", str(tmp_path / "absent-codex-cli"))
+         with patch("agent.auxiliary_client._select_pool_entry", return_value=(False, None)):
+             result = _read_codex_access_token()
+         assert result is None, "Expired JWT should return None"
+diff --git a/tests/gateway/test_boot_announcement.py b/tests/gateway/test_boot_announcement.py
+new file mode 100644
+index 00000000000..2821d730b22
+--- /dev/null
++++ b/tests/gateway/test_boot_announcement.py
+@@ -0,0 +1,101 @@
++"""Tests for gateway boot-line profile announcement (gateway/run.py)."""
++
++import logging
++import os
++from pathlib import Path
++from unittest.mock import patch
++
++import pytest
++
++from gateway.run import _log_boot_announcement
++
++
++def _capture(caplog):
++    """Return the announcement record message, or None if not emitted."""
++    for rec in caplog.records:
++        if rec.message.startswith("[hermes] starting"):
++            return rec.message
++    return None
++
++
++def test_default_profile_announces_default(tmp_path, caplog, monkeypatch):
++    home = tmp_path / "home"
++    hermes_root = home / ".hermes"
++    hermes_root.mkdir(parents=True)
++    (hermes_root / "active_profile").write_text("ruta\n")
++    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
++    monkeypatch.setenv("HERMES_HOME", str(hermes_root))
++
++    caplog.set_level(logging.INFO, logger="gateway.run")
++    log = logging.getLogger("gateway.run")
++    _log_boot_announcement(log)
++
++    msg = _capture(caplog)
++    assert msg is not None
++    assert "profile=default" in msg
++    assert "active_profile_file=ruta" in msg
++    assert f"pid={os.getpid()}" in msg
++
++
++def test_profile_billprinter_announces_correctly(tmp_path, caplog, monkeypatch):
++    home = tmp_path / "home"
++    default_root = home / ".hermes"
++    default_root.mkdir(parents=True)
++    profile_home = default_root / "profiles" / "billprinter"
++    profile_home.mkdir(parents=True)
++    (default_root / "active_profile").write_text("default")
++    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
++    monkeypatch.setenv("HERMES_HOME", str(profile_home))
++
++    caplog.set_level(logging.INFO, logger="gateway.run")
++    log = logging.getLogger("gateway.run")
++    _log_boot_announcement(log)
++
++    msg = _capture(caplog)
++    assert msg is not None
++    assert "profile=billprinter" in msg
++    assert "active_profile_file=default" in msg
++
++
++def test_missing_active_profile_file(tmp_path, caplog, monkeypatch):
++    home = tmp_path / "home"
++    hermes_root = home / ".hermes"
++    hermes_root.mkdir(parents=True)
++    # No active_profile file written.
++    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
++    monkeypatch.setenv("HERMES_HOME", str(hermes_root))
++
++    caplog.set_level(logging.INFO, logger="gateway.run")
++    log = logging.getLogger("gateway.run")
++    _log_boot_announcement(log)
++
++    msg = _capture(caplog)
++    assert msg is not None
++    assert "active_profile_file=(missing)" in msg
++
++
++def test_unreadable_active_profile_file(tmp_path, caplog, monkeypatch):
++    home = tmp_path / "home"
++    hermes_root = home / ".hermes"
++    hermes_root.mkdir(parents=True)
++    active = hermes_root / "active_profile"
++    active.write_text("ruta")
++    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
++    monkeypatch.setenv("HERMES_HOME", str(hermes_root))
++
++    original_read_text = Path.read_text
++
++    def boom(self, *args, **kwargs):
++        if self == active:
++            raise OSError("permission denied")
++        return original_read_text(self, *args, **kwargs)
++
++    monkeypatch.setattr(Path, "read_text", boom)
++
++    caplog.set_level(logging.INFO, logger="gateway.run")
++    log = logging.getLogger("gateway.run")
++    _log_boot_announcement(log)
++
++    msg = _capture(caplog)
++    assert msg is not None
++    assert "active_profile_file=(unreadable)" in msg
+diff --git a/tests/gateway/test_restart_notification.py b/tests/gateway/test_restart_notification.py
+index 3d5d5ee9557..41f743b7133 100644
+--- a/tests/gateway/test_restart_notification.py
++++ b/tests/gateway/test_restart_notification.py
+@@ -361,6 +361,8 @@ async def test_send_restart_notification_delivers_and_cleans_up(tmp_path, monkey
+     call_args = adapter.send.call_args
+     assert call_args[0][0] == "42"  # chat_id
+     assert "restarted" in call_args[0][1].lower()
++    assert "auto-resume" in call_args[0][1]
++    assert "idle" in call_args[0][1].lower()
+     assert call_args[1].get("metadata") is None  # no thread
+     assert not notify_path.exists()
+ 
+diff --git a/tests/gateway/test_restart_resume_pending.py b/tests/gateway/test_restart_resume_pending.py
+index 996153239fc..6494a152b32 100644
+--- a/tests/gateway/test_restart_resume_pending.py
++++ b/tests/gateway/test_restart_resume_pending.py
+@@ -1096,7 +1096,7 @@ async def test_restart_notifies_home_channel_even_without_active_sessions():
+ 
+     assert adapter.sent == [
+         "⚠️ Gateway restarting — Your current task will be interrupted. "
+-        "Send any message after restart and I'll try to resume where you left off."
++        "If it was mid-turn, I'll try to resume automatically after restart and report back here."
+     ]
+ 
+ 
+diff --git a/tests/hermes_cli/test_auth_codex_provider.py b/tests/hermes_cli/test_auth_codex_provider.py
+index ad5ce40f3db..bfb88591576 100644
+--- a/tests/hermes_cli/test_auth_codex_provider.py
++++ b/tests/hermes_cli/test_auth_codex_provider.py
+@@ -79,6 +79,10 @@ def test_resolve_codex_runtime_credentials_missing_access_token(tmp_path, monkey
+     hermes_home = tmp_path / "hermes"
+     _setup_hermes_auth(hermes_home, access_token="")
+     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
++    # Pin CODEX_HOME so the resolver's borrow path can't escape to a
++    # developer's real ~/.codex/auth.json and silently mask the
++    # missing-access-token surface this test is pinning.
++    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "absent-codex-cli"))
+ 
+     with pytest.raises(AuthError) as exc:
+         resolve_codex_runtime_credentials()
+diff --git a/tests/hermes_cli/test_bare_hermes_warning.py b/tests/hermes_cli/test_bare_hermes_warning.py
+new file mode 100644
+index 00000000000..0bcf78a379b
+--- /dev/null
++++ b/tests/hermes_cli/test_bare_hermes_warning.py
+@@ -0,0 +1,134 @@
++"""Tests for the bare-hermes active_profile fallback warning.
++
++When bare ``hermes`` (no -p/--profile) is invoked and ``~/.hermes/active_profile``
++points to a non-default profile, ``_apply_profile_override()`` silently sets
++HERMES_HOME to that profile. This trapdoor caused three profile-hijack
++incidents in 24h where launchd-spawned processes ended up bound to Ruta when
++the operator expected default. The fix: emit a loud one-shot stderr warning
++at the moment the trapdoor fires.
++
++The warning must:
++  1. Fire ONLY on the active_profile fallback path (not -p/--profile).
++  2. Skip the no-op case (resolved profile == 'default').
++  3. Be one-shot per process.
++  4. Skip when HERMES_HOME was already pinned in env (plists do this).
++  5. Be suppressible via HERMES_QUIET_BARE_WARNING=1.
++"""
++
++from pathlib import Path
++
++import pytest
++
++
++@pytest.fixture
++def fresh_main(monkeypatch, tmp_path):
++    """Reset the one-shot warn flag and point HOME at a tmpdir.
++
++    We import hermes_cli.main and reset the module-level guard so each
++    test starts from a clean slate. We avoid reloading the module
++    (which would re-run the top-level _apply_profile_override() call).
++    """
++    import hermes_cli.main as main_mod
++    monkeypatch.setattr(main_mod, "_BARE_HERMES_WARNING_EMITTED", False)
++    monkeypatch.setattr(Path, "home", lambda: tmp_path)
++    monkeypatch.delenv("HERMES_HOME", raising=False)
++    monkeypatch.delenv("HERMES_QUIET_BARE_WARNING", raising=False)
++    return main_mod
++
++
++def _seed_profile(tmp_path: Path, active: str) -> None:
++    """Create ~/.hermes/active_profile and a matching profile dir."""
++    hermes_dir = tmp_path / ".hermes"
++    hermes_dir.mkdir(exist_ok=True)
++    (hermes_dir / "active_profile").write_text(active + "\n")
++    if active and active != "default":
++        (hermes_dir / "profiles" / active).mkdir(parents=True, exist_ok=True)
++
++
++class TestBareHermesWarning:
++    def test_explicit_profile_flag_no_warning(
++        self, fresh_main, tmp_path, monkeypatch, capsys
++    ):
++        """-p ruta on the command line → user knows, no warning."""
++        _seed_profile(tmp_path, "ruta")
++        monkeypatch.setattr("sys.argv", ["hermes", "-p", "ruta", "chat"])
++
++        fresh_main._apply_profile_override()
++
++        err = capsys.readouterr().err
++        assert "No --profile flag" not in err
++
++    def test_active_profile_default_no_warning(
++        self, fresh_main, tmp_path, monkeypatch, capsys
++    ):
++        """active_profile=default → no-op, no warning."""
++        _seed_profile(tmp_path, "default")
++        monkeypatch.setattr("sys.argv", ["hermes"])
++
++        fresh_main._apply_profile_override()
++
++        err = capsys.readouterr().err
++        assert "No --profile flag" not in err
++
++    def test_active_profile_non_default_warns(
++        self, fresh_main, tmp_path, monkeypatch, capsys
++    ):
++        """Bare hermes + active_profile=ruta → loud stderr warning."""
++        _seed_profile(tmp_path, "ruta")
++        monkeypatch.setattr("sys.argv", ["hermes"])
++
++        fresh_main._apply_profile_override()
++
++        err = capsys.readouterr().err
++        assert "No --profile flag" in err
++        assert "active_profile → ruta" in err
++        assert "Set --profile ruta explicitly" in err
++        assert "hermes profile use default" in err
++
++    def test_hermes_home_already_set_no_warning(
++        self, fresh_main, tmp_path, monkeypatch, capsys
++    ):
++        """HERMES_HOME explicitly set in env → caller pinned it, no warning.
++
++        This is the launchd plist case: the .plist sets HERMES_HOME, so
++        even if active_profile says something else, the caller is loud.
++        We point HERMES_HOME at the hermes root (NOT a profile dir) so
++        step 1.5's early-return doesn't fire and step 2 still runs.
++        """
++        _seed_profile(tmp_path, "ruta")
++        monkeypatch.setenv("HERMES_HOME", str(tmp_path / ".hermes"))
++        monkeypatch.setattr("sys.argv", ["hermes"])
++
++        fresh_main._apply_profile_override()
++
++        err = capsys.readouterr().err
++        assert "No --profile flag" not in err
++
++    def test_warning_is_one_shot(
++        self, fresh_main, tmp_path, monkeypatch, capsys
++    ):
++        """Two fallback firings in the same process → warning appears once."""
++        _seed_profile(tmp_path, "ruta")
++        monkeypatch.setattr("sys.argv", ["hermes"])
++
++        fresh_main._apply_profile_override()
++        # Clear HERMES_HOME so the second call also goes through step 2 →
++        # step 3 fallback path. Without this, step 1.5 returns early.
++        monkeypatch.delenv("HERMES_HOME", raising=False)
++        fresh_main._apply_profile_override()
++
++        err = capsys.readouterr().err
++        assert err.count("No --profile flag") == 1
++
++    def test_quiet_env_var_suppresses(
++        self, fresh_main, tmp_path, monkeypatch, capsys
++    ):
++        """HERMES_QUIET_BARE_WARNING=1 → silent."""
++        _seed_profile(tmp_path, "ruta")
++        monkeypatch.setenv("HERMES_QUIET_BARE_WARNING", "1")
++        monkeypatch.setattr("sys.argv", ["hermes"])
++
++        fresh_main._apply_profile_override()
++
++        err = capsys.readouterr().err
++        assert "No --profile flag" not in err
+diff --git a/tests/hermes_cli/test_gateway.py b/tests/hermes_cli/test_gateway.py
+index d78dcc131af..987b2e14cad 100644
+--- a/tests/hermes_cli/test_gateway.py
++++ b/tests/hermes_cli/test_gateway.py
+@@ -9,6 +9,22 @@
+ import hermes_cli.gateway as gateway
+ 
+ 
++def test_gateway_run_args_always_pin_profile(monkeypatch):
++    monkeypatch.setattr(gateway, "get_python_path", lambda: "/py")
++
++    assert gateway._gateway_run_args_for_profile("default") == [
++        "/py",
++        "-m",
++        "hermes_cli.main",
++        "--profile",
++        "default",
++        "gateway",
++        "run",
++        "--replace",
++    ]
++    assert gateway._gateway_run_args_for_profile("ruta")[3:5] == ["--profile", "ruta"]
++
++
+ def _install_fake_gateway_run(monkeypatch, start_gateway):
+     module = ModuleType("gateway.run")
+     module.start_gateway = start_gateway
+diff --git a/tests/plugins/image_gen/test_openai_codex_provider.py b/tests/plugins/image_gen/test_openai_codex_provider.py
+index 3c8cf86c0a6..43a7ffadf95 100644
+--- a/tests/plugins/image_gen/test_openai_codex_provider.py
++++ b/tests/plugins/image_gen/test_openai_codex_provider.py
+@@ -108,6 +108,44 @@ def test_openai_api_key_alone_is_not_enough(self, monkeypatch):
+         monkeypatch.setattr(codex_plugin, "_read_codex_access_token", lambda: None)
+         assert codex_plugin.OpenAICodexImageGenProvider().is_available() is False
+ 
++    def test_available_when_only_codex_cli_store_populated(
++        self, tmp_path, monkeypatch
++    ):
++        """Codex-CLI-only scenario: ~/.hermes/auth.json has no Codex
++        entry, but ~/.codex/auth.json does. After unification, the
++        plugin must see is_available()=True via the borrow path.
++        """
++        import base64
++        import json
++        import time
++
++        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
++
++        # Empty Hermes store
++        hermes_home = tmp_path / "hermes_home"
++        hermes_home.mkdir()
++        (hermes_home / "auth.json").write_text(
++            json.dumps({"version": 1, "providers": {}})
++        )
++        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
++
++        # Codex CLI store with a fresh JWT
++        codex_home = tmp_path / "codex-cli"
++        codex_home.mkdir()
++        payload = base64.urlsafe_b64encode(
++            json.dumps({"exp": int(time.time()) + 3600}).encode("utf-8")
++        ).rstrip(b"=").decode("utf-8")
++        cli_token = f"h.{payload}.s"
++        (codex_home / "auth.json").write_text(
++            json.dumps(
++                {"tokens": {"access_token": cli_token, "refresh_token": "rt"}}
++            )
++        )
++        monkeypatch.setenv("CODEX_HOME", str(codex_home))
++
++        provider = codex_plugin.OpenAICodexImageGenProvider()
++        assert provider.is_available() is True
++
+ 
+ # ── Generate ────────────────────────────────────────────────────────────────
+ 
+diff --git a/tests/test_account_usage.py b/tests/test_account_usage.py
+index 072dc21c6f2..4b20e15187a 100644
+--- a/tests/test_account_usage.py
++++ b/tests/test_account_usage.py
+@@ -50,17 +50,17 @@ def get(self, url, headers=None):
+ 
+ 
+ def test_fetch_account_usage_codex(monkeypatch):
++    from agent.auth.codex import CodexCredentials
++
+     monkeypatch.setattr(
+-        "agent.account_usage.resolve_codex_runtime_credentials",
+-        lambda refresh_if_expiring=True: {
+-            "provider": "openai-codex",
+-            "base_url": "https://chatgpt.com/backend-api/codex",
+-            "api_key": "access-token",
+-        },
+-    )
+-    monkeypatch.setattr(
+-        "agent.account_usage._read_codex_tokens",
+-        lambda: {"tokens": {"account_id": "acct_123"}},
++        "agent.account_usage.resolve_codex_credentials",
++        lambda refresh_if_expiring=True: CodexCredentials(
++            access_token="access-token",
++            base_url="https://chatgpt.com/backend-api/codex",
++            source="hermes-auth-store",
++            last_refresh=None,
++            account_id="acct_123",
++        ),
+     )
+     monkeypatch.setattr(
+         "agent.account_usage.httpx.Client",
+diff --git a/website/docs/reference/environment-variables.md b/website/docs/reference/environment-variables.md
+index df125c73206..0a9437466b1 100644
+--- a/website/docs/reference/environment-variables.md
++++ b/website/docs/reference/environment-variables.md
+@@ -114,6 +114,7 @@ For native Anthropic auth, Hermes prefers Claude Code's own credential files whe
+ | Variable | Description |
+ |----------|-------------|
+ | `HERMES_INFERENCE_PROVIDER` | Override provider selection: `auto`, `custom`, `openrouter`, `nous`, `openai-codex`, `copilot`, `copilot-acp`, `anthropic`, `huggingface`, `novita`, `gemini`, `zai`, `kimi-coding`, `kimi-coding-cn`, `minimax`, `minimax-cn`, `minimax-oauth` (browser OAuth login — no API key required; see [MiniMax OAuth guide](../guides/minimax-oauth.md)), `kilocode`, `xiaomi`, `arcee`, `gmi`, `stepfun`, `alibaba`, `alibaba-coding-plan` (alias `alibaba_coding`), `deepseek`, `nvidia`, `ollama-cloud`, `xai` (alias `grok`), `xai-oauth` (browser OAuth login for SuperGrok subscribers — no API key required; see [xAI Grok OAuth guide](../guides/xai-grok-oauth.md)), `google-gemini-cli`, `qwen-oauth`, `bedrock`, `opencode-zen`, `opencode-go`, `ai-gateway`, `tencent-tokenhub` (default: `auto`) |
++| `HERMES_CODEX_ACCESS_TOKEN` | Developer escape hatch: forces the Codex resolver to use this access token verbatim. Bypasses both `~/.hermes/auth.json` and `~/.codex/auth.json`, performs no refresh, and skips the expiry check. Intended for short-lived debugging only — leave unset in normal operation. |
+ | `HERMES_PORTAL_BASE_URL` | Override Nous Portal URL (for development/testing) |
+ | `NOUS_INFERENCE_BASE_URL` | Override Nous inference API URL |
+ | `HERMES_NOUS_MIN_KEY_TTL_SECONDS` | Min agent key TTL before re-mint (default: 1800 = 30min) |

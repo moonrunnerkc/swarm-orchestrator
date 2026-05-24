@@ -1,0 +1,19 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.surrealdb.md b/src/main/resources/doc/io.kestra.plugin.surrealdb.md
+new file mode 100644
+index 0000000..9adb648
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.surrealdb.md
+@@ -0,0 +1,13 @@
++# How to use the SurrealDB plugin
++
++Run SurrealQL queries and poll for results in SurrealDB from Kestra flows.
++
++## Authentication
++
++Set `host` to your SurrealDB server hostname and `port` (default `8000`). Set `namespace` and `database` to scope the connection. For authenticated access, set `username` and `password`. Set `useTls: true` for TLS connections. Store secrets in [secrets](https://kestra.io/docs/concepts/secret) and apply connection properties globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
++
++## Tasks
++
++`Query` runs a SurrealQL statement set in `query`. Pass named `parameters` as a map. Control result handling with `fetchType`: `STORE` (default, writes to internal storage), `FETCH` returns all rows, `FETCH_ONE` returns the first row, `NONE` discards results.
++
++`Trigger` polls SurrealDB on a schedule (default 1 minute) and starts one execution per batch of matching rows. Set `query`, `parameters`, and `fetchType` the same way as the `Query` task.

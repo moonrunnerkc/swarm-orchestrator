@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-LabKey-MacCossLabModules-pr638",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 638,
+    "headSha": "3e1101fd50be7ff85bc033a0559f5c78476fbaa0",
+    "baseSha": "335bfd9c7018cadcd6f98c2679eb60c50f1e669c",
+    "title": "Add kaptcha verification to signup module",
+    "body": "#### Rationale\r\nWe need to add bot protection to the self-sign-up form. \r\n\r\n#### Changes\r\n * Added server-side kaptcha verification to `SignUpApiAction` and `BeginAction`\r\n  * Extracted shared helpers so both action paths follow the same verification sequence in the same order\r\n  * Added `emailConfirm` field requiring users to enter their email address twice\r\n  * Fixed two API path bugs: `EmailValidator.isValid` was not called, and a  `sendEmail` failure was falling through to `status=USER_ADDED`\r\n  * Wrapped TempUser insert + confirmation email in a transaction so the row  is rolled back if email delivery fails\r\n  * Rewrote `signupPage.jsp` to use `<labkey:form>` and `<labkey:input>` taglibs\r\n\r\n ## Manual test plan\r\n\r\n  - [x] Valid kaptcha + valid form: confirmation email sent, TempUser row inserted\r\n  - [x] Invalid kaptcha: error returned, no row inserted\r\n  - [x] Session expired / kaptcha not initialized: load the page, delete the JSESSIONID cookie in DevTools → Application → Cookies, submit the form → expect \"Captcha not initialized, please retry.\"\r\n  - [x] Invalid email format (e.g. \"notanemail\"): rejected with error message\r\n  - [x] Email / Confirm Email mismatch: rejected with error message\r\n  - [x] Email already registered: API returns `status=USER_EXISTS`\r\n  - [x] Tested as unauthenticated guest\r\n \r\n See ai/todos/active/TODO-LK-20260517_add-kaptcha-to-signup.md\r\n\r\nCo-Authored-By: Claude <noreply@anthropic.com>",
+    "author": "vagisha",
+    "headRef": "26.3_fb_signup-kaptcha",
+    "repository": "LabKey/MacCossLabModules"
+  },
+  "diffRef": {
+    "repository": "LabKey/MacCossLabModules",
+    "headSha": "3e1101fd50be7ff85bc033a0559f5c78476fbaa0",
+    "baseSha": "335bfd9c7018cadcd6f98c2679eb60c50f1e669c"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-LabKey-MacCossLabModules-pr638.diff",
+  "vendoredAt": "2026-05-24T03:10:04.880Z",
+  "collectedAt": "2026-05-24T03:10:04.880Z"
+}

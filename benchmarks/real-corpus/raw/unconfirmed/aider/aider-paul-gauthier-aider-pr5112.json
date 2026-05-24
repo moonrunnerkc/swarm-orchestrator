@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5112",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5112,
+    "headSha": "0543a71b74969868c561047ee9efd228bc3a14b0",
+    "baseSha": "3ec8ec5a7d695b08a6c24fe6c0c235c8f87df9af",
+    "title": "fix(coders): catch doubled-prefix hallucinations in edit-block headers",
+    "body": "## Summary\nCatch doubled-prefix hallucinations like `.claude/.claude/foo.json` (when the chat file is `.claude/foo.json`) by extending the existing prepended-bogus-dir guard with progressive suffix-stripping against `chat_files` / `valid_fnames`. Closes #5111.\n\n## Why\nObserved in production dispatch across small editor models (`groq/llama-3.3-70b-versatile`, `openrouter/openai/gpt-oss-120b`, `gemini-2.5-flash-lite`). Existing basename-only guard in `WholeFileCoder` and basename+fuzzy guards in `find_filename` miss multi-segment doubled prefixes; result is a 0-byte canonical file and content at a doubled path.\n\n## Changes\n- `aider/coders/wholefile_coder.py`: after basename guard, try progressively shorter suffixes against `chat_files`.\n- `aider/coders/editblock_coder.py:find_filename`: same pattern, between basename and fuzzy match (catches cases where `SequenceMatcher` ratio falls below the 0.8 cutoff).\n- 2 tests covering both code paths, including a mutation-tested case where fuzzy match would otherwise miss (ratio 0.778 < 0.8).\n\n## Risk\nLow. Strict subset of behaviour:\n- Only triggers when exact match and basename match both fail.\n- Only resolves when a deterministic suffix is itself in `chat_files` / `valid_fnames`.\n- No behaviour change on any path that currently resolves correctly.\n\n## Test plan\n- [x] `pytest tests/basic/test_wholefile.py tests/basic/test_editblock.py` — 38 passed (was 36 before)\n- [x] Mutation test: confirmed both new tests fail without the fix (return doubled path verbatim)",
+    "author": "ekrembasari",
+    "headRef": "fix/edit-block-doubled-prefix-path",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "0543a71b74969868c561047ee9efd228bc3a14b0",
+    "baseSha": "3ec8ec5a7d695b08a6c24fe6c0c235c8f87df9af"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5112.diff",
+  "vendoredAt": "2026-05-24T03:19:37.006Z",
+  "collectedAt": "2026-05-24T03:19:37.006Z"
+}

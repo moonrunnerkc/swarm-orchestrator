@@ -1,0 +1,37 @@
+diff --git a/.agent-locks/gate-improvements-followup.yml b/.agent-locks/gate-improvements-followup.yml
+new file mode 100644
+index 00000000..047944b1
+--- /dev/null
++++ b/.agent-locks/gate-improvements-followup.yml
+@@ -0,0 +1,9 @@
++version: 1
++task: "gate-improvements-followup"
++locks:
++  - path: "src/router/index.js"
++    scope: "file"
++    owner: "cursor"
++    branch: "cursor/gate-improvements-followup"
++    expiresAt: "2026-05-25T02:43:18.114Z"
++    reason: "Fix E2E auth routing issue for settings and ca-management routes"
+diff --git a/src/router/index.js b/src/router/index.js
+index 38960a42..8c3eff60 100644
+--- a/src/router/index.js
++++ b/src/router/index.js
+@@ -185,7 +185,7 @@ const routes = [
+         path: 'resource/ca-management',
+         name: 'CAManagement',
+         component: () => import('@/views/Resource/CAManagement.vue'),
+-        meta: { title: 'CA 管理' }
++        meta: { title: 'CA 管理', requiresAuth: true }
+       },
+       {
+         path: 'resource/contract-borrow',
+@@ -250,7 +250,7 @@ const routes = [
+         path: 'settings',
+         name: 'Settings',
+         component: () => import('@/views/System/Settings.vue'),
+-        meta: { title: '系统设置', permissionKeys: ['settings'] }
++        meta: { title: '系统设置', permissionKeys: ['settings'], requiresAuth: true }
+       },
+       {
+         path: 'settings/workflow-forms',

@@ -1,0 +1,26 @@
+{
+  "id": "cursor-katsu996-test-CursorToSlack-pr13",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 13,
+    "headSha": "d3d589a3f53961d96fea6869cc604bad795d676d",
+    "baseSha": "d593531a4da3d0d58d9d5995eddd388cad47fbd7",
+    "title": "feat: 元難易度表ごとのレベルを独自列（custom_level）にマッピング",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## 概要\n\n複数の元難易度表を結合するとき、**表ごとに別々のレベル表記**を**ひとつの独自スケール**へ写すための設定を追加しました。例として「1 番目の表のレベル 12 → 独自 12」「2 番目の表のレベル 1 → 独自 13」は、`source_header_urls` の順に並べた `custom_level_mapping` の各オブジェクトで定義します。\n\n## 変更内容\n\n- **`filter_table.py`**: マージ時に各行へ `custom_level_field`（既定 `custom_level`）を付与。`custom_level_source_key`（既定 `level`）の値をキーに `custom_level_mapping[i]` を参照。未マップ時は `custom_level_unmapped`（`omit` / `source` / `null`）で制御。フィールド名は英数字とアンダースコアのみ許可。\n- **`filter_config.json`**: 後方互換のため空配列と既定キーを追加。\n- **`filter_config.example.json`**: 2 ソース向けの例マップを記載。\n- **`build_pages_table.py`**: `browser_rows.json` の `meta` に独自レベル関連の要約を追加。\n- **`docs/index.html`**: 「独自レベル」列のラベル・列順、マップ使用時のみメタ表示。\n- **ドキュメント**: ルート `README.md` に手動運用（§10）、`docs/github-actions-songdata-table-filter.md` にデータフロー、`tools/table-filter/README.md` と `docs/README.md` を更新。\n\n## 注意\n\n- 同一 `md5` / `sha256` が複数表に出る場合は**先に列挙したヘッダー側のマップのみ**が使われます（既存の重複除去と同じ「先勝ち」）。\n- `course` 内のチャート行にはマップを適用していません（メインのデータ配列のみ）。\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n[Slack Thread](https://katsu996.slack.com/archives/C0B562H42LX/p1779516104767189?thread_ts=1779516104.767189&cid=C0B562H42LX)\n\n<div><a href=\"https://cursor.com/agents/bc-a17dfc67-07ce-5d70-90a9-517dacfe4dca\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-a17dfc67-07ce-5d70-90a9-517dacfe4dca\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "katsu996",
+    "headRef": "cursor/custom-level-mapping-4dca",
+    "repository": "katsu996/test-CursorToSlack"
+  },
+  "diffRef": {
+    "repository": "katsu996/test-CursorToSlack",
+    "headSha": "d3d589a3f53961d96fea6869cc604bad795d676d",
+    "baseSha": "d593531a4da3d0d58d9d5995eddd388cad47fbd7"
+  },
+  "vendoredDiffPath": "cursor/cursor-katsu996-test-CursorToSlack-pr13.diff",
+  "vendoredAt": "2026-05-24T03:11:22.194Z",
+  "collectedAt": "2026-05-24T03:11:22.194Z"
+}

@@ -1,0 +1,869 @@
+diff --git a/frontend/__tests__/components/features/conversation-panel/conversation-card.test.tsx b/frontend/__tests__/components/features/conversation-panel/conversation-card.test.tsx
+index cf00c6794bc6..89218de93da5 100644
+--- a/frontend/__tests__/components/features/conversation-panel/conversation-card.test.tsx
++++ b/frontend/__tests__/components/features/conversation-panel/conversation-card.test.tsx
+@@ -434,7 +434,7 @@ describe("ConversationCard", () => {
+     expect(screen.queryByTestId("ellipsis-button")).not.toBeInTheDocument();
+   });
+ 
+-  it("should render the llm model when provided", () => {
++  it("renders the chip with prettified model text and raw model in the tooltip", () => {
+     renderWithProviders(
+       <ConversationCard
+         onDelete={onDelete}
+@@ -442,23 +442,29 @@ describe("ConversationCard", () => {
+         title="Conversation 1"
+         selectedRepository={null}
+         lastUpdatedAt="2021-10-01T12:00:00Z"
+-        llmModel="anthropic/claude-sonnet-4-20250514"
++        agentChip={{
++          kind: "openhands",
++          text: "Claude Sonnet 4",
++          tooltip: "anthropic/claude-sonnet-4-20250514",
++        }}
+       />,
+     );
+ 
+     const model = screen.getByTestId("conversation-card-llm-model");
+     expect(model).toBeInTheDocument();
+-    expect(model).toHaveTextContent("anthropic/claude-sonnet-4-20250514");
+-    expect(model).toHaveAttribute("title", "anthropic/claude-sonnet-4-20250514");
++    expect(model).toHaveTextContent("Claude Sonnet 4");
++    expect(model).toHaveAttribute(
++      "title",
++      "anthropic/claude-sonnet-4-20250514",
++    );
+     expect(model.querySelector("svg")).toBeInTheDocument();
+ 
+-    // Verify truncation structure: text is wrapped in a span with truncate class
+     const textSpan = model.querySelector("span.truncate");
+     expect(textSpan).toBeInTheDocument();
+-    expect(textSpan).toHaveTextContent("anthropic/claude-sonnet-4-20250514");
++    expect(textSpan).toHaveTextContent("Claude Sonnet 4");
+   });
+ 
+-  it("should not render the llm model when not provided", () => {
++  it("does not render the chip when agentChip is not provided", () => {
+     renderWithProviders(
+       <ConversationCard
+         onDelete={onDelete}
+diff --git a/frontend/__tests__/components/features/conversation/conversation-name.test.tsx b/frontend/__tests__/components/features/conversation/conversation-name.test.tsx
+index 1eaf8056e7fc..837044476ba1 100644
+--- a/frontend/__tests__/components/features/conversation/conversation-name.test.tsx
++++ b/frontend/__tests__/components/features/conversation/conversation-name.test.tsx
+@@ -296,7 +296,7 @@ describe("ConversationName", () => {
+     ).not.toBeInTheDocument();
+   });
+ 
+-  it("should render the raw llm_model when set", () => {
++  it("renders prettified model text and raw model in the tooltip", () => {
+     useActiveConversationMock.mockReturnValue({
+       data: {
+         conversation_id: "test-conversation-id",
+@@ -310,7 +310,7 @@ describe("ConversationName", () => {
+ 
+     const model = screen.getByTestId("conversation-name-llm-model");
+     expect(model).toBeInTheDocument();
+-    expect(model).toHaveTextContent("openai/gpt-4o");
++    expect(model).toHaveTextContent("GPT-4o");
+     expect(model).toHaveAttribute("title", "openai/gpt-4o");
+     expect(model.querySelector("svg")).toBeInTheDocument();
+   });
+@@ -361,6 +361,40 @@ describe("ConversationName", () => {
+     expect(model).toHaveTextContent("Claude Code");
+   });
+ 
++  it("renders the underlying model for an ACP conversation that exposes one", () => {
++    useActiveConversationMock.mockReturnValue({
++      data: {
++        conversation_id: "test-conversation-id",
++        title: "Test Conversation",
++        status: "RUNNING",
++        agent_kind: "acp",
++        tags: { acp_server: "claude-code" },
++        llm_model: "anthropic/claude-opus-4-1",
++      } as unknown as Conversation,
++    });
++    useConfigMock.mockReturnValue({
++      data: {
++        app_mode: "oss",
++        acp_providers: [
++          {
++            key: "claude-code",
++            display_name: "Claude Code",
++            default_command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
++          },
++        ],
++      },
++    } as unknown as ReturnType<typeof useConfigMock>);
++
++    renderConversationNameWithRouter();
++
++    const model = screen.getByTestId("conversation-name-llm-model");
++    expect(model).toHaveTextContent("Claude Opus 4.1");
++    expect(model).toHaveAttribute(
++      "title",
++      "Claude Code · anthropic/claude-opus-4-1",
++    );
++  });
++
+   it("should not render the llm model when not available", () => {
+     useActiveConversationMock.mockReturnValue({
+       data: {
+diff --git a/frontend/__tests__/components/features/home/recent-conversation.test.tsx b/frontend/__tests__/components/features/home/recent-conversation.test.tsx
+index f79830a539b5..ee627436ab82 100644
+--- a/frontend/__tests__/components/features/home/recent-conversation.test.tsx
++++ b/frontend/__tests__/components/features/home/recent-conversation.test.tsx
+@@ -53,8 +53,8 @@ const renderRecentConversation = (conversation: V1AppConversation) =>
+     </BrowserRouter>,
+   );
+ 
+-describe("RecentConversation - llm_model", () => {
+-  it("should render the raw llm_model when provided", () => {
++describe("RecentConversation - chip", () => {
++  it("renders prettified model text with raw model in the tooltip", () => {
+     renderRecentConversation({
+       ...baseConversation,
+       llm_model: "anthropic/claude-sonnet-4-20250514",
+@@ -62,7 +62,7 @@ describe("RecentConversation - llm_model", () => {
+ 
+     const model = screen.getByTestId("recent-conversation-llm-model");
+     expect(model).toBeInTheDocument();
+-    expect(model).toHaveTextContent("anthropic/claude-sonnet-4-20250514");
++    expect(model).toHaveTextContent("Claude Sonnet 4");
+     expect(model).toHaveAttribute(
+       "title",
+       "anthropic/claude-sonnet-4-20250514",
+@@ -71,10 +71,10 @@ describe("RecentConversation - llm_model", () => {
+ 
+     const textSpan = model.querySelector("span.truncate");
+     expect(textSpan).toBeInTheDocument();
+-    expect(textSpan).toHaveTextContent("anthropic/claude-sonnet-4-20250514");
++    expect(textSpan).toHaveTextContent("Claude Sonnet 4");
+   });
+ 
+-  it("should render plain 'ACP' for ACP-agent conversations", () => {
++  it("falls back to 'ACP' for ACP conversations with no llm_model", () => {
+     renderRecentConversation({
+       ...baseConversation,
+       agent_kind: "acp",
+@@ -86,7 +86,7 @@ describe("RecentConversation - llm_model", () => {
+     expect(model).toHaveAttribute("title", "ACP");
+   });
+ 
+-  it("should not render the model chip when neither llm_model nor ACP", () => {
++  it("hides the chip when neither llm_model nor ACP", () => {
+     renderRecentConversation(baseConversation);
+ 
+     expect(
+diff --git a/frontend/__tests__/utils/agent-display-label.test.ts b/frontend/__tests__/utils/agent-display-label.test.ts
+new file mode 100644
+index 000000000000..b6ad47757b02
+--- /dev/null
++++ b/frontend/__tests__/utils/agent-display-label.test.ts
+@@ -0,0 +1,109 @@
++import { describe, it, expect } from "vitest";
++import { resolveAgentChip } from "#/utils/agent-display-label";
++import type { ACPProviderConfig } from "#/api/option-service/option.types";
++
++const PROVIDERS: ACPProviderConfig[] = [
++  {
++    key: "claude-code",
++    display_name: "Claude Code",
++    default_command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
++  },
++  {
++    key: "codex",
++    display_name: "Codex",
++    default_command: ["npx", "-y", "@openai/codex-acp"],
++  },
++  {
++    key: "gemini-cli",
++    display_name: "Gemini CLI",
++    default_command: ["npx", "-y", "@google/gemini-cli-acp"],
++  },
++];
++
++describe("resolveAgentChip", () => {
++  describe("OpenHands branch", () => {
++    it("returns kind=openhands with prettified text and raw tooltip", () => {
++      const chip = resolveAgentChip(
++        "openhands",
++        "anthropic/claude-sonnet-4-5-20250929",
++      );
++      expect(chip).toEqual({
++        kind: "openhands",
++        text: "Claude Sonnet 4.5",
++        tooltip: "anthropic/claude-sonnet-4-5-20250929",
++      });
++    });
++
++    it("treats undefined agent_kind as the OpenHands branch", () => {
++      const chip = resolveAgentChip(undefined, "openai/gpt-4o");
++      expect(chip?.kind).toBe("openhands");
++      expect(chip?.text).toBe("GPT-4o");
++    });
++
++    it("returns null when no llm_model is set", () => {
++      expect(resolveAgentChip("openhands", null)).toBeNull();
++      expect(resolveAgentChip("openhands", undefined)).toBeNull();
++      expect(resolveAgentChip(undefined, null)).toBeNull();
++    });
++  });
++
++  describe("ACP branch — known providers map to brand kinds", () => {
++    it.each([
++      ["claude-code", "acp-claude-code", "Claude Code"],
++      ["codex", "acp-codex", "Codex"],
++      ["gemini-cli", "acp-gemini-cli", "Gemini CLI"],
++    ])(
++      "provider key %s → kind %s, brand text %s (no model)",
++      (providerKey, expectedKind, expectedText) => {
++        const chip = resolveAgentChip(
++          "acp",
++          null,
++          { acp_server: providerKey },
++          PROVIDERS,
++        );
++        expect(chip).toEqual({
++          kind: expectedKind,
++          text: expectedText,
++          tooltip: expectedText,
++        });
++      },
++    );
++
++    it("uses prettified llm_model as text with brand+model tooltip", () => {
++      const chip = resolveAgentChip(
++        "acp",
++        "anthropic/claude-opus-4-1",
++        { acp_server: "claude-code" },
++        PROVIDERS,
++      );
++      expect(chip).toEqual({
++        kind: "acp-claude-code",
++        text: "Claude Opus 4.1",
++        tooltip: "Claude Code · anthropic/claude-opus-4-1",
++      });
++    });
++
++    it("falls back to acp-generic + 'ACP' when the provider key is unknown", () => {
++      const chip = resolveAgentChip(
++        "acp",
++        null,
++        { acp_server: "some-custom-thing" },
++        PROVIDERS,
++      );
++      expect(chip).toEqual({
++        kind: "acp-generic",
++        text: "ACP",
++        tooltip: "ACP",
++      });
++    });
++
++    it("uses the brand icon from acp_server even when the provider registry hasn't loaded yet (text falls back to 'ACP')", () => {
++      const chip = resolveAgentChip("acp", null, { acp_server: "claude-code" });
++      // The acp_server key is canonical, so we can still pick the right brand
++      // mark; the display_name is unavailable without the registry so the text
++      // falls back to the generic "ACP" label.
++      expect(chip?.kind).toBe("acp-claude-code");
++      expect(chip?.text).toBe("ACP");
++    });
++  });
++});
+diff --git a/frontend/__tests__/utils/format-llm-model.test.ts b/frontend/__tests__/utils/format-llm-model.test.ts
+new file mode 100644
+index 000000000000..eecd11b83d3c
+--- /dev/null
++++ b/frontend/__tests__/utils/format-llm-model.test.ts
+@@ -0,0 +1,97 @@
++import { describe, it, expect } from "vitest";
++import { formatLlmModel } from "#/utils/format-llm-model";
++
++describe("formatLlmModel", () => {
++  describe("provider prefix stripping", () => {
++    it("strips a single provider prefix", () => {
++      expect(formatLlmModel("openai/gpt-4o")).toBe("GPT-4o");
++    });
++
++    it("strips chained proxy prefixes (last segment wins)", () => {
++      expect(
++        formatLlmModel("litellm_proxy/anthropic/claude-3-5-sonnet-20241022"),
++      ).toBe("Claude 3.5 Sonnet");
++    });
++
++    it("passes through unprefixed bare model names", () => {
++      expect(formatLlmModel("my-finetune")).toBe("my-finetune");
++    });
++  });
++
++  describe("date suffix stripping", () => {
++    it("strips -YYYYMMDD suffix", () => {
++      expect(formatLlmModel("anthropic/claude-sonnet-4-5-20250929")).toBe(
++        "Claude Sonnet 4.5",
++      );
++    });
++
++    it("strips -YYYY-MM-DD suffix", () => {
++      expect(formatLlmModel("openai/gpt-4o-2024-08-06")).toBe("GPT-4o");
++    });
++  });
++
++  describe("Claude family (4.x naming)", () => {
++    it.each([
++      ["anthropic/claude-sonnet-4-5", "Claude Sonnet 4.5"],
++      ["anthropic/claude-sonnet-4", "Claude Sonnet 4"],
++      ["anthropic/claude-opus-4-7", "Claude Opus 4.7"],
++      ["anthropic/claude-haiku-4-5", "Claude Haiku 4.5"],
++    ])("formats %s", (raw, expected) => {
++      expect(formatLlmModel(raw)).toBe(expected);
++    });
++  });
++
++  describe("Claude family (3.x naming)", () => {
++    it.each([
++      ["anthropic/claude-3-5-sonnet", "Claude 3.5 Sonnet"],
++      ["anthropic/claude-3-opus", "Claude 3 Opus"],
++      ["anthropic/claude-3-haiku", "Claude 3 Haiku"],
++    ])("formats %s", (raw, expected) => {
++      expect(formatLlmModel(raw)).toBe(expected);
++    });
++  });
++
++  describe("GPT family", () => {
++    it.each([
++      ["openai/gpt-4o", "GPT-4o"],
++      ["openai/gpt-4o-mini", "GPT-4o mini"],
++      ["openai/gpt-4.1", "GPT-4.1"],
++      ["openai/gpt-5", "GPT-5"],
++      ["openai/gpt-5-pro", "GPT-5 pro"],
++    ])("formats %s", (raw, expected) => {
++      expect(formatLlmModel(raw)).toBe(expected);
++    });
++  });
++
++  describe("o-series", () => {
++    it.each([
++      ["openhands/o3", "o3"],
++      ["openai/o3-mini", "o3-mini"],
++      ["openai/o4-mini", "o4-mini"],
++    ])("formats %s", (raw, expected) => {
++      expect(formatLlmModel(raw)).toBe(expected);
++    });
++  });
++
++  describe("Gemini family", () => {
++    it.each([
++      ["gemini/gemini-2.5-pro", "Gemini 2.5 Pro"],
++      ["gemini/gemini-2.0-flash", "Gemini 2.0 Flash"],
++      ["gemini/gemini-2.0-flash-001", "Gemini 2.0 Flash 001"],
++    ])("formats %s", (raw, expected) => {
++      expect(formatLlmModel(raw)).toBe(expected);
++    });
++  });
++
++  describe("empty / fallback", () => {
++    it("returns empty input unchanged", () => {
++      expect(formatLlmModel("")).toBe("");
++    });
++
++    it("returns unknown models with prefix stripped", () => {
++      expect(formatLlmModel("custom-provider/some-weird-model")).toBe(
++        "some-weird-model",
++      );
++    });
++  });
++});
+diff --git a/frontend/src/assets/branding/claude-mark.svg b/frontend/src/assets/branding/claude-mark.svg
+new file mode 100644
+index 000000000000..3b4359ea8e27
+--- /dev/null
++++ b/frontend/src/assets/branding/claude-mark.svg
+@@ -0,0 +1 @@
++<svg fill="#D97757" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>Claude</title><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg>
+diff --git a/frontend/src/assets/branding/gemini-mark.svg b/frontend/src/assets/branding/gemini-mark.svg
+new file mode 100644
+index 000000000000..fe6f8141a1c2
+--- /dev/null
++++ b/frontend/src/assets/branding/gemini-mark.svg
+@@ -0,0 +1 @@
++<svg fill="#8E75B2" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>Google Gemini</title><path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg>
+diff --git a/frontend/src/assets/branding/openai-mark.svg b/frontend/src/assets/branding/openai-mark.svg
+new file mode 100644
+index 000000000000..890e2efe396b
+--- /dev/null
++++ b/frontend/src/assets/branding/openai-mark.svg
+@@ -0,0 +1 @@
++<svg fill="#FFFFFF" viewBox="0 0 24 24" role="img" xmlns="http://www.w3.org/2000/svg"><title>OpenAI</title><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg>
+diff --git a/frontend/src/components/features/conversation-panel/conversation-card/conversation-card-footer.tsx b/frontend/src/components/features/conversation-panel/conversation-card/conversation-card-footer.tsx
+index 2ab5a861fa33..8fd0110cb5e4 100644
+--- a/frontend/src/components/features/conversation-panel/conversation-card/conversation-card-footer.tsx
++++ b/frontend/src/components/features/conversation-panel/conversation-card/conversation-card-footer.tsx
+@@ -6,14 +6,15 @@ import { RepositorySelection } from "#/api/open-hands.types";
+ import { V1SandboxStatus } from "#/api/sandbox-service/sandbox-service.types";
+ import { ConversationRepoLink } from "./conversation-repo-link";
+ import { NoRepository } from "./no-repository";
+-import CircuitIcon from "#/icons/u-circuit.svg?react";
++import { AgentChipIcon } from "#/components/shared/agent-chip-icon";
++import type { AgentChip } from "#/utils/agent-display-label";
+ 
+ interface ConversationCardFooterProps {
+   selectedRepository: RepositorySelection | null;
+   lastUpdatedAt: string; // ISO 8601
+   createdAt?: string; // ISO 8601
+   sandboxStatus?: V1SandboxStatus;
+-  llmModel?: string | null;
++  agentChip?: AgentChip | null;
+ }
+ 
+ export function ConversationCardFooter({
+@@ -21,7 +22,7 @@ export function ConversationCardFooter({
+   lastUpdatedAt,
+   createdAt,
+   sandboxStatus,
+-  llmModel,
++  agentChip,
+ }: ConversationCardFooterProps) {
+   const { t } = useTranslation();
+ 
+@@ -40,14 +41,14 @@ export function ConversationCardFooter({
+         <NoRepository />
+       )}
+       <div className="flex items-center gap-2 flex-1 justify-end">
+-        {llmModel && (
++        {agentChip && (
+           <span
+             className="text-xs text-[#A3A3A3] max-w-[120px] flex items-center gap-1 overflow-hidden"
+-            title={llmModel}
++            title={agentChip.tooltip}
+             data-testid="conversation-card-llm-model"
+           >
+-            <CircuitIcon width={12} height={12} className="shrink-0" />
+-            <span className="truncate">{llmModel}</span>
++            <AgentChipIcon kind={agentChip.kind} />
++            <span className="truncate">{agentChip.text}</span>
+           </span>
+         )}
+         {(createdAt ?? lastUpdatedAt) && (
+diff --git a/frontend/src/components/features/conversation-panel/conversation-card/conversation-card.tsx b/frontend/src/components/features/conversation-panel/conversation-card/conversation-card.tsx
+index 8829482df727..ee4474cc5990 100644
+--- a/frontend/src/components/features/conversation-panel/conversation-card/conversation-card.tsx
++++ b/frontend/src/components/features/conversation-panel/conversation-card/conversation-card.tsx
+@@ -9,6 +9,7 @@ import { ConversationCardActions } from "./conversation-card-actions";
+ import { ConversationCardFooter } from "./conversation-card-footer";
+ import { SandboxStatusBadges } from "./sandbox-status-badges";
+ import { useDownloadConversation } from "#/hooks/use-download-conversation";
++import type { AgentChip } from "#/utils/agent-display-label";
+ 
+ interface ConversationCardProps {
+   onClick?: () => void;
+@@ -24,7 +25,7 @@ interface ConversationCardProps {
+   conversationId?: string; // Optional conversation ID for VS Code URL
+   contextMenuOpen?: boolean;
+   onContextMenuToggle?: (isOpen: boolean) => void;
+-  llmModel?: string | null;
++  agentChip?: AgentChip | null;
+ }
+ 
+ export function ConversationCard({
+@@ -43,7 +44,7 @@ export function ConversationCard({
+   sandboxStatus,
+   contextMenuOpen = false,
+   onContextMenuToggle,
+-  llmModel,
++  agentChip,
+ }: ConversationCardProps) {
+   const [titleMode, setTitleMode] = React.useState<"view" | "edit">("view");
+   const { mutateAsync: downloadConversation } = useDownloadConversation();
+@@ -157,7 +158,7 @@ export function ConversationCard({
+         lastUpdatedAt={lastUpdatedAt}
+         createdAt={createdAt}
+         sandboxStatus={sandboxStatus}
+-        llmModel={llmModel}
++        agentChip={agentChip}
+       />
+     </div>
+   );
+diff --git a/frontend/src/components/features/conversation-panel/conversation-panel.tsx b/frontend/src/components/features/conversation-panel/conversation-panel.tsx
+index 4df2655dcca5..813aa32b49ec 100644
+--- a/frontend/src/components/features/conversation-panel/conversation-panel.tsx
++++ b/frontend/src/components/features/conversation-panel/conversation-panel.tsx
+@@ -15,7 +15,7 @@ import { useClickOutsideElement } from "#/hooks/use-click-outside-element";
+ import { Provider } from "#/types/settings";
+ import { useUpdateConversation } from "#/hooks/mutation/use-update-conversation";
+ import { displaySuccessToast } from "#/utils/custom-toast-handlers";
+-import { agentDisplayLabel } from "#/utils/agent-display-label";
++import { resolveAgentChip } from "#/utils/agent-display-label";
+ import { useConfig } from "#/hooks/query/use-config";
+ import { ConversationCard } from "./conversation-card/conversation-card";
+ import { StartTaskCard } from "./start-task-card/start-task-card";
+@@ -204,7 +204,7 @@ export function ConversationPanel({ onClose }: ConversationPanelProps) {
+             onContextMenuToggle={(isOpen) =>
+               setOpenContextMenuId(isOpen ? conversation.id : null)
+             }
+-            llmModel={agentDisplayLabel(
++            agentChip={resolveAgentChip(
+               conversation.agent_kind,
+               conversation.llm_model,
+               conversation.tags,
+diff --git a/frontend/src/components/features/conversation/conversation-name.tsx b/frontend/src/components/features/conversation/conversation-name.tsx
+index 6ea493f6a809..715f98e11de5 100644
+--- a/frontend/src/components/features/conversation/conversation-name.tsx
++++ b/frontend/src/components/features/conversation/conversation-name.tsx
+@@ -8,7 +8,8 @@ import { useUpdateConversation } from "#/hooks/mutation/use-update-conversation"
+ import { useConversationNameContextMenu } from "#/hooks/use-conversation-name-context-menu";
+ import { displaySuccessToast } from "#/utils/custom-toast-handlers";
+ import { I18nKey } from "#/i18n/declaration";
+-import { agentDisplayLabel } from "#/utils/agent-display-label";
++import { resolveAgentChip } from "#/utils/agent-display-label";
++import { AgentChipIcon } from "#/components/shared/agent-chip-icon";
+ import { EllipsisButton } from "../conversation-panel/ellipsis-button";
+ import { ConversationNameContextMenu } from "./conversation-name-context-menu";
+ import { SystemMessageModal } from "../conversation-panel/system-message-modal";
+@@ -17,7 +18,6 @@ import { HooksModal } from "../conversation-panel/hooks-modal";
+ import { ConfirmDeleteModal } from "../conversation-panel/confirm-delete-modal";
+ import { ConfirmStopModal } from "../conversation-panel/confirm-stop-modal";
+ import { MetricsModal } from "./metrics-modal/metrics-modal";
+-import CircuitIcon from "#/icons/u-circuit.svg?react";
+ 
+ export function ConversationName() {
+   const { t } = useTranslation();
+@@ -135,7 +135,7 @@ export function ConversationName() {
+     return null;
+   }
+ 
+-  const agentLabel = agentDisplayLabel(
++  const agentChip = resolveAgentChip(
+     conversation.agent_kind,
+     conversation.llm_model,
+     conversation.tags,
+@@ -170,15 +170,15 @@ export function ConversationName() {
+           </div>
+         )}
+ 
+-        {titleMode !== "edit" && agentLabel && (
++        {titleMode !== "edit" && agentChip && (
+           <span
+             className="text-xs text-[#A3A3A3] max-w-[150px] flex items-center gap-1 overflow-hidden"
+-            title={conversation.llm_model ?? agentLabel}
++            title={agentChip.tooltip}
+             data-testid="conversation-name-llm-model"
+           >
+-            <CircuitIcon width={12} height={12} className="shrink-0" />
++            <AgentChipIcon kind={agentChip.kind} />
+             <Typography.Text className="text-xs text-[#A3A3A3] truncate">
+-              {agentLabel}
++              {agentChip.text}
+             </Typography.Text>
+           </span>
+         )}
+diff --git a/frontend/src/components/features/home/recent-conversations/recent-conversation.tsx b/frontend/src/components/features/home/recent-conversations/recent-conversation.tsx
+index 1e4efcb620dc..dbe1652c80d2 100644
+--- a/frontend/src/components/features/home/recent-conversations/recent-conversation.tsx
++++ b/frontend/src/components/features/home/recent-conversations/recent-conversation.tsx
+@@ -10,8 +10,8 @@ import { I18nKey } from "#/i18n/declaration";
+ import { SandboxStatusIndicator } from "./sandbox-status-indicator";
+ import RepoForkedIcon from "#/icons/repo-forked.svg?react";
+ import { Typography } from "#/ui/typography";
+-import CircuitIcon from "#/icons/u-circuit.svg?react";
+-import { agentDisplayLabel } from "#/utils/agent-display-label";
++import { resolveAgentChip } from "#/utils/agent-display-label";
++import { AgentChipIcon } from "#/components/shared/agent-chip-icon";
+ 
+ interface RecentConversationProps {
+   conversation: V1AppConversation;
+@@ -23,7 +23,7 @@ export function RecentConversation({ conversation }: RecentConversationProps) {
+ 
+   const hasRepository =
+     conversation.selected_repository && conversation.selected_branch;
+-  const agentLabel = agentDisplayLabel(
++  const agentChip = resolveAgentChip(
+     conversation.agent_kind,
+     conversation.llm_model,
+     conversation.tags,
+@@ -76,15 +76,15 @@ export function RecentConversation({ conversation }: RecentConversationProps) {
+           ) : null}
+         </div>
+         <div className="flex items-center gap-2">
+-          {agentLabel && (
++          {agentChip && (
+             <span
+               className="max-w-[120px] flex items-center gap-1 overflow-hidden"
+-              title={conversation.llm_model ?? agentLabel}
++              title={agentChip.tooltip}
+               data-testid="recent-conversation-llm-model"
+             >
+-              <CircuitIcon width={12} height={12} className="shrink-0" />
++              <AgentChipIcon kind={agentChip.kind} />
+               <Typography.Text className="text-xs truncate">
+-                {agentLabel}
++                {agentChip.text}
+               </Typography.Text>
+             </span>
+           )}
+diff --git a/frontend/src/components/shared/agent-chip-icon.tsx b/frontend/src/components/shared/agent-chip-icon.tsx
+new file mode 100644
+index 000000000000..1fbd4314fe4c
+--- /dev/null
++++ b/frontend/src/components/shared/agent-chip-icon.tsx
+@@ -0,0 +1,40 @@
++import OpenHandsLogo from "#/assets/branding/openhands-logo.svg?react";
++import ClaudeMark from "#/assets/branding/claude-mark.svg?react";
++import OpenAIMark from "#/assets/branding/openai-mark.svg?react";
++import GeminiMark from "#/assets/branding/gemini-mark.svg?react";
++import PuzzlePieceIcon from "#/icons/u-puzzle-piece.svg?react";
++import type { AgentChipKind } from "#/utils/agent-display-label";
++
++interface AgentChipIconProps {
++  kind: AgentChipKind;
++  className?: string;
++}
++
++const SIZE = 12;
++
++/**
++ * Brand mark for the conversation chip. Each harness gets its own recognisable
++ * glyph: the OpenHands logo for native conversations, and the relevant
++ * provider mark for known ACP servers (Claude, OpenAI/Codex, Gemini). Unknown
++ * ACP providers fall back to a generic puzzle piece.
++ */
++export function AgentChipIcon({
++  kind,
++  className = "shrink-0",
++}: AgentChipIconProps) {
++  switch (kind) {
++    case "openhands":
++      // Logo is wider than tall — keep its native aspect ratio so it doesn't squash.
++      return <OpenHandsLogo width={18} height={SIZE} className={className} />;
++    case "acp-claude-code":
++      return <ClaudeMark width={SIZE} height={SIZE} className={className} />;
++    case "acp-codex":
++      return <OpenAIMark width={SIZE} height={SIZE} className={className} />;
++    case "acp-gemini-cli":
++      return <GeminiMark width={SIZE} height={SIZE} className={className} />;
++    default:
++      return (
++        <PuzzlePieceIcon width={SIZE} height={SIZE} className={className} />
++      );
++  }
++}
+diff --git a/frontend/src/utils/agent-display-label.ts b/frontend/src/utils/agent-display-label.ts
+index bb96a25a58ad..6113425cb6d2 100644
+--- a/frontend/src/utils/agent-display-label.ts
++++ b/frontend/src/utils/agent-display-label.ts
+@@ -1,5 +1,6 @@
+ import type { ACPProviderConfig } from "#/api/option-service/option.types";
+ import type { AgentKind, ConversationTags } from "#/api/open-hands.types";
++import { formatLlmModel } from "./format-llm-model";
+ 
+ /**
+  * Tag key on ``AppConversationInfo.tags`` holding the active ACP provider
+@@ -11,29 +12,93 @@ import type { AgentKind, ConversationTags } from "#/api/open-hands.types";
+ export const ACP_SERVER_TAG = "acp_server";
+ 
+ /**
+- * Resolve the short label shown next to a conversation title.
++ * Discriminator for the chip icon. Known ACP providers get a dedicated kind so
++ * the icon picker can render the right brand mark; unknown providers fall back
++ * to ``acp-generic``.
++ */
++export type AgentChipKind =
++  | "openhands"
++  | "acp-claude-code"
++  | "acp-codex"
++  | "acp-gemini-cli"
++  | "acp-generic";
++
++export interface AgentChip {
++  /** Which harness the conversation runs on — used to pick the chip icon. */
++  kind: AgentChipKind;
++  /** Visible label: prettified model when known, harness brand otherwise. */
++  text: string;
++  /** Full info shown on hover: raw model string + harness for ACP. */
++  tooltip: string;
++}
++
++/**
++ * Map a known ACP provider key to its icon kind. Keys come from the SDK
++ * registry returned by ``/api/v1/web-client/config``; keep this list in sync
++ * with what we ship brand marks for.
++ */
++function acpKindFor(providerKey: string | undefined): AgentChipKind {
++  switch (providerKey) {
++    case "claude-code":
++      return "acp-claude-code";
++    case "codex":
++      return "acp-codex";
++    case "gemini-cli":
++      return "acp-gemini-cli";
++    default:
++      return "acp-generic";
++  }
++}
++
++function resolveAcpProvider(
++  tags: ConversationTags | undefined,
++  acpProviders: ACPProviderConfig[] | undefined,
++): { key: string | undefined; name: string } {
++  const key = tags?.[ACP_SERVER_TAG];
++  const keyStr = typeof key === "string" ? key : undefined;
++  if (keyStr && acpProviders) {
++    const provider = acpProviders.find((p) => p.key === keyStr);
++    if (provider) return { key: keyStr, name: provider.display_name };
++  }
++  return { key: keyStr, name: "ACP" };
++}
++
++/**
++ * Resolve the icon, label, and tooltip for the conversation chip.
++ *
++ * The chip carries two signals: the icon is a brand mark for the harness
++ * (OpenHands logo, Claude/OpenAI/Gemini mark), and the text is the prettified
++ * LLM model when known. For ACP conversations where the underlying model
++ * isn't exposed, the text falls back to the provider brand ("Claude Code",
++ * "Codex", "Gemini CLI", …, or "ACP").
+  *
+- * - ACP conversations show the provider brand name ("Claude Code", "Codex",
+- *   "Gemini CLI", …) looked up via the SDK registry that the server exposes
+- *   at ``/api/v1/web-client/config``. Falls back to plain "ACP" when the
+- *   provider key is unknown (custom commands, or registry not yet loaded).
+- * - OpenHands conversations show the raw ``llm_model`` string verbatim
+- *   (e.g. ``"anthropic/claude-sonnet-4-5-20250929"``), matching the
+- *   pre-ACP behavior of the model chip.
++ * Returns ``null`` when the conversation has neither a model nor an ACP
++ * discriminator — in that case the chip is hidden.
+  */
+-export function agentDisplayLabel(
++export function resolveAgentChip(
+   agentKind: AgentKind | undefined,
+   llmModel: string | null | undefined,
+   tags?: ConversationTags,
+   acpProviders?: ACPProviderConfig[],
+-): string | null {
++): AgentChip | null {
+   if (agentKind === "acp") {
+-    const acpServer = tags?.[ACP_SERVER_TAG];
+-    if (acpServer && acpProviders) {
+-      const provider = acpProviders.find((p) => p.key === acpServer);
+-      if (provider) return provider.display_name;
++    const { key, name } = resolveAcpProvider(tags, acpProviders);
++    const kind = acpKindFor(key);
++    if (llmModel) {
++      return {
++        kind,
++        text: formatLlmModel(llmModel),
++        tooltip: `${name} · ${llmModel}`,
++      };
+     }
+-    return "ACP";
++    return { kind, text: name, tooltip: name };
++  }
++  if (llmModel) {
++    return {
++      kind: "openhands",
++      text: formatLlmModel(llmModel),
++      tooltip: llmModel,
++    };
+   }
+-  return llmModel ?? null;
++  return null;
+ }
+diff --git a/frontend/src/utils/format-llm-model.ts b/frontend/src/utils/format-llm-model.ts
+new file mode 100644
+index 000000000000..7d7e6064c971
+--- /dev/null
++++ b/frontend/src/utils/format-llm-model.ts
+@@ -0,0 +1,93 @@
++function capitalize(s: string): string {
++  return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s;
++}
++
++/**
++ * Format a raw ``llm_model`` routing string into a short, human-readable
++ * label suitable for the conversation chip.
++ *
++ * Examples:
++ *   "anthropic/claude-sonnet-4-5-20250929" -> "Claude Sonnet 4.5"
++ *   "openai/gpt-4o"                        -> "GPT-4o"
++ *   "openai/gpt-4o-mini"                   -> "GPT-4o mini"
++ *   "gemini/gemini-2.5-pro"                -> "Gemini 2.5 Pro"
++ *   "openhands/o3"                         -> "o3"
++ *   "litellm_proxy/anthropic/claude-3-5-sonnet-20241022" -> "Claude 3.5 Sonnet"
++ *   "litellm_proxy/my-finetune"            -> "my-finetune"
++ *
++ * Unknown models pass through with the routing prefix stripped. The raw
++ * string should still be surfaced as a tooltip elsewhere.
++ */
++export function formatLlmModel(raw: string): string {
++  if (!raw) return raw;
++
++  // Strip everything up to and including the LAST "/" — handles proxy
++  // chains like "litellm_proxy/anthropic/...".
++  const lastSlash = raw.lastIndexOf("/");
++  const stripped = lastSlash >= 0 ? raw.slice(lastSlash + 1) : raw;
++
++  // Strip trailing date suffix: -YYYYMMDD or -YYYY-MM-DD.
++  const noDate = stripped
++    .replace(/-\d{8}$/, "")
++    .replace(/-\d{4}-\d{2}-\d{2}$/, "");
++
++  const lower = noDate.toLowerCase();
++
++  // Claude (4.x+ naming): claude-{tier}-{maj}[-{min}]
++  //   claude-sonnet-4-5 -> Claude Sonnet 4.5
++  //   claude-opus-4     -> Claude Opus 4
++  let m = lower.match(/^claude-(sonnet|opus|haiku)-(\d+)(?:-(\d+))?$/);
++  if (m) {
++    const tier = capitalize(m[1]);
++    const version = m[3] ? `${m[2]}.${m[3]}` : m[2];
++    return `Claude ${tier} ${version}`;
++  }
++
++  // Claude (3.x naming): claude-{maj}[-{min}]-{tier}
++  //   claude-3-5-sonnet -> Claude 3.5 Sonnet
++  //   claude-3-opus     -> Claude 3 Opus
++  m = lower.match(/^claude-(\d+)(?:-(\d+))?-(sonnet|opus|haiku)$/);
++  if (m) {
++    const version = m[2] ? `${m[1]}.${m[2]}` : m[1];
++    const tier = capitalize(m[3]);
++    return `Claude ${version} ${tier}`;
++  }
++
++  // GPT family: gpt-{rest}
++  //   gpt-4o           -> GPT-4o
++  //   gpt-4o-mini      -> GPT-4o mini
++  //   gpt-4.1          -> GPT-4.1
++  //   gpt-5            -> GPT-5
++  m = lower.match(/^gpt-(.+)$/);
++  if (m) {
++    const rest = m[1];
++    // Split off optional "-{suffix}" once we've consumed the version token.
++    const versionMatch = rest.match(/^([\d.]+[a-z]?)(?:-(.+))?$/);
++    if (versionMatch) {
++      const version = versionMatch[1];
++      const suffix = versionMatch[2];
++      return suffix ? `GPT-${version} ${suffix}` : `GPT-${version}`;
++    }
++    return `GPT-${rest}`;
++  }
++
++  // o-series (OpenAI reasoning): o1, o3, o3-mini, o4-mini, etc.
++  if (/^o\d+(-[a-z]+)?$/.test(lower)) {
++    return noDate;
++  }
++
++  // Gemini: gemini-{ver}[-{tier}[-{rest}]]
++  //   gemini-2.5-pro       -> Gemini 2.5 Pro
++  //   gemini-2.0-flash-001 -> Gemini 2.0 Flash 001
++  m = lower.match(/^gemini-(\d+(?:\.\d+)?)(?:-(.+))?$/);
++  if (m) {
++    const ver = m[1];
++    const tail = m[2];
++    if (!tail) return `Gemini ${ver}`;
++    const tailWords = tail.split("-").map(capitalize).join(" ");
++    return `Gemini ${ver} ${tailWords}`;
++  }
++
++  // Unknown — return the prefix-stripped form so the chip stays readable.
++  return noDate;
++}

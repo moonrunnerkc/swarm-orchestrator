@@ -1,0 +1,26 @@
+{
+  "id": "cursor-NousResearch-hermes-agent-pr20457",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/"
+  },
+  "pr": {
+    "number": 20457,
+    "headSha": "0039772023fe01822c03324000cd0fe0bf2e7ce9",
+    "baseSha": "0d41e94ca99ca873148081e597fabf5d339f267b",
+    "title": "fix(auth): bootstrap Hermes Codex credentials from Codex CLI",
+    "body": "## Problem\n\nHermes stores OpenAI Codex OAuth tokens in `~/.hermes/auth.json` separately from the Codex CLI (`~/.codex/auth.json`). When Hermes has never completed `hermes auth` but `codex login` has been run, runtime resolution (`resolve_codex_runtime_credentials`) fails with `codex_auth_missing` even though valid Codex CLI credentials exist.\n\n## Change\n\nOn `codex_auth_missing`, attempt a one-time bootstrap: if `_import_codex_cli_tokens()` returns valid non-expired tokens from `~/.codex/auth.json`, copy them into the Hermes auth store via `_save_codex_tokens`, then continue normally (including refresh when needed).\n\n## Test\n\nAdded `test_resolve_codex_bootstraps_from_codex_cli_when_hermes_missing`.\n\nBranch pushed from fork: `agentnortheast01/hermes-agent`.",
+    "author": "agentnortheast01",
+    "headRef": "cursor/fix-hermes-codex-auth-bootstrap-a097",
+    "repository": "NousResearch/hermes-agent"
+  },
+  "diffRef": {
+    "repository": "NousResearch/hermes-agent",
+    "headSha": "0039772023fe01822c03324000cd0fe0bf2e7ce9",
+    "baseSha": "0d41e94ca99ca873148081e597fabf5d339f267b"
+  },
+  "vendoredDiffPath": "unconfirmed/cursor/cursor-NousResearch-hermes-agent-pr20457.diff",
+  "vendoredAt": "2026-05-24T03:13:01.721Z",
+  "collectedAt": "2026-05-24T03:13:01.721Z"
+}

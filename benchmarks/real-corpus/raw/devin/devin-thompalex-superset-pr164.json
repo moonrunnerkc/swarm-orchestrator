@@ -1,0 +1,26 @@
+{
+  "id": "devin-thompalex-superset-pr164",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 164,
+    "headSha": "8c59eab70d8d7c013a898a0d810e4b8026eded13",
+    "baseSha": "cd9c2d1aa2815c50e1cc61f642fc51b1b7820659",
+    "title": "fix(deps): bump protobuf from 4.25.8 to 5.29.6 (closes #90)",
+    "body": "### SUMMARY\n\nBumps `protobuf` from 4.25.8 to 5.29.6 to fix **CVE-2026-0994** ([GHSA-7gcm-g887-7qv7](https://github.com/advisories/GHSA-7gcm-g887-7qv7)) — protobuf affected by a JSON recursion depth bypass (HIGH severity).\n\nAlso bumps `google-cloud-bigquery-storage` from 2.19.1 to 2.27.0 because the old version had a `protobuf<5.0.0dev` upper bound that was incompatible with protobuf 5.x.\n\nAdditionally fixes two pre-existing test failures where `PlaywrightTimeout()` was constructed without the required `message` argument, and updates the Pillow validation range in `dependency_validation.py` to match the pinned version (12.2.0).\n\n**Files changed:**\n- `requirements/development.txt` — bumped `protobuf` 4.25.8 → 5.29.6, `google-cloud-bigquery-storage` 2.19.1 → 2.27.0\n- `tests/unit_tests/utils/test_screenshot_utils.py` — fixed `PlaywrightTimeout()` → `PlaywrightTimeout(\"Timeout 30000ms exceeded.\")`\n- `tests/unit_tests/utils/webdriver_test.py` — same PlaywrightTimeout fix\n- `superset/utils/dependency_validation.py` — updated Pillow validation range to match pinned 12.2.0\n\n### BEFORE/AFTER SCREENSHOTS OR ANIMATED GIF\nNot applicable (dependency bump, no UI changes).\n\n### TESTING INSTRUCTIONS\n\n1. Install dependencies: `pip install -r requirements/development.txt`\n2. Verify protobuf version: `python -c \"import google.protobuf; print(google.protobuf.__version__)\"` → should print `5.29.6`\n3. Run unit tests: `python -m pytest tests/unit_tests/ -x -q`\n\n**Unit test output (actual):**\n```\n7010 passed, 4 skipped in 381.81s (0:06:21)\n```\n\n**Integration test output (actual):**\nIntegration tests fail on master with a pre-existing SQLite schema error (`no such table: css_templates`) that is unrelated to this change. The same error reproduces identically on `master` without any protobuf changes:\n```\nERROR tests/integration_tests/access_tests.py::test_get_user_id[None-None] - sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such table: css_templates\n1 skipped, 1 error in 6.28s\n```\n\n### ADDITIONAL INFORMATION\n- [x] Has associated issue: Fixes #90\n- [ ] Required feature flags:\n- [ ] Changes UI\n- [ ] Includes DB Migration\n- [ ] Introduces new feature or API\n- [ ] Removes existing feature or API\n\nLink to Devin session: https://app.devin.ai/sessions/ed413f183512413bbf3f5ac2ad806592",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779565493-bump-protobuf",
+    "repository": "thompalex/superset"
+  },
+  "diffRef": {
+    "repository": "thompalex/superset",
+    "headSha": "8c59eab70d8d7c013a898a0d810e4b8026eded13",
+    "baseSha": "cd9c2d1aa2815c50e1cc61f642fc51b1b7820659"
+  },
+  "vendoredDiffPath": "devin/devin-thompalex-superset-pr164.diff",
+  "vendoredAt": "2026-05-24T03:05:17.708Z",
+  "collectedAt": "2026-05-24T03:05:17.708Z"
+}

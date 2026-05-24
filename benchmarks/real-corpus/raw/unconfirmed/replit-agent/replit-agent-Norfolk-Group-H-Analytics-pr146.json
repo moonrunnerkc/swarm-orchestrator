@@ -1,0 +1,26 @@
+{
+  "id": "replit-agent-Norfolk-Group-H-Analytics-pr146",
+  "agent": {
+    "vendor": "replit-agent",
+    "confidence": "low",
+    "source": "body=replit-agent-footer"
+  },
+  "pr": {
+    "number": 146,
+    "headSha": "9d2fdcc0e5444d88d1fbb73e4e306aaa84c64f99",
+    "baseSha": "ec31cda789ec89dffe6053c57044e12663a8f5ae",
+    "title": "feat: plan-002 finalization — plan doc + U1 descriptor-drift telemetry + U7 engine-reader handoff",
+    "body": "## Summary\n\nTwo Replit-Agent-authored commits that finalize plan **2026-05-13-002** (property-assumptions-restructure-finish) and ship its first non-engine unit.\n\n### Commit 1 — `Finalize property assumptions restructure plan and apply design standards`\nAdds `docs/plans/2026-05-13-002-feat-property-assumptions-restructure-finish-plan.md` (+213 lines, new). Standard plan doc shape — units U1-U8, rationale, milestones, deferred-Milestone-B references.\n\n### Commit 2 — `feat(descriptor-drift): persist drift events + write U7 engine-reader handoff`\nPlan-002 **U1** implementation + the U7 engine-reader handoff doc:\n\n- `lib/db/migrations/0057_descriptor_drift_log.sql` — new migration creating `property_descriptor_drift_log` table.\n- `lib/db/src/schema/property-descriptor-drift-log.ts` — Drizzle schema.\n- `lib/db/src/schema/index.ts` + `lib/db/migrations/meta/_journal.json` — wiring.\n- `artifacts/api-server/src/storage/property-descriptor-drift-log.ts` — storage adapter.\n- `artifacts/api-server/src/storage/index.ts` — registration.\n- `artifacts/api-server/src/routes/properties.ts` — write-path hook that records drift events on save.\n- `docs/handoffs/property-descriptor-engine-reader-migration-2026-05-13.md` — the U7 engine-reader handoff (already consumed by **PR #144**, which shipped the U7 implementation against this doc).\n\n## Migration slot 0057 conflict — flagged\n\nThe seed-calibration workstream's paused branch `feat/seed-calibration-bracket-defaults` also uses `lib/db/migrations/0057_*.sql` (for the refi-LTV cap migration in plan-001 U2). Both can't live at slot 0057. Disposition:\n\n- This PR ships `0057_descriptor_drift_log.sql` first; the seed-calibration branch will rebase + renumber its migration to `0058_property_refi_max_ltv_cap.sql` when that workstream resumes. The `artifacts/api-server/migrations/` mirror slot for the refi-cap (`0064`) is unaffected — only the `lib/db/migrations/` slot needs renumbering.\n\n## Test plan\n\n- [ ] CI typecheck + tests green.\n- [ ] `check:migration-guards` passes (new entry needs declaration — verify the commit author included it).\n- [ ] `check:schema-drift` passes.\n\nAuthored by **Replit Agent**; pushed by shell CC.\n\n<!-- This is an auto-generated comment: release notes by coderabbit.ai -->\n## Summary by CodeRabbit\n\n* **Documentation**\n  * Updated migration handoff documentation with post-merge sign-off notes clarifying scope boundaries and unblocking status for subsequent work.\n\n<!-- review_stack_entry_start -->\n\n[![Review Change Stack](https://storage.googleapis.com/coderabbit_public_assets/review-stack-in-coderabbit-ui.svg)](https://app.coderabbit.ai/change-stack/Norfolk-Group/H-Analytics/pull/146?utm_source=github_walkthrough&utm_medium=github&utm_campaign=change_stack)\n\n<!-- review_stack_entry_end -->\n<!-- end of auto-generated comment: release notes by coderabbit.ai -->",
+    "author": "ricardo-cidale-personal",
+    "headRef": "feat/replit-plan-002-finalization",
+    "repository": "Norfolk-Group/H-Analytics"
+  },
+  "diffRef": {
+    "repository": "Norfolk-Group/H-Analytics",
+    "headSha": "9d2fdcc0e5444d88d1fbb73e4e306aaa84c64f99",
+    "baseSha": "ec31cda789ec89dffe6053c57044e12663a8f5ae"
+  },
+  "vendoredDiffPath": "unconfirmed/replit-agent/replit-agent-Norfolk-Group-H-Analytics-pr146.diff",
+  "vendoredAt": "2026-05-24T03:15:01.841Z",
+  "collectedAt": "2026-05-24T03:15:01.841Z"
+}

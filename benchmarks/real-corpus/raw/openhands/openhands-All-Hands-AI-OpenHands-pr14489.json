@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14489",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14489,
+    "headSha": "50c06f8a479947e8950d4c43d8450086571d991f",
+    "baseSha": "8350c498aa6557d6e7e5c6f3c1385808191b1500",
+    "title": "fix: recover conversation metadata save race",
+    "body": "﻿## Summary\n- recover from a duplicate-key race when conversation metadata is inserted by a concurrent startup/webhook writer\n- after rolling back the failed insert, update the row that already exists for the same conversation id\n- add a regression test for the concurrent insert path\n\n## To verify\n- `uv run pytest tests/unit/app_server/test_sql_app_conversation_info_service.py -q --basetemp .tmp/pytest-sql-conversation-info`\n- `uv run ruff check openhands/app_server/app_conversation/sql_app_conversation_info_service.py tests/unit/app_server/test_sql_app_conversation_info_service.py`\n- `python -m py_compile openhands/app_server/app_conversation/sql_app_conversation_info_service.py tests/unit/app_server/test_sql_app_conversation_info_service.py`\n- `git diff --check`\n\nFixes #14476\r\n",
+    "author": "he-yufeng",
+    "headRef": "fix/conversation-metadata-save-race",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "50c06f8a479947e8950d4c43d8450086571d991f",
+    "baseSha": "8350c498aa6557d6e7e5c6f3c1385808191b1500"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14489.diff",
+  "vendoredAt": "2026-05-24T03:18:38.873Z",
+  "collectedAt": "2026-05-24T03:18:38.873Z"
+}

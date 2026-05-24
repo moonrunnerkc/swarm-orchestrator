@@ -1,0 +1,26 @@
+{
+  "id": "devin-einmalmaik-maunting-server-manager-pr8",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 8,
+    "headSha": "3e034da5dc9c8038f38d13f228efcb1401c06702",
+    "baseSha": "462e03dbd7a391552e36c501ecc70cd476c73f69",
+    "title": "Hotfix: SteamCMD-Entrypoint explizit setzen + HOME → /data",
+    "body": "## Summary\n\nFix für den Fehler aus deinem Smoke-Test:\n\n```\n[MSM] SteamCMD fehlgeschlagen: docker: Error response from daemon:\n  failed to create task for container: failed to create shim task:\n  OCI runtime create failed: runc create failed: unable to start container process:\n  error during container init: exec: \"+force_install_dir\": executable file not found in $PATH\n```\n\n### Ursache\n\nDas `cm2network/steamcmd:root`-Image hat in einigen Tags keinen brauchbaren `ENTRYPOINT` — Docker hat unser `+force_install_dir /data +login anonymous …`-Argument **als Executable** interpretiert und natürlich keines mit diesem Namen gefunden.\n\n### Fix\n\n1. **`docker_service.run_ephemeral`** akzeptiert jetzt einen `entrypoint`-Parameter. Wird er gesetzt, fügen wir `--entrypoint <path>` **vor dem Image-Argument** in die docker-CLI-Args ein (Reihenfolge ist hier kritisch: nach dem Image würde Docker den Wert als CMD-Override missverstehen).\n2. **`games/base.py`** definiert:\n   - `STEAMCMD_ENTRYPOINT = \"/home/steam/steamcmd/steamcmd.sh\"`\n   - `STEAMCMD_WORKDIR = \"/home/steam/steamcmd\"`\n   Diese werden beim Aufruf von `run_steamcmd_install` und `run_steamcmd_workshop_download` durchgereicht.\n3. **HOME-Variable** wird auf `/data` umgeleitet. Damit landet SteamCMDs `~/Steam/`-Cache im Bind-Mount → persistent zwischen Runs, keine Permission-Probleme mit `/home/steam` (root-owned), und der \"Update-Statt-Vollredownload\"-Mechanismus von SteamCMD funktioniert weiterhin.\n\n### Tests\n\nDrei neue Tests in `backend/tests/test_docker_service.py`:\n\n- `test_entrypoint_override_lands_before_image` — sichert die Docker-Arg-Reihenfolge (`--entrypoint <path>` vor dem Image).\n- `test_steamcmd_install_uses_entrypoint_and_home` — `run_steamcmd_install` ruft `run_ephemeral` mit dem korrekten Entrypoint, Workdir und HOME=/data auf.\n- `test_workshop_download_uses_entrypoint_and_home` — gleiche Garantie für Workshop-Downloads.\n\nKomplette Backend-Suite weiterhin grün: **95 passed**.\n\n## Review & Testing Checklist for Human\n\nRisiko: **gelb** — Verändert das Setup-Verhalten von SteamCMD. SteamCMD wird beim ersten Lauf jetzt in `/data/Steam/` (statt `/home/steam/Steam/`) seine Auth/Cache-Dateien anlegen. Das verbraucht ein paar 100 MB im Server-`install_dir`, ist aber gewünscht (persistent, in der Backup-Sphäre).\n\n- [ ] **Smoke-Test erneut:** Server löschen (oder `rm -rf /opt/msm/servers/<id>`), neu anlegen, Install starten. Im Console-Log muss jetzt SteamCMD-Output erscheinen statt der Docker-Fehlermeldung.\n- [ ] Nach erfolgreichem Install: `ls -la /opt/msm/servers/<id>/Steam/` sollte einen SteamCMD-Cache zeigen. Bei einem zweiten Install-Lauf desselben Servers sollte SteamCMD merklich schneller fertig sein (nur Delta).\n- [ ] Workshop-Mod abonnieren — gleicher Codepfad, sollte ohne Fehler durchlaufen.\n\n### Test-Plan kurz\n\n```bash\n# 1) Bestehenden Test-Server entfernen\nrm -rf /opt/msm/servers/conan_exiles_ue5_*\n# 2) Update + Restart\ncd /opt/msm && git pull && systemctl restart msm-panel\n# 3) Im Panel: Server erstellen → Install starten\n# 4) Console-Log beobachten: SteamCMD läuft jetzt sauber durch\n# 5) Optional: Workshop-Mod abonnieren, Update-Pfad testen\n```\n\n### Notes\n\n- Der `cm2network/steamcmd:root`-Image-Container läuft trotz `:root`-Tag **als unser msm-UID** dank `--user $uid:$gid`. Dass HOME jetzt auf `/data` zeigt (statt `/home/steam`) macht das Permission-Modell robust gegen jede Image-Variante.\n- Falls in einer Folge-Phase doch auf rootless Docker umgestellt wird (TODO in `docs/agent-rules/architecture.md` §12.5), bleibt dieser Code unverändert funktional — `/data` ist sowieso uid-namespaced.\n- `--entrypoint` ersetzt **nur** den Default-Entrypoint des Images, nicht unsere Hardening-Flags (`--cap-drop=ALL`, `--security-opt=no-new-privileges`). Sicherheitsmodell bleibt identisch.\n\n\nLink to Devin session: https://app.devin.ai/sessions/226db64a5e62433d87404f2c1b15137d\nRequested by: @einmalmaik",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779577034-steamcmd-entrypoint",
+    "repository": "einmalmaik/maunting-server-manager"
+  },
+  "diffRef": {
+    "repository": "einmalmaik/maunting-server-manager",
+    "headSha": "3e034da5dc9c8038f38d13f228efcb1401c06702",
+    "baseSha": "462e03dbd7a391552e36c501ecc70cd476c73f69"
+  },
+  "vendoredDiffPath": "devin/devin-einmalmaik-maunting-server-manager-pr8.diff",
+  "vendoredAt": "2026-05-24T03:04:51.647Z",
+  "collectedAt": "2026-05-24T03:04:51.647Z"
+}

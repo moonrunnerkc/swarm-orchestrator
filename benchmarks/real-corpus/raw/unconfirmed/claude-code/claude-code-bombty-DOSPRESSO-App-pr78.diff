@@ -1,0 +1,485 @@
+diff --git a/docs/PENDING.md b/docs/PENDING.md
+index 6e3e10b77..0a3cd626d 100644
+--- a/docs/PENDING.md
++++ b/docs/PENDING.md
+@@ -64,6 +64,8 @@ Excel'deki 5 pozisyon BRÜT rakamlarını al, Replit `PAYROLL_DRY_RUN=false` yap
+ | PP-6 | 3 kiosk endpoint → 1 standart | API consistency | 1 sprint |
+ | PP-7 | 36 açık branch temizlik | Git hijyeni | 30 dk |
+ | **PP-NEW** | **Long-shift auto-close + monitor scheduler** | D-55 — pilot için ertelendi | 1 sprint |
++| **PP-S15.1** | **Kiosk Vardiya Planlama** (supervisor PIN ile 1-2 hafta plan) | Aslan 11 May istedi — pilot test buffer'ına sığmadı | 2 gün | [Plan: `docs/SPRINT-15-1-PLAN-KIOSK-VARDIYA.md`](./SPRINT-15-1-PLAN-KIOSK-VARDIYA.md) |
++| **PP-S16-2** | **Aylık compliance trend grafiği** (recharts line chart) | Sprint 16 V2 — gauge yapıldı, trend için time-series endpoint gerek | 1 hafta |
+ 
+ ---
+ 
+diff --git a/docs/SPRINT-15-1-PLAN-KIOSK-VARDIYA.md b/docs/SPRINT-15-1-PLAN-KIOSK-VARDIYA.md
+new file mode 100644
+index 000000000..4dc502ec7
+--- /dev/null
++++ b/docs/SPRINT-15-1-PLAN-KIOSK-VARDIYA.md
+@@ -0,0 +1,466 @@
++# 📐 Sprint 15.1 — Kiosk Üzerinde Vardiya Planlama (Mimari Plan)
++
++> **Bu döküman**, S15.1 için kapsamlı implementasyon planıdır. Sonraki Claude oturumu bu dökümanı okuyarak doğrudan koda başlayabilir — tarama, karar, mimari analiz tekrarına gerek yoktur.
++
++**Hazırlayan:** Claude (Anthropic), 11 May 2026 oturumu
++**Tahmini iş:** ~14 saat (2 gün) aktif kod yazma + 8 saat test buffer
++**Başlangıç tarihi:** 20 May 2026+ (pilot stabilize olduktan sonra)
++**Sprint sırası:** Sprint 17 (post-pilot Sprint 16 Part 2 — Aslan'ın "büyük sprint" tercihi)
++
++---
++
++## 🎯 1. Sprint Tanımı
++
++### Hedef
++
++Şube müdürü / supervisor kioska gelir, PIN girer, kendi vardiyasını başlatır. Karşısına bir tab açılır: **"Vardiya Planla"**. Bu tab'a tıklayınca 1-2 haftalık takvim görünümü açılır. Sürükle-bırak ile personeli günlere atayabilir. AI öneri butonu mevcut. "Kaydet" deyince `shifts` tablosuna yazar. Mevcut PDKS + compliance sistemi otomatik çalışmaya başlar.
++
++### Niçin Kioska?
++
++- **F&B Ops:** Şube müdürleri bilgisayarda değil, kasada/iş başında. Kiosk her zaman elinde.
++- **Hız:** Web'e geçmek için login ekranı + ayrı tarayıcı. Kioskta zaten girişli.
++- **End User:** Yaşlı / teknolojiye uzak müdürler için tek arayüz.
++
++### Mevcut Durum
++
++- `client/src/pages/vardiya-planlama.tsx` (2711 satır) — gelişmiş web sürümü, dnd-kit, AI öneri
++- Müdürler şu an bu web sayfasına bilgisayardan giriyor
++- Kioskta vardiya görünüyor (shiftStatus: active/on_break/scheduled/off) ama PLANLAMA yapılamıyor
++
++---
++
++## 🏗️ 2. Mimari Karar
++
++### Karar 1: Yeni Sayfa, Mevcut Web Sayfasını Adapt Etmek Yerine
++
++**Sebep:** Mevcut `vardiya-planlama.tsx` 2711 satır — kontekst farklı (full screen vs kiosk pencere), responsive değil, çok fazla feature (audit log, template management, vb). Kiosk için sıyrılmış ve touch-optimize edilmiş yeni sayfa daha sağlıklı.
++
++**Yeni dosya:** `client/src/pages/sube/kiosk-supervisor-shift.tsx` (~700-900 satır tahmin)
++
++### Karar 2: Auth Akışı
++
++```
++Kiosk Açık (PIN girişi)
++  ↓
++Personel PIN gir → role kontrol
++  ↓
++Eğer role IN ('supervisor', 'supervisor_buddy', 'mudur'):
++  → Standart vardiya başlat butonları YANINA "Vardiya Planla" butonu çıkar
++  → Tıklanınca KioskSupervisorShift componentine geç
++  ↓
++Yetkisiz personel: bu buton görünmez
++```
++
++**Implementasyon:** `sube/kiosk.tsx` içinde role check + conditional button.
++
++### Karar 3: Backend Endpoint'leri Mevcutlar Yeterli mi?
++
++✅ **EVET, mevcutlar yeterli.** Yeni endpoint yazılmayacak:
++
++| Endpoint | Mevcut Durum | Nasıl Kullanılacak |
++|---|---|---|
++| `GET /api/shifts?branchId=&start=&end=` | ✅ Var | Mevcut shift'leri çek |
++| `POST /api/shifts` | ✅ Var | Yeni vardiya oluştur |
++| `PATCH /api/shifts/:id` | ✅ Var | Vardiya güncelle |
++| `DELETE /api/shifts/:id` | ✅ Var | Vardiya sil |
++| `GET /api/shift-templates` | ✅ Var | Hazır şablonları çek (8h fulltime, 4h parttime vb) |
++| `GET /api/branches/:id/staff` | ✅ Var | Şube personel listesi |
++| `POST /api/shifts/ai-suggest` | 🟡 Kontrol | AI öneri (varsa kullan, yoksa eklenir) |
++
++### Karar 4: AI Öneri Butonu Dahil mi?
++
++**Pilot için dahil:** Mevcut `vardiya-planlama.tsx`'te Sparkles/Wand2 ikon ile AI öneri var. Aynı endpoint kioska da bağlanır. Eğer endpoint yoksa Sprint 17.5 olarak ayırırız.
++
++### Karar 5: Drag-Drop kütüphanesi
++
++`@dnd-kit/core` zaten projeye yüklü. Kioskta da kullanılacak. Touch desteği `PointerSensor` ile sağlanır (zaten configured).
++
++---
++
++## 🎨 3. UI/UX Tasarımı
++
++### Layout
++
++```
++┌─────────────────────────────────────────────────────┐
++│  ← Geri        Vardiya Planla — Lara Şubesi          │
++│                                          [💡 AI Öneri]│
++├─────────────────────────────────────────────────────┤
++│  [Hafta 1: 13-19 May]  [Hafta 2: 20-26 May]          │
++│                                                       │
++│  Pzt  Sal  Çar  Per  Cum  Cmt  Paz                   │
++│  ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐                  │
++│  │  │ │  │ │  │ │  │ │  │ │KP│ │KP│ (KP = Kapalı)    │
++│  └──┘ └──┘ └──┘ └──┘ └──┘ └──┘ └──┘                  │
++│                                                       │
++│  Personel havuzu (sürükle):                          │
++│  [👤 Berkan]  [👤 Eren]  [👤 Cihan]  [👤 Basri]      │
++├─────────────────────────────────────────────────────┤
++│  Şablonlar: [Sabah 09-17] [Akşam 14-22] [Gece]      │
++├─────────────────────────────────────────────────────┤
++│  [İptal]                              [Kaydet ✓]     │
++└─────────────────────────────────────────────────────┘
++```
++
++### Touch Optimizasyonları
++
++| Element | Web sürümü | Kiosk sürümü |
++|---|---|---|
++| Button min boyut | 32px | **56px** (Apple HIG 44px+) |
++| Drag handle | hover-only | **her zaman görünür** |
++| Dropdown | select | **modal sheet** (büyük butonlar) |
++| Saat seçimi | text input | **time wheel** (number picker) |
++| Personel kartı | 240px wide | **min 320px** (parmak rahat tutar) |
++
++### Responsive Davranış
++
++- Kiosk genelde 16:9 yatay (1920x1080) → 2 hafta yan yana
++- Kiosk dikey (1080x1920) → 1 hafta + alttan personel havuzu (scroll)
++- Tablet kiosk → adaptif
++
++---
++
++## 🔐 4. Role / Auth Akışı
++
++### Yetki Matrisi
++
++| Role | Vardiya Planla Sekme? | İşlem |
++|---|---|---|
++| `mudur` | ✅ | Tam yetki (oluştur, sil, düzelt, AI öneri) |
++| `supervisor` | ✅ | Tam yetki |
++| `supervisor_buddy` | ✅ | Sadece kendi vardiyasının olduğu günler |
++| `barista` / `bar_buddy` / `stajyer` | ❌ | Buton görünmez |
++
++### Kiosk Auth Akışı (Mevcut)
++
++```
++1. Kiosk açık (branch context'i yüklü)
++2. Personel kasaya gelir
++3. 4-haneli PIN girer
++4. Auth: POST /api/branches/:id/kiosk-pin-verify
++5. Response: { user: {..., role}, token: '...' }
++6. Frontend: kiosk-token localStorage'a yazılır
++7. Sayfa: dashboard (active shift varsa "Vardiyada", yoksa "Vardiya Başlat")
++```
++
++### S15.1 Eklenmesi
++
++```diff
++  Sayfa: kiosk-main-screen veya kiosk dashboard
++  if (kioskUser?.role IN ('supervisor', 'supervisor_buddy', 'mudur')) {
+++   <Button onClick={() => navigate('/sube/kiosk-supervisor-shift')}>
+++     📅 Vardiya Planla
+++   </Button>
++  }
++```
++
++---
++
++## 📋 5. Detaylı Aşama Planı (Tahmini Saatler)
++
++### Aşama 1: Branch Setup + Iskele (~2 saat)
++
++1. Branch oluştur: `claude/sprint-15-1-kiosk-vardiya-planlama-2026-XX-XX`
++2. Yeni sayfa: `client/src/pages/sube/kiosk-supervisor-shift.tsx`
++3. App.tsx'e route: `/sube/kiosk-supervisor-shift`
++4. Mevcut `sube/kiosk.tsx`'e role check + buton ekle
++5. Boş sayfa: başlık + geri butonu + iskelet layout
++
++### Aşama 2: Veri Çekme + Görüntüleme (~3 saat)
++
++1. `useQuery` ile shifts çek (`GET /api/shifts?branchId=&start=&end=`)
++2. `useQuery` ile branch personel çek
++3. `useQuery` ile şablonlar çek
++4. 1-2 haftalık takvim grid (CSS Grid, 7 kolon)
++5. Her güne mevcut vardiyaları render et (read-only)
++
++### Aşama 3: Drag-Drop + Vardiya Oluşturma (~4 saat)
++
++1. `@dnd-kit/core` setup (`PointerSensor`, `DndContext`, `DragOverlay`)
++2. Personel havuzu (`useDraggable`)
++3. Gün hücreleri (`useDroppable`)
++4. Drop handler: `POST /api/shifts` (default 09:00-17:00 fulltime)
++5. Optimistic update
++6. Vardiya tıklanınca düzenle modal (saat değiştir, sil)
++
++### Aşama 4: Şablonlar + AI Öneri + UX Cila (~3 saat)
++
++1. Şablonlar paneli altta (drag from şablon → gün hücresi)
++2. AI öneri butonu (`POST /api/shifts/ai-suggest`)
++3. Kaydet/iptal mantığı (draft vs published)
++4. Success toast, error handling
++5. Loading skeletons
++6. Empty states
++
++### Aşama 5: Test + Polish (~2 saat)
++
++1. Mobile/touch test (kiosk tablet'inde)
++2. Edge case: 2 personel aynı saatte, çakışma uyarısı
++3. Yarış durumu: 2 supervisor aynı anda planlama
++4. Touch hassasiyeti
++5. Build + smoke test
++
++---
++
++## ⚙️ 6. Backend Genişletme (Sadece Gerekliyse)
++
++Mevcut endpoint'ler %95 yetiyor. Sadece ek olarak:
++
++### Eğer AI öneri endpoint'i yoksa (kontrol gerek)
++
++```ts
++POST /api/shifts/ai-suggest
++{
++  "branchId": 8,
++  "weekStart": "2026-05-20",
++  "weeks": 2,
++  "constraints": {
++    "honorEmploymentType": true,  // fulltime 45h, parttime 30h
++    "honorLeaves": true,           // izin günlerini boş bırak
++    "balanceWorkload": true        // eşit dağıt
++  }
++}
++
++Response:
++{
++  "suggestions": [
++    { "shiftDate": "2026-05-20", "startTime": "09:00", "endTime": "17:00", "assignedToId": "user123" },
++    ...
++  ],
++  "violations": [],
++  "totalShifts": 28
++}
++```
++
++Implementation (OpenAI veya basit algoritma):
++- OpenAI GPT-4o-mini ile pre-pilot veriden öğrenip öner
++- Veya basit round-robin: personel sıraya koy + iş yükü dengele
++
++### Çakışma kontrolü (mevcut shifts.ts'de var olmalı)
++
++Bir personele aynı saat içinde 2 vardiya atanırsa 409 dön.
++
++---
++
++## 🚨 7. Risk + Mitigasyon
++
++| Risk | Olasılık | Etki | Mitigasyon |
++|---|---|---|---|
++| Touch sensitivity (drag yanlış başlatma) | Yüksek | Orta | Long-press (300ms) önceden test |
++| Kiosk küçük ekranda 2 hafta sığmaz | Orta | Orta | Single-week fallback, swipe için sonraki hafta |
++| AI endpoint yok | Orta | Düşük | Önce manuel çalışsın, AI Sprint 17.5 |
++| 2 supervisor aynı anda planlama | Düşük | Yüksek | Optimistic locking + son yazılan uyarı |
++| Çakışma (aynı kişi aynı saat 2 vardiya) | Orta | Yüksek | Backend 409 + frontend uyarı modal |
++| Internet kesintisi sırasında planlama | Düşük | Orta | Offline mode YOK (pilot için kapsam dışı) |
++
++---
++
++## 🧪 8. Test Planı
++
++### Senaryo 1: Tek Vardiya Oluştur
++1. Supervisor (Berkan) kioska PIN gir
++2. "Vardiya Planla" butonuna tıkla
++3. Personel havuzundan "Cihan" sürükle → 22 May 14:00 hücresine bırak
++4. Default şablon (akşam 14-22) atansın
++5. Kaydet
++6. Mahmut /pdks-merkezi'ten kontrol → Cihan'ın 22 May vardıyası görünmeli
++
++### Senaryo 2: AI Öneri
++1. Vardiya Planla → AI Öneri butonu
++2. 2 hafta öner
++3. Tüm personeller dengeli atanmalı
++4. 45h üstüne kimse atanmamalı (İş K. m.63)
++5. Onay → tüm vardıyalar kaydet
++
++### Senaryo 3: Çakışma
++1. Cihan'a aynı saatte 2 vardiya atamaya çalış
++2. Backend 409 dönmeli
++3. UI'da kırmızı uyarı modal: "Bu personel zaten 22 May 14:00-22:00'da çalışıyor"
++
++### Senaryo 4: Yetkisiz Erişim
++1. Berkan baristanın kioska PIN girişi → "Vardiya Planla" buton GÖRÜNMEMELİ
++2. URL doğrudan açarsa → 403
++
++### Senaryo 5: Touch
++1. Tablet kioskta drag uzun parmak vuruşu — fail etmemeli
++2. Hızlı tap (drag değil) → modal aç
++3. İki parmak — zoom çalışmamalı (kiosk fullscreen)
++
++---
++
++## 📐 9. 6 Perspektif Review (Pre-Implementation)
++
++| Perspektif | Görüş | Action |
++|---|---|---|
++| **Principal Eng** | Yeni sayfa = ayrı domain. Mevcut vardiya-planlama.tsx etkilenmez. dnd-kit zaten yüklü. Risk düşük | Yeşil ışık |
++| **F&B Ops** | Müdürlerin kioska geçmesi günde 10 dk tasarruf × 25 şube × 4 hafta = 167 saat/ay tasarruf | Yüksek değer |
++| **Senior QA** | Touch sensitivity + concurrent locking kritik. Test buffer 8 saat zorunlu | Detaylı test planı yukarıda |
++| **Product** | Aslan'ın 11 May'da özel istediği özellik (PDKS Mahmut UX raporu sonrası) | Pilot stabilize sonrası yap |
++| **Compliance** | İş K. m.63 (45h fulltime, 30h parttime) AI önerisinde otomatik uygulansın | Constraint olarak ekle |
++| **End User** | Yaşlı/teknolojiye uzak müdürler için 56px+ buton ZORUNLU. Yanlış drag → undo butonu | UI requirement |
++
++---
++
++## 🚀 10. Sonraki Claude Oturumu İçin Hızlı Başlangıç
++
++Sonraki Claude bu dökümanı + projeyi taradıktan sonra **direkt Aşama 1'den başlayabilir**:
++
++### Replit Agent İlk Prompt (sonraki oturum başı için)
++
++```
++Sprint 15.1 — Kiosk Vardiya Planlama başlıyor.
++Önce şu 3 bilgiyi doğrula, raporla:
++
++1. /api/shifts/ai-suggest endpoint'i var mı? 
++   grep -rn "ai-suggest\|aiSuggest" server/routes/
++
++2. shifts tablosunda son 7 günde kaç kayıt var?
++   SELECT COUNT(*), MIN(shift_date), MAX(shift_date) FROM shifts;
++
++3. Pilot 4 şubenin (5/8/23/24) supervisor + mudur kullanıcıları:
++   SELECT id, first_name, last_name, role, branch_id 
++   FROM users 
++   WHERE branch_id IN (5,8,23,24) AND role IN ('supervisor','supervisor_buddy','mudur') 
++   AND is_active = true;
++
++Bu 3 bilgiyi paylaş, sonra Claude Aşama 1'e başlasın.
++```
++
++### Branch + Komut Akışı
++
++```bash
++git checkout main && git pull origin main
++git checkout -b claude/sprint-15-1-kiosk-vardiya-planlama-2026-XX-XX
++# Aşama 1 başla — bu döküman zaten anlatıyor ne yapacağını
++```
++
++### İlk Dosya İskeleti (kopyala-yapıştır şablon)
++
++```tsx
++// client/src/pages/sube/kiosk-supervisor-shift.tsx
++import { useState } from "react";
++import { useLocation } from "wouter";
++import { useQuery, useMutation } from "@tanstack/react-query";
++import { DndContext, DragEndEvent, useDraggable, useDroppable, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
++import { Card, CardContent } from "@/components/ui/card";
++import { Button } from "@/components/ui/button";
++import { ChevronLeft, Sparkles, Save, X } from "lucide-react";
++
++export default function KioskSupervisorShift() {
++  const [, setLocation] = useLocation();
++  const [currentWeek, setCurrentWeek] = useState<Date>(new Date());
++
++  // Kiosk auth: zaten girişli kullanıcı bilgisi
++  const kioskUser = JSON.parse(localStorage.getItem("kiosk-user") || "null");
++  if (!kioskUser || !["supervisor", "supervisor_buddy", "mudur"].includes(kioskUser.role)) {
++    return <div className="p-8 text-center">Yetkisiz erişim</div>;
++  }
++
++  // ... Aşama 2'den itibaren bu dökümana göre devam et
++  return (
++    <div className="min-h-screen bg-background p-4">
++      <header className="flex items-center justify-between mb-4">
++        <Button onClick={() => setLocation("/sube/kiosk")} size="lg">
++          <ChevronLeft className="mr-2" /> Geri
++        </Button>
++        <h1 className="text-2xl font-bold">Vardiya Planla</h1>
++        <Button size="lg" variant="outline">
++          <Sparkles className="mr-2" /> AI Öneri
++        </Button>
++      </header>
++      {/* TODO: Aşama 2 — takvim + personel havuzu */}
++      {/* TODO: Aşama 3 — drag-drop */}
++      {/* TODO: Aşama 4 — şablonlar + AI öneri */}
++    </div>
++  );
++}
++```
++
++### App.tsx Route Ekleme
++
++```tsx
++const KioskSupervisorShift = lazyWithRetry(() => import("@/pages/sube/kiosk-supervisor-shift"));
++
++// Route'a ekle:
++<Route path="/sube/kiosk-supervisor-shift">
++  {() => <KioskSupervisorShift />}
++</Route>
++```
++
++### sube/kiosk.tsx Modifikasyonu
++
++Mevcut role-based action buton bölümüne ekle:
++
++```tsx
++{['supervisor', 'supervisor_buddy', 'mudur'].includes(kioskUser?.role) && (
++  <Button
++    onClick={() => setLocation("/sube/kiosk-supervisor-shift")}
++    size="lg"
++    className="w-full"
++  >
++    📅 Vardiya Planla
++  </Button>
++)}
++```
++
++---
++
++## 📊 11. Başarı Kriterleri
++
++S15.1 "tamam" denmesi için:
++- ✅ Supervisor PIN ile kioska girip "Vardiya Planla" butonunu görür
++- ✅ 1-2 haftalık takvim açılır, mevcut vardiyalar görünür
++- ✅ Personel havuzundan drag-drop ile yeni vardiya oluşturulabilir
++- ✅ Şablonlar (sabah/akşam) hazır
++- ✅ AI öneri butonu çalışır (en azından placeholder)
++- ✅ Çakışma kontrolü (aynı kişi aynı saat) backend'de aktif
++- ✅ Kaydet → DB'ye yazar, Mahmut PDKS'te görür
++- ✅ Yetkisiz kullanıcı (barista) butonu göremez
++- ✅ Touch testi 56px+ butonlar, drag çalışır
++- ✅ Pilot 4 şubede dummy plan oluşturulup test edilir
++
++---
++
++## 🔗 12. Bağlantılı Dokümanlar
++
++- `docs/DECIDED.md` D-56: Sprint 14a (mola sayaç) — sub-systems
++- `docs/DECIDED.md` D-44: Bağlam-İçi Tab prensibi (PDKS Hub örneği)
++- `.agents/skills/dospresso-architecture/SKILL.md`: Kiosk auth akışı
++- `client/src/pages/vardiya-planlama.tsx`: Referans implementasyon (2711 satır web)
++- `server/routes/shifts.ts`: Mevcut shift API'leri
++- `shared/schema/schema-03.ts`: `shifts` tablo şeması (satır 965)
++
++---
++
++## 📅 13. Tahmini Takvim
++
++```
++Pilot Day-1: 13 May 15:00  ─── Pilot başlar (4 şube)
++Pilot Day-7: 19 May        ─── Sistem stabil mi gözlemle
++Pilot Day-8: 20 May        ─── S15.1 BAŞLAR (yeni Claude oturumu)
++  - Aşama 1+2: 1. gün (5 saat)
++  - Aşama 3+4: 2. gün (7 saat)
++  - Aşama 5 test + polish: 0.5 gün
++Pilot Day-11: 23 May       ─── S15.1 PR açık + Mahmut testi
++Pilot Day-13: 25 May       ─── S15.1 mergele + canlı kullanım başlar
++```
++
++---
++
++## ⚠️ 14. Önemli Uyarılar
++
++1. **Pilot stabilize OLMADAN başlama.** Pilot Day-1'de bug çıkarsa öncelik pilotu kurtarmak. S15.1 minimum 7 gün stabil pilot sonrası.
++
++2. **Mevcut `vardiya-planlama.tsx`'i SİLME.** Kiosk versiyonu paralel, web versiyonu kalmaya devam. Mahmut ve müdürler her ikisini de kullanabilir.
++
++3. **Shifts API'sini DEĞİŞTİRME.** Mevcut endpoint'ler diğer 23 yer tarafından kullanılıyor. Sadece OKUMA + YAZMA hakkını kullan, schema değişikliği YAPMA.
++
++4. **AI öneri yoksa "Coming Soon" göster.** Endpoint olmadığı için sprint engellenmesin. AI sprintini Sprint 17.5 olarak ayrı et.
++
++5. **D-39 6 Perspektif Review zorunlu.** Her commit öncesi mental check yap.
++
++---
++
++**Son güncelleme:** 11 May 2026 (S15.1 plan döküman hazırlandı)
++
++> **Sonraki Claude/AI/ekip için:** Bu döküman tam yol haritası. Mevcut sistemi tekrar taramana gerek yok. Direkt **Aşama 1**'den başla.

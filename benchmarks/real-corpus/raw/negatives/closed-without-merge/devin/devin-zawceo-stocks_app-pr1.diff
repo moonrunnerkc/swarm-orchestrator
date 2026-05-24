@@ -1,0 +1,153 @@
+diff --git a/README.md b/README.md
+index 396ee47..48665d2 100644
+--- a/README.md
++++ b/README.md
+@@ -5,3 +5,27 @@ The website serves as good practice for full-stack webdevelopment as it handles
+ as well as backend data connectivity, using SQLite for ease and convenience.
+ > This project is still ongoing, my hope is add data analysis tools and apply them to the stock data.
+ > Users will be allowed to purchase, sell, or even trade stocks based on their budget.
++
++## API keys
++
++API keys are stored in the local SQLite database so they are still available after the server restarts.
++
++Create the database tables:
++
++```bash
++python -c "from models import db; db.create_all()"
++```
++
++Save the IEX API key:
++
++```bash
++python manage_api_keys.py set iex YOUR_IEX_API_KEY
++```
++
++List saved API key providers:
++
++```bash
++python manage_api_keys.py list
++```
++
++The app also supports `IEX_API_KEY` as a fallback environment variable if no key has been saved in the database yet.
+diff --git a/app.py b/app.py
+index 62cd69b..89db88a 100644
+--- a/app.py
++++ b/app.py
+@@ -1,4 +1,4 @@
+-from models import app, db, User, Stocks, Portfolios
++from models import app, db, get_api_key, User, Stocks, Portfolios
+ from flask import render_template, request, redirect, url_for, flash
+ from forms import RegisterForm, StocksForm, LoginForm,  PurchaseItemForm, FriendRequestForm
+ from flask_login import login_user, logout_user, login_required, current_user
+@@ -116,7 +116,10 @@ def update(id):
+ def more_info(symbol):
+     s = requests.Session()
+     s.verify = False
+-    token = 'Tsk_1c42cee11b834d83b84aec96ae542f1a'
++    token = get_api_key('iex', 'IEX_API_KEY')
++    if not token:
++        flash('IEX API key is missing. Run: python manage_api_keys.py set iex YOUR_API_KEY', category='danger')
++        return redirect(url_for('stocks'))
+     api_url = f'https://sandbox.iexapis.com/stable/stock/{symbol}/chart/20200415?token={token}'
+     historical_request = s.get(api_url)
+     historical_data = historical_request.json()
+diff --git a/manage_api_keys.py b/manage_api_keys.py
+new file mode 100644
+index 0000000..08b2635
+--- /dev/null
++++ b/manage_api_keys.py
+@@ -0,0 +1,30 @@
++import sys
++
++from models import ApiKey, db, set_api_key
++
++
++def list_api_keys():
++    for api_key in ApiKey.query.order_by(ApiKey.provider).all():
++        print(api_key.provider)
++
++
++def main():
++    db.create_all()
++
++    if len(sys.argv) == 2 and sys.argv[1] == 'list':
++        list_api_keys()
++        return
++
++    if len(sys.argv) == 4 and sys.argv[1] == 'set':
++        set_api_key(sys.argv[2], sys.argv[3])
++        print(f"Saved API key for {sys.argv[2]}")
++        return
++
++    print('Usage:')
++    print('  python manage_api_keys.py set PROVIDER API_KEY')
++    print('  python manage_api_keys.py list')
++    sys.exit(1)
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/models.py b/models.py
+index a69e84d..5795bf1 100644
+--- a/models.py
++++ b/models.py
+@@ -5,7 +5,8 @@
+ import os
+ SECRET_KEY = os.urandom(32)
+ app = Flask(__name__)
+-app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:///database.db"
++BASE_DIR = os.path.abspath(os.path.dirname(__file__))
++app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{os.path.join(BASE_DIR, 'database.db')}"
+ app.config['SECRET_KEY'] = SECRET_KEY
+ db = SQLAlchemy(app)
+ bcrypt = Bcrypt(app)
+@@ -90,3 +91,28 @@ class Friends(db.Model):
+     name = db.Column(db.String, nullable=False)
+     last = db.Column(db.String(30), nullable=False)
+     email = db.Column(db.String(60), nullable=False)
++
++
++class ApiKey(db.Model):
++    provider = db.Column(db.String(50), primary_key=True)
++    key = db.Column(db.String(255), nullable=False)
++
++
++def get_api_key(provider, env_var=None):
++    stored_key = ApiKey.query.get(provider)
++    if stored_key:
++        return stored_key.key
++
++    if env_var:
++        return os.environ.get(env_var)
++
++    return os.environ.get(f"{provider.upper()}_API_KEY")
++
++
++def set_api_key(provider, key):
++    stored_key = ApiKey.query.get(provider)
++    if stored_key:
++        stored_key.key = key
++    else:
++        db.session.add(ApiKey(provider=provider, key=key))
++    db.session.commit()
+diff --git a/test.py b/test.py
+index 38cde60..6dfabd3 100644
+--- a/test.py
++++ b/test.py
+@@ -1,11 +1,13 @@
+ from stocks import data
+-from models import db, Stocks
++from models import db, get_api_key, Stocks
+ import requests
+ 
+ # Pass all the api info to the db
+ # TODO: make a generator to pass the fast api calls
+ 
+-token = 'Tsk_1c42cee11b834d83b84aec96ae542f1a'
++token = get_api_key('iex', 'IEX_API_KEY')
++if not token:
++    raise RuntimeError('IEX API key is missing. Run: python manage_api_keys.py set iex YOUR_API_KEY')
+ 
+ 
+ def chunks(lst, n):

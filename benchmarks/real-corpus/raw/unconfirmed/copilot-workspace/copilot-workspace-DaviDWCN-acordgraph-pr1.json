@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-DaviDWCN-acordgraph-pr1",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "e4783ae90e5ee184808620deda837c8609169b4a",
+    "baseSha": "f3f35aed25981b83977a5e63161fdb5beb6042e5",
+    "title": "Bootstrap OpenSpec scaffolding for ACORD-aligned GraphRAG knowledge graph",
+    "body": "Stand up the repository's **Requirements & Architecture** phase: persist the inbound v1.1 technical brief, layer in industry-best-practice upgrades, and structure everything under the [OpenSpec](https://github.com/Fission-AI/OpenSpec) convention so the next change can deliver implementation against a stable contract.\n\n### OpenSpec layout\n- `openspec/project.md` — project context, stage scope, conventions.\n- `openspec/changes/bootstrap-acord-kg/` — first change with `proposal.md`, `design.md`, `tasks.md`, plus five domain delta specs (`ontology`, `ingestion`, `retrieval`, `governance`, `api`), each `### Requirement` paired with at least one GIVEN/WHEN/THEN `#### Scenario`.\n\n### Architectural upgrades over v1.1 (full table in `docs/architecture-optimizations.md`)\n- **Bitemporal edges** (`valid_from` / `valid_to` / `recorded_at`) + `Endorsement` event node — replaces single `is_active` flag, enables `as_of` queries needed at claim time.\n- **Hybrid retrieval**: vector + full-text → RRF fusion → **cross-encoder rerank** → parameterised Cypher → **two-pass grounded answerer with citation validation**. LLM-generated Cypher is forbidden in production.\n- **Provenance & confidence** mandatory on every extracted node/edge; tiered promotion (`<0.6` blocked, `0.6–0.8` staging, `≥0.8` active).\n- **Entity resolution cascade**: blocking key (ICD/ACORD) → cosine ≥ 0.89 → LLM judge → HITL queue for the 0.80–0.89 ambiguous band.\n- **PII tokenisation** at ingest; raw values held in a separate vault.\n- **Exclusion-precedes-coverage** rule made explicit and testable.\n- **Per-stage latency budgets** (resolve / recall / rerank / cypher / llm) instead of a single SLO.\n- Cypher fix: `vector.similarity_function` (underscore) — the hyphen form in v1.1 is rejected by Neo4j 5.13+.\n\n### Reference assets (ready for the next change to consume)\n- `assets/cypher/01_constraints_indexes.cypher` — uniqueness + range + full-text + vector index DDL.\n- `assets/cypher/10_graphrag_lookup.cypher` — parameterised, bitemporal, as-of-aware retrieval template.\n- `assets/schemas/extraction.schema.json` — strict JSON Schema for LLM extractor output (with `provenance` block).\n- `assets/prompts/extractor_system.md`, `assets/prompts/answerer_system.md` — system prompts for ingestion and grounded answering.\n\n### Docs\n- `docs/technical-spec.md` — inbound v1.1 archived verbatim.\n- `docs/architecture-optimizations.md` — human-readable rationale for each upgrade.\n- `README.md` — navigation hub.\n\n### Deliberately deferred\nLLM/embedding/reranker vendor selection, concrete SLA numbers, HITL tooling choice, and the `Coverage` reified node (offered as optional in `design.md` for rider-heavy products). No runtime code, package manifests or CI pipelines introduced in this change.",
+    "author": "Copilot",
+    "headRef": "copilot/define-insurance-knowledge-graph-specification",
+    "repository": "DaviDWCN/acordgraph"
+  },
+  "diffRef": {
+    "repository": "DaviDWCN/acordgraph",
+    "headSha": "e4783ae90e5ee184808620deda837c8609169b4a",
+    "baseSha": "f3f35aed25981b83977a5e63161fdb5beb6042e5"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-DaviDWCN-acordgraph-pr1.diff",
+  "vendoredAt": "2026-05-24T03:35:36.593Z",
+  "collectedAt": "2026-05-24T03:35:36.593Z"
+}

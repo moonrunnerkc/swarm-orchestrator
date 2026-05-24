@@ -1,0 +1,671 @@
+diff --git a/.github/workflows/ci-global.yml b/.github/workflows/ci-global.yml
+index 24c751c..715912f 100644
+--- a/.github/workflows/ci-global.yml
++++ b/.github/workflows/ci-global.yml
+@@ -1,5 +1,5 @@
+ # ═══════════════════════════════════════════════════════════════════════════════
+-# CI Global · Lint, Formato y Protección de Estructura
++# CI Global · Lint, Formato y Estructura
+ #
+ # Propósito: Garantizar que todo código que entra al repo cumple con las reglas
+ # de formato (YAML, JSON, Markdown, Python, Shell) y mantiene la estructura
+@@ -27,33 +27,37 @@ permissions:
+   contents: read
+ 
+ jobs:
+-  lint-yaml:
+-    name: Lint YAML
++  lint:
++    name: Lint & Estructura
+     runs-on: ubuntu-latest
+     steps:
+       - uses: actions/checkout@v4
+       - uses: actions/setup-python@v5
+         with:
+           python-version: "3.12"
+-      - name: Instalar yamllint
+-        run: pip install yamllint
+-      - name: Ejecutar yamllint
++      - uses: actions/setup-node@v4
++        with:
++          node-version: "20"
++
++      - name: Instalar herramientas
+         run: |
++          pip install yamllint ruff pyyaml
++          npm install -g markdownlint-cli
++          sudo apt-get update && sudo apt-get install -y shellcheck
++
++      # ── Bloqueantes ──────────────────────────────────────────────────────
++      - name: Lint YAML
++        run: |
++          echo "::group::yamllint"
+           yamllint -d relaxed \
+             $(find . -type f \( -name '*.yml' -o -name '*.yaml' \) \
+               ! -path './.git/*' \
+               ! -path './artefactos/*' | sort)
++          echo "::endgroup::"
+ 
+-  lint-json:
+-    name: Lint JSON
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@v4
+-      - uses: actions/setup-python@v5
+-        with:
+-          python-version: "3.12"
+-      - name: Validar JSON
++      - name: Lint JSON
+         run: |
++          echo "::group::json validation"
+           EXIT=0
+           for f in $(find . -type f -name '*.json' ! -path './.git/*' | sort); do
+             if ! python -m json.tool "$f" > /dev/null 2>&1; then
+@@ -61,94 +65,44 @@ jobs:
+               EXIT=1
+             fi
+           done
++          echo "::endgroup::"
+           exit $EXIT
+ 
+-  lint-markdown:
+-    name: Lint Markdown
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@v4
+-      - uses: actions/setup-node@v4
+-        with:
+-          node-version: "20"
+-      - name: Instalar markdownlint
+-        run: npm install -g markdownlint-cli
+-      - name: Ejecutar markdownlint
++      - name: Lint Python
+         run: |
+-          markdownlint \
+-            --ignore '.git/**' \
+-            --ignore 'artefactos/**' \
+-            --ignore '**/node_modules/**' \
+-            --ignore 'dot-claude/**' \
+-            '**/*.md' || true  # Warnings por ahora, no bloqueantes
++          echo "::group::ruff"
++          ruff check validadores/ tests/ */validar_*.py validar_repo.py
++          echo "::endgroup::"
+ 
+-  lint-python:
+-    name: Lint Python
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@v4
+-      - uses: actions/setup-python@v5
+-        with:
+-          python-version: "3.12"
+-      - name: Instalar ruff
+-        run: pip install ruff
+-      - name: Ejecutar ruff
+-        run: ruff check validadores/ tests/ */validar_*.py validar_repo.py
++      - name: Validar Estructura del Repo
++        run: |
++          echo "::group::validar_repo.py"
++          python validar_repo.py --strict
++          echo "::endgroup::"
+ 
+-  lint-shell:
+-    name: Lint Shell
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@v4
+-      - name: Instalar shellcheck
+-        run: sudo apt-get update && sudo apt-get install -y shellcheck
+-      - name: Ejecutar shellcheck
++      # ── Advisory (no bloquean el PR) ─────────────────────────────────────
++      - name: Lint Shell (advisory)
++        if: always()
+         run: |
++          echo "::group::shellcheck"
+           find . -type f \( -name '*.sh' -o -name 'claude-init' -o -name 'install' -o -name 'update' \) \
+             ! -path './.git/*' \
+             ! -path './artefactos/*' | while read -r f; do
+-            # Solo si el shebang es bash/sh
+             if head -1 "$f" | grep -qE 'bash|sh'; then
+               echo "🔍 $f"
+               shellcheck -S warning "$f" || true
+             fi
+           done
++          echo "::endgroup::"
+ 
+-  lint-repo-structure:
+-    name: Validar Estructura del Repo
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@v4
+-      - uses: actions/setup-python@v5
+-        with:
+-          python-version: "3.12"
+-      - name: Ejecutar validador global
+-        run: python validar_repo.py --strict
+-
+-  resumen:
+-    name: Resumen CI Global
+-    runs-on: ubuntu-latest
+-    needs: [lint-yaml, lint-json, lint-markdown, lint-python, lint-shell, lint-repo-structure]
+-    if: always()
+-    steps:
+-      - name: Resultado final
++      - name: Lint Markdown (advisory)
++        if: always()
+         run: |
+-          for job in lint-yaml lint-json lint-markdown lint-python lint-shell lint-repo-structure; do
+-            result="${{ needs[job].result }}"
+-            if [ "$result" == "success" ]; then
+-              echo "✅ $job"
+-            else
+-              echo "❌ $job ($result)"
+-            fi
+-          done
+-
+-          if [ "${{ needs.lint-yaml.result }}" == "success" ] && \
+-             [ "${{ needs.lint-json.result }}" == "success" ] && \
+-             [ "${{ needs.lint-python.result }}" == "success" ] && \
+-             [ "${{ needs.lint-repo-structure.result }}" == "success" ]; then
+-            echo "✅ CI GLOBAL PASÓ"
+-            exit 0
+-          else
+-            echo "❌ CI GLOBAL FALLÓ"
+-            exit 1
+-          fi
++          echo "::group::markdownlint"
++          markdownlint \
++            --ignore '.git/**' \
++            --ignore 'artefactos/**' \
++            --ignore '**/node_modules/**' \
++            --ignore 'dot-claude/**' \
++            '**/*.md' || true
++          echo "::endgroup::"
+diff --git a/.github/workflows/pr-guardian.yml b/.github/workflows/pr-guardian.yml
+index 00e1c18..d1e60f9 100644
+--- a/.github/workflows/pr-guardian.yml
++++ b/.github/workflows/pr-guardian.yml
+@@ -19,20 +19,33 @@ permissions:
+   pull-requests: write
+ 
+ jobs:
+-  conventional-title:
+-    name: Título Conventional Commit
++  guardian:
++    name: PR Guardian
+     runs-on: ubuntu-latest
+     steps:
++      - uses: actions/checkout@v4
++        with:
++          fetch-depth: 0
++
++      - uses: actions/setup-python@v5
++        with:
++          python-version: "3.12"
++
++      - name: Instalar dependencias
++        run: pip install pyyaml
++
++      # ── 1. Título Conventional Commit ────────────────────────────────────
+       - name: Validar título del PR
++        env:
++          PR_TITLE: ${{ github.event.pull_request.title }}
+         run: |
+-          TITLE="${{ github.event.pull_request.title }}"
++          echo "::group::Conventional Commit Title"
+           REGEX="^(feat|fix|docs|style|refactor|test|ci|chore)(\(.+\))?!?: .+"
+ 
+-          if echo "$TITLE" | grep -qE "$REGEX"; then
+-            echo "✅ Título válido: $TITLE"
+-            exit 0
++          if echo "$PR_TITLE" | grep -qE "$REGEX"; then
++            echo "✅ Título válido: $PR_TITLE"
+           else
+-            echo "❌ Título inválido: $TITLE"
++            echo "❌ Título inválido: $PR_TITLE"
+             echo ""
+             echo "El título debe seguir Conventional Commits:"
+             echo "  tipo(alcance)?: descripción"
+@@ -41,19 +54,14 @@ jobs:
+             echo "Ejemplo: feat(agentes): añade validador de subagentes"
+             exit 1
+           fi
++          echo "::endgroup::"
+ 
+-  pr-size:
+-    name: Tamaño del PR
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@v4
++      # ── 2. Tamaño del PR ────────────────────────────────────────────────
+       - name: Contar líneas cambiadas
+         run: |
+-          BASE="${{ github.event.pull_request.base.sha }}"
+-          HEAD="${{ github.event.pull_request.head.sha }}"
+-          git fetch origin "$BASE" --depth=1
+-
+-          LINES=$(git diff --numstat "origin/${{ github.event.pull_request.base.ref }}" "$HEAD" | \
++          echo "::group::PR Size"
++          LINES=$(git diff --numstat "origin/${{ github.event.pull_request.base.ref }}" \
++            "${{ github.event.pull_request.head.sha }}" | \
+             awk '{added+=$1; removed+=$2} END {print added+removed}')
+ 
+           echo "📊 Líneas cambiadas: $LINES"
+@@ -64,18 +72,12 @@ jobs:
+           else
+             echo "✅ Tamaño aceptable"
+           fi
++          echo "::endgroup::"
+ 
+-  protected-files:
+-    name: Archivos Protegidos
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@v4
++      # ── 3. Archivos Protegidos ──────────────────────────────────────────
+       - name: Detectar archivos protegidos modificados
+         run: |
+-          BASE="${{ github.event.pull_request.base.sha }}"
+-          HEAD="${{ github.event.pull_request.head.sha }}"
+-          git fetch origin "$BASE" --depth=1
+-
++          echo "::group::Protected Files"
+           PROTECTED=(
+             "INDEX.md"
+             "README.md"
+@@ -92,8 +94,11 @@ jobs:
+           )
+ 
+           EXIT=0
++          CHANGED=$(git diff --name-only "origin/${{ github.event.pull_request.base.ref }}" \
++            "${{ github.event.pull_request.head.sha }}")
++
+           for f in "${PROTECTED[@]}"; do
+-            if git diff --name-only "origin/${{ github.event.pull_request.base.ref }}" "$HEAD" | grep -qx "$f"; then
++            if echo "$CHANGED" | grep -qx "$f"; then
+               echo "⚠️ Archivo protegido modificado: $f"
+               EXIT=1
+             fi
+@@ -105,25 +110,18 @@ jobs:
+             echo "Si necesitas modificarlos, abre un issue primero y discútelo."
+             exit 1
+           fi
++          echo "::endgroup::"
+ 
+-  changelog-check:
+-    name: CHANGELOG Actualizado
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@v4
++      # ── 4. CHANGELOG Actualizado ────────────────────────────────────────
+       - name: Verificar CHANGELOG.md
+         run: |
+-          BASE="${{ github.event.pull_request.base.sha }}"
+-          HEAD="${{ github.event.pull_request.head.sha }}"
+-          git fetch origin "$BASE" --depth=1
+-
+-          # Si el PR modifica módulos o validadores, requiere CHANGELOG
+-          CHANGES=$(git diff --name-only "origin/${{ github.event.pull_request.base.ref }}" "$HEAD")
++          echo "::group::CHANGELOG Check"
++          CHANGES=$(git diff --name-only "origin/${{ github.event.pull_request.base.ref }}" \
++            "${{ github.event.pull_request.head.sha }}")
+ 
+           if echo "$CHANGES" | grep -qE '^(agentes|skills|commands|hooks|mcp|plugins|dot-claude|repositorios|validadores|modulo|proyecto)/'; then
+             if echo "$CHANGES" | grep -qx "CHANGELOG.md"; then
+               echo "✅ CHANGELOG.md actualizado"
+-              exit 0
+             else
+               echo "❌ Falta actualizar CHANGELOG.md"
+               echo "Este PR modifica módulos o validadores. Añade una entrada en CHANGELOG.md."
+@@ -132,17 +130,12 @@ jobs:
+           else
+             echo "ℹ️ No requiere CHANGELOG (no modifica módulos)"
+           fi
++          echo "::endgroup::"
+ 
+-  placeholder-check:
+-    name: Placeholders en Ejemplos
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@v4
+-      - uses: actions/setup-python@v5
+-        with:
+-          python-version: "3.12"
++      # ── 5. Placeholders en Ejemplos ─────────────────────────────────────
+       - name: Validar que ejemplos no tengan placeholders
+         run: |
++          echo "::group::Placeholder Check"
+           EXIT=0
+           for dir in agentes skills commands hooks mcp plugins dot-claude repositorios; do
+             ejemplo="${dir}/ejemplo_${dir}"
+@@ -174,4 +167,5 @@ jobs:
+               fi
+             fi
+           done
++          echo "::endgroup::"
+           exit $EXIT
+diff --git a/.github/workflows/security-scan.yml b/.github/workflows/security-scan.yml
+index 2837d2c..5f7b7a8 100644
+--- a/.github/workflows/security-scan.yml
++++ b/.github/workflows/security-scan.yml
+@@ -22,19 +22,22 @@ permissions:
+   contents: read
+ 
+ jobs:
+-  detect-secrets:
+-    name: Detectar Secrets
++  security:
++    name: Security
+     runs-on: ubuntu-latest
+     steps:
+       - uses: actions/checkout@v4
+         with:
+-          fetch-depth: 0  # Necesario para scan completo
++          fetch-depth: 0
++
+       - uses: actions/setup-python@v5
+         with:
+           python-version: "3.12"
++
++      # ── 1. Detect Secrets (regex) ──────────────────────────────────────
+       - name: Scan de secrets con regex
+         run: |
+-          EXIT=0
++          echo "::group::Detect Secrets"
+           python3 << 'PYEOF'
+           import re
+           from pathlib import Path
+@@ -71,19 +74,14 @@ jobs:
+                       break
+           exit(errores if errores > 0 else 0)
+           PYEOF
+-          EXIT=$?
+-          exit $EXIT
++          echo "::endgroup::"
+ 
+-  gitignore-check:
+-    name: Verificar .gitignore
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@v4
++      # ── 2. .gitignore violations ───────────────────────────────────────
+       - name: Detectar archivos que deberían estar ignorados
+         run: |
++          echo "::group::Gitignore Check"
+           EXIT=0
+ 
+-          # Lista de patrones que NUNCA deben estar en el repo
+           CHECKS=(
+             ".env"
+             ".env.local"
+@@ -108,24 +106,17 @@ jobs:
+             fi
+           done
+ 
+-          # Directorios prohibidos explícitos
+           for dir in cuaderno-plantilla artefactos/operador vap; do
+             if [ -d "$dir" ]; then
+               echo "⚠️ Directorio prohibido detectado en el repo: $dir/"
+-              echo "   Asegúrate de que .gitignore lo excluye y no fue forzado con git add -f"
+               EXIT=1
+             fi
+           done
+ 
++          echo "::endgroup::"
+           exit $EXIT
+ 
+-  trufflehog:
+-    name: TruffleHog Scan
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@v4
+-        with:
+-          fetch-depth: 0
++      # ── 3. TruffleHog ─────────────────────────────────────────────────
+       - name: Ejecutar TruffleHog
+         uses: trufflesecurity/trufflehog@main
+         with:
+diff --git a/.github/workflows/validar-todos.yml b/.github/workflows/validar-todos.yml
+index 1803528..cb7bc69 100644
+--- a/.github/workflows/validar-todos.yml
++++ b/.github/workflows/validar-todos.yml
+@@ -8,7 +8,8 @@
+ #   - Push a main/master
+ #   - Manualmente (workflow_dispatch)
+ #
+-# Módulos validados: agentes, skills, commands, hooks, mcp, plugins, dot-claude, repositorios, modulo, proyecto
++# Módulos validados: agentes, skills, commands, hooks, mcp, plugins, dot-claude,
++#                    repositorios, modulo, proyecto
+ # ═══════════════════════════════════════════════════════════════════════════════
+ 
+ name: Validar Sistema de Plantillas
+@@ -20,145 +21,101 @@ on:
+   workflow_dispatch:
+ 
+ jobs:
+-  listar-modulos:
+-    name: Listar módulos
++  validar:
++    name: Validar Módulos
+     runs-on: ubuntu-latest
+-    outputs:
+-      modulos: ${{ steps.list.outputs.modulos }}
+     steps:
+-      - name: Checkout
+-        uses: actions/checkout@v4
++      - uses: actions/checkout@v4
++      - uses: actions/setup-python@v5
++        with:
++          python-version: "3.12"
++
++      - name: Instalar dependencias
++        run: pip install pyyaml
+ 
+-      - name: Detectar módulos con validador
+-        id: list
++      - name: Validar todos los módulos
+         run: |
+-          MODULOS=()
+-          for dir in agentes skills commands hooks mcp plugins dot-claude repositorios modulo proyecto; do
+-            if [ -f "$dir/validar_${dir%-claude}" ]; then
+-              MODULOS+=("$dir")
+-            elif [ -f "$dir/validar_${dir%-claude}.py" ]; then
+-              MODULOS+=("$dir")
++          # Mapa de módulo → singular (para rutas de validador/ejemplo)
++          singular() {
++            case "$1" in
++              agentes)      echo "agente" ;;
++              skills)       echo "skill" ;;
++              commands)     echo "command" ;;
++              hooks)        echo "hook" ;;
++              mcp)          echo "mcp" ;;
++              plugins)      echo "plugin" ;;
++              dot-claude)   echo "dot_claude" ;;
++              repositorios) echo "repositorio" ;;
++              modulo)       echo "modulo" ;;
++              proyecto)     echo "proyecto" ;;
++              *)            echo "$1" ;;
++            esac
++          }
++
++          MODULOS=(agentes skills commands hooks mcp plugins dot-claude repositorios modulo proyecto)
++          ESPECIALES=(modulo proyecto)
++          GLOBAL_EXIT=0
++          PASSED=0
++          FAILED=0
++
++          for dir in "${MODULOS[@]}"; do
++            S=$(singular "$dir")
++            SCRIPT_PY="${dir}/validar_${S}.py"
++
++            if [ ! -f "$SCRIPT_PY" ]; then
++              echo "⚠️ Sin validador para $dir — omitido"
++              continue
+             fi
+-          done
+ 
+-          # Fallback: usar lista fija
+-          if [ ${#MODULOS[@]} -eq 0 ]; then
+-            MODULOS=(agentes skills commands hooks mcp plugins dot-claude repositorios modulo proyecto)
+-          fi
++            echo "::group::📦 $dir"
++            MOD_OK=true
+ 
+-          JSON=$(printf '%s\n' "${MODULOS[@]}" | jq -R . | jq -s .)
+-          echo "modulos=$JSON" >> $GITHUB_OUTPUT
+-          echo "📦 Módulos detectados:"
+-          printf '%s\n' "${MODULOS[@]}"
+-
+-  validar:
+-    name: Validar ${{ matrix.modulo }}
+-    runs-on: ubuntu-latest
+-    needs: listar-modulos
+-    strategy:
+-      fail-fast: false
+-      matrix:
+-        modulo: ${{ fromJson(needs.listar-modulos.outputs.modulos) }}
+-    steps:
+-      - name: Checkout
+-        uses: actions/checkout@v4
++            # Ejemplo path
++            if [[ " ${ESPECIALES[*]} " == *" $dir "* ]]; then
++              EJEMPLO="$dir"
++            else
++              EJEMPLO="${dir}/ejemplo_${S}"
++            fi
+ 
+-      - name: Setup Python
+-        uses: actions/setup-python@v5
+-        with:
+-          python-version: "3.12"
++            EXTRA_ARGS=""
++            if [ "$dir" = "repositorios" ]; then
++              EXTRA_ARGS="--visibility public"
++            fi
+ 
+-      - name: Instalar dependencias
+-        run: |
+-          python -m pip install --upgrade pip
+-          pip install pyyaml
++            if python "$SCRIPT_PY" "$EJEMPLO" --strict $EXTRA_ARGS; then
++              echo "✅ ejemplo: OK"
++            else
++              echo "❌ ejemplo: FALLÓ"
++              MOD_OK=false
++              GLOBAL_EXIT=1
++            fi
+ 
+-      - name: Ejecutar validador de ${{ matrix.modulo }}
+-        run: |
+-          SCRIPT="${{ matrix.modulo }}/validar_${{ matrix.modulo }}"
+-          SCRIPT_PY="${SCRIPT}.py"
+-
+-          # Mapeo de nombres
+-          if [ "${{ matrix.modulo }}" = "dot-claude" ]; then
+-            SCRIPT_PY="dot-claude/validar_dot_claude.py"
+-          elif [ "${{ matrix.modulo }}" = "agentes" ]; then
+-            SCRIPT_PY="agentes/validar_agente.py"
+-          elif [ "${{ matrix.modulo }}" = "skills" ]; then
+-            SCRIPT_PY="skills/validar_skill.py"
+-          elif [ "${{ matrix.modulo }}" = "commands" ]; then
+-            SCRIPT_PY="commands/validar_command.py"
+-          elif [ "${{ matrix.modulo }}" = "hooks" ]; then
+-            SCRIPT_PY="hooks/validar_hook.py"
+-          elif [ "${{ matrix.modulo }}" = "mcp" ]; then
+-            SCRIPT_PY="mcp/validar_mcp.py"
+-          elif [ "${{ matrix.modulo }}" = "plugins" ]; then
+-            SCRIPT_PY="plugins/validar_plugin.py"
+-          fi
+-
+-          # Validar ejemplo correspondiente
+-          EJEMPLO="${{ matrix.modulo }}/ejemplo_${{ matrix.modulo }}"
+-          if [ "${{ matrix.modulo }}" = "dot-claude" ]; then
+-            EJEMPLO="dot-claude/ejemplo_dot_claude"
+-          elif [ "${{ matrix.modulo }}" = "modulo" ]; then
+-            EJEMPLO="modulo"
+-          elif [ "${{ matrix.modulo }}" = "proyecto" ]; then
+-            EJEMPLO="proyecto"
+-          fi
+-
+-          echo "::group::Validando $EJEMPLO con $SCRIPT_PY"
+-          python "$SCRIPT_PY" "$EJEMPLO" --strict
+-          echo "::endgroup::"
+-
+-      - name: Validar plantilla correspondiente
+-        run: |
+-          PLANTILLA="${{ matrix.modulo }}/plantilla_${{ matrix.modulo }}"
+-          if [ "${{ matrix.modulo }}" = "dot-claude" ]; then
+-            PLANTILLA="dot-claude/plantilla_dot_claude"
+-          elif [ "${{ matrix.modulo }}" = "modulo" ]; then
+-            PLANTILLA="modulo"
+-          elif [ "${{ matrix.modulo }}" = "proyecto" ]; then
+-            PLANTILLA="proyecto"
+-          fi
+-
+-          SCRIPT_PY="${{ matrix.modulo }}/validar_${{ matrix.modulo }}.py"
+-          if [ "${{ matrix.modulo }}" = "dot-claude" ]; then
+-            SCRIPT_PY="dot-claude/validar_dot_claude.py"
+-          elif [ "${{ matrix.modulo }}" = "agentes" ]; then
+-            SCRIPT_PY="agentes/validar_agente.py"
+-          elif [ "${{ matrix.modulo }}" = "skills" ]; then
+-            SCRIPT_PY="skills/validar_skill.py"
+-          elif [ "${{ matrix.modulo }}" = "commands" ]; then
+-            SCRIPT_PY="commands/validar_command.py"
+-          elif [ "${{ matrix.modulo }}" = "hooks" ]; then
+-            SCRIPT_PY="hooks/validar_hook.py"
+-          elif [ "${{ matrix.modulo }}" = "mcp" ]; then
+-            SCRIPT_PY="mcp/validar_mcp.py"
+-          elif [ "${{ matrix.modulo }}" = "plugins" ]; then
+-            SCRIPT_PY="plugins/validar_plugin.py"
+-          fi
+-
+-          if [ -d "$PLANTILLA" ]; then
+-            echo "::group::Validando plantilla $PLANTILLA"
+-            if [ "${{ matrix.modulo }}" = "modulo" ] || [ "${{ matrix.modulo }}" = "proyecto" ]; then
+-              python "$SCRIPT_PY" "$PLANTILLA" || true
++            # Plantilla path
++            if [[ " ${ESPECIALES[*]} " == *" $dir "* ]]; then
++              PLANTILLA="$dir"
+             else
+-              python "$SCRIPT_PY" "$PLANTILLA" --strict || true
++              PLANTILLA="${dir}/plantilla_${S}"
++            fi
++
++            if [ -d "$PLANTILLA" ]; then
++              if [[ " ${ESPECIALES[*]} " == *" $dir "* ]]; then
++                python "$SCRIPT_PY" "$PLANTILLA" || true
++              else
++                python "$SCRIPT_PY" "$PLANTILLA" --strict || true
++              fi
+             fi
++
+             echo "::endgroup::"
+-          fi
+ 
+-  resumen:
+-    name: Resumen
+-    runs-on: ubuntu-latest
+-    needs: validar
+-    if: always()
+-    steps:
+-      - name: Resultado final
+-        run: |
+-          if [ "${{ needs.validar.result }}" == "success" ]; then
+-            echo "✅ TODOS LOS MÓDULOS PASARON LA VALIDACIÓN"
+-            exit 0
+-          else
+-            echo "❌ ALGUNOS MÓDULOS FALLARON LA VALIDACIÓN"
+-            exit 1
+-          fi
++            if [ "$MOD_OK" = true ]; then
++              PASSED=$((PASSED + 1))
++            else
++              FAILED=$((FAILED + 1))
++            fi
++          done
++
++          echo ""
++          echo "═══════════════════════════════════════"
++          echo "📊 Resultado: $PASSED pasaron, $FAILED fallaron"
++          echo "═══════════════════════════════════════"
++          exit $GLOBAL_EXIT

@@ -1,0 +1,231 @@
+diff --git a/.release-please-manifest.json b/.release-please-manifest.json
+index 19c0e9cca..7f719b8d9 100644
+--- a/.release-please-manifest.json
++++ b/.release-please-manifest.json
+@@ -1,3 +1,3 @@
+ {
+-  ".": "0.104.0"
++  ".": "0.104.1"
+ }
+\ No newline at end of file
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index c1d957ff0..29cc5f78f 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,13 @@
+ # Changelog
+ 
++## 0.104.1 (2026-05-21)
++
++Full Changelog: [v0.104.0...v0.104.1](https://github.com/anthropics/anthropic-sdk-python/compare/v0.104.0...v0.104.1)
++
++### Bug Fixes
++
++* **streaming:** carry encrypted_content through beta compaction accumulator ([#1821](https://github.com/anthropics/anthropic-sdk-python/issues/1821)) ([f7a720c](https://github.com/anthropics/anthropic-sdk-python/commit/f7a720c514cc5e428b310f46249ca1c807894c2e))
++
+ ## 0.104.0 (2026-05-21)
+ 
+ Full Changelog: [v0.103.1...v0.104.0](https://github.com/anthropics/anthropic-sdk-python/compare/v0.103.1...v0.104.0)
+diff --git a/pyproject.toml b/pyproject.toml
+index 4fe923191..7488d570e 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -1,6 +1,6 @@
+ [project]
+ name = "anthropic"
+-version = "0.104.0"
++version = "0.104.1"
+ description = "The official Python library for the anthropic API"
+ dynamic = ["readme"]
+ license = "MIT"
+diff --git a/src/anthropic/_version.py b/src/anthropic/_version.py
+index 023ce50f0..03c9e372e 100644
+--- a/src/anthropic/_version.py
++++ b/src/anthropic/_version.py
+@@ -1,4 +1,4 @@
+ # File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+ 
+ __title__ = "anthropic"
+-__version__ = "0.104.0"  # x-release-please-version
++__version__ = "0.104.1"  # x-release-please-version
+diff --git a/src/anthropic/lib/streaming/_beta_messages.py b/src/anthropic/lib/streaming/_beta_messages.py
+index 5a5a562a0..7736b6bd5 100644
+--- a/src/anthropic/lib/streaming/_beta_messages.py
++++ b/src/anthropic/lib/streaming/_beta_messages.py
+@@ -411,6 +411,7 @@ def build_events(
+                         BetaCompactionEvent,
+                         type="compaction",
+                         content=content_block.content,
++                        encrypted_content=content_block.encrypted_content,
+                     )
+                 )
+         else:
+@@ -525,6 +526,7 @@ def accumulate_event(
+         elif event.delta.type == "compaction_delta":
+             if content.type == "compaction":
+                 content.content = event.delta.content
++                content.encrypted_content = event.delta.encrypted_content
+         else:
+             # we only want exhaustive checking for linters, not at runtime
+             if TYPE_CHECKING:  # type: ignore[unreachable]
+diff --git a/src/anthropic/lib/streaming/_beta_types.py b/src/anthropic/lib/streaming/_beta_types.py
+index 3dcf35354..8685815a0 100644
+--- a/src/anthropic/lib/streaming/_beta_types.py
++++ b/src/anthropic/lib/streaming/_beta_types.py
+@@ -81,6 +81,9 @@ class BetaCompactionEvent(BaseModel):
+     content: Union[str, None]
+     """The compaction content"""
+ 
++    encrypted_content: Union[str, None]
++    """Opaque metadata from prior compaction, to be round-tripped verbatim"""
++
+ 
+ class ParsedBetaMessageStopEvent(BetaRawMessageStopEvent, GenericModel, Generic[ResponseFormatT]):
+     type: Literal["message_stop"]
+diff --git a/tests/lib/streaming/fixtures/compaction_response.txt b/tests/lib/streaming/fixtures/compaction_response.txt
+new file mode 100644
+index 000000000..7b809f37a
+--- /dev/null
++++ b/tests/lib/streaming/fixtures/compaction_response.txt
+@@ -0,0 +1,29 @@
++event: message_start
++data: {"type":"message_start","message":{"id":"msg_01CompactionEncryptedContent01","type":"message","role":"assistant","content":[],"model":"claude-opus-4-7","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":30,"output_tokens":1}}}
++
++event: content_block_start
++data: {"type":"content_block_start","index":0,"content_block":{"type":"compaction","content":null,"encrypted_content":null}}
++
++event: ping
++data: {"type": "ping"}
++
++event: content_block_delta
++data: {"type":"content_block_delta","index":0,"delta":{"type":"compaction_delta","content":"Earlier conversation summarized.","encrypted_content":"EpwBCioIDxgCEAEYASJALd_opaque_compaction_payload"}}
++
++event: content_block_stop
++data: {"type":"content_block_stop","index":0}
++
++event: content_block_start
++data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}
++
++event: content_block_delta
++data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Hello there!"}}
++
++event: content_block_stop
++data: {"type":"content_block_stop","index":1}
++
++event: message_delta
++data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":8}}
++
++event: message_stop
++data: {"type":"message_stop"}
+diff --git a/tests/lib/streaming/test_beta_messages.py b/tests/lib/streaming/test_beta_messages.py
+index 8203864b4..265ec15ae 100644
+--- a/tests/lib/streaming/test_beta_messages.py
++++ b/tests/lib/streaming/test_beta_messages.py
+@@ -13,7 +13,7 @@
+ from anthropic._utils import assert_overloads_in_sync, assert_signatures_in_sync
+ from anthropic._compat import PYDANTIC_V1
+ from anthropic.types.beta.beta_message import BetaMessage
+-from anthropic.lib.streaming._beta_types import ParsedBetaMessageStreamEvent
++from anthropic.lib.streaming._beta_types import BetaCompactionEvent, ParsedBetaMessageStreamEvent
+ from anthropic.resources.messages.messages import DEPRECATED_MODELS
+ from anthropic.lib.streaming._beta_messages import TRACKS_TOOL_INPUT, BetaMessageStream, BetaAsyncMessageStream
+ 
+@@ -160,6 +160,36 @@
+     "message_delta",
+ ]
+ 
++EXPECTED_COMPACTION_MESSAGE = {
++    "id": "msg_01CompactionEncryptedContent01",
++    "model": "claude-opus-4-7",
++    "role": "assistant",
++    "stop_reason": "end_turn",
++    "type": "message",
++    "content": [
++        {
++            "type": "compaction",
++            "content": "Earlier conversation summarized.",
++            "encrypted_content": "EpwBCioIDxgCEAEYASJALd_opaque_compaction_payload",
++        },
++        {"type": "text", "text": "Hello there!"},
++    ],
++    "usage": {"input_tokens": 30, "output_tokens": 8},
++}
++
++EXPECTED_COMPACTION_EVENT_TYPES = [
++    "message_start",
++    "content_block_start",
++    "content_block_delta",
++    "compaction",
++    "content_block_stop",
++    "content_block_start",
++    "content_block_delta",
++    "text",
++    "content_block_stop",
++    "message_delta",
++]
++
+ 
+ def assert_message_matches(message: BetaMessage, expected: Dict[str, Any]) -> None:
+     actual_message_json = message.model_dump_json(
+@@ -186,6 +216,16 @@ def assert_incomplete_partial_input_response(events: list[ParsedBetaMessageStrea
+     assert [e.type for e in events] == EXPECTED_INCOMPLETE_EVENT_TYPES
+ 
+ 
++def assert_compaction_response(events: list[ParsedBetaMessageStreamEvent], message: BetaMessage) -> None:
++    assert_message_matches(message, EXPECTED_COMPACTION_MESSAGE)
++    assert [e.type for e in events] == EXPECTED_COMPACTION_EVENT_TYPES
++
++    # the emitted compaction event must carry encrypted_content, not just the accumulated block
++    compaction_events = [e for e in events if isinstance(e, BetaCompactionEvent)]
++    assert len(compaction_events) == 1
++    assert compaction_events[0].encrypted_content == "EpwBCioIDxgCEAEYASJALd_opaque_compaction_payload"
++
++
+ def assert_refusal_response(message: BetaMessage) -> None:
+     assert message.stop_reason == "refusal"
+     assert message.stop_details is not None
+@@ -285,6 +325,21 @@ def test_refusal_stop_details_propagated(self, respx_mock: MockRouter) -> None:
+         ) as stream:
+             assert_refusal_response(stream.get_final_message())
+ 
++    @pytest.mark.respx(base_url=base_url)
++    def test_compaction(self, respx_mock: MockRouter) -> None:
++        respx_mock.post("/v1/messages").mock(
++            return_value=httpx.Response(200, content=get_response("compaction_response.txt"))
++        )
++
++        with sync_client.beta.messages.stream(
++            max_tokens=1024,
++            messages=[{"role": "user", "content": "Say hello there!"}],
++            model="claude-opus-4-7",
++        ) as stream:
++            assert isinstance(cast(Any, stream), BetaMessageStream)
++
++            assert_compaction_response([event for event in stream], stream.get_final_message())
++
+ 
+ class TestAsyncMessages:
+     @pytest.mark.asyncio
+@@ -407,6 +462,22 @@ async def test_refusal_stop_details_propagated(self, respx_mock: MockRouter) ->
+         ) as stream:
+             assert_refusal_response(await stream.get_final_message())
+ 
++    @pytest.mark.asyncio
++    @pytest.mark.respx(base_url=base_url)
++    async def test_compaction(self, respx_mock: MockRouter) -> None:
++        respx_mock.post("/v1/messages").mock(
++            return_value=httpx.Response(200, content=to_async_iter(get_response("compaction_response.txt")))
++        )
++
++        async with async_client.beta.messages.stream(
++            max_tokens=1024,
++            messages=[{"role": "user", "content": "Say hello there!"}],
++            model="claude-opus-4-7",
++        ) as stream:
++            assert isinstance(cast(Any, stream), BetaAsyncMessageStream)
++
++            assert_compaction_response([event async for event in stream], await stream.get_final_message())
++
+ 
+ @pytest.mark.parametrize("sync", [True, False], ids=["sync", "async"])
+ def test_stream_method_definition_in_sync(sync: bool) -> None:

@@ -1,0 +1,188 @@
+diff --git a/app.py b/app.py
+index 5e6a402..a8cb91b 100644
+--- a/app.py
++++ b/app.py
+@@ -135,21 +135,20 @@ async def verify_and_extract(request: Request):
+     data = await request.json()
+     cookies_raw = data.get("cookies", "")
+     proxy = data.get("proxy", "").strip() or None
+-    ad_account_raw = data.get("ad_account", "").strip()
++    billing_url = data.get("billing_url", "").strip()
+ 
+     try:
+         cookies = parse_cookies(cookies_raw)
+     except ValueError as e:
+         return {"ok": False, "reason": str(e)}
+ 
+-    # بناء رابط الصفحة المستهدفة — دائماً Ads Manager لأنه يحتوي على التوكن
+-    if ad_account_raw:
+-        act_id = extract_act_id(ad_account_raw)
++    # استخراج الحساب الإعلاني من رابط الفوترة
++    if billing_url:
++        act_id = extract_act_id(billing_url)
+         target_url = f'https://www.facebook.com/ads/manager/?act={act_id}'
+         resolved_account = f"act_{act_id}"
+     else:
+-        target_url = 'https://www.facebook.com/ads/manager/'
+-        resolved_account = None
++        return {"ok": False, "reason": "الرجاء إدخال رابط الفوترة"}
+ 
+     try:
+         async with async_playwright() as p:
+@@ -178,17 +177,13 @@ async def verify_and_extract(request: Request):
+             name_match = re.search(r'<title>([^<]+)</title>', content)
+             name = name_match.group(1).replace('Facebook', '').strip() if name_match else 'مستخدم'
+ 
+-            # إذا لم يُعطَ حساب، استخرجه من الصفحة
+-            if not resolved_account:
+-                found = list(set(re.findall(r'act_(\d+)', content)))
+-                resolved_account = f"act_{found[0]}" if found else ""
+-
+             await browser.close()
+             return {
+                 "ok": True,
+                 "name": name,
+                 "token": token,
+-                "ad_account": resolved_account
++                "ad_account": resolved_account,
++                "billing_url": billing_url
+             }
+     except Exception as e:
+         return {"ok": False, "reason": f"خطأ: {str(e)[:100]}"}
+@@ -274,12 +269,12 @@ async def add_cards(request: Request):
+     if not cards_text:
+         return {"ok": False, "reason": "لا توجد بطاقات للربط"}
+ 
+-    if not billing_url and ad_account:
+-        act_id = ad_account.replace('act_', '').strip()
+-        billing_url = f'https://www.facebook.com/ads/manager/account_settings/account_billing/?act={act_id}'
+-
+     if not billing_url:
+-        return {"ok": False, "reason": "لم يتم تحديد حساب إعلاني"}
++        if ad_account:
++            act_id = ad_account.replace('act_', '').strip()
++            billing_url = f'https://www.facebook.com/ads/manager/account_settings/account_billing/?act={act_id}'
++        else:
++            return {"ok": False, "reason": "لم يتم تحديد رابط الفوترة أو الحساب الإعلاني"}
+ 
+     results = []
+     try:
+diff --git a/index.html b/index.html
+index c176992..a83d130 100644
+--- a/index.html
++++ b/index.html
+@@ -69,9 +69,9 @@ <h1 class="text-lg font-bold text-blue-400">🚀 Meta Ads Tool</h1>
+         <textarea id="cookies" class="field" rows="4" placeholder='[{"name":"c_user","value":"..."}]'></textarea>
+       </div>
+       <div>
+-        <label id="lbl_ad_account" class="text-gray-400 text-xs mb-1 block">الحساب الإعلاني (رابط أو act_xxx)</label>
+-        <input id="ad_account_input" class="field" placeholder="https://www.facebook.com/adsmanager/?act=... أو act_1234567890">
+-        <div id="lbl_ad_account_hint" class="text-gray-500 text-xs mt-1">الأداة ستفتح صفحته لاستخراج التوكن وتستخدمه في كل الخطوات تلقائياً</div>
++        <label id="lbl_billing_url" class="text-gray-400 text-xs mb-1 block">رابط الفوترة (Billing URL)</label>
++        <input id="billing_url_input" class="field" placeholder="https://www.facebook.com/ads/manager/account_settings/account_billing/?act=123456789">
++        <div id="lbl_billing_hint" class="text-gray-500 text-xs mt-1">الأداة ستستخرج الحساب الإعلاني من الرابط وتربط البطاقات فيه وتستخدمه لإنشاء الإعلانات</div>
+       </div>
+       <div>
+         <label id="lbl_proxy" class="text-gray-400 text-xs mb-1 block">بروكسي (اختياري)</label>
+@@ -195,7 +195,8 @@ <h1 class="text-lg font-bold text-blue-400">🚀 Meta Ads Tool</h1>
+   cookies: null,
+   proxy: null,
+   token: null,
+-  adAccount: null,   // الحساب الإعلاني الوحيد المستخدم في كل مكان
++  adAccount: null,   // الحساب الإعلاني المستخرج من رابط الفوترة
++  billingUrl: null,  // رابط الفوترة المدخل من المستخدم
+   cardMode: 'auto',
+   lastAdId: null, lastCampId: null, lastAdsetId: null,
+   extractedPageId: '', extractedPostId: '',
+@@ -207,8 +208,8 @@ <h1 class="text-lg font-bold text-blue-400">🚀 Meta Ads Tool</h1>
+ const LABELS = {
+   ar: {
+     lbl_cookies: 'الكوكيز (JSON)',
+-    lbl_ad_account: 'الحساب الإعلاني (رابط أو act_xxx)',
+-    lbl_ad_account_hint: 'الأداة ستفتح صفحته لاستخراج التوكن وتستخدمه في كل الخطوات تلقائياً',
++    lbl_billing_url: 'رابط الفوترة (Billing URL)',
++    lbl_billing_hint: 'الأداة ستستخرج الحساب الإعلاني من الرابط وتربط البطاقات فيه وتستخدمه لإنشاء الإعلانات',
+     lbl_proxy: 'بروكسي (اختياري)',
+     btn_verify: '🔍 التحقق واستخراج التوكن',
+     lbl_active_acc: 'الحساب النشط:',
+@@ -229,7 +230,7 @@ <h1 class="text-lg font-bold text-blue-400">🚀 Meta Ads Tool</h1>
+     seg_auto: '🤖 ربط تلقائي من المصدر', seg_manual: '✍️ ربط ببطاقاتي',
+     opt_all: 'الكل', opt_male: 'ذكور', opt_female: 'إناث',
+     opt_eng: 'تفاعل', opt_tra: 'زيارات', opt_awa: 'وعي', opt_lea: 'عملاء', opt_sal: 'مبيعات',
+-    no_cookies: 'أدخل الكوكيز', no_account: 'أدخل الحساب الإعلاني في التبويب الأول أولاً',
++    no_cookies: 'أدخل الكوكيز', no_billing_url: 'أدخل رابط الفوترة', no_account: 'أدخل رابط الفوترة في التبويب الأول أولاً',
+     no_cards: 'أدخل البطاقات', no_post: 'أدخل رابط المنشور وانتظر الاستخراج',
+     no_token: 'استخرج التوكن أولاً', no_traffic: 'أدخل رابط الوجهة',
+     creating: '⏳ جاري الإنشاء...', linking_auto: '⏳ جاري جلب كارت عشوائي وربطه...',
+@@ -237,8 +238,8 @@ <h1 class="text-lg font-bold text-blue-400">🚀 Meta Ads Tool</h1>
+   },
+   en: {
+     lbl_cookies: 'Cookies (JSON)',
+-    lbl_ad_account: 'Ad Account (URL or act_xxx)',
+-    lbl_ad_account_hint: 'The tool opens its page to extract the token and uses it automatically everywhere',
++    lbl_billing_url: 'Billing URL',
++    lbl_billing_hint: 'The tool extracts the ad account from this URL, links cards in it, and uses it to create ads',
+     lbl_proxy: 'Proxy (optional)',
+     btn_verify: '🔍 Verify & Extract Token',
+     lbl_active_acc: 'Active account:',
+@@ -259,7 +260,7 @@ <h1 class="text-lg font-bold text-blue-400">🚀 Meta Ads Tool</h1>
+     seg_auto: '🤖 Auto-link from source', seg_manual: '✍️ Manual cards',
+     opt_all: 'All', opt_male: 'Male', opt_female: 'Female',
+     opt_eng: 'Engagement', opt_tra: 'Traffic', opt_awa: 'Awareness', opt_lea: 'Leads', opt_sal: 'Sales',
+-    no_cookies: 'Enter cookies', no_account: 'Enter your ad account in the first tab first',
++    no_cookies: 'Enter cookies', no_billing_url: 'Enter billing URL', no_account: 'Enter the billing URL in the first tab first',
+     no_cards: 'Enter cards', no_post: 'Enter post URL and wait for extraction',
+     no_token: 'Extract token first', no_traffic: 'Enter destination URL',
+     creating: '⏳ Creating...', linking_auto: '⏳ Fetching random card and linking...',
+@@ -271,8 +272,8 @@ <h1 class="text-lg font-bold text-blue-400">🚀 Meta Ads Tool</h1>
+ 
+ function translatePage(){
+   document.getElementById('lbl_cookies').textContent           = t('lbl_cookies');
+-  document.getElementById('lbl_ad_account').textContent        = t('lbl_ad_account');
+-  document.getElementById('lbl_ad_account_hint').textContent   = t('lbl_ad_account_hint');
++  document.getElementById('lbl_billing_url').textContent        = t('lbl_billing_url');
++  document.getElementById('lbl_billing_hint').textContent       = t('lbl_billing_hint');
+   document.getElementById('lbl_proxy').textContent             = t('lbl_proxy');
+   document.getElementById('btn_verify').textContent            = t('btn_verify');
+   document.getElementById('lbl_active_acc').textContent        = t('lbl_active_acc');
+@@ -399,9 +400,10 @@ <h1 class="text-lg font-bold text-blue-400">🚀 Meta Ads Tool</h1>
+ async function verifyAndExtract(){
+   STATE.cookies = document.getElementById('cookies').value.trim();
+   STATE.proxy   = document.getElementById('proxy').value.trim();
+-  const accInput = document.getElementById('ad_account_input').value.trim();
++  STATE.billingUrl = document.getElementById('billing_url_input').value.trim();
+ 
+   if(!STATE.cookies) return alert(t('no_cookies'));
++  if(!STATE.billingUrl) return alert(t('no_billing_url'));
+ 
+   const resultEl = document.getElementById('verify_result');
+   resultEl.innerHTML = '<span class="loader"></span> جاري الاستخراج...';
+@@ -409,11 +411,12 @@ <h1 class="text-lg font-bold text-blue-400">🚀 Meta Ads Tool</h1>
+   try {
+     const res = await fetch('/api/verify_and_extract',{method:'POST',
+       headers:{'Content-Type':'application/json'},
+-      body:JSON.stringify({cookies:STATE.cookies, proxy:STATE.proxy, ad_account:accInput})}).then(r=>r.json());
++      body:JSON.stringify({cookies:STATE.cookies, proxy:STATE.proxy, billing_url:STATE.billingUrl})}).then(r=>r.json());
+ 
+     if(res.ok){
+       STATE.token     = res.token;
+-      STATE.adAccount = res.ad_account || accInput || null;
++      STATE.adAccount = res.ad_account || null;
++      STATE.billingUrl = res.billing_url || STATE.billingUrl;
+       updateAccBadge();
+ 
+       const tokenPreview = STATE.token ? STATE.token.substring(0,20)+'...' : (STATE.lang==='ar'?'لم يُستخرج':'not extracted');
+@@ -438,11 +441,11 @@ <h1 class="text-lg font-bold text-blue-400">🚀 Meta Ads Tool</h1>
+ 
+   let body;
+   if(STATE.cardMode==='auto'){
+-    body = {cookies:STATE.cookies, proxy:STATE.proxy, ad_account:STATE.adAccount, mode:'auto'};
++    body = {cookies:STATE.cookies, proxy:STATE.proxy, ad_account:STATE.adAccount, billing_url:STATE.billingUrl, mode:'auto'};
+   } else {
+     const cards = document.getElementById('cards_text').value.trim();
+     if(!cards) return alert(t('no_cards'));
+-    body = {cookies:STATE.cookies, proxy:STATE.proxy, ad_account:STATE.adAccount, mode:'manual', cards_text:cards};
++    body = {cookies:STATE.cookies, proxy:STATE.proxy, ad_account:STATE.adAccount, billing_url:STATE.billingUrl, mode:'manual', cards_text:cards};
+   }
+ 
+   log.classList.remove('hidden');

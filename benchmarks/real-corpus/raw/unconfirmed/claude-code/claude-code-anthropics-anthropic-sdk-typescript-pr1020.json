@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1020",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1020,
+    "headSha": "ac033437f4cf454b74dcb0ea85b729046efb4b4b",
+    "baseSha": "74ac150346ca92290b0fc57d9728e3841aa2dd54",
+    "title": "fix(vertex): strip anthropic-beta header from countTokens requests",
+    "body": "## Summary\n\nFixes #1016\n\nWhen using the Vertex AI backend, `client.messages.countTokens()` and `client.beta.messages.countTokens()` forward the `anthropic-beta` header to Vertex's `count-tokens:rawPredict` endpoint. Vertex model backends roll out beta values on different schedules — the Haiku tier frequently lags — so any call that includes an unrecognized beta value receives an HTTP 400:\n\n```\n\"Unexpected value(s) `effort-2025-11-24` for the `anthropic-beta` header.\"\n```\n\nToken counting does not require any beta-gated capabilities, so there is no reason to forward these headers. This PR strips `anthropic-beta` inside `buildRequest` at the same point where the path is rewritten to `count-tokens:rawPredict`.\n\n## Changes\n\n- **`packages/vertex-sdk/src/client.ts`**: In the `count_tokens` branch of `buildRequest`, apply `buildHeaders([options.headers, { 'anthropic-beta': null }])` to explicitly remove the `anthropic-beta` header before forwarding to Vertex. The `null` sentinel follows the existing convention used throughout the SDK to delete a header.\n- **`packages/vertex-sdk/tests/client.test.ts`**: Add four new tests covering:\n  - Beta header is stripped from non-beta `count_tokens` requests\n  - Beta header is stripped from beta `count_tokens?beta=true` requests\n  - Beta header is **not** stripped from regular `/v1/messages` requests\n  - The path is correctly rewritten to `count-tokens:rawPredict`\n\n## Test plan\n\n- [x] All 12 tests in `packages/vertex-sdk/tests/client.test.ts` pass (`yarn test`)\n- [x] No changes to generated SDK code\n- [x] Fix is isolated to the Vertex `buildRequest` override and does not affect the Bedrock or main SDK paths",
+    "author": "xodn348",
+    "headRef": "fix/vertex-strip-anthropic-beta-count-tokens",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "ac033437f4cf454b74dcb0ea85b729046efb4b4b",
+    "baseSha": "74ac150346ca92290b0fc57d9728e3841aa2dd54"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1020.diff",
+  "vendoredAt": "2026-05-24T03:16:43.165Z",
+  "collectedAt": "2026-05-24T03:16:43.165Z"
+}

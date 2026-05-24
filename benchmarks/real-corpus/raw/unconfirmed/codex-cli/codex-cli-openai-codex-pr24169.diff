@@ -1,0 +1,367 @@
+diff --git a/codex-rs/codex-api/src/api_bridge.rs b/codex-rs/codex-api/src/api_bridge.rs
+index 1c34d8bbf23..3818cccf05c 100644
+--- a/codex-rs/codex-api/src/api_bridge.rs
++++ b/codex-rs/codex-api/src/api_bridge.rs
+@@ -57,8 +57,8 @@ pub fn map_api_error(err: ApiError) -> CodexErr {
+                 }
+ 
+                 if status == http::StatusCode::BAD_REQUEST {
+-                    if let Ok(parsed) = serde_json::from_str::<Value>(&body_text)
+-                        && let Some(error) = parsed.get("error")
++                    let parsed = serde_json::from_str::<Value>(&body_text).ok();
++                    if let Some(error) = parsed.as_ref().and_then(|parsed| parsed.get("error"))
+                         && error.get("code").and_then(Value::as_str)
+                             == Some(CYBER_POLICY_ERROR_CODE)
+                     {
+@@ -69,8 +69,13 @@ pub fn map_api_error(err: ApiError) -> CodexErr {
+                             .map(str::to_string)
+                             .unwrap_or_else(|| CYBER_POLICY_FALLBACK_MESSAGE.to_string());
+                         CodexErr::CyberPolicy { message }
+-                    } else if body_text
+-                        .contains("The image data you provided does not represent a valid image")
++                    } else if parsed
++                        .as_ref()
++                        .and_then(|parsed| parsed.get("error"))
++                        .is_some_and(is_invalid_image_url_error)
++                        || body_text.contains(
++                            "The image data you provided does not represent a valid image",
++                        )
+                     {
+                         CodexErr::InvalidImageRequest()
+                     } else {
+@@ -145,6 +150,21 @@ const X_ERROR_JSON_HEADER: &str = "x-error-json";
+ const CYBER_POLICY_ERROR_CODE: &str = "cyber_policy";
+ const CYBER_POLICY_FALLBACK_MESSAGE: &str =
+     "This request has been flagged for possible cybersecurity risk.";
++const IMAGE_URL_ERROR_MESSAGE: &str = "Expected a base64-encoded data URL with an image MIME type";
++
++fn is_invalid_image_url_error(error: &Value) -> bool {
++    let points_to_image_url = error
++        .get("param")
++        .and_then(Value::as_str)
++        .is_some_and(|param| param == "image_url" || param.ends_with(".image_url"));
++
++    error.get("code").and_then(Value::as_str) == Some("invalid_value")
++        && points_to_image_url
++        && error
++            .get("message")
++            .and_then(Value::as_str)
++            .is_some_and(|message| message.contains(IMAGE_URL_ERROR_MESSAGE))
++}
+ 
+ #[cfg(test)]
+ #[path = "api_bridge_tests.rs"]
+diff --git a/codex-rs/codex-api/src/api_bridge_tests.rs b/codex-rs/codex-api/src/api_bridge_tests.rs
+index 101e5566fe2..44118a4b44b 100644
+--- a/codex-rs/codex-api/src/api_bridge_tests.rs
++++ b/codex-rs/codex-api/src/api_bridge_tests.rs
+@@ -124,6 +124,72 @@ fn map_api_error_keeps_unknown_400_errors_generic() {
+     assert_eq!(message, body);
+ }
+ 
++#[test]
++fn map_api_error_maps_empty_base64_image_url_to_invalid_image() {
++    let body = serde_json::json!({
++        "error": {
++            "type": "invalid_request_error",
++            "code": "invalid_value",
++            "message": "Invalid 'input[0].content[2].image_url'. Expected a base64-encoded data URL with an image MIME type (e.g. 'data:image/png;base64,aW1nIGJ5dGVzIGhlcmU='), but got empty base64-encoded bytes.",
++            "param": "input[0].content[2].image_url"
++        }
++    })
++    .to_string();
++    let err = map_api_error(ApiError::Transport(TransportError::Http {
++        status: http::StatusCode::BAD_REQUEST,
++        url: Some("http://example.com/v1/responses".to_string()),
++        headers: None,
++        body: Some(body),
++    }));
++
++    assert!(matches!(err, CodexErr::InvalidImageRequest()));
++}
++
++#[test]
++fn map_api_error_maps_tool_output_image_url_to_invalid_image() {
++    let body = serde_json::json!({
++        "error": {
++            "type": "invalid_request_error",
++            "code": "invalid_value",
++            "message": "Invalid 'input[111].output[1].image_url'. Expected a base64-encoded data URL with an image MIME type (e.g. 'data:image/png;base64,aW1nIGJ5dGVzIGhlcmU='), but got empty base64-encoded bytes.",
++            "param": "input[111].output[1].image_url"
++        }
++    })
++    .to_string();
++    let err = map_api_error(ApiError::Transport(TransportError::Http {
++        status: http::StatusCode::BAD_REQUEST,
++        url: Some("http://example.com/v1/responses".to_string()),
++        headers: None,
++        body: Some(body),
++    }));
++
++    assert!(matches!(err, CodexErr::InvalidImageRequest()));
++}
++
++#[test]
++fn map_api_error_keeps_non_image_url_invalid_value_generic() {
++    let body = serde_json::json!({
++        "error": {
++            "type": "invalid_request_error",
++            "code": "invalid_value",
++            "message": "Invalid 'input[0].name'. Expected a valid tool name.",
++            "param": "input[0].name"
++        }
++    })
++    .to_string();
++    let err = map_api_error(ApiError::Transport(TransportError::Http {
++        status: http::StatusCode::BAD_REQUEST,
++        url: Some("http://example.com/v1/responses".to_string()),
++        headers: None,
++        body: Some(body.clone()),
++    }));
++
++    let CodexErr::InvalidRequest(message) = err else {
++        panic!("expected CodexErr::InvalidRequest, got {err:?}");
++    };
++    assert_eq!(message, body);
++}
++
+ #[test]
+ fn map_api_error_maps_usage_limit_limit_name_header() {
+     let mut headers = HeaderMap::new();
+diff --git a/codex-rs/protocol/src/models.rs b/codex-rs/protocol/src/models.rs
+index 28a7d6522c8..6a7877d5dc8 100644
+--- a/codex-rs/protocol/src/models.rs
++++ b/codex-rs/protocol/src/models.rs
+@@ -1062,6 +1062,24 @@ fn unsupported_image_error_placeholder(path: &std::path::Path, mime: &str) -> Co
+     }
+ }
+ 
++const EMPTY_BASE64_IMAGE_INPUT_TEXT: &str =
++    "Codex could not attach the image because it had empty base64 data.";
++const EMPTY_BASE64_TOOL_IMAGE_TEXT: &str =
++    "Tool returned an empty image; skipped sending it to the model.";
++
++fn is_empty_base64_image_data_url(image_url: &str) -> bool {
++    let Some((metadata, payload)) = image_url.split_once(',') else {
++        return false;
++    };
++    let metadata = metadata.trim().to_ascii_lowercase();
++
++    metadata.starts_with("data:image/")
++        && metadata
++            .split(';')
++            .any(|segment| segment.trim() == "base64")
++        && payload.trim().is_empty()
++}
++
+ pub fn local_image_content_items_with_label_number(
+     path: &std::path::Path,
+     file_bytes: Vec<u8>,
+@@ -1231,14 +1249,21 @@ impl From<Vec<UserInput>> for ResponseInputItem {
+                     UserInput::Image { image_url, detail } => {
+                         image_index += 1;
+                         let detail = detail.unwrap_or(DEFAULT_IMAGE_DETAIL);
+-                        vec![
++                        let image_item = if is_empty_base64_image_data_url(&image_url) {
+                             ContentItem::InputText {
+-                                text: image_open_tag_text(),
+-                            },
++                                text: EMPTY_BASE64_IMAGE_INPUT_TEXT.to_string(),
++                            }
++                        } else {
+                             ContentItem::InputImage {
+                                 image_url,
+                                 detail: Some(detail),
++                            }
++                        };
++                        vec![
++                            ContentItem::InputText {
++                                text: image_open_tag_text(),
+                             },
++                            image_item,
+                             ContentItem::InputText {
+                                 text: image_close_tag_text(),
+                             },
+@@ -1361,9 +1386,15 @@ impl From<crate::dynamic_tools::DynamicToolCallOutputContentItem>
+                 Self::InputText { text }
+             }
+             crate::dynamic_tools::DynamicToolCallOutputContentItem::InputImage { image_url } => {
+-                Self::InputImage {
+-                    image_url,
+-                    detail: Some(DEFAULT_IMAGE_DETAIL),
++                if is_empty_base64_image_data_url(&image_url) {
++                    Self::InputText {
++                        text: EMPTY_BASE64_TOOL_IMAGE_TEXT.to_string(),
++                    }
++                } else {
++                    Self::InputImage {
++                        image_url,
++                        detail: Some(DEFAULT_IMAGE_DETAIL),
++                    }
+                 }
+             }
+         }
+@@ -1592,19 +1623,23 @@ fn convert_mcp_content_to_items(
+                     let mime_type = mime_type.unwrap_or_else(|| "application/octet-stream".into());
+                     format!("data:{mime_type};base64,{data}")
+                 };
+-                FunctionCallOutputContentItem::InputImage {
+-                    image_url,
+-                    detail: meta
+-                        .as_ref()
+-                        .and_then(serde_json::Value::as_object)
+-                        .and_then(|meta| meta.get(CODEX_IMAGE_DETAIL_META_KEY))
+-                        .and_then(serde_json::Value::as_str)
+-                        .and_then(|detail| match detail {
+-                            "high" => Some(ImageDetail::High),
+-                            "original" => Some(ImageDetail::Original),
+-                            _ => None,
+-                        })
+-                        .or(Some(DEFAULT_IMAGE_DETAIL)),
++                let detail = meta
++                    .as_ref()
++                    .and_then(serde_json::Value::as_object)
++                    .and_then(|meta| meta.get(CODEX_IMAGE_DETAIL_META_KEY))
++                    .and_then(serde_json::Value::as_str)
++                    .and_then(|detail| match detail {
++                        "high" => Some(ImageDetail::High),
++                        "original" => Some(ImageDetail::Original),
++                        _ => None,
++                    })
++                    .or(Some(DEFAULT_IMAGE_DETAIL));
++                if is_empty_base64_image_data_url(&image_url) {
++                    FunctionCallOutputContentItem::InputText {
++                        text: EMPTY_BASE64_TOOL_IMAGE_TEXT.to_string(),
++                    }
++                } else {
++                    FunctionCallOutputContentItem::InputImage { image_url, detail }
+                 }
+             }
+             Ok(McpContent::Unknown) | Err(_) => FunctionCallOutputContentItem::InputText {
+@@ -2210,6 +2245,24 @@ mod tests {
+         Ok(())
+     }
+ 
++    #[test]
++    fn empty_base64_dynamic_tool_image_output_is_replaced_with_text() -> Result<()> {
++        let item = FunctionCallOutputContentItem::from(
++            crate::dynamic_tools::DynamicToolCallOutputContentItem::InputImage {
++                image_url: "data:image/png;base64,".to_string(),
++            },
++        );
++
++        assert_eq!(
++            item,
++            FunctionCallOutputContentItem::InputText {
++                text: EMPTY_BASE64_TOOL_IMAGE_TEXT.to_string(),
++            }
++        );
++
++        Ok(())
++    }
++
+     #[test]
+     fn serializes_image_outputs_as_array() -> Result<()> {
+         let call_tool_result = CallToolResult {
+@@ -2255,6 +2308,66 @@ mod tests {
+         Ok(())
+     }
+ 
++    #[test]
++    fn empty_base64_mcp_image_output_is_replaced_with_text() -> Result<()> {
++        let call_tool_result = CallToolResult {
++            content: vec![
++                serde_json::json!({"type":"text","text":"caption"}),
++                serde_json::json!({"type":"image","data":"","mimeType":"image/png"}),
++            ],
++            structured_content: None,
++            is_error: Some(false),
++            meta: None,
++        };
++
++        let payload = call_tool_result.into_function_call_output_payload();
++        assert_eq!(payload.success, Some(true));
++        let Some(items) = payload.content_items() else {
++            panic!("expected content items");
++        };
++        assert_eq!(
++            items,
++            [
++                FunctionCallOutputContentItem::InputText {
++                    text: "caption".into(),
++                },
++                FunctionCallOutputContentItem::InputText {
++                    text: EMPTY_BASE64_TOOL_IMAGE_TEXT.to_string(),
++                },
++            ]
++        );
++
++        Ok(())
++    }
++
++    #[test]
++    fn empty_base64_data_url_mcp_image_output_is_replaced_with_text() -> Result<()> {
++        let call_tool_result = CallToolResult {
++            content: vec![serde_json::json!({
++                "type": "image",
++                "data": "data:image/png;base64,",
++                "mimeType": "image/png"
++            })],
++            structured_content: None,
++            is_error: Some(false),
++            meta: None,
++        };
++
++        let payload = call_tool_result.into_function_call_output_payload();
++        assert_eq!(payload.success, Some(true));
++        let Some(items) = payload.content_items() else {
++            panic!("expected content items");
++        };
++        assert_eq!(
++            items,
++            [FunctionCallOutputContentItem::InputText {
++                text: EMPTY_BASE64_TOOL_IMAGE_TEXT.to_string(),
++            }]
++        );
++
++        Ok(())
++    }
++
+     #[test]
+     fn serializes_custom_tool_image_outputs_as_array() -> Result<()> {
+         let item = ResponseInputItem::CustomToolCallOutput {
+@@ -2645,6 +2758,34 @@ mod tests {
+         Ok(())
+     }
+ 
++    #[test]
++    fn empty_base64_image_user_input_is_replaced_with_text() -> Result<()> {
++        let item = ResponseInputItem::from(vec![UserInput::Image {
++            image_url: "data:image/png;base64,".to_string(),
++            detail: None,
++        }]);
++
++        match item {
++            ResponseInputItem::Message { content, .. } => {
++                let expected = vec![
++                    ContentItem::InputText {
++                        text: image_open_tag_text(),
++                    },
++                    ContentItem::InputText {
++                        text: EMPTY_BASE64_IMAGE_INPUT_TEXT.to_string(),
++                    },
++                    ContentItem::InputText {
++                        text: image_close_tag_text(),
++                    },
++                ];
++                assert_eq!(content, expected);
++            }
++            other => panic!("expected message response but got {other:?}"),
++        }
++
++        Ok(())
++    }
++
+     #[test]
+     fn image_user_input_preserves_requested_detail() -> Result<()> {
+         let image_url = "data:image/png;base64,abc".to_string();

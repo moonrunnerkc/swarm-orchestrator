@@ -1,0 +1,133 @@
+diff --git a/src/anthropic/_client.py b/src/anthropic/_client.py
+index e3752e20c..c1919c441 100644
+--- a/src/anthropic/_client.py
++++ b/src/anthropic/_client.py
+@@ -172,7 +172,7 @@ def __init__(
+         _token_cache: TokenCache | None | NotGiven = not_given,
+     ) -> None:
+         """Construct a new synchronous Anthropic client instance.
+-        
++
+         Credentials are resolved in the following order (first match wins):
+ 
+         1. Explicit constructor arguments — ``api_key=``, ``auth_token=``,
+@@ -456,6 +456,19 @@ def copy(
+ 
+         http_client = http_client or self._client
+         # --- credentials support (hand-written, upstream to Stainless) ---
++        replaces_static_auth = (
++            (not isinstance(credentials, NotGiven) and credentials is not None)
++            or config is not None
++            or profile is not None
++        )
++        copied_api_key = api_key if api_key is not None else self.api_key
++        copied_auth_token = auth_token if auth_token is not None else self.auth_token
++        if replaces_static_auth:
++            if api_key is None:
++                copied_api_key = None
++            if auth_token is None:
++                copied_auth_token = None
++
+         if config is not None:
+             if not isinstance(credentials, NotGiven) or profile is not None:
+                 raise TypeError("Pass at most one of `credentials=`, `config=`, or `profile=`.")
+@@ -475,8 +488,8 @@ def copy(
+                     _extra_kwargs = {"_token_cache": self._token_cache, **_extra_kwargs}
+         # --- end credentials support ---
+         return self.__class__(
+-            api_key=api_key or self.api_key,
+-            auth_token=auth_token or self.auth_token,
++            api_key=copied_api_key,
++            auth_token=copied_auth_token,
+             webhook_key=webhook_key or self.webhook_key,
+             base_url=base_url or self.base_url,
+             timeout=self.timeout if isinstance(timeout, NotGiven) else timeout,
+@@ -854,6 +867,19 @@ def copy(
+ 
+         http_client = http_client or self._client
+         # --- credentials support (hand-written, upstream to Stainless) ---
++        replaces_static_auth = (
++            (not isinstance(credentials, NotGiven) and credentials is not None)
++            or config is not None
++            or profile is not None
++        )
++        copied_api_key = api_key if api_key is not None else self.api_key
++        copied_auth_token = auth_token if auth_token is not None else self.auth_token
++        if replaces_static_auth:
++            if api_key is None:
++                copied_api_key = None
++            if auth_token is None:
++                copied_auth_token = None
++
+         if config is not None:
+             if not isinstance(credentials, NotGiven) or profile is not None:
+                 raise TypeError("Pass at most one of `credentials=`, `config=`, or `profile=`.")
+@@ -873,8 +899,8 @@ def copy(
+                     _extra_kwargs = {"_token_cache": self._token_cache, **_extra_kwargs}
+         # --- end credentials support ---
+         return self.__class__(
+-            api_key=api_key or self.api_key,
+-            auth_token=auth_token or self.auth_token,
++            api_key=copied_api_key,
++            auth_token=copied_auth_token,
+             webhook_key=webhook_key or self.webhook_key,
+             base_url=base_url or self.base_url,
+             timeout=self.timeout if isinstance(timeout, NotGiven) else timeout,
+diff --git a/tests/lib/test_credentials.py b/tests/lib/test_credentials.py
+index 780eee85b..ab7dc2848 100644
+--- a/tests/lib/test_credentials.py
++++ b/tests/lib/test_credentials.py
+@@ -2948,6 +2948,18 @@ def _walk_sync_auth(client: Anthropic) -> httpx.Request:
+             pass
+         return modified
+ 
++    @staticmethod
++    async def _walk_async_auth(client: AsyncAnthropic) -> httpx.Request:
++        request = client._build_request(FinalRequestOptions(method="get", url="/foo"))
++        auth = client.custom_auth
++        if auth is None:
++            return request
++
++        async for modified in auth.async_auth_flow(request):
++            return modified
++
++        raise AssertionError("async auth flow did not yield a request")
++
+     # -- step 1 beats step 2: explicit credentials= beats env static --------
+ 
+     def test_explicit_credentials_beats_env_api_key(
+@@ -3044,6 +3056,34 @@ def test_copy_with_explicit_api_key_shadows_inherited_credentials(self, caplog:
+         assert req.headers.get("Authorization") is None
+         assert any("`api_key=`" in r.message for r in caplog.records)
+ 
++    def test_copy_with_credentials_replaces_inherited_api_key(self, caplog: pytest.LogCaptureFixture) -> None:
++        parent = Anthropic(api_key="sk-parent")
++        with caplog.at_level(logging.WARNING, logger="anthropic.lib.credentials._auth"):
++            copied = parent.copy(credentials=StaticToken("bearer-child"))
++
++        assert copied.api_key is None
++        assert copied.credentials is not None
++        req = self._walk_sync_auth(copied)
++        assert req.headers.get("X-Api-Key") is None
++        assert req.headers.get("Authorization") == "Bearer bearer-child"
++        assert not any("takes precedence" in r.message for r in caplog.records)
++
++    async def test_async_copy_with_credentials_replaces_inherited_api_key(
++        self, caplog: pytest.LogCaptureFixture
++    ) -> None:
++        parent = AsyncAnthropic(api_key="sk-parent")
++        with caplog.at_level(logging.WARNING, logger="anthropic.lib.credentials._auth"):
++            copied = parent.copy(credentials=StaticToken("bearer-child"))
++
++        assert copied.api_key is None
++        assert copied.credentials is not None
++        req = await self._walk_async_auth(copied)
++        assert req.headers.get("X-Api-Key") is None
++        assert req.headers.get("Authorization") == "Bearer bearer-child"
++        assert not any("takes precedence" in r.message for r in caplog.records)
++        await parent.close()
++        await copied.close()
++
+     # -- step 2 shadows steps 3-5: env static shadows auto-discovery ---------
+ 
+     def test_env_api_key_shadows_env_federation_trio_with_warning(

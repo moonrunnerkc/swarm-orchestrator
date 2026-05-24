@@ -1,0 +1,532 @@
+diff --git a/.cursor/rules/sprint-context.md b/.cursor/rules/sprint-context.md
+index 8e11e33..8f8301d 100644
+--- a/.cursor/rules/sprint-context.md
++++ b/.cursor/rules/sprint-context.md
+@@ -12,8 +12,13 @@ alwaysApply: true
+ ## Current Sprint
+ 
+ **Sprint:** 2 (first Marathon-driven sprint)
+-**Phase:** Kickoff — awaiting specification
+-**Status:** Inputs populated, ready for `sprint-kickoff` skill activation
++**Phase:** Specification
++**Status:** Sprint kicked off, specification in progress
++
++**Selected Requirements:**
++- R1: Schedule/Cron Triggers — automation entity + cron scheduler
++- R2: Event Triggers (GitHub/GitLab) — extend InboundRouter for automation dispatch
++- R6: Automation Builder UI — create/list scaffold for managing automations
+ 
+ ## What Exists
+ 
+@@ -69,4 +74,4 @@ Epic 1 (Agent Powers) delivered core platform: agent loop, gateway API, web dash
+ ## Sprint Goals
+ 
+ <!-- Updated at sprint kickoff by the sprint-kickoff skill -->
+-Sprint 2 will implement: Automation entity + schema, cron/schedule triggers, GitHub/GitLab event trigger binding, and automation builder UI scaffold.
++Sprint 2 delivers the automation foundation: a persistent automation entity with cron/schedule triggers that fire unattended agent sessions, GitHub/GitLab event bindings that extend the existing InboundRouter into full automation dispatch, and a web UI scaffold (list + create flow) for managing automations. This sprint establishes the core data model and dispatch patterns that Sprint 3+ will extend with additional trigger sources.
+diff --git a/.marathon/inputs/requirements.md b/.marathon/inputs/requirements.md
+index d7e3e9a..a86e707 100644
+--- a/.marathon/inputs/requirements.md
++++ b/.marathon/inputs/requirements.md
+@@ -17,7 +17,7 @@
+ 
+ ### R1: Schedule/Cron Triggers
+ 
+-**Status:** [TODO]
++**Status:** [IN SPRINT]
+ 
+ **Description:**
+ Agents can be triggered on schedules — either preset intervals (every hour, daily, weekly) or custom cron expressions. Scheduled automations run unattended and produce results like any other agent session.
+@@ -41,7 +41,7 @@ Agents can be triggered on schedules — either preset intervals (every hour, da
+ 
+ ### R2: Event Triggers (GitHub/GitLab)
+ 
+-**Status:** [TODO]
++**Status:** [IN SPRINT]
+ 
+ **Description:**
+ Extend the existing `InboundRouter` + `InboundDispatcher` to support full automation binding — users configure trigger → prompt → tools → repos, and matching events automatically spawn agent sessions.
+@@ -127,7 +127,7 @@ Agents can store and retrieve learnings from past runs. A memory system provides
+ 
+ ### R6: Automation Builder UI
+ 
+-**Status:** [TODO]
++**Status:** [IN SPRINT]
+ 
+ **Description:**
+ A web interface for creating, editing, and managing automations. Users configure trigger → prompt → tools → repos through a guided builder flow.
+diff --git a/.marathon/sprints/002/clarifications.md b/.marathon/sprints/002/clarifications.md
+new file mode 100644
+index 0000000..fdf2444
+--- /dev/null
++++ b/.marathon/sprints/002/clarifications.md
+@@ -0,0 +1,286 @@
++# Clarifications: Sprint 2 — Automations Foundation
++
++**Spec**: `.marathon/sprints/002/spec.md`
++**Date**: 2026-05-24
++**Inputs**: spec.md, product.md, constraints.md, existing codebase
++
++---
++
++## Ambiguities Identified & Resolved
++
++### C1: Router Architecture — First-Match vs. Multi-Match
++
++**Ambiguity**: The spec originally said automation routes run "after all legacy routes" as a catch-all, but the InboundRouter uses first-match-wins semantics. How should automations integrate with the existing dispatch system?
++
++**Resolution**: **No backward compatibility constraint.** Refactor InboundRouter to multi-match (evaluate-all) semantics. The router evaluates every route (static + dynamic automation-backed) and returns an array of all matching actions. The dispatcher executes each action. This unifies the system:
++
++- Static routes (existing `DEFAULT_ROUTES`) continue to work but are no longer first-match-wins exclusive
++- Dynamic automation routes query the DB for enabled automations matching the event's repo + kind
++- Both static and automation routes can fire on the same event
++
++The InboundRouter becomes the single dispatch orchestrator for all inbound events, whether they target existing sessions or create new automation sessions.
++
++---
++
++### C2: Scheduler Concurrency — Timer-Based with Pub/Sub Coordination
++
++**Ambiguity**: The gateway may run N instances on Render. How is at-most-once guaranteed without polling?
++
++**Resolution**: Timer-based scheduler with Redis pub/sub coordination:
++
++1. **On startup**, each gateway instance queries `SELECT id, next_run_at FROM automations WHERE status = 'active' AND trigger_type = 'schedule' ORDER BY next_run_at ASC LIMIT 1`
++2. **Sets a `setTimeout`** for exactly `nextRunAt - now` milliseconds
++3. **When the timer fires**, it attempts an atomic claim: `UPDATE automations SET next_run_at = <computed_next>, last_run_at = NOW() WHERE id = ? AND next_run_at = <expected_value>`. Only the instance whose UPDATE affects 1 row wins (compare-and-swap).
++4. **The winner** enqueues the agent session via Redis Streams, then re-queries for the next due automation and sets a new timer.
++5. **Losers** (affected rows = 0) simply re-query and re-set their timer — no work done.
++6. **On automation CRUD**, the API handler publishes to Redis channel `automation:schedule:changed`. All instances subscribe and re-compute their next wakeup.
++
++This gives:
++- **Zero polling waste** — no periodic queries when nothing is due
++- **Millisecond precision** — fires exactly when scheduled, not up to 30s late
++- **Multi-instance safe** — atomic DB CAS guarantees at-most-once
++- **Reactive to changes** — pub/sub ensures new/updated automations are picked up immediately
++
++**Fallback**: A 5-minute safety-net interval re-queries unconditionally, catching edge cases where pub/sub messages are lost (Redis restart, network partition). This is a recovery mechanism, not the primary scheduling path.
++
++---
++
++### C3: `create_automation_session` — Dispatch Path
++
++**Ambiguity**: The spec introduces automation session creation. How does it integrate with the refactored multi-match InboundRouter?
++
++**Resolution**: The refactored InboundRouter returns an array of `RouteAction[]`. A new action type `create_automation_session` is added to the `RouteAction` union, carrying the `automationId` and trigger context. The InboundDispatcher handles this new action type by calling `SessionService.createFromAutomation(automationId, triggerContext)`.
++
++This keeps the clean router → dispatcher → service layering. The router decides what to do (including automation matches), the dispatcher executes, and SessionService owns session creation logic.
++
++---
++
++### C4: Automation Entity Ownership — User vs. Project vs. Org
++
++**Ambiguity**: The spec says "Owned by a user, scoped to a project/org" but doesn't clarify the access model. Can other org members see/edit automations created by a colleague?
++
++**Resolution**: Automations are owned by a `userId` (creator) and optionally scoped to a `projectId`. Access rules:
++- If `projectId` is set → all org members with project access can view; only owner can edit/delete
++- If `projectId` is null → only the owner can view/edit/delete (personal automation)
++- Sprint 2 implements owner-only access. Project-scoped access control deferred to Sprint 3 when roles/permissions become relevant.
++
++---
++
++### C5: Automation → Session Link — Foreign Key vs. Join Table
++
++**Ambiguity**: The spec says "Sessions get an optional `automationId` foreign key" AND "link is through `automation_runs` join table." These are contradictory.
++
++**Resolution**: Use **both**, serving different purposes:
++- `sessions.automationId` (nullable FK) → quick lookup: "was this session created by an automation?" Enables filtering in the sessions list.
++- `automation_runs` table → rich audit trail: triggered_at, trigger_event_id (webhook delivery ID), trigger_payload snapshot, outcome. Enables the run history view on the automation detail page.
++
++The FK is the foreign key from session → automation. The join table is the audit log with additional metadata. They are complementary, not redundant.
++
++---
++
++### C6: Webhook Handler Dispatch — Sync vs. Async
++
++**Ambiguity**: The current webhook handler (`webhookRoutes.post("/github", ...)`) runs `inboundDispatcher.dispatch()` synchronously before returning 200. Should automation matching also be synchronous?
++
++**Resolution**: Automation matching is **asynchronous** (fire-and-forget after returning 200 to GitHub). Rationale:
++- GitHub expects webhook responses within 10 seconds
++- Automation matching requires a database query (SELECT automations WHERE repo = X AND enabled = true)
++- Session creation enqueues a Redis Streams job (fast) but we don't want to risk timeout
++- Pattern: `void automationMatcher.evaluateAndDispatch(event)` — non-blocking
++
++The webhook handler returns 200 immediately. Any failures in automation dispatch are logged and retried via the scheduler's "missed execution" recovery (if a session was expected but not created).
++
++---
++
++### C7: Cron Library Selection
++
++**Ambiguity**: The spec doesn't specify which cron parser library to use. The dependency policy requires >1000 GitHub stars and active maintenance.
++
++**Resolution**: Use `cron-parser` (npm: `cron-parser`, 1.6k+ stars, actively maintained, MIT license). It provides:
++- Cron expression validation
++- Next execution time calculation
++- Timezone-aware parsing
++- Standard 5-field cron (minute, hour, day-of-month, month, day-of-week)
++
++**Alternative considered**: `croner` (newer, TypeScript-first, similar stars). Rejected because `cron-parser` has a larger install base in production systems and better documentation for edge cases.
++
++**Alternative considered**: Writing a custom parser. Rejected — cron parsing has well-known edge cases (leap years, DST transitions, day-of-week vs. day-of-month interaction) that are not worth reimplementing.
++
++---
++
++### C8: Builder UI — Multi-Step Wizard vs. Single-Page Form
++
++**Ambiguity**: The spec describes a multi-step wizard (6 steps). Is this the right UX pattern given the product principle "data density over chrome"?
++
++**Resolution**: Use a **single-page form with collapsible sections**, not a multi-step wizard. Rationale:
++- Product principles: "data density over chrome", "keyboard-first"
++- A wizard hides information and requires N clicks to reach step N
++- The automation config has ~5 fields total in Sprint 2 (trigger type, cron/events, prompt, repo, name) — this fits on one page
++- Collapsible sections allow progressive disclosure without pagination
++
++The builder is a single page at `/automations/new` with sections: (1) Name + Trigger Type, (2) Trigger Configuration (contextual — shows cron or event config), (3) Prompt, (4) Repo selection. All visible, all keyboard-navigable.
++
++**Impact on spec**: Clarification Q4 answer is revised. The "multi-step wizard" is replaced with a single-page form.
++
++---
++
++### C9: `agentRuns.trigger` Enum — Extend or Separate Field
++
++**Ambiguity**: The existing `agentRuns.trigger` enum has values like `ci_failure`, `review_comment`, `pr_opened`. Should automation-triggered runs add `automation_schedule` and `automation_event` to this enum?
++
++**Resolution**: Add two new enum values to `agentRuns.trigger`:
++- `automation_schedule` — run was triggered by a cron automation
++- `automation_event` — run was triggered by a GitHub event automation
++
++This keeps the trigger source visible in existing observability queries without requiring a schema migration to add a separate field. The `sessions.automationId` FK provides the link to the specific automation config.
++
++---
++
++### C10: Filter Conditions — Static Configuration vs. Dynamic Expressions
++
++**Ambiguity**: FR-010 lists filter conditions (base branch, head branch, actor, file paths, labels). How are these stored and evaluated?
++
++**Resolution**: Filters are stored as a JSON array on the automation's `triggerConfig`:
++
++```typescript
++type FilterCondition = {
++  field: "base_branch" | "head_branch" | "actor" | "label";
++  operator: "equals" | "not_equals" | "contains" | "matches";
++  value: string;
++};
++```
++
++Evaluation: all conditions must match (AND semantics). No OR groups in Sprint 2 — users create multiple automations if they need OR logic.
++
++**Deferred**: `file_paths_changed` filter requires diffstat from GitHub API (extra HTTP call per webhook). Deferred to Sprint 3 — Sprint 2 supports branch, actor, and label filters only.
++
++---
++
++## Gaps Identified
++
++### G1: Missing — Automation Execution Timeout
++
++The spec does not address what happens when an automation-spawned session hangs. Standard sessions have user oversight; automated sessions do not.
++
++**Resolution**: Add `maxDurationMinutes` field to the automation entity (default: 60, max: 480). The scheduler checks active automation sessions and cancels any that exceed their timeout. This is implemented as part of the scheduler's polling loop.
++
++---
++
++### G2: Missing — Rate Limiting for Event Automations
++
++If a repository receives 100 rapid-fire `pr_synchronize` events (rebasing), the system could spawn 100 sessions. The spec's coalesce logic only applies to legacy routes.
++
++**Resolution**: Add `cooldownSeconds` field to event-type automations (default: 60). After an automation fires, it will not fire again for the same repo until the cooldown expires. Stored as `lastFiredAt` on the automation. The automation matcher checks `NOW() - lastFiredAt > cooldownSeconds` before dispatching.
++
++---
++
++### G3: Missing — Error State for Automations
++
++The spec has enabled/paused states but no error state. What if an automation fails 5 times in a row?
++
++**Resolution**: Add `status` enum: `active`, `paused`, `error`. If an automation produces 3 consecutive failed sessions (configurable via `maxConsecutiveFailures`, default 3), it transitions to `error` status and stops firing. The user sees the error in the list UI and can manually re-enable after investigating.
++
++---
++
++### G4: Missing — Automation Creation via API Without UI
++
++The spec's FR-011 mentions a REST API, but no detail on the endpoint paths or Zod schemas. The gateway API pattern requires Zod-OpenAPI.
++
++**Resolution**: Endpoints follow existing gateway conventions:
++- `POST /api/automations` — create
++- `GET /api/automations` — list (paginated)
++- `GET /api/automations/:id` — detail (includes recent runs)
++- `PATCH /api/automations/:id` — update
++- `DELETE /api/automations/:id` — delete
++- `POST /api/automations/:id/toggle` — enable/disable
++
++All use Zod-OpenAPI schemas consistent with the gateway's existing patterns.
++
++---
++
++## Contradictions Found
++
++### X1: InboundRouter Catch-All vs. Backward Compatibility
++
++The spec originally assumed backward compatibility with InboundRouter's first-match-wins semantics. **This constraint has been removed.** The router will be refactored to multi-match (evaluate-all). No contradiction remains.
++
++---
++
++### X2: AutomationRun Join Table vs. Session FK
++
++Addressed in C5 above. The spec contained both "optional FK on sessions" and "join table for linking." Both are kept — they serve different purposes.
++
++---
++
++## Alternative Implementations Evaluated
++
++### Alt-1: Scheduler Architecture
++
++| Approach | Pros | Cons | Decision |
++|----------|------|------|----------|
++| **A) Timer-based scheduler with Redis pub/sub coordination** | Zero polling waste, millisecond precision, event-driven, reactive to CRUD changes | Slightly more complex than polling, requires pub/sub subscription management, needs safety-net fallback | **Selected** |
++| B) Polling worker inside gateway (30s interval) | Simple implementation, easy to reason about | Wasteful (queries every 30s even with no due automations), up to 30s late on execution, burns DB connections | Rejected |
++| C) Dedicated Render cron job | Clean separation of concerns, Render-native | New service to deploy/maintain, cold start latency (up to 60s), minimum granularity is 1 minute, can't share DB/Redis connections | Rejected |
++| D) Redis sorted set delay queue (ZADD + blocking pop) | Precise timing, event-driven | Complex implementation, can't easily inspect/modify scheduled items, requires custom consumer, poor observability | Rejected |
++| E) Redis keyspace notifications (TTL-based) | Clever, zero application-level scheduling code | Redis doesn't guarantee expiration event delivery (can miss events under memory pressure), unreliable for production scheduling | Rejected |
++| F) pg_cron (PostgreSQL extension) | No application code for scheduling, highly reliable | Render PostgreSQL may not support pg_cron, couples scheduling to DB, limited observability, minimum 1-minute granularity | Rejected |
++
++**Rationale for A**: Constitution principle IX (Performance) says no blocking/polling patterns. A timer-based approach is truly event-driven — the process sleeps until the exact moment work is due. Redis pub/sub provides instant reactivity when automations change. The atomic DB claim (CAS) is the same pattern regardless of scheduling approach, providing multi-instance safety.
++
++---
++
++### Alt-2: Automation Matching Architecture
++
++| Approach | Pros | Cons | Decision |
++|----------|------|------|----------|
++| **A) Refactor InboundRouter to multi-match with integrated automation lookup** | Single unified dispatch path, DRY, clean architecture | Breaks existing first-match-wins contract (acceptable — no backward compat required) | **Selected** |
++| B) Separate AutomationMatcher component (two-pass dispatch) | No changes to InboundRouter, separation of concerns | Two code paths for webhook handling, harder to reason about ordering, slight duplication | Rejected |
++| C) InboundRoute per automation (dynamic route table) | Leverages existing pattern | Route table grows with automation count (N routes for N automations), DB query on every route table rebuild, hot-reload complexity | Rejected |
++| D) Webhook fan-out via Redis pub/sub | Fully decoupled, async by design | Over-engineered for Sprint 2 scope, adds Redis topic management, harder to trace delivery | Rejected |
++
++**Rationale for A**: Without backward compatibility constraints, refactoring InboundRouter to evaluate-all is the cleanest design. It unifies static routes and dynamic automation matching into a single dispatch orchestrator, eliminating the two-pass complexity of a separate matcher. The router becomes the single source of truth for "what happens when an event arrives."
++
++---
++
++### Alt-3: Automation Entity Storage
++
++| Approach | Pros | Cons | Decision |
++|----------|------|------|----------|
++| **A) Dedicated `automations` table in PostgreSQL** | Type-safe with Drizzle, queryable, indexable, consistent with existing schema | Another migration, another table to manage | **Selected** |
++| B) JSONB document in a generic `configs` table | Flexible schema, no migration for new fields | Loses type safety, can't index trigger conditions, query patterns are clumsy | Rejected |
++| C) Redis-backed config (for fast scheduler access) | Sub-millisecond reads for scheduler | Not durable (Redis is ephemeral by design in this stack), requires sync layer with PG | Rejected |
++
++**Rationale for A**: Constitution principles require Drizzle ORM for all database access, typed schemas, and proper indexing. The automation entity has well-defined fields that benefit from relational constraints (FK to users, projects).
++
++---
++
++### Alt-4: Builder UI Pattern
++
++| Approach | Pros | Cons | Decision |
++|----------|------|------|----------|
++| **A) Single-page form with collapsible sections** | Data-dense, keyboard-navigable, fast to complete, all context visible | Longer initial page, may overwhelm new users | **Selected** |
++| B) Multi-step wizard (originally specified) | Guided, approachable for new users | Hides information, more clicks, violates "data density" principle | Rejected |
++| C) Conversational/chat-based builder | Novel, AI-native feel | Hard to edit after creation, no random-access to fields, slow for power users | Rejected |
++| D) YAML/JSON config editor | Maximum flexibility, power-user friendly | Terrible UX for non-technical users, error-prone | Rejected |
++
++**Rationale for A**: Product principles explicitly state "data density over chrome" and "keyboard-first." The automation config has ≤6 fields in Sprint 2 — easily fits on one page. Collapsible sections provide progressive disclosure without hiding information.
++
++---
++
++### Alt-5: Session-Automation Linkage
++
++| Approach | Pros | Cons | Decision |
++|----------|------|------|----------|
++| **A) FK on sessions + separate audit table** | Fast filtering (FK), rich history (audit table), separation of concerns | Two places to maintain, slight redundancy | **Selected** |
++| B) Only FK on sessions, query sessions for history | Simpler schema, single source of truth | Loses trigger metadata (webhook ID, payload), can't distinguish "automation created session" from "session later linked to automation" | Rejected |
++| C) Only join table, no FK | Clean normalized design | Requires JOIN for basic "is this session automated?" check, slower list queries | Rejected |
++
++---
++
++## Unstated Assumptions Made Explicit
++
++1. **No multi-tenancy isolation in Sprint 2**: Automations query by userId — there is no workspace/org-level isolation beyond the owner check. Multi-tenant isolation is a Sprint 3+ concern.
++2. **Cron expressions are 5-field standard**: No seconds field, no year field. This is the overwhelmingly common format and what `cron-parser` supports by default.
++3. **Tool configuration is stored as a JSON array of tool slugs**: The automation stores which tools are available, but does not configure per-tool parameters. Tool params use defaults.
++4. **The gateway webhook endpoint is the only entry point for GitHub events**: There is no separate event bus consumer that could process events. All automation matching happens in the webhook request lifecycle (async, after 200 response).
++5. **No approval gate for automation-created sessions**: Automated sessions execute immediately without user confirmation. This matches the "run unattended" requirement in R1.
+diff --git a/.marathon/sprints/002/spec.md b/.marathon/sprints/002/spec.md
+new file mode 100644
+index 0000000..4d5570f
+--- /dev/null
++++ b/.marathon/sprints/002/spec.md
+@@ -0,0 +1,177 @@
++# Feature Specification: Automations — Schedule Triggers, Event Binding & Builder UI
++
++**Feature Branch**: `sprint-002-automations-foundation`
++
++**Created**: 2026-05-24
++
++**Status**: Draft
++
++**Input**: Sprint 2 requirements batch [R1, R2, R6] from Milestone 2 (Automations). Delivers the automation entity, cron/schedule triggers, GitHub/GitLab event trigger binding via the existing InboundRouter, and an automation builder UI scaffold.
++
++## User Scenarios & Testing *(mandatory)*
++
++### User Story 1 - Create a Scheduled Automation (Priority: P1)
++
++A platform user opens the Automation Builder, selects "Schedule" as the trigger type, configures a cron expression (e.g., `0 9 * * 1-5` for weekday mornings), writes a prompt ("Check for dependency updates and open a PR if any are outdated"), selects tools and a target repo, and saves the automation. The scheduler picks it up at the next due time and spawns an agent session.
++
++**Why this priority**: The automation entity is the foundational data model that all trigger types depend on. Without a persisted automation configuration, neither cron nor event triggers can function. This story exercises the full stack: entity creation, scheduler polling, and job dispatch.
++
++**Independent Test**: Can be fully tested by creating an automation with a short-interval cron (every minute), waiting 60 seconds, and verifying an agent session was spawned with the correct prompt and tool configuration.
++
++**Acceptance Scenarios**:
++
++1. **Given** a user is on the automations page, **When** they click "New Automation" and select "Schedule" trigger, **Then** a cron expression input and preset dropdown are shown.
++2. **Given** a user enters a valid cron expression, **When** they complete the builder flow (prompt + tools + repo), **Then** the automation is persisted and appears in the list with status "Active" and a calculated "Next run at" timestamp.
++3. **Given** an active automation has a `nextRunAt` in the past, **When** the scheduler polls, **Then** an agent session is created with the automation's configured prompt, tools, and repo binding.
++4. **Given** an automation's scheduled run completes, **When** the session finishes, **Then** `lastRunAt` is updated and `nextRunAt` is recalculated from the cron expression.
++5. **Given** a user enters an invalid cron expression (e.g., `* * * * * * *`), **When** they attempt to save, **Then** validation fails with a human-readable error message.
++
++---
++
++### User Story 2 - Trigger Automation from GitHub Events (Priority: P1)
++
++A developer creates an automation with trigger type "GitHub Event" — e.g., trigger on `pr_opened` to the `main` branch. When a matching PR is opened on the bound repository, the system matches it against configured automations and spawns a new agent session with the automation's prompt and tool config.
++
++**Why this priority**: Event-driven dispatch is the most powerful automation pattern and extends existing infrastructure (InboundRouter/InboundDispatcher). The automation entity must bind trigger conditions to prompts/tools, and the dispatcher must be extended with a new action type that creates fresh sessions (not just triggers existing ones).
++
++**Independent Test**: Can be tested by creating an automation bound to `pr_opened` events, simulating a GitHub webhook delivery for a PR opened event, and verifying a new agent session is created.
++
++**Acceptance Scenarios**:
++
++1. **Given** a user creates an automation with trigger `pr_opened` on repo `org/backend`, **When** a PR opened webhook arrives for `org/backend`, **Then** the InboundRouter evaluates the event against configured automations and dispatches a new session.
++2. **Given** an automation has a filter condition `base_branch = main`, **When** a PR opened webhook arrives targeting the `develop` branch, **Then** the automation does not fire.
++3. **Given** multiple automations match the same event, **When** the webhook arrives, **Then** each matching automation spawns its own independent session.
++4. **Given** an automation is paused (enabled = false), **When** a matching event arrives, **Then** no session is created.
++5. **Given** a webhook arrives for a repo with no bound automations, **When** the dispatcher evaluates it, **Then** existing InboundRouter behavior is preserved unchanged (backward-compatible).
++
++---
++
++### User Story 3 - List and Manage Automations (Priority: P1)
++
++A platform user navigates to the Automations page to see all configured automations. They see a table with automation name, trigger type, target repo, status (active/paused), last run time, and next run time. They can toggle an automation on/off and delete it.
++
++**Why this priority**: Without a list view and basic management (enable/disable/delete), users cannot observe or control their automations after creation. This is the minimum viable UI for Sprint 2.
++
++**Independent Test**: Can be tested by creating 3 automations (mix of cron and event triggers), navigating to the list page, verifying all appear with correct metadata, toggling one off, and confirming it no longer fires.
++
++**Acceptance Scenarios**:
++
++1. **Given** the user has 5 automations configured, **When** they navigate to `/automations`, **Then** all 5 are displayed in a table with columns: Name, Trigger, Repo, Status, Last Run, Next Run.
++2. **Given** an automation is active, **When** the user clicks the enable/disable toggle, **Then** the automation status changes to "paused" and no scheduled/event runs will fire.
++3. **Given** a user clicks "Delete" on an automation, **When** they confirm the deletion, **Then** the automation is removed and no future runs will occur.
++4. **Given** a scheduled automation has never run, **When** the list displays, **Then** "Last Run" shows "Never" and "Next Run" shows the computed next execution time.
++
++---
++
++### User Story 4 - Automation Detail View with Run History (Priority: P2)
++
++A user clicks into a specific automation to see its full configuration and run history. The detail view shows the trigger configuration, prompt, selected tools, and a chronological list of past runs with their outcomes.
++
++**Why this priority**: Run history provides observability into automation behavior. While the system functions without it, users need visibility to debug and trust automated agent runs.
++
++**Independent Test**: Can be tested by creating an automation, triggering it 3 times, then viewing the detail page and confirming all 3 runs appear with correct status and timestamps.
++
++**Acceptance Scenarios**:
++
++1. **Given** an automation has 10 past runs, **When** the user opens its detail page, **Then** runs are listed chronologically (newest first) with status, duration, and session link.
++2. **Given** a run failed, **When** it appears in the history, **Then** the failure reason is shown inline.
++3. **Given** the user is on the detail page, **When** they click "Edit", **Then** they are taken to the builder flow pre-populated with the automation's current configuration.
++
++---
++
++### User Story 5 - Preset Schedule Shortcuts (Priority: P3)
++
++For common scheduling patterns, the builder offers preset buttons ("Every hour", "Daily at 9am", "Weekly on Monday") that auto-fill the cron expression, reducing the need to know cron syntax.
++
++**Why this priority**: Improves UX for non-technical users but is not required for core functionality. Power users can always type raw cron expressions.
++
++**Independent Test**: Can be tested by clicking each preset button and verifying the corresponding cron expression is filled in and validated correctly.
++
++**Acceptance Scenarios**:
++
++1. **Given** the user is in the schedule trigger configuration step, **When** they click "Daily at 9am", **Then** the cron input is populated with `0 9 * * *` and validated as correct.
++2. **Given** the user selected a preset, **When** they modify the cron expression manually, **Then** no preset appears selected (manual mode).
++
++---
++
++### Edge Cases
++
++- What happens when the scheduler polls and an automation's bound repo has been deleted from the platform? → Log error, skip execution, surface in automation status as "repo_unavailable".
++- What happens when two scheduler polls overlap (slow execution)? → Idempotency via `lastRunAt` check: only schedule if current time > nextRunAt AND no run is already in progress for this automation.
++- How does the system handle cron expressions that resolve to sub-minute intervals? → Reject at validation: minimum interval is 1 minute.
++- What happens when a GitHub webhook arrives but the automation's owner no longer has access to the repo? → Verify repo access at dispatch time; skip and log if access revoked.
++- How does timezone handling work for scheduled automations? → Store all times in UTC internally; display in user's timezone in the UI. Cron expressions evaluate in UTC.
++- What happens when hundreds of automations are due at the same second (thundering herd)? → Each gateway instance's timer fires at the same moment. The atomic DB claim (CAS) ensures each automation is claimed by exactly one instance. Losers re-query and pick up unclaimed automations. Work fans out naturally across instances.
++- What if the same webhook event matches both static routes AND automation rules? → Both fire. The refactored multi-match router evaluates all routes and returns all matching actions. The dispatcher executes each independently.
++
++## Requirements *(mandatory)*
++
++### Functional Requirements
++
++- **FR-001**: System MUST persist an `automations` entity with: id, name, owner (userId), trigger type, trigger configuration, prompt template, tool configuration, repo binding, enabled status, and scheduling metadata.
++- **FR-002**: System MUST support trigger types: `schedule` (cron expression) and `github_event` (event kind + filter conditions). Additional trigger types (slack, linear) are out of scope for this sprint.
++- **FR-003**: System MUST validate cron expressions at creation/update time and reject invalid expressions with descriptive error messages.
++- **FR-004**: System MUST compute and persist `nextRunAt` for schedule-type automations, recalculating after each run completes.
++- **FR-005**: System MUST include a timer-based scheduler that sets precise timeouts for the next due automation, fires exactly at `nextRunAt`, claims the automation atomically (compare-and-swap on `nextRunAt`), and enqueues the agent session. Redis pub/sub coordinates across multiple gateway instances so that schedule changes trigger re-computation of the next wakeup.
++- **FR-006**: System MUST guarantee at-most-once execution per scheduled interval via atomic claim (`UPDATE automations SET next_run_at = <next> WHERE id = ? AND next_run_at = <expected>` — only the winner proceeds).
++- **FR-007**: System MUST extend the `InboundRouter` to support automation dispatch — either by making it multi-match (evaluate all routes and return all matching actions) or by integrating automation matching directly into the router. The existing first-match-wins contract may be broken.
++- **FR-008**: System MUST add `SessionService.createFromAutomation(automationId, triggerContext)` to create fresh agent sessions from automation configurations.
++- **FR-009**: [REMOVED — backward compatibility with existing InboundRouter routes is NOT required. Breaking changes to the routing layer are acceptable.]
++- **FR-010**: System MUST support filter conditions on event triggers: base branch, head branch, actor, file paths changed, and PR labels.
++- **FR-011**: System MUST expose a REST API for automation CRUD: create, read (list + detail), update, delete, toggle enabled/disabled.
++- **FR-012**: System MUST provide a web UI at `/automations` with: list view (table), create flow (multi-step builder), detail view with run history, toggle, and delete.
++- **FR-013**: System MUST record each automation execution as a standard agent session with `trigger` field indicating the automation source, and link back to the automation entity.
++- **FR-014**: System MUST allow automations to be paused (enabled=false) and resumed (enabled=true) without data loss.
++- **FR-015**: System MUST display "Next run at" for schedule automations in the UI, computed from the cron expression relative to current time.
++
++### Key Entities
++
++- **Automation**: A persistent configuration binding a trigger (schedule or event) to an agent execution template (prompt, tools, repos). Owned by a user, scoped to a project/org.
++- **AutomationRun**: A join record linking an automation to the agent session it spawned, with metadata (triggered_at, trigger_event_id, outcome).
++- **TriggerConfig**: Polymorphic configuration attached to an automation — either `{ type: "schedule", cron: string, timezone?: string }` or `{ type: "github_event", events: string[], filters: FilterCondition[] }`.
++- **FilterCondition**: A predicate applied to incoming events before dispatch — field + operator + value (e.g., `base_branch = "main"`).
++
++## Success Criteria *(mandatory)*
++
++### Measurable Outcomes
++
++- **SC-001**: A schedule-type automation fires within 1 second of its `nextRunAt` time under normal load (timer-based precision).
++- **SC-002**: GitHub event automations dispatch a session within 5 seconds of webhook receipt (matching existing InboundRouter latency).
++- **SC-003**: The automation list page loads in under 2 seconds with 100 automations (meeting LCP < 2.5s constraint).
++- **SC-004**: Existing webhook-to-session behavior continues to work after refactoring (verified by integration tests, but breaking API changes to InboundRouter are acceptable).
++- **SC-005**: Automation CRUD API responds in under 200ms p95 (meeting gateway performance constraint).
++- **SC-006**: The scheduler correctly handles multi-instance deployment: at-most-once execution guaranteed via atomic DB claim, no duplicate sessions.
++- **SC-007**: Users can create a working scheduled automation through the builder UI in under 2 minutes without consulting documentation.
++
++## Clarifications
++
++### Session 2026-05-24
++
++- Q: Should the scheduler be a dedicated Render cron job or a polling worker? → A: **Timer-based scheduler** inside the gateway process. On startup (and whenever automations change), it queries the next due automation and sets a precise `setTimeout` for that exact moment. When the timer fires, it claims the automation atomically (DB CAS) and enqueues the session. Redis pub/sub coordinates across gateway instances — when automations are created/updated/deleted, a notification triggers all instances to re-compute their next wakeup. This eliminates polling waste and fires within milliseconds of the due time.
++- Q: How does automation dispatch differ from existing InboundDispatcher trigger_session? → A: Existing `trigger_session` triggers an **existing** running session. Automation dispatch creates a **new** session from scratch using the automation's prompt/tools/repo config. New method `SessionService.createFromAutomation()` handles this.
++- Q: Should automation runs reuse existing sessions or always create fresh ones? → A: Always fresh sessions. Each automation run is independent and self-contained. This prevents state bleeding between runs.
++- Q: How is the automation builder UI structured? → A: Single-page form with collapsible sections (not a multi-step wizard). Product principles demand "data density over chrome" and "keyboard-first." All fields visible on one page with progressive disclosure via collapsible sections.
++- Q: What existing InboundKind values map to automation event triggers? → A: `pr_opened`, `pr_synchronize`, `pr_merged`, `pr_closed`, `ci_failure`, `ci_success`, `review_comment`. These already exist in the InboundEvent type system.
++- Q: Should the automation table reference the `sessions` table or vice versa? → A: Both. Sessions get an optional `automationId` FK (for fast filtering). A separate `automation_runs` table provides the rich audit trail with trigger metadata.
++- Q: How do automations coexist with existing InboundRouter routes? → A: The InboundRouter is refactored to support multi-match semantics. It evaluates all routes (static + dynamic automation-backed) and returns all matching actions. The dispatcher executes each. No backward compatibility constraint — breaking changes to InboundRouter's first-match-wins contract are acceptable.
++- Q: What cron library should be used? → A: `cron-parser` (1.6k+ stars, MIT, actively maintained). Handles validation, next-execution calculation, and timezone-aware parsing.
++- Q: What happens when automation-spawned sessions hang? → A: `maxDurationMinutes` field on automation entity (default 60). Scheduler cancels sessions exceeding their timeout.
++- Q: How are rapid-fire events rate-limited for automations? → A: `cooldownSeconds` field on event automations (default 60). Automation will not re-fire for the same repo within cooldown window.
++
++### Clarifications — Architecture Decisions (2026-05-24)
++
++- **No backward compatibility constraint**: InboundRouter can be freely refactored. First-match-wins semantics can be replaced with multi-match (evaluate-all) to unify static routes and automation dispatch in a single pass.
++- **FR-008 revised**: Instead of a new RouteAction type, the system adds `SessionService.createFromAutomation(automationId, triggerContext)`. The router/dispatcher calls this for automation matches.
++- **Automation status enum**: `active`, `paused`, `error`. Auto-transitions to `error` after 3 consecutive failures (configurable).
++- **`file_paths_changed` filter deferred to Sprint 3** — requires GitHub API diffstat call per webhook, adds latency.
++- **Automation matching is async**: webhook returns 200 immediately, then automation evaluation + dispatch runs in the background.
++
++## Assumptions
++
++- The existing Redis pub/sub infrastructure supports the `automation:schedule:changed` channel without requiring new Redis connections (reuses existing ioredis subscriber).
++- The InboundRouter will be refactored to support automation dispatch natively — no backward compatibility constraint applies. Breaking changes to the routing API are acceptable.
++- The gateway API already has auth middleware that will apply to new automation endpoints without additional work.
++- The existing agent worker pool has capacity for automation-spawned sessions alongside user-initiated sessions (no dedicated pool needed for Sprint 2).
++- Timezone handling for cron expressions defaults to UTC; user-local timezone display is a UI concern only and does not affect scheduling logic.
++- The web dashboard's existing layout, design system (Radix + Tailwind), and routing structure accommodate a new `/automations` route without architectural changes.
++- Sprint 2 delivers the create/list/detail/toggle/delete UI scaffold. Full CRUD editing of all fields (tools, repos) is completed in Sprint 3.

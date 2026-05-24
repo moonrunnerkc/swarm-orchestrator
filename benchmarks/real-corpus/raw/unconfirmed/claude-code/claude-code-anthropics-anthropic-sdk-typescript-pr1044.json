@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1044",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1044,
+    "headSha": "303cf62057d98dfa85d9aa533e06dd522dc736a0",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02",
+    "title": "perf(streams): buffer streamed text deltas",
+    "body": "## Summary\n- buffer streamed text deltas on message snapshots and materialize the joined text only when snapshots are observed or finalized\n- keep existing text and streamEvent listener snapshots current by materializing when those listeners are present\n- apply the same accumulator behavior to beta message streams\n- add regression coverage for long text streams and listener snapshots\n\nFixes #995\n\n## Test plan\n- `./node_modules/.bin/jest tests/api-resources/MessageStream.test.ts --runInBand`\n- `./node_modules/.bin/jest tests/api-resources/BetaMessageStream.test.ts --runInBand`\n- `./node_modules/typescript/bin/tsc --pretty false`\n- `./node_modules/.bin/prettier --check src/lib/MessageStream.ts src/lib/BetaMessageStream.ts tests/api-resources/MessageStream.test.ts`\n- `./node_modules/.bin/eslint src/lib/MessageStream.ts src/lib/BetaMessageStream.ts tests/api-resources/MessageStream.test.ts`",
+    "author": "MukundaKatta",
+    "headRef": "codex/message-stream-text-chunks",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "303cf62057d98dfa85d9aa533e06dd522dc736a0",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1044.diff",
+  "vendoredAt": "2026-05-24T03:16:28.479Z",
+  "collectedAt": "2026-05-24T03:16:28.479Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-JamesJedi420-containment-protocol-pr2381",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 2381,
+    "headSha": "799bcc2c0a331599c4f2ce78f1f60977b2273f39",
+    "baseSha": "a839c3ea3bee83ca10c0fb18171d8889dc1e4c7f",
+    "title": "feat(spe-2159): investigation exposure and fuzzy-clue registry (slice 1)",
+    "body": "Investigation clues carry inherent uncertainty — they may be true, fuzzy, incomplete, partially false, or deliberately misleading. This slice adds a pure domain registry that models clue clarity and exposure risk without discarding uncertain clues.\n\n## New: `src/domain/investigationExposureClueRegistry.ts`\n\n- **`ClueClarity`** union: `'true' | 'fuzzy' | 'incomplete' | 'partial_false' | 'misleading'`\n- **`ExposureRiskBand`**: `'controlled' | 'low' | 'moderate' | 'high' | 'critical'` — follows `MissionRiskBand` convention\n- **`InvestigationExposureClueRecord`** / **`InvestigationExposureClueRegistry`** typed interfaces\n- Set-backed type guards: `isClueClarity`, `isExposureRiskBand`\n- Issue-array validators: `validateInvestigationExposureClueRecord`, `validateInvestigationExposureClueRegistry`\n- `getInvestigationExposureClueById` — registry lookup\n- `projectClueActionability` — deterministic projection:\n  - `isActionable`: clarity ≠ `misleading` (fuzzy/incomplete/partial_false retain usable signal)\n  - `isUncertain`: clarity ≠ `true`\n  - `isHazardousToInvestigate`: band is `high` or `critical`\n- `DEFAULT_INVESTIGATION_EXPOSURE_CLUE_REGISTRY` — five frozen entries, one per clarity value\n\n```ts\nconst projection = projectClueActionability(getInvestigationExposureClueById(\n  DEFAULT_INVESTIGATION_EXPOSURE_CLUE_REGISTRY,\n  'clue:planted-transaction-record'  // clarity: 'partial_false'\n)!)\n// { isActionable: true, isUncertain: true, isHazardousToInvestigate: false }\n```\n\n## New: `src/test/investigationExposureClueRegistry.test.ts`\n\n15 tests: every clarity value, invalid clarity/band rejection, duplicate-id detection, fuzzy/partial clues staying actionable (not discarded), and a deterministic full-registry projection snapshot.",
+    "author": "Copilot",
+    "headRef": "copilot/spe-2159-investigation-exposure-and-fuzzy-clue-reg",
+    "repository": "JamesJedi420/containment-protocol"
+  },
+  "diffRef": {
+    "repository": "JamesJedi420/containment-protocol",
+    "headSha": "799bcc2c0a331599c4f2ce78f1f60977b2273f39",
+    "baseSha": "a839c3ea3bee83ca10c0fb18171d8889dc1e4c7f"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-JamesJedi420-containment-protocol-pr2381.diff",
+  "vendoredAt": "2026-05-24T03:06:01.392Z",
+  "collectedAt": "2026-05-24T03:06:01.392Z"
+}

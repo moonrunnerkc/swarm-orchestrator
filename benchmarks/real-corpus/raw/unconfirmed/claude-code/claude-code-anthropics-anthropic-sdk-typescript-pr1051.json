@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1051",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1051,
+    "headSha": "9386b121946817ac538c0490cdd8554648dc2936",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02",
+    "title": "fix(internal): restrict isAbsoluteURL scheme regex to http(s)",
+    "body": "### Problem\n\n`isAbsoluteURL` at `src/internal/utils/values.ts:6-10` uses `/^[a-z][a-z0-9+.-]*:/i`. The regex follows the WHATWG URL spec definition of \"URI scheme string\" and matches any RFC 3986 scheme. When an absolute-URL path reaches `buildURL`, the path is used as the complete URL via `new URL(path)` and `baseURL` is bypassed.\n\nThe SDK's typed resource methods (`messages`, `models`, `beta`, etc.) all use hardcoded relative paths. The only legitimate consumer use of absolute-URL paths is via the raw `client.get` / `client.post` methods, and those should only construct HTTP or HTTPS requests.\n\nSchemes accepted by the current regex that have no legitimate use here include `file:`, `gopher:`, `ftp:`, `data:`, `javascript:`.\n\n### Change\n\nOne regex narrow in `src/internal/utils/values.ts:6-10`. The new pattern accepts `^https?:` only. A comment explains the SDK-side reasoning so a future contributor does not loosen the regex back to the spec form.\n\n### Impact\n\n- `client.get(\"file:///etc/passwd\")`, `client.get(\"gopher://internal/...\")`, `client.get(\"data:text/html,...\")`, `client.get(\"javascript:...\")` are now treated as relative paths rather than absolute, so `buildURL` rejects them via the standard `new URL(baseURL + path)` parse failure.\n- Standard `http://` and `https://` absolute paths continue to work.\n\n### Backwards compatibility\n\n- Public API unchanged.\n- Consumers passing `http://` or `https://` absolute paths to raw `client.get` / `client.post`: no behavior change.\n- Consumers passing non-HTTP schemes to raw `client.get`: previously bypassed `baseURL`; now treated as a relative path. This was not a documented use case and there are no resource methods that generate such schemes, so no internal SDK call site is affected.\n\n### Tests\n\n- `pnpm prettier --check src/internal/utils/values.ts`: clean.\n- `pnpm eslint src/internal/utils/values.ts`: clean.\n- `pnpm tsc --noEmit`: clean.\n- `pnpm jest tests/internal`: 19 pass.\n\nFull `pnpm test` requires the Stainless mock server (steady on port 4010) which is not available on the contributor side. The change is type-neutral and narrows the matching set; tests that previously passed with the broader regex still pass with the narrower one as long as they do not depend on a non-HTTP scheme.\n\n### Why this is a hardening contribution\n\nI was reading the SDK's request pipeline and noticed the regex breadth. The SDK has no documented call site that constructs non-HTTP schemes, so the regex can be narrowed without changing intended behavior.\n",
+    "author": "ibondarenko1",
+    "headRef": "hardening/isabsoluteurl-restrict-http-schemes",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "9386b121946817ac538c0490cdd8554648dc2936",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1051.diff",
+  "vendoredAt": "2026-05-24T03:16:21.200Z",
+  "collectedAt": "2026-05-24T03:16:21.200Z"
+}

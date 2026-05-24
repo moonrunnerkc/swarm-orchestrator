@@ -1,0 +1,26 @@
+{
+  "id": "devin-randomused786-gif-Aamil-Baba-Syed-Numan-Ali-shah-pr1",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "56a86e76b8f0019db261ee1dbedaf3347a374f49",
+    "baseSha": "7c311202c20c21640eec27d0424f7237917baa62",
+    "title": "feat: Add automated social media posting system",
+    "body": "## Summary\n\nAdds a complete automated social media posting system that can publish content to **Twitter/X**, **Facebook**, and **Instagram**.\n\n**Key components:**\n\n- **Python bot** (`social_media_bot/`) — modular platform adapters for Twitter (Tweepy v2), Facebook (Graph API), and Instagram (Graph API), with a CLI entry point supporting `--dry-run`, `--post-id`, and `--platforms` flags\n- **GitHub Actions workflows:**\n  - `social-media-post.yml` — daily scheduled posting (09:00 UTC cron) + manual `workflow_dispatch` with configurable platforms, post selection, and dry-run mode\n  - `validate-config.yml` — CI validation that runs on every push/PR to verify YAML config integrity and dry-run post selection\n- **YAML content config** (`content/posts.yaml`) — declarative post definitions with text, media attachments (images, GIFs), scheduled dates, and per-post platform targeting\n- **Credential security** — all API tokens managed exclusively via GitHub Secrets (never stored in code)\n- **Documentation** (`SOCIAL_MEDIA_AUTOMATION.md`) — complete setup guide covering API credential configuration, content authoring, trigger modes, local testing, and extensibility\n\n## Review & Testing Checklist for Human\n\n- [ ] **Add API credentials as GitHub Secrets** — the bot will not post without these. Follow the table in `SOCIAL_MEDIA_AUTOMATION.md` for the required secret names for each platform (Twitter: 5 secrets, Facebook: 2, Instagram: 2)\n- [ ] **Test with a dry run first** — go to Actions → Social Media Auto-Post → Run workflow, set `dry_run` to `true`, and verify the output selects the correct post\n- [ ] **Test a real post** — after adding secrets, run the workflow with `dry_run` set to `false` against a single platform (e.g., just `twitter`) to verify end-to-end posting works\n- [ ] **Verify the cron schedule** — the daily trigger is set to `0 9 * * *` (09:00 UTC). Adjust if a different time or frequency is needed\n- [ ] **Review post content** in `content/posts.yaml` — the sample posts reference the site's services. Edit or add posts as needed\n\n### Notes\n\n- Instagram requires images hosted at publicly accessible URLs (not local files). Use the `instagram_image_url` field in `posts.yaml` for this.\n- To add a new platform, create a module in `social_media_bot/platforms/`, implement a `post(text, media_paths)` method, and register it in `poster.py`'s `PLATFORM_MAP`.\n- The `validate-config.yml` CI workflow runs automatically on PRs touching `content/`, `social_media_bot/`, or `requirements.txt`.\n\nLink to Devin session: https://app.devin.ai/sessions/b0cc7810052943149d29122bbb7fb638\nRequested by: @randomused786-gif",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779578672-social-media-automation",
+    "repository": "randomused786-gif/Aamil-Baba-Syed-Numan-Ali-shah"
+  },
+  "diffRef": {
+    "repository": "randomused786-gif/Aamil-Baba-Syed-Numan-Ali-shah",
+    "headSha": "56a86e76b8f0019db261ee1dbedaf3347a374f49",
+    "baseSha": "7c311202c20c21640eec27d0424f7237917baa62"
+  },
+  "vendoredDiffPath": "devin/devin-randomused786-gif-Aamil-Baba-Syed-Numan-Ali-shah-pr1.diff",
+  "vendoredAt": "2026-05-24T03:04:44.900Z",
+  "collectedAt": "2026-05-24T03:04:44.900Z"
+}

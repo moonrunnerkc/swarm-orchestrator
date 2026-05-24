@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-impact2021-ielts-preparation-course-pr848",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 848,
+    "headSha": "9366dd042351bfe6a544f7275f0191c8cebbf97a",
+    "baseSha": "cb851425c74f3ed3b34a40bf727a2dc547f05283",
+    "title": "Improve AI writing mobile layout and stack feedback cards",
+    "body": "The AI writing exercise layout did not fit smaller screens well: the prompt and response panes remained too wide, and the feedback cards stayed in a two-column layout. This change makes the writing UI collapse cleanly on mobile so each major panel fits the viewport.\n\n- **Writing exercise mobile layout**\n  - Stack the prompt pane and response pane vertically on screens up to 768px.\n  - Remove desktop width constraints so both panes use full mobile width.\n  - Relax overflow behavior in the prompt panel to avoid clipped content.\n  - Allow the writing area header to wrap instead of forcing horizontal squeeze.\n\n- **Feedback/results mobile layout**\n  - Change the writing results grid from two columns to a single column on mobile.\n  - Stack Task 1 / Task 2 feedback cards one per row.\n  - Convert the combined score header and per-card result headers to vertical layouts where needed to prevent overflow.\n\n- **Versioning**\n  - Bump the plugin version to `19.6`.\n\n```css\n@media (max-width: 768px) {\n  #ielts-writing-container,\n  .ielts-writing-results-grid {\n    grid-template-columns: 1fr;\n    flex-direction: column;\n  }\n\n  #ielts-writing-left-col,\n  #ielts-writing-right-col {\n    width: 100%;\n    max-width: 100%;\n  }\n}\n```",
+    "author": "Copilot",
+    "headRef": "copilot/fix-ai-writing-responsive-design",
+    "repository": "impact2021/ielts-preparation-course"
+  },
+  "diffRef": {
+    "repository": "impact2021/ielts-preparation-course",
+    "headSha": "9366dd042351bfe6a544f7275f0191c8cebbf97a",
+    "baseSha": "cb851425c74f3ed3b34a40bf727a2dc547f05283"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/copilot-workspace/copilot-workspace-impact2021-ielts-preparation-course-pr848.diff",
+  "vendoredAt": "2026-05-24T04:28:16.443Z",
+  "collectedAt": "2026-05-24T04:28:16.443Z"
+}

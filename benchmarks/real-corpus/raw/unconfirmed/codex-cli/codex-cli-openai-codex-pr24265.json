@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24265",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24265,
+    "headSha": "bbe95832e7c967c16402cb8d71408a8fc0d3ae1b",
+    "baseSha": "7d47056ea42636271ac020b86347fbbef49490aa",
+    "title": "TUI config cleanup: MCP inventory",
+    "body": "## Summary\n\nThe TUI `/mcp` inventory flow should reflect the app server’s MCP status response. It was also joining those results with the TUI process’s local `config.mcp_servers`, which can diverge once MCP state is owned by a remote app server and cause stale local command, URL, status, or empty-state details to render.\n\nThis change removes the local config join from the app-server-backed inventory renderer. The TUI now renders directly from the existing `mcpServerStatus/list` payload and treats an empty status response as the empty MCP inventory state.\n\n## Known limitation\n\nThe existing `mcpServerStatus/list` payload does not include disabled-state or disabled-reason fields. To preserve the current app-server API, this PR does not try to infer that state from client-local config. If remote `/mcp` needs to show disabled/reason details again, that should come from app-server-owned status data in a follow-up.\n\nRelated to #22914, #22915, and #22916.",
+    "author": "etraut-openai",
+    "headRef": "etraut/tui-mcp-inventory-remote-config",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "bbe95832e7c967c16402cb8d71408a8fc0d3ae1b",
+    "baseSha": "7d47056ea42636271ac020b86347fbbef49490aa"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24265.diff",
+  "vendoredAt": "2026-05-24T03:20:34.954Z",
+  "collectedAt": "2026-05-24T03:20:34.954Z"
+}

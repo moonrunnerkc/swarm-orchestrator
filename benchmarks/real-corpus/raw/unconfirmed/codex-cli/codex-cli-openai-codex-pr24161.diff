@@ -1,0 +1,599 @@
+diff --git a/codex-rs/app-server/tests/suite/v2/client_metadata.rs b/codex-rs/app-server/tests/suite/v2/client_metadata.rs
+index 162e9642bc0..f81c238d844 100644
+--- a/codex-rs/app-server/tests/suite/v2/client_metadata.rs
++++ b/codex-rs/app-server/tests/suite/v2/client_metadata.rs
+@@ -1,11 +1,14 @@
+ use anyhow::Result;
+ use app_test_support::McpProcess;
+ use app_test_support::create_fake_rollout;
++use app_test_support::create_fake_rollout_with_source;
+ use app_test_support::to_response;
+ use codex_app_server_protocol::JSONRPCResponse;
+ use codex_app_server_protocol::RequestId;
+ use codex_app_server_protocol::ThreadForkParams;
+ use codex_app_server_protocol::ThreadForkResponse;
++use codex_app_server_protocol::ThreadResumeParams;
++use codex_app_server_protocol::ThreadResumeResponse;
+ use codex_app_server_protocol::ThreadSource;
+ use codex_app_server_protocol::ThreadStartParams;
+ use codex_app_server_protocol::ThreadStartResponse;
+@@ -14,6 +17,9 @@ use codex_app_server_protocol::TurnStartResponse;
+ use codex_app_server_protocol::TurnSteerParams;
+ use codex_app_server_protocol::TurnSteerResponse;
+ use codex_app_server_protocol::UserInput as V2UserInput;
++use codex_protocol::ThreadId as CoreThreadId;
++use codex_protocol::protocol::SessionSource;
++use codex_protocol::protocol::SubAgentSource;
+ use core_test_support::responses;
+ use core_test_support::skip_if_no_network;
+ use pretty_assertions::assert_eq;
+@@ -192,6 +198,104 @@ async fn turn_start_sends_fork_lineage_in_turn_metadata_for_thread_fork_v2() ->
+     Ok(())
+ }
+ 
++#[tokio::test]
++async fn turn_start_sends_subagent_lineage_after_cold_thread_resume_v2() -> Result<()> {
++    skip_if_no_network!(Ok(()));
++
++    let server = responses::start_mock_server().await;
++    let response_mock = responses::mount_sse_once(
++        &server,
++        responses::sse(vec![
++            responses::ev_response_created("resp-1"),
++            responses::ev_assistant_message("msg-1", "Done"),
++            responses::ev_completed("resp-1"),
++        ]),
++    )
++    .await;
++
++    let codex_home = TempDir::new()?;
++    create_config_toml(
++        codex_home.path(),
++        &server.uri(),
++        /*supports_websockets*/ false,
++    )?;
++
++    let parent_thread_id = CoreThreadId::new();
++    let parent_thread_id_str = parent_thread_id.to_string();
++    let subagent_thread_id = create_fake_rollout_with_source(
++        codex_home.path(),
++        "2025-01-05T12-00-00",
++        "2025-01-05T12:00:00Z",
++        "Saved subagent message",
++        Some("mock_provider"),
++        /*git_info*/ None,
++        SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
++            parent_thread_id,
++            depth: 1,
++            agent_path: None,
++            agent_nickname: None,
++            agent_role: None,
++        }),
++    )?;
++
++    let mut mcp = McpProcess::new(codex_home.path()).await?;
++    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
++
++    let resume_req = mcp
++        .send_thread_resume_request(ThreadResumeParams {
++            thread_id: subagent_thread_id.clone(),
++            ..Default::default()
++        })
++        .await?;
++    let resume_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(resume_req)),
++    )
++    .await??;
++    let ThreadResumeResponse { thread, .. } = to_response::<ThreadResumeResponse>(resume_resp)?;
++    assert_eq!(thread.id, subagent_thread_id);
++
++    let turn_req = mcp
++        .send_turn_start_request(TurnStartParams {
++            thread_id: thread.id.clone(),
++            input: vec![V2UserInput::Text {
++                text: "Continue".to_string(),
++                text_elements: Vec::new(),
++            }],
++            ..Default::default()
++        })
++        .await?;
++    let turn_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(turn_req)),
++    )
++    .await??;
++    let TurnStartResponse { turn } = to_response::<TurnStartResponse>(turn_resp)?;
++
++    timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_notification_message("turn/completed"),
++    )
++    .await??;
++
++    let request = response_mock.single_request();
++    let metadata = request
++        .header("x-codex-turn-metadata")
++        .as_deref()
++        .map(parse_json_header)
++        .unwrap_or_else(|| panic!("missing x-codex-turn-metadata header"));
++    assert_eq!(
++        metadata["parent_thread_id"].as_str(),
++        Some(parent_thread_id_str.as_str())
++    );
++    assert_eq!(metadata["subagent_type"].as_str(), Some("thread_spawn"));
++    assert_eq!(metadata["thread_id"].as_str(), Some(thread.id.as_str()));
++    assert_eq!(metadata["turn_id"].as_str(), Some(turn.id.as_str()));
++    assert!(metadata.get("forked_from_thread_id").is_none());
++
++    Ok(())
++}
++
+ #[tokio::test]
+ async fn turn_steer_updates_client_metadata_on_follow_up_responses_request_v2() -> Result<()> {
+     skip_if_no_network!(Ok(()));
+diff --git a/codex-rs/core/src/session/review.rs b/codex-rs/core/src/session/review.rs
+index d99637c4262..b4cb9da108b 100644
+--- a/codex-rs/core/src/session/review.rs
++++ b/codex-rs/core/src/session/review.rs
+@@ -75,7 +75,10 @@ pub(super) async fn spawn_review_thread(
+     let turn_metadata_state = Arc::new(TurnMetadataState::new(
+         sess.session_id().to_string(),
+         sess.thread_id().to_string(),
+-        ThreadMetadataLineage::from_fork_source(sess.forked_from_thread_id()),
++        ThreadMetadataLineage::for_session(
++            sess.forked_from_thread_id(),
++            &parent_turn_context.session_source,
++        ),
+         parent_turn_context.thread_source,
+         review_turn_id.clone(),
+         #[allow(deprecated)]
+diff --git a/codex-rs/core/src/session/turn_context.rs b/codex-rs/core/src/session/turn_context.rs
+index b6d98a6429a..16c89e26e87 100644
+--- a/codex-rs/core/src/session/turn_context.rs
++++ b/codex-rs/core/src/session/turn_context.rs
+@@ -482,7 +482,10 @@ impl Session {
+         let turn_metadata_state = Arc::new(TurnMetadataState::new(
+             session_id.to_string(),
+             thread_id.to_string(),
+-            ThreadMetadataLineage::from_fork_source(session_configuration.forked_from_thread_id),
++            ThreadMetadataLineage::for_session(
++                session_configuration.forked_from_thread_id,
++                &session_configuration.session_source,
++            ),
+             session_configuration.thread_source,
+             sub_id.clone(),
+             cwd.clone(),
+diff --git a/codex-rs/core/src/thread_manager.rs b/codex-rs/core/src/thread_manager.rs
+index 6150568d2ad..a2c6b22840a 100644
+--- a/codex-rs/core/src/thread_manager.rs
++++ b/codex-rs/core/src/thread_manager.rs
+@@ -586,6 +586,7 @@ impl ThreadManager {
+     ) -> CodexResult<NewThread> {
+         let session_source = options
+             .session_source
++            .or_else(|| options.initial_history.get_resumed_session_source())
+             .unwrap_or_else(|| self.state.session_source.clone());
+         let thread_source = options
+             .thread_source
+@@ -671,17 +672,23 @@ impl ThreadManager {
+             self.state.environment_manager.as_ref(),
+             &config.cwd,
+         );
++        let session_source = initial_history
++            .get_resumed_session_source()
++            .unwrap_or_else(|| self.state.session_source.clone());
+         let thread_source = initial_history.get_resumed_thread_source();
+-        Box::pin(self.state.spawn_thread(
++        Box::pin(self.state.spawn_thread_with_source(
+             config,
+             initial_history,
+             auth_manager,
+             self.agent_control(),
++            session_source,
+             /*forked_from_thread_id*/ None,
+             thread_source,
+             Vec::new(),
+             persist_extended_history,
+             /*metrics_service_name*/ None,
++            /*inherited_shell_snapshot*/ None,
++            /*inherited_exec_policy*/ None,
+             parent_trace,
+             environments,
+             /*user_shell_override*/ None,
+@@ -727,17 +734,23 @@ impl ThreadManager {
+             self.state.environment_manager.as_ref(),
+             &config.cwd,
+         );
++        let session_source = initial_history
++            .get_resumed_session_source()
++            .unwrap_or_else(|| self.state.session_source.clone());
+         let thread_source = initial_history.get_resumed_thread_source();
+-        Box::pin(self.state.spawn_thread(
++        Box::pin(self.state.spawn_thread_with_source(
+             config,
+             initial_history,
+             auth_manager,
+             self.agent_control(),
++            session_source,
+             /*forked_from_thread_id*/ None,
+             thread_source,
+             Vec::new(),
+             /*persist_extended_history*/ false,
+             /*metrics_service_name*/ None,
++            /*inherited_shell_snapshot*/ None,
++            /*inherited_exec_policy*/ None,
+             /*parent_trace*/ None,
+             environments,
+             /*user_shell_override*/ Some(user_shell_override),
+diff --git a/codex-rs/core/src/turn_metadata.rs b/codex-rs/core/src/turn_metadata.rs
+index 69e07dd3b76..9757e4347da 100644
+--- a/codex-rs/core/src/turn_metadata.rs
++++ b/codex-rs/core/src/turn_metadata.rs
+@@ -20,6 +20,8 @@ use codex_protocol::ThreadId;
+ use codex_protocol::config_types::WindowsSandboxLevel;
+ use codex_protocol::models::PermissionProfile;
+ use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
++use codex_protocol::protocol::SessionSource;
++use codex_protocol::protocol::SubAgentSource;
+ use codex_protocol::protocol::ThreadSource;
+ use codex_utils_absolute_path::AbsolutePathBuf;
+ 
+@@ -32,6 +34,8 @@ const THREAD_ID_KEY: &str = "thread_id";
+ const THREAD_SOURCE_KEY: &str = "thread_source";
+ const TURN_ID_KEY: &str = "turn_id";
+ const FORKED_FROM_THREAD_ID_KEY: &str = "forked_from_thread_id";
++const PARENT_THREAD_ID_KEY: &str = "parent_thread_id";
++const SUBAGENT_TYPE_KEY: &str = "subagent_type";
+ 
+ pub(crate) struct McpTurnMetadataContext<'a> {
+     pub(crate) model: &'a str,
+@@ -73,19 +77,68 @@ impl From<WorkspaceGitMetadata> for TurnMetadataWorkspace {
+     }
+ }
+ 
++#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
++#[serde(rename_all = "snake_case")]
++enum TurnMetadataSubagentType {
++    Review,
++    Compact,
++    ThreadSpawn,
++    MemoryConsolidation,
++    Other,
++}
++
+ /// Thread lineage sent to Responses via `x-codex-turn-metadata`.
+ ///
+ /// `forked_from_thread_id` is history/data lineage: the current thread copied
+-/// conversation state from that source thread.
++/// conversation state from that source thread. `parent_thread_id` is
++/// subagent/control lineage: the current thread is a spawned child of that
++/// immediate parent. They often match for forked thread-spawn subagents, but
++/// root forks have no parent and non-forked subagents have no fork source, so
++/// the fields must stay separate.
+ #[derive(Clone, Debug, Default)]
+ pub(crate) struct ThreadMetadataLineage {
+     forked_from_thread_id: Option<String>,
++    parent_thread_id: Option<String>,
++    subagent_type: Option<TurnMetadataSubagentType>,
+ }
+ 
+ impl ThreadMetadataLineage {
+-    pub(crate) fn from_fork_source(forked_from_thread_id: Option<ThreadId>) -> Self {
++    pub(crate) fn for_session(
++        forked_from_thread_id: Option<ThreadId>,
++        session_source: &SessionSource,
++    ) -> Self {
++        let (parent_thread_id, subagent_type) = match session_source {
++            SessionSource::SubAgent(SubAgentSource::Review) => {
++                (None, Some(TurnMetadataSubagentType::Review))
++            }
++            SessionSource::SubAgent(SubAgentSource::Compact) => {
++                (None, Some(TurnMetadataSubagentType::Compact))
++            }
++            SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
++                parent_thread_id, ..
++            }) => (
++                Some(parent_thread_id.to_string()),
++                Some(TurnMetadataSubagentType::ThreadSpawn),
++            ),
++            SessionSource::SubAgent(SubAgentSource::MemoryConsolidation) => {
++                (None, Some(TurnMetadataSubagentType::MemoryConsolidation))
++            }
++            SessionSource::SubAgent(SubAgentSource::Other(_)) => {
++                (None, Some(TurnMetadataSubagentType::Other))
++            }
++            SessionSource::Cli
++            | SessionSource::VSCode
++            | SessionSource::Exec
++            | SessionSource::Mcp
++            | SessionSource::Custom(_)
++            | SessionSource::Internal(_)
++            | SessionSource::Unknown => (None, None),
++        };
++
+         Self {
+             forked_from_thread_id: forked_from_thread_id.map(|thread_id| thread_id.to_string()),
++            parent_thread_id,
++            subagent_type,
+         }
+     }
+ }
+@@ -99,6 +152,10 @@ pub(crate) struct TurnMetadataBag {
+     #[serde(default, skip_serializing_if = "Option::is_none")]
+     forked_from_thread_id: Option<String>,
+     #[serde(default, skip_serializing_if = "Option::is_none")]
++    parent_thread_id: Option<String>,
++    #[serde(default, skip_serializing_if = "Option::is_none")]
++    subagent_type: Option<TurnMetadataSubagentType>,
++    #[serde(default, skip_serializing_if = "Option::is_none")]
+     thread_source: Option<ThreadSource>,
+     #[serde(default, skip_serializing_if = "Option::is_none")]
+     turn_id: Option<String>,
+@@ -123,6 +180,8 @@ fn is_core_turn_metadata_key(key: &str) -> bool {
+             | TURN_ID_KEY
+             | TURN_STARTED_AT_UNIX_MS_KEY
+             | FORKED_FROM_THREAD_ID_KEY
++            | PARENT_THREAD_ID_KEY
++            | SUBAGENT_TYPE_KEY
+     )
+ }
+ 
+@@ -176,6 +235,8 @@ fn build_turn_metadata_bag(
+         session_id,
+         thread_id,
+         forked_from_thread_id: lineage.forked_from_thread_id,
++        parent_thread_id: lineage.parent_thread_id,
++        subagent_type: lineage.subagent_type,
+         thread_source,
+         turn_id,
+         workspaces,
+@@ -394,6 +455,8 @@ impl TurnMetadataState {
+                 state.base_metadata.thread_id.clone(),
+                 ThreadMetadataLineage {
+                     forked_from_thread_id: state.base_metadata.forked_from_thread_id.clone(),
++                    parent_thread_id: state.base_metadata.parent_thread_id.clone(),
++                    subagent_type: state.base_metadata.subagent_type,
+                 },
+                 state.base_metadata.thread_source,
+                 state.base_metadata.turn_id.clone(),
+diff --git a/codex-rs/core/src/turn_metadata_tests.rs b/codex-rs/core/src/turn_metadata_tests.rs
+index 2f9b95035e4..fd1590bd4a0 100644
+--- a/codex-rs/core/src/turn_metadata_tests.rs
++++ b/codex-rs/core/src/turn_metadata_tests.rs
+@@ -3,6 +3,8 @@ use super::*;
+ use crate::sandbox_tags::permission_profile_sandbox_tag;
+ use codex_protocol::models::PermissionProfile;
+ use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
++use codex_protocol::protocol::SessionSource;
++use codex_protocol::protocol::SubAgentSource;
+ use codex_protocol::protocol::ThreadSource;
+ use core_test_support::PathBufExt;
+ use core_test_support::PathExt;
+@@ -160,7 +162,7 @@ fn turn_metadata_state_includes_root_fork_lineage() {
+     let state = TurnMetadataState::new(
+         "session-a".to_string(),
+         "thread-a".to_string(),
+-        ThreadMetadataLineage::from_fork_source(Some(source_thread_id)),
++        ThreadMetadataLineage::for_session(Some(source_thread_id), &SessionSource::Exec),
+         Some(ThreadSource::User),
+         "turn-a".to_string(),
+         cwd,
+@@ -180,6 +182,89 @@ fn turn_metadata_state_includes_root_fork_lineage() {
+     assert!(json.get("subagent_type").is_none());
+ }
+ 
++#[test]
++fn turn_metadata_state_includes_thread_spawn_subagent_parent_without_fork() {
++    let temp_dir = TempDir::new().expect("temp dir");
++    let cwd = temp_dir.path().abs();
++    let permission_profile = PermissionProfile::read_only();
++    let parent_thread_id =
++        ThreadId::from_string("22222222-2222-4222-8222-222222222222").expect("thread id");
++
++    let state = TurnMetadataState::new(
++        "session-a".to_string(),
++        "thread-a".to_string(),
++        ThreadMetadataLineage::for_session(
++            None,
++            &SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
++                parent_thread_id,
++                depth: 1,
++                agent_path: None,
++                agent_nickname: None,
++                agent_role: None,
++            }),
++        ),
++        Some(ThreadSource::Subagent),
++        "turn-a".to_string(),
++        cwd,
++        &permission_profile,
++        WindowsSandboxLevel::Disabled,
++        /*enforce_managed_network*/ false,
++    );
++
++    let header = state.current_header_value().expect("header");
++    let json: Value = serde_json::from_str(&header).expect("json");
++
++    assert!(json.get("forked_from_thread_id").is_none());
++    assert_eq!(
++        json["parent_thread_id"].as_str(),
++        Some("22222222-2222-4222-8222-222222222222")
++    );
++    assert_eq!(json["subagent_type"].as_str(), Some("thread_spawn"));
++}
++
++#[test]
++fn turn_metadata_state_includes_forked_thread_spawn_subagent_lineage() {
++    let temp_dir = TempDir::new().expect("temp dir");
++    let cwd = temp_dir.path().abs();
++    let permission_profile = PermissionProfile::read_only();
++    let parent_thread_id =
++        ThreadId::from_string("33333333-3333-4333-8333-333333333333").expect("thread id");
++
++    let state = TurnMetadataState::new(
++        "session-a".to_string(),
++        "thread-a".to_string(),
++        ThreadMetadataLineage::for_session(
++            Some(parent_thread_id),
++            &SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
++                parent_thread_id,
++                depth: 1,
++                agent_path: None,
++                agent_nickname: None,
++                agent_role: None,
++            }),
++        ),
++        Some(ThreadSource::Subagent),
++        "turn-a".to_string(),
++        cwd,
++        &permission_profile,
++        WindowsSandboxLevel::Disabled,
++        /*enforce_managed_network*/ false,
++    );
++
++    let header = state.current_header_value().expect("header");
++    let json: Value = serde_json::from_str(&header).expect("json");
++
++    assert_eq!(
++        json["forked_from_thread_id"].as_str(),
++        Some("33333333-3333-4333-8333-333333333333")
++    );
++    assert_eq!(
++        json["parent_thread_id"].as_str(),
++        Some("33333333-3333-4333-8333-333333333333")
++    );
++    assert_eq!(json["subagent_type"].as_str(), Some("thread_spawn"));
++}
++
+ #[test]
+ fn turn_metadata_state_includes_turn_started_at_unix_ms_after_start() {
+     let temp_dir = TempDir::new().expect("temp dir");
+@@ -331,6 +416,11 @@ fn turn_metadata_state_ignores_client_turn_started_at_unix_ms_before_start() {
+             "forked_from_thread_id".to_string(),
+             "client-supplied".to_string(),
+         ),
++        (
++            "parent_thread_id".to_string(),
++            "client-supplied".to_string(),
++        ),
++        ("subagent_type".to_string(), "client-supplied".to_string()),
+     ]));
+ 
+     let header = state.current_header_value().expect("header");
+@@ -338,6 +428,8 @@ fn turn_metadata_state_ignores_client_turn_started_at_unix_ms_before_start() {
+ 
+     assert!(json.get("turn_started_at_unix_ms").is_none());
+     assert!(json.get("forked_from_thread_id").is_none());
++    assert!(json.get("parent_thread_id").is_none());
++    assert!(json.get("subagent_type").is_none());
+ }
+ 
+ #[test]
+@@ -347,11 +439,22 @@ fn turn_metadata_state_merges_client_metadata_without_replacing_reserved_fields(
+     let permission_profile = PermissionProfile::read_only();
+     let source_thread_id =
+         ThreadId::from_string("44444444-4444-4444-8444-444444444444").expect("thread id");
++    let parent_thread_id =
++        ThreadId::from_string("55555555-5555-4555-8555-555555555555").expect("thread id");
+ 
+     let state = TurnMetadataState::new(
+         "session-a".to_string(),
+         "thread-a".to_string(),
+-        ThreadMetadataLineage::from_fork_source(Some(source_thread_id)),
++        ThreadMetadataLineage::for_session(
++            Some(source_thread_id),
++            &SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
++                parent_thread_id,
++                depth: 1,
++                agent_path: None,
++                agent_nickname: None,
++                agent_role: None,
++            }),
++        ),
+         Some(ThreadSource::User),
+         "turn-a".to_string(),
+         cwd,
+@@ -373,6 +476,11 @@ fn turn_metadata_state_merges_client_metadata_without_replacing_reserved_fields(
+             "forked_from_thread_id".to_string(),
+             "client-supplied".to_string(),
+         ),
++        (
++            "parent_thread_id".to_string(),
++            "client-supplied".to_string(),
++        ),
++        ("subagent_type".to_string(), "client-supplied".to_string()),
+         ("thread_source".to_string(), "client-supplied".to_string()),
+         (
+             "turn_started_at_unix_ms".to_string(),
+@@ -396,6 +504,11 @@ fn turn_metadata_state_merges_client_metadata_without_replacing_reserved_fields(
+         json["forked_from_thread_id"].as_str(),
+         Some("44444444-4444-4444-8444-444444444444")
+     );
++    assert_eq!(
++        json["parent_thread_id"].as_str(),
++        Some("55555555-5555-4555-8555-555555555555")
++    );
++    assert_eq!(json["subagent_type"].as_str(), Some("thread_spawn"));
+     assert_eq!(json["thread_source"].as_str(), Some("user"));
+     assert_eq!(json["turn_id"].as_str(), Some("turn-a"));
+     assert_eq!(
+@@ -449,13 +562,22 @@ async fn turn_metadata_state_preserves_lineage_after_git_enrichment() {
+         .expect("git commit");
+ 
+     let permission_profile = PermissionProfile::read_only();
+-    let source_thread_id =
++    let parent_thread_id =
+         ThreadId::from_string("66666666-6666-4666-8666-666666666666").expect("thread id");
+     let state = TurnMetadataState::new(
+         "session-a".to_string(),
+         "thread-a".to_string(),
+-        ThreadMetadataLineage::from_fork_source(Some(source_thread_id)),
+-        Some(ThreadSource::User),
++        ThreadMetadataLineage::for_session(
++            Some(parent_thread_id),
++            &SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
++                parent_thread_id,
++                depth: 1,
++                agent_path: None,
++                agent_nickname: None,
++                agent_role: None,
++            }),
++        ),
++        Some(ThreadSource::Subagent),
+         "turn-a".to_string(),
+         repo_path,
+         &permission_profile,
+@@ -486,4 +608,9 @@ async fn turn_metadata_state_preserves_lineage_after_git_enrichment() {
+         json["forked_from_thread_id"].as_str(),
+         Some("66666666-6666-4666-8666-666666666666")
+     );
++    assert_eq!(
++        json["parent_thread_id"].as_str(),
++        Some("66666666-6666-4666-8666-666666666666")
++    );
++    assert_eq!(json["subagent_type"].as_str(), Some("thread_spawn"));
+ }
+diff --git a/codex-rs/protocol/src/protocol.rs b/codex-rs/protocol/src/protocol.rs
+index 7d955f1d1f2..95b094e9020 100644
+--- a/codex-rs/protocol/src/protocol.rs
++++ b/codex-rs/protocol/src/protocol.rs
+@@ -2411,6 +2411,18 @@ impl InitialHistory {
+             }
+         }
+     }
++
++    pub fn get_resumed_session_source(&self) -> Option<SessionSource> {
++        match self {
++            InitialHistory::New | InitialHistory::Cleared | InitialHistory::Forked(_) => None,
++            InitialHistory::Resumed(resumed) => {
++                resumed.history.iter().find_map(|item| match item {
++                    RolloutItem::SessionMeta(meta_line) => Some(meta_line.meta.source.clone()),
++                    _ => None,
++                })
++            }
++        }
++    }
+ }
+ 
+ fn session_cwd_from_items(items: &[RolloutItem]) -> Option<PathBuf> {

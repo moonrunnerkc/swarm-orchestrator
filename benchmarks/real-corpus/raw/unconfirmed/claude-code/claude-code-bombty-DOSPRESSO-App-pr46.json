@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-bombty-DOSPRESSO-App-pr46",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "branch=claude/"
+  },
+  "pr": {
+    "number": 46,
+    "headSha": "9d7b618080957ca6fba2c876ce2cc939d22d085c",
+    "baseSha": "3e29861a6cc8e6f3fac0bd829ebdea3a332b9273",
+    "title": "docs: Sprint 10 P-7 + Sprint 8c EXECUTE doğrulaması (Replit Agent çık…",
+    "body": "…tıları)\r\n\r\nAslan'ın paylaştığı Replit Agent log'larından elde edilen sonuçlar PENDING.md ve sabah son durum dökümanına işlendi.\r\n\r\n═══════════════════════════════════════════════════════════════════ SPRINT 10 P-7 — HQ Kiosk PIN bcrypt migration ✅ EXECUTED ═══════════════════════════════════════════════════════════════════\r\n\r\nTask #356, Replit Agent EXECUTE.\r\n\r\nPRE_CHECK (canlı DB):\r\n- HQ user phone_number NOT NULL: 0 (hepsi NULL)\r\n- Existing HQ branch_staff_pins (branch_id=23): 18 satır (zaten bcrypt)\r\n- pgcrypto installed: yok → CREATE EXTENSION çalıştı\r\n\r\nMigration etkisi:\r\n- INSERT: 0 satır (phone NULL → WHERE eşleşmedi - beklenen)\r\n- pgcrypto extension: kuruldu\r\n- audit_logs: 1 kayıt (action=migration.bcrypt_hash, event_type=kiosk.hq_pin_bulk_migration)\r\n- branch_staff_pins toplam: 18 (değişmedi)\r\n\r\nBackup: schema 1.3M + data 1.2M (docs/audit/backups/ git-ignored).\r\n\r\nSonuç: Lazy migration fallback kalıcı. HQ user'lar PIN için Mr. Dobody UI'sından (PR #36) PIN reset mekanizmasını kullanacak.\r\n\r\n═══════════════════════════════════════════════════════════════════ SPRINT 8c — position_salaries UNIQUE constraint ✅ EXECUTED ═══════════════════════════════════════════════════════════════════\r\n\r\nTask #352, Replit Agent EXECUTE.\r\n\r\nPRE_CHECK:\r\n- Constraint zaten exists: position_salaries_code_effective_unique\r\n- Daha önceki commit 55978c171 ile uygulanmış\r\n- Duplicate (position_code + effective_from): 0 satır\r\n- Toplam kayıt: 19 satır temiz\r\n\r\nMigration: idempotent DO $$ BEGIN ... EXCEPTION END $$ 'already exists' uyarısı geldi, hata vermedi.\r\nEXIT_CODE: 0\r\n\r\nBackup: schema 1.2MB + data 2.7KB.\r\n\r\nSonuç: Constraint kalıcı, payroll INSERT ON CONFLICT DO NOTHING güvende.\r\n\r\n═══════════════════════════════════════════════════════════════════ GÜVENLIK NOTU\r\n═══════════════════════════════════════════════════════════════════\r\n\r\nReplit code review:\r\n- Backup SQL dosyaları PII içerebilir\r\n- .gitignore'da docs/audit/backups/ ve *backup*.sql kuralları var ✓\r\n- Geçmiş tracked backup dosyaları stub'landı\r\n\r\nKVKK uyumlu, PII sızıntısı yok.\r\n\r\n═══════════════════════════════════════════════════════════════════ ASLAN İÇİN SABAH AKSİYONU\r\n═══════════════════════════════════════════════════════════════════\r\n\r\nKRİTİK kalan iş: HQ PIN dağıtımı (19 user için Mr. Dobody UI'sından)\r\nSüre: ~45 dk\r\nDeadline: pilot öncesi (12 May'dan 18 May'a ertelendi)\r\n\r\nBordro çağrısı (Mahmut): Cuma 8 May\r\nPilot day-1 dry-run: 9 May 14:00-18:00\r\n\r\nDoküman: docs/ASLAN-7-MAY-SABAH-SON-DURUM.md (kapsamlı özet)\r\n\r\nBranch: claude/sprint-10-p7-execute-confirmation-2026-05-07",
+    "author": "bombty",
+    "headRef": "claude/sprint-10-p7-execute-confirmation-2026-05-07",
+    "repository": "bombty/DOSPRESSO-App"
+  },
+  "diffRef": {
+    "repository": "bombty/DOSPRESSO-App",
+    "headSha": "9d7b618080957ca6fba2c876ce2cc939d22d085c",
+    "baseSha": "3e29861a6cc8e6f3fac0bd829ebdea3a332b9273"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-bombty-DOSPRESSO-App-pr46.diff",
+  "vendoredAt": "2026-05-24T03:14:38.906Z",
+  "collectedAt": "2026-05-24T03:14:38.906Z"
+}

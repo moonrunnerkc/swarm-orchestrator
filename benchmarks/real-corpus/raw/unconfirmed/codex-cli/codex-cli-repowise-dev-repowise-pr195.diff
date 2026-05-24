@@ -1,0 +1,4358 @@
+diff --git a/.agents/plugins/marketplace.json b/.agents/plugins/marketplace.json
+new file mode 100644
+index 00000000..d3fa42d3
+--- /dev/null
++++ b/.agents/plugins/marketplace.json
+@@ -0,0 +1,20 @@
++{
++  "name": "repowise",
++  "interface": {
++    "displayName": "Repowise"
++  },
++  "plugins": [
++    {
++      "name": "codex",
++      "source": {
++        "source": "local",
++        "path": "./plugins/codex"
++      },
++      "policy": {
++        "installation": "AVAILABLE",
++        "authentication": "ON_INSTALL"
++      },
++      "category": "Productivity"
++    }
++  ]
++}
+diff --git a/README.md b/README.md
+index 3bce29a9..d7fad6db 100644
+--- a/README.md
++++ b/README.md
+@@ -21,9 +21,9 @@ Four intelligence layers. Seven MCP tools. Multi-repo workspaces. Auto-sync hook
+ 
+ </div>
+ 
+-Your AI coding agent reads files. It doesn't know which ones change together, which ones are dead, or why they were built the way they were. It has the source code and no memory of how the codebase got there.
++Your AI coding agent reads files. It does not know who owns them, which ones change together, which ones are dead, or why they were built the way they were. It has the source code and zero institutional knowledge.
+ 
+-repowise fixes that. It indexes your codebase into four intelligence layers — dependency graph, git history, auto-generated documentation, and architectural decisions — and exposes them to Claude Code (and any MCP-compatible AI agent) through seven precisely designed tools. Multi-repo? Initialize a workspace and get cross-repo co-change detection, API contract extraction, and federated MCP queries across all your services. **27× fewer tokens per query. 36% cheaper. Same answer quality.**
++repowise fixes that. It indexes your codebase into four intelligence layers — dependency graph, git history, auto-generated documentation, and architectural decisions — and exposes them to Claude Code, Codex, and any MCP-compatible AI agent through seven precisely designed tools. Multi-repo? Initialize a workspace and get cross-repo co-change detection, API contract extraction, and federated MCP queries across all your services. **27× fewer tokens per query. 36% cheaper. Same answer quality.**
+ 
+ The result: your agent answers *"why does auth work this way?"* instead of *"here is what auth.ts contains."*
+ 
+@@ -82,7 +82,7 @@ The layer nobody else has. Architectural decisions captured from git history, in
+ # TRADEOFF: Accepted eventual consistency in preferences for write throughput
+ ```
+ 
+-These become structured decision records, queryable by Claude Code via `get_why()`.
++These become structured decision records, queryable by AI agents via `get_why()`.
+ 
+ ---
+ 
+@@ -114,7 +114,7 @@ repowise init .      # scans for git repos, indexes each, runs cross-repo analys
+ repowise serve       # workspace dashboard + per-repo pages
+ ```
+ 
+-That's it. `repowise init` automatically registers the MCP server, installs PreToolUse/PostToolUse hooks in `~/.claude/settings.json`, generates `.mcp.json` at the project root, and offers to install a post-commit git hook that keeps everything in sync after every commit. See [Auto-Sync](docs/AUTO_SYNC.md) for all sync methods (hooks, file watcher, GitHub/GitLab webhooks, polling).
++That's it. `repowise init` automatically registers the MCP server for Claude Code, installs Claude Code hooks in `~/.claude/settings.json`, generates `.mcp.json` at the project root, and offers to install a post-commit git hook that keeps everything in sync after every commit. If the Codex CLI is installed and logged in, interactive runs offer to write project-local `.codex/config.toml` and `.codex/hooks.json`; non-interactive runs require `--codex`. Skip Codex setup with `--no-codex`; force or skip `AGENTS.md` with `--agents` / `--no-agents`. See [Auto-Sync](docs/AUTO_SYNC.md) for all sync methods (hooks, file watcher, GitHub/GitLab webhooks, polling).
+ 
+ To manually add the MCP server to another editor:
+ 
+@@ -129,9 +129,17 @@ To manually add the MCP server to another editor:
+ }
+ ```
+ 
++Codex users can also add this repository as the local Repowise plugin marketplace and install the bundled MCP, hooks, and skills from the Codex plugin browser:
++
++```bash
++codex plugin marketplace add .
++codex
++/plugins
++```
++
+ > **Note on init time:** Initial indexing analyzes your entire codebase — AST parsing, git-history mining, LLM doc generation, embedding indexing, and decision archaeology. This is a one-time cost (~25 minutes for a 3,000-file project). Every subsequent update after a commit takes under 30 seconds and only regenerates the few pages affected by your changes.
+ 
+-> **Full docs:** [Quickstart](docs/QUICKSTART.md) · [User Guide](docs/USER_GUIDE.md) · [CLI Reference](docs/CLI_REFERENCE.md) · [MCP Tools](docs/MCP_TOOLS.md) · [Workspaces](docs/WORKSPACES.md) · [Computed Glossary](docs/COMPUTED_GLOSSARY.md) · [Auto-Sync](docs/AUTO_SYNC.md)
++> **Full docs:** [Quickstart](docs/QUICKSTART.md) · [User Guide](docs/USER_GUIDE.md) · [CLI Reference](docs/CLI_REFERENCE.md) · [Codex](docs/CODEX.md) · [MCP Tools](docs/MCP_TOOLS.md) · [Workspaces](docs/WORKSPACES.md) · [Computed Glossary](docs/COMPUTED_GLOSSARY.md) · [Auto-Sync](docs/AUTO_SYNC.md)
+ 
+ ---
+ 
+@@ -278,11 +286,11 @@ This is what happens when an AI agent has real codebase intelligence.
+ 
+ ## Proactive context enrichment — hooks
+ 
+-Most MCP tools are passive — the agent has to know to call them. repowise hooks are **active**. They inject graph context into every search automatically, so agents are smarter even when they don't explicitly ask for help.
++Most MCP tools are passive — the agent has to know to call them. repowise hooks are **active**. Claude Code hooks add graph context when search results need rescue or triage. Codex hooks add Repowise MCP workflow guidance at session/prompt time and remind the agent after edits or git operations.
+ 
+-### PreToolUse — every search gets graph context
++### Claude search hooks — graph context for broad searches
+ 
+-When your AI agent runs `Grep` or `Glob`, repowise intercepts the call and enriches it with the top 3 related files — found via multi-signal search (symbol name match, file path match, and full-text search on wiki content), ranked by relevance then PageRank:
++When your AI agent runs a broad or zero-result `Grep` or `Glob`, repowise can enrich the result with the top related files — found via multi-signal search (symbol name match, file path match, and full-text search on wiki content), ranked by relevance then PageRank:
+ 
+ - **Symbols** — top functions, classes, and methods in each file
+ - **Imported by** — who depends on this file
+@@ -314,6 +322,10 @@ Run `repowise update` to refresh documentation and graph context.
+ 
+ Hooks are installed automatically during `repowise init`. No manual configuration needed. Full details: [docs/AUTO_SYNC.md](docs/AUTO_SYNC.md)
+ 
++### Codex lifecycle hooks
++
++Codex setup writes `.codex/hooks.json` with `SessionStart`, `UserPromptSubmit`, and `PostToolUse` hooks. It intentionally does not use inline `[hooks]` in `.codex/config.toml`. Repowise keeps Codex hooks focused on lifecycle guidance and freshness checks rather than trying to reuse Claude-specific search enrichment. Full details: [docs/CODEX.md](docs/CODEX.md).
++
+ ---
+ 
+ ## Auto-sync — five ways to keep your wiki current
+@@ -347,7 +359,7 @@ A typical single-commit update touches 3–10 pages and completes in under 30 se
+ 
+ ---
+ 
+-## Auto-generated CLAUDE.md
++## Auto-generated AI instructions
+ 
+ After every `repowise init` and `repowise update`, repowise regenerates your `CLAUDE.md` from actual codebase intelligence — not a template. No LLM calls. Under 5 seconds.
+ 
+@@ -357,6 +369,8 @@ repowise generate-claude-md
+ 
+ The generated section includes: architecture summary, module map, hotspot warnings, ownership map, hidden coupling pairs, active architectural decisions, and dead code candidates. A user-owned section at the top is never touched.
+ 
++Codex users also get managed `AGENTS.md` by default. Its Repowise section is bounded by managed markers, preserves user content outside the markers, and gives Codex MCP workflows for overview, search, context, risk, why, dependency tracing, diagrams, and dead-code cleanup.
++
+ ```markdown
+ <!-- REPOWISE:START — managed automatically, do not edit -->
+ ## Architecture
+@@ -461,7 +475,7 @@ The "why" usually walks out the door — when a teammate leaves, or when you reo
+ | Multi-repo workspace intelligence | ✅ co-changes, contracts, federated MCP | ❌ | ❌ | ❌ | ❌ |
+ | MCP server for AI agents | ✅ 7 tools | ❌ | ✅ 3 tools | ✅ | ✅ |
+ | Proactive agent hooks | ✅ PreToolUse + PostToolUse | ❌ | ❌ | ❌ | ❌ |
+-| Auto-generated CLAUDE.md | ✅ | ❌ | ❌ | ❌ | ❌ |
++| Auto-generated AI instructions (`CLAUDE.md`, `AGENTS.md`) | ✅ | ❌ | ❌ | ❌ | ❌ |
+ | Doc freshness scoring | ✅ | ❌ | ❌ | ⚠️ staleness only | ❌ |
+ | Incremental updates on commit | ✅ <30s | ✅ | ❌ | ✅ | ✅ |
+ | Local dashboard / frontend | ✅ | ❌ | ❌ | ❌ IDE only | ✅ |
+@@ -500,6 +514,8 @@ We use it on our own codebase — see the live snapshot of repowise indexing its
+ ```bash
+ # Core
+ repowise init [PATH]              # index codebase (one-time, offers hook setup)
++repowise init --provider codex_cli --codex  # use authenticated Codex CLI subscription
++repowise init --no-codex --no-agents        # skip Codex project files and AGENTS.md
+ repowise init --index-only        # graph + git + dead code, no LLM, no cost
+ repowise init -x vendor/ -x proto/  # exclude patterns (gitignore syntax)
+ repowise init --include-submodules   # include git submodule directories
+@@ -543,6 +559,7 @@ repowise decision health          # stale, conflicts, ungoverned hotspots
+ 
+ # Editor files
+ repowise generate-claude-md       # regenerate CLAUDE.md
++repowise init --agents            # generate managed AGENTS.md for Codex
+ 
+ # Proactive hooks (auto-installed by init — not called manually)
+ repowise augment                  # enriches agent tool calls with graph context
+@@ -586,11 +603,15 @@ repowise reindex                  # rebuild vector store (no LLM calls)
+ `repowise init` generates `.repowise/config.yaml`. Key options:
+ 
+ ```yaml
+-provider: anthropic               # anthropic | openai | openrouter | gemini | deepseek | ollama | litellm | mock
++provider: anthropic               # anthropic | openai | openrouter | gemini | deepseek | ollama | litellm | codex_cli | mock
+ model: claude-sonnet-4-5
+ embedding_model: voyage-3
+ reasoning: auto                   # auto | off | minimal
+ 
++editor_files:
++  claude_md: true
++  agents_md: true
++
+ git:
+   co_change_commit_limit: 500
+   blame_enabled: true
+diff --git a/docs/CLI_REFERENCE.md b/docs/CLI_REFERENCE.md
+index 1c50dcac..8e4a8f64 100644
+--- a/docs/CLI_REFERENCE.md
++++ b/docs/CLI_REFERENCE.md
+@@ -42,7 +42,7 @@ repowise init .
+ 1. **Ingestion** — walks every file, parses AST with tree-sitter, builds a two-tier dependency graph (file + symbol nodes), indexes git history (churn, hotspots, ownership, bus factor)
+ 2. **Analysis** — detects dead code, extracts architectural decisions from inline markers, READMEs, and git history. Runs Leiden community detection and execution flow tracing.
+ 3. **Generation** — sends structured prompts to the LLM, generates file-level, module-level, and repo-level wiki pages
+-4. **Persistence** — stores everything in `.repowise/wiki.db`, builds search indexes, generates `CLAUDE.md`, registers MCP server and Claude Code hooks
++4. **Persistence** — stores everything in `.repowise/wiki.db`, builds search indexes, generates `CLAUDE.md` and `AGENTS.md`, registers MCP server and Claude/Codex hooks
+ 
+ In workspace mode, adds: repo scanning, per-repo indexing, cross-repo analysis (co-changes, contracts, package deps), workspace CLAUDE.md generation.
+ 
+@@ -50,7 +50,7 @@ In workspace mode, adds: repo scanning, per-repo indexing, cross-repo analysis (
+ 
+ | Flag | Description |
+ |------|-------------|
+-| `--provider` | LLM provider: `anthropic`, `openai`, `openrouter`, `gemini`, `deepseek`, `ollama`, `litellm`, `mock` |
++| `--provider` | LLM provider: `anthropic`, `openai`, `openrouter`, `gemini`, `deepseek`, `ollama`, `litellm`, `codex_cli`, `mock` |
+ | `--model` | Model name override (e.g., `claude-sonnet-4-6`) |
+ | `--embedder` | Embedder for semantic search: `gemini`, `openai`, `mock` |
+ | `--index-only` | Skip LLM generation. Only parse, build graph, and index git. Free. |
+@@ -67,6 +67,8 @@ In workspace mode, adds: repo scanning, per-repo indexing, cross-repo analysis (
+ | `--commit-limit` | Max commits to analyze per file (default: 500). |
+ | `--follow-renames` | Track file renames in git history. |
+ | `--no-claude-md` | Don't generate `CLAUDE.md`. |
++| `--agents / --no-agents` | Generate or skip managed `AGENTS.md` for Codex. Persists the preference. |
++| `--codex / --no-codex` | Generate or skip project-local Codex MCP/hooks setup. Interactive runs prompt when Codex CLI is installed and logged in; non-interactive runs require `--codex`. |
+ | `--yes / -y` | Skip confirmation prompts. |
+ 
+ **Examples:**
+@@ -74,6 +76,7 @@ In workspace mode, adds: repo scanning, per-repo indexing, cross-repo analysis (
+ ```bash
+ repowise init                                         # interactive
+ repowise init --provider anthropic --yes              # automated
++repowise init --provider codex_cli --codex --yes       # use authenticated Codex CLI
+ repowise init --index-only                            # free, no LLM
+ repowise init --dry-run                               # preview cost
+ repowise init --test-run                              # quick test (10 files)
+@@ -81,6 +84,7 @@ repowise init --provider openai --model qwen3 --reasoning off
+ repowise init --provider openrouter --model openai/gpt-5 --reasoning minimal
+ repowise init -x vendor/ -x "*.gen.go"               # exclude patterns
+ repowise init --include-submodules                    # include submodules
++repowise init --no-codex --no-agents                  # skip Codex project files
+ repowise init .                                       # workspace mode
+ repowise init . --index-only -x "node_modules/"      # workspace, no LLM
+ ```
+@@ -104,6 +108,7 @@ Incrementally update wiki pages for files changed since the last sync.
+ | `--workspace` | Update all stale repos in the workspace + cross-repo analysis |
+ | `--no-workspace` | Force single-repo mode (handy when running from a workspace root) |
+ | `--repo` | Update a specific workspace repo by alias |
++| `--agents / --no-agents` | Generate or skip managed `AGENTS.md` after update. Persists the preference. |
+ 
+ **First-time indexing:** as of v0.8, `update --workspace` now runs full first-time indexing for workspace entries that have no `.repowise/` dir yet (previously skipped with `"not_indexed"`). The pipeline runs index-only — no LLM cost — and writes a state.json marker so `repowise update --repo <alias> --docs` later picks up doc generation cleanly.
+ 
+@@ -387,6 +392,8 @@ See [Auto-Sync](AUTO_SYNC.md) for all sync methods (hooks, file watcher, webhook
+ 
+ Start the MCP server for AI editor integration.
+ 
++If `PATH` is omitted, `repowise mcp` first walks upward from the current directory to the nearest initialized `.repowise` repository. This lets project-local Codex config use `args = ["mcp"]` with `cwd` set to the repo root.
++
+ **Options:**
+ 
+ | Flag | Description |
+@@ -395,7 +402,7 @@ Start the MCP server for AI editor integration.
+ | `--port` | Port for SSE transport (default: 7338) |
+ 
+ ```bash
+-repowise mcp --transport stdio           # for Claude Code, Cursor, etc.
++repowise mcp --transport stdio           # for Claude Code, Codex, Cursor, etc.
+ repowise mcp --transport sse --port 7338 # for web clients
+ ```
+ 
+@@ -415,6 +422,12 @@ repowise generate-claude-md --stdout
+ 
+ ---
+ 
++### `AGENTS.md`
++
++`repowise init` and `repowise update` generate managed `AGENTS.md` for Codex by default. Control it with `--agents` / `--no-agents`; user content outside the Repowise managed markers is preserved.
++
++---
++
+ ### `repowise export [PATH]`
+ 
+ Export wiki pages to files.
+@@ -466,4 +479,4 @@ repowise doctor --workspace --repair     # also drop dead entries / sync drift
+ 
+ ### `repowise augment`
+ 
+-Hook-driven context enrichment engine. Not meant to be called manually — invoked by Claude Code hooks installed during `repowise init`.
++Hook-driven context enrichment engine. Not meant to be called manually — invoked by Claude Code and Codex hooks installed during `repowise init`. Claude Code uses it for search-result enrichment and stale-wiki checks; Codex uses it for `SessionStart`, `UserPromptSubmit`, and `PostToolUse` lifecycle guidance.
+diff --git a/docs/CODEX.md b/docs/CODEX.md
+new file mode 100644
+index 00000000..0022f45c
+--- /dev/null
++++ b/docs/CODEX.md
+@@ -0,0 +1,136 @@
++# Codex Integration
++
++Repowise supports Codex in three separate ways:
++
++- Project setup for Codex MCP and lifecycle hooks.
++- The `codex_cli` LLM provider for wiki generation through your authenticated Codex CLI subscription.
++- A local Codex plugin with bundled MCP, hooks, and Repowise skills.
++
++These features use project-local files. `repowise init --codex` writes under the repository, not to global `~/.codex/config.toml`.
++
++## Prerequisites
++
++Install and authenticate the Codex CLI:
++
++```bash
++npm install -g @openai/codex
++codex login
++codex login status
++```
++
++Repowise checks `codex --version` and `codex login status`. When both succeed, interactive `repowise init` offers to enable Codex project setup. Non-interactive runs require `--codex`; use `--no-codex` to skip the prompt.
++
++## Project MCP Setup
++
++Run from the repository root:
++
++```bash
++repowise init --codex
++```
++
++Repowise merges this server into `.codex/config.toml`:
++
++```toml
++[mcp_servers.repowise]
++command = "repowise"
++args = ["mcp"]
++cwd = "/absolute/path/to/repo"
++startup_timeout_sec = 20
++
++[features]
++hooks = true
++```
++
++The MCP server uses `repowise mcp` without a path. In no-path mode, Repowise walks upward from the current directory to the nearest initialized `.repowise` repository.
++
++Smoke check:
++
++```bash
++codex mcp list
++```
++
++## Codex Hooks
++
++Repowise writes hooks to `.codex/hooks.json`, not inline `[hooks]` tables. The default hooks call the import-isolated `repowise-augment` entry point for:
++
++- `SessionStart` to add Repowise MCP workflow guidance.
++- `UserPromptSubmit` to remind Codex when Repowise context is available.
++- `PostToolUse` for `Bash` to detect git operations that make the wiki stale.
++- `PostToolUse` for `apply_patch`, `Edit`, and `Write` to remind Codex after edits.
++
++Claude Code has its own search-result enrichment hook path for `Grep` and `Glob`. Codex setup stays focused on lifecycle guidance and freshness checks instead of trying to reuse that Claude-specific search enrichment.
++
++## `codex_cli` Provider
++
++Use `codex_cli` when you want Repowise page generation to run through your Codex CLI subscription instead of an API key:
++
++```bash
++repowise init --provider codex_cli --codex --yes
++```
++
++You can also persist it:
++
++```bash
++REPOWISE_PROVIDER=codex_cli repowise update
++```
++
++The provider runs:
++
++```bash
++codex exec --ephemeral --sandbox read-only --json --cd /absolute/path/to/repo -
++```
++
++Repowise sends the prompt on stdin, parses Codex JSONL output, records token usage from `turn.completed.usage`, and treats `codex_cli/*` cost as `$0.00` because subscription billing happens outside Repowise API pricing. `--model` is passed to Codex only when you explicitly configure a model. `--reasoning minimal` maps to Codex `model_reasoning_effort="low"`; `--reasoning off` is not supported by the Codex CLI provider.
++
++Smoke check:
++
++```bash
++codex exec --ephemeral --sandbox read-only --json "Return exactly OK"
++```
++
++## Plugin And Skills
++
++The repository includes a local Codex plugin:
++
++```text
++.agents/plugins/marketplace.json
++plugins/codex/.codex-plugin/plugin.json
++plugins/codex/.mcp.json
++plugins/codex/hooks/hooks.json
++plugins/codex/skills/*/SKILL.md
++```
++
++From the Repowise repository root, add the local marketplace to Codex, then install the Repowise plugin from the Codex plugin browser:
++
++```bash
++codex plugin marketplace add .
++codex
++/plugins
++```
++
++The plugin bundles Repowise MCP, lifecycle hooks, and Codex-neutral skills for exploration, pre-modification checks, architectural decisions, and dead-code cleanup. It does not add Claude-style slash commands. Plugin-bundled hooks are opt-in in current Codex releases; enable them with `[features] plugin_hooks = true` if you want hooks loaded from an installed plugin.
++
++## AGENTS.md
++
++`repowise init` and `repowise update` generate a managed `AGENTS.md` by default. The Repowise section is bounded by managed markers and user content outside the markers is preserved.
++
++Controls:
++
++```bash
++repowise init --no-agents
++repowise init --agents
++repowise update --no-agents
++repowise update --agents
++```
++
++The generated section tells Codex when to use Repowise MCP tools for overview, search, context, risk, why/decision history, dependency tracing, diagrams, and dead-code cleanup.
++
++## Official Codex Docs
++
++- [Codex hooks](https://developers.openai.com/codex/hooks)
++- [Codex MCP](https://developers.openai.com/codex/mcp)
++- [Codex non-interactive mode](https://developers.openai.com/codex/noninteractive)
++- [Codex plugins](https://developers.openai.com/codex/plugins)
++- [Build Codex plugins](https://developers.openai.com/codex/plugins/build)
++- [Codex skills](https://developers.openai.com/codex/skills)
++- [AGENTS.md instructions](https://developers.openai.com/codex/guides/agents-md)
+diff --git a/docs/MCP_TOOLS.md b/docs/MCP_TOOLS.md
+index 45bc7569..0b187cfc 100644
+--- a/docs/MCP_TOOLS.md
++++ b/docs/MCP_TOOLS.md
+@@ -1,11 +1,11 @@
+ # MCP Tools Reference
+ 
+-repowise exposes 7 tools via the [Model Context Protocol](https://modelcontextprotocol.io) (MCP). These tools give AI coding assistants (Claude Code, Cursor, Cline, Windsurf) structured access to your codebase intelligence — dependency graph, git history, documentation, and architectural decisions.
++repowise exposes 7 tools via the [Model Context Protocol](https://modelcontextprotocol.io) (MCP). These tools give AI coding assistants (Claude Code, Codex, Cursor, Cline, Windsurf) structured access to your codebase intelligence — dependency graph, git history, documentation, and architectural decisions.
+ 
+ **Start the MCP server:**
+ 
+ ```bash
+-repowise mcp --transport stdio           # for Claude Code, Cursor, etc.
++repowise mcp --transport stdio           # for Claude Code, Codex, Cursor, etc.
+ repowise mcp --transport sse --port 7338 # for web clients
+ ```
+ 
+@@ -222,7 +222,7 @@ The MCP server automatically enriches responses with cross-repo intelligence:
+ 
+ ## Proactive Hooks (Complementary)
+ 
+-In addition to the 7 MCP tools, `repowise init` installs Claude Code hooks that provide **passive, automatic** context enrichment:
++In addition to the 7 MCP tools, `repowise init` installs Claude Code and Codex hooks that provide **passive, automatic** context:
+ 
+ - **PreToolUse** — every `Grep`/`Glob` call is enriched with graph context (symbols, importers, dependencies, git signals) at ~24ms latency
+ - **PostToolUse** — after git commits, the agent is notified when the wiki is stale
+diff --git a/docs/QUICKSTART.md b/docs/QUICKSTART.md
+index 5756bd1c..4e0fb44b 100644
+--- a/docs/QUICKSTART.md
++++ b/docs/QUICKSTART.md
+@@ -14,6 +14,14 @@ pip install "repowise[anthropic]"
+ 
+ Or substitute `openai`, `gemini`, `litellm`, or `all` depending on your LLM provider.
+ 
++For the Codex CLI subscription flow, no provider SDK or API key is required:
++
++```bash
++pip install repowise
++npm install -g @openai/codex
++codex login
++```
++
+ **Requirements:** Python 3.11+, Git.
+ 
+ ## 2. Set Your API Key
+@@ -24,6 +32,12 @@ export ANTHROPIC_API_KEY="sk-ant-..."
+ 
+ Or `OPENAI_API_KEY`, `GEMINI_API_KEY` — whichever provider you installed.
+ 
++If you use Codex as the LLM provider, authenticate the Codex CLI instead:
++
++```bash
++codex login status
++```
++
+ On Windows PowerShell:
+ 
+ ```powershell
+@@ -39,6 +53,12 @@ repowise init
+ 
+ Repowise will walk you through an interactive setup — choose a provider, review the cost estimate, and confirm. It parses every file, builds a dependency graph, indexes git history, and generates wiki pages.
+ 
++Codex users can force project-local MCP/hooks setup and use the Codex CLI provider in one command:
++
++```bash
++repowise init --codex --provider codex_cli --yes
++```
++
+ A typical run on a ~500-file codebase takes 5-15 minutes.
+ 
+ **Want to skip LLM costs?** Use `--index-only` to just parse and analyze without generating docs:
+@@ -67,7 +87,7 @@ repowise serve
+ 
+ If Node.js 20+ is installed, the web UI starts automatically. Otherwise, use Docker (see below).
+ 
+-**Connect to your AI editor (Claude Code, Cursor, Cline, Windsurf):**
++**Connect to your AI editor (Claude Code, Codex, Cursor, Cline, Windsurf):**
+ 
+ ```bash
+ repowise mcp --transport stdio
+@@ -75,6 +95,8 @@ repowise mcp --transport stdio
+ 
+ > **Automatic for Claude Code:** `repowise init` already registers the MCP server and installs PreToolUse/PostToolUse hooks in `~/.claude/settings.json`. Every `Grep`/`Glob` call is automatically enriched with graph context (importers, dependencies, symbols, git signals). After git commits, the agent is notified when the wiki is stale.
+ 
++> **Codex setup:** if the Codex CLI is installed and logged in, interactive `repowise init` can write `.codex/config.toml` and `.codex/hooks.json` in the project. In non-interactive runs, pass `--codex`. Verify with `codex mcp list` and `codex exec --ephemeral --sandbox read-only --json "Return exactly OK"`. See [Codex Integration](CODEX.md).
++
+ ## 5. Keep It in Sync
+ 
+ After pulling changes or editing code:
+diff --git a/docs/USER_GUIDE.md b/docs/USER_GUIDE.md
+index 053511f2..d28b4fb7 100644
+--- a/docs/USER_GUIDE.md
++++ b/docs/USER_GUIDE.md
+@@ -52,6 +52,14 @@ pip install "repowise[litellm]"      # 100+ providers via LiteLLM (Together, Gro
+ pip install "repowise[all]"          # All LLM providers + PostgreSQL support
+ ```
+ 
++For the Codex CLI provider, install `repowise` plus the Codex CLI. No LLM provider SDK or API key is required by Repowise:
++
++```bash
++pip install repowise
++npm install -g @openai/codex
++codex login
++```
++
+ If you plan to use PostgreSQL instead of the default SQLite:
+ 
+ ```bash
+@@ -62,7 +70,7 @@ pip install "repowise[postgres]"
+ 
+ - Python 3.11 or later
+ - Git (repowise analyzes your repository's git history)
+-- An LLM API key (for documentation generation — not needed for analysis-only mode)
++- An LLM API key or authenticated Codex CLI login (for documentation generation — not needed for analysis-only mode)
+ 
+ ### Verify Installation
+ 
+@@ -95,6 +103,13 @@ export OPENAI_API_KEY="sk-..."
+ export GEMINI_API_KEY="..."
+ ```
+ 
++Or use your Codex CLI subscription:
++
++```bash
++codex login status
++export REPOWISE_PROVIDER=codex_cli
++```
++
+ On Windows PowerShell:
+ 
+ ```powershell
+@@ -123,7 +138,7 @@ After init completes, you have several ways to access the generated documentatio
+ ```bash
+ repowise search "authentication"     # Search from the terminal
+ repowise serve                       # Browse in a web UI at localhost:7337
+-repowise mcp                         # Connect to Claude Code, Cursor, etc.
++repowise mcp                         # Connect to Claude Code, Codex, Cursor, etc.
+ ```
+ 
+ ### What gets created
+@@ -156,13 +171,13 @@ repowise init [PATH]
+ 1. **Ingestion** — walks every file, parses AST with tree-sitter, builds a dependency graph, indexes git history (churn, hotspots, ownership, bus factor)
+ 2. **Analysis** — detects dead code, extracts architectural decisions from inline markers, READMEs, and git history
+ 3. **Generation** — sends structured prompts to the LLM, generates file-level, module-level, and repo-level wiki pages, plus architecture diagrams
+-4. **Persistence** — stores everything in `.repowise/wiki.db`, builds search indexes, generates `CLAUDE.md`
++4. **Persistence** — stores everything in `.repowise/wiki.db`, builds search indexes, generates `CLAUDE.md` and `AGENTS.md`, and writes editor MCP/hooks config where enabled
+ 
+ **Options:**
+ 
+ | Flag | Description |
+ |------|-------------|
+-| `--provider` | LLM provider: `anthropic`, `openai`, `openrouter`, `gemini`, `deepseek`, `ollama`, `litellm`, `mock`. Auto-detected from env vars if not set. |
++| `--provider` | LLM provider: `anthropic`, `openai`, `openrouter`, `gemini`, `deepseek`, `ollama`, `litellm`, `codex_cli`, `mock`. Auto-detected from env vars/config if not set. |
+ | `--model` | Model name override (e.g., `claude-sonnet-4-6`, `gpt-5.4-nano`) |
+ | `--embedder` | Embedder for semantic search: `gemini`, `openai`, `mock`. Auto-detected from env vars. |
+ | `--index-only` | Skip LLM generation entirely. Only parse, build graph, and index git. Free. |
+@@ -178,6 +193,8 @@ repowise init [PATH]
+ | `--commit-limit` | Max commits to analyze per file (default: 500, max: 5000). Saved to config. |
+ | `--follow-renames` | Track file renames in git history (slower but more accurate). |
+ | `--no-claude-md` | Don't generate `CLAUDE.md` at the end. |
++| `--agents / --no-agents` | Generate or skip managed `AGENTS.md` for Codex. Persists the preference. |
++| `--codex / --no-codex` | Generate or skip project-local Codex `.codex/config.toml` and `.codex/hooks.json`. Interactive runs prompt when Codex CLI is installed and logged in; non-interactive runs require `--codex`. |
+ | `--yes / -y` | Skip cost confirmation prompt (auto-confirms if cost > $2). |
+ 
+ **Examples:**
+@@ -189,6 +206,9 @@ repowise init
+ # Fully automated
+ repowise init --provider anthropic --model claude-sonnet-4-6 --yes
+ 
++# Codex CLI subscription provider + Codex project setup
++repowise init --provider codex_cli --codex --yes
++
+ # Just index, no LLM cost
+ repowise init --index-only
+ 
+@@ -223,7 +243,7 @@ Much faster and cheaper than a full `init` — only regenerates pages for change
+ 2. Re-parses changed files and rebuilds the dependency graph
+ 3. Determines affected pages (direct changes + dependents via cascade analysis)
+ 4. Regenerates only those pages
+-5. Updates `state.json` and `CLAUDE.md`
++5. Updates `state.json`, `CLAUDE.md`, and `AGENTS.md` where enabled
+ 
+ **Options:**
+ 
+@@ -235,6 +255,7 @@ Much faster and cheaper than a full `init` — only regenerates pages for change
+ | `--reasoning` | Reasoning mode for supported providers: `auto`, `off`, or `minimal`. |
+ | `--cascade-budget` | Max pages to regenerate per run (default: 30). Prevents runaway regeneration. |
+ | `--dry-run` | Show what would be updated without regenerating. |
++| `--agents / --no-agents` | Generate or skip managed `AGENTS.md` after update. Persists the preference. |
+ 
+ **Examples:**
+ 
+@@ -329,7 +350,7 @@ Start the MCP (Model Context Protocol) server for AI editor integration.
+ repowise mcp [PATH]
+ ```
+ 
+-This is how you connect repowise to Claude Code, Cursor, Cline, Windsurf, and other MCP-compatible editors.
++This is how you connect repowise to Claude Code, Codex, Cursor, Cline, Windsurf, and other MCP-compatible editors.
+ 
+ **Options:**
+ 
+@@ -484,6 +505,8 @@ repowise generate-claude-md [PATH]
+ 
+ If you have custom instructions at the top of your `CLAUDE.md`, they are preserved. Only the auto-generated section (between markers) is updated.
+ 
++`AGENTS.md` is generated by `repowise init` and `repowise update` for Codex. Use `--agents` / `--no-agents` on those commands to control it; user content outside the Repowise managed markers is preserved.
++
+ **Options:**
+ 
+ | Flag | Description |
+@@ -778,6 +801,30 @@ repowise mcp /path/to/your-repo --transport stdio
+ 
+ Claude Code auto-detects the `.repowise/.mcp.json` generated by `repowise init`.
+ 
++### Codex
++
++If Codex CLI is installed and logged in, interactive `repowise init` runs offer to write project-local Codex config. Non-interactive runs require `--codex`. You can force or skip this behavior:
++
++```bash
++repowise init --codex
++repowise init --no-codex
++```
++
++Generated files:
++
++```text
++.codex/config.toml   # [mcp_servers.repowise], project-local only
++.codex/hooks.json    # SessionStart, UserPromptSubmit, PostToolUse
++AGENTS.md            # managed instructions with user content preserved
++```
++
++`repowise mcp` can run without a path for Codex because it resolves upward to the nearest initialized `.repowise` repo. Verify setup with:
++
++```bash
++codex mcp list
++codex exec --ephemeral --sandbox read-only --json "Return exactly OK"
++```
++
+ ### Cursor / Windsurf / Cline
+ 
+ Add an MCP server entry pointing to:
+@@ -813,15 +860,15 @@ Once connected, your AI editor can:
+ 
+ ## Proactive Context Enrichment (Hooks)
+ 
+-Repowise automatically enriches AI agent tool calls with codebase graph context via Claude Code hooks. This is installed automatically during `repowise init` — no manual configuration required.
++Repowise automatically enriches AI agent workflows with hooks. Claude Code gets search-result graph enrichment. Codex gets session/prompt MCP guidance and post-edit freshness reminders. Setup is installed automatically during `repowise init` where the matching editor is available.
+ 
+-Unlike MCP tools (which agents must explicitly call), hooks fire on every search automatically. Every `Grep` or `Glob` an agent runs gets graph context injected alongside the results, without the agent having to think about it.
++Unlike MCP tools (which agents must explicitly call), hooks can fire automatically. In Claude Code, broad or zero-result `Grep` and `Glob` searches can get graph context alongside the results. In Codex, `SessionStart` and `UserPromptSubmit` add concise Repowise MCP usage guidance.
+ 
+ ### How it works
+ 
+-#### PreToolUse Hook — Grep/Glob enrichment
++#### Claude search hook — Grep/Glob enrichment
+ 
+-Whenever an AI agent runs `Grep` or `Glob`, repowise intercepts the call and queries the local `wiki.db` for each matching file. The enrichment is appended to the tool result before the agent sees it:
++When an AI agent gets a broad or zero-result `Grep` or `Glob` result, repowise queries the local `wiki.db` for relevant files. The enrichment is appended to the tool result before the agent sees it:
+ 
+ | Field | What it tells the agent |
+ |-------|------------------------|
+@@ -830,7 +877,7 @@ Whenever an AI agent runs `Grep` or `Glob`, repowise intercepts the call and que
+ | **Depends on** | What this file imports (forward dependency) |
+ | **Git signals** | Hotspot status, bus factor, and owner |
+ 
+-Average latency is ~24ms — well under the 500ms target. No LLM calls, no network requests — pure local SQLite queries against `wiki.db`.
++No LLM calls. No network requests. Pure local SQLite queries against `wiki.db`.
+ 
+ #### PostToolUse Hook — Git commit detection
+ 
+@@ -842,21 +889,33 @@ Wiki is stale — run `repowise update` to refresh
+ 
+ This ensures agents are never silently working from outdated documentation.
+ 
++#### Codex lifecycle hooks
++
++Codex hooks are written to `.codex/hooks.json` and enabled through `[features] hooks = true` in `.codex/config.toml`. Repowise installs:
++
++| Hook type | Matcher | Action |
++|-----------|---------|--------|
++| `SessionStart` | `startup\|resume\|clear` | Add Repowise MCP workflow guidance |
++| `UserPromptSubmit` | all prompts | Add Repowise MCP workflow guidance |
++| `PostToolUse` | `Bash` | Check git operations and stale wiki state |
++| `PostToolUse` | `apply_patch\|Edit\|Write` | Remind after edits that context may need refresh |
++
++Repowise keeps Codex hooks focused on lifecycle guidance and freshness checks rather than trying to reuse Claude-specific search enrichment.
++
+ ### Configuration
+ 
+-Hooks are written to `~/.claude/settings.json` automatically during `repowise init`. The installed configuration:
++Claude hooks are written to `~/.claude/settings.json` automatically during `repowise init`. Codex hooks are written to project-local `.codex/hooks.json`; Repowise never writes global `~/.codex/config.toml` for Codex setup.
+ 
+ | Hook type | Matcher | Action |
+ |-----------|---------|--------|
+-| `PreToolUse` | `Grep\|Glob` | Query `wiki.db` and prepend graph context to the result |
+-| `PostToolUse` | `Bash` | Check for git operations and notify if wiki is stale |
++| `PostToolUse` | `Bash\|Grep\|Glob` | Check git operations, rescue zero-result searches, and rank large search result sets |
+ 
+-Both hooks call the `repowise-augment` console script — a standalone, import-isolated entry point that does not load the full `repowise` CLI. This keeps cold start under the 500ms target and ensures a broken environment (missing optional dep, corrupt DB, etc.) never crashes the agent: any failure exits 0 silently. The equivalent `repowise augment` Click subcommand still exists for manual debugging.
++Claude Code and Codex hooks call the `repowise-augment` console script — a standalone, import-isolated entry point that does not load the full `repowise` CLI. It is designed for graceful failure: any error exits 0 silently so a repowise issue never breaks the agent.
+ 
+ ### CLI command
+ 
+ ```bash
+-repowise-augment    # Not meant to be called manually — invoked by Claude Code hooks
++repowise-augment    # Not meant to be called manually — invoked by installed hooks
+ repowise augment    # Equivalent Click subcommand, useful for manual debugging
+ ```
+ 
+@@ -1016,6 +1075,9 @@ repowise export --format markdown --output ./docs/wiki/
+ # Re-generate with a different provider
+ repowise init --provider openai --model gpt-5.4-nano --force
+ 
++# Use the authenticated Codex CLI subscription
++repowise init --provider codex_cli --force
++
+ # Or just change the model for future updates
+ # (edit .repowise/config.yaml, then:)
+ repowise update --provider gemini
+diff --git a/examples/codex/README.md b/examples/codex/README.md
+new file mode 100644
+index 00000000..db0634bb
+--- /dev/null
++++ b/examples/codex/README.md
+@@ -0,0 +1,49 @@
++# Codex Example
++
++This example shows the expected Codex setup for an initialized Repowise repository.
++
++## Setup
++
++```bash
++cd /path/to/your-repo
++codex login status
++repowise init --codex --index-only --yes   # fast smoke: index only, no LLM wiki generation
++repowise init --codex --provider codex_cli --yes
++```
++
++`repowise init --codex --index-only` is the quick setup smoke path. Drop `--index-only` when you want the full LLM-generated wiki. `repowise init --codex` writes project-local Codex files:
++
++```text
++.codex/config.toml
++.codex/hooks.json
++AGENTS.md
++```
++
++It does not write to global `~/.codex/config.toml`.
++
++## Smoke Checks
++
++```bash
++codex mcp list
++codex exec --ephemeral --sandbox read-only --json "Return exactly OK"
++```
++
++Inside Codex, start a new session in the repository and ask:
++
++```text
++Use Repowise to summarize the architecture and identify risky files before editing.
++```
++
++Codex should have Repowise MCP available, load the managed `AGENTS.md`, and receive hook guidance from `.codex/hooks.json`.
++
++## Local Plugin
++
++From the Repowise repository root:
++
++```bash
++codex plugin marketplace add .
++codex
++/plugins
++```
++
++Install the Repowise plugin from the local marketplace. The plugin bundles Repowise MCP, hooks, and Codex-neutral skills; it does not add slash commands. Plugin-bundled hooks require `[features] plugin_hooks = true` in current Codex releases.
+diff --git a/packages/cli/src/repowise/cli/augment_hook.py b/packages/cli/src/repowise/cli/augment_hook.py
+index 62a33c0d..de039025 100644
+--- a/packages/cli/src/repowise/cli/augment_hook.py
++++ b/packages/cli/src/repowise/cli/augment_hook.py
+@@ -1,11 +1,11 @@
+-"""Standalone entry point for the Claude Code ``repowise-augment`` hook.
++"""Standalone entry point for installed AI-agent ``repowise-augment`` hooks.
+ 
+ Hooks must never crash the agent. The full ``repowise`` CLI imports the
+ entire command surface — including ``init_cmd`` → ``cost_estimator`` →
+ ``core.ingestion.graph``, which pulls in ``networkx``, ``scipy``, and other
+ heavy dependencies. A single missing dep (or any other import-time failure
+ in any subcommand) would otherwise propagate as a non-zero exit on every
+-``Grep``/``Glob``/``Bash`` tool call, spamming the agent transcript with
++``Grep``/``Glob``/``Bash``/edit tool call, spamming the agent transcript with
+ tracebacks.
+ 
+ This entry point is wired as a separate ``[project.scripts]`` console script
+@@ -27,11 +27,20 @@
+ import sys
+ 
+ 
++def _parse_client_arg(argv: list[str]) -> str | None:
++    for idx, arg in enumerate(argv):
++        if arg == "--client" and idx + 1 < len(argv):
++            return argv[idx + 1]
++        if arg.startswith("--client="):
++            return arg.split("=", 1)[1]
++    return None
++
++
+ def main() -> None:
+     try:
+         from repowise.cli.commands.augment_cmd import _run_augment
+ 
+-        _run_augment()
++        _run_augment(client=_parse_client_arg(sys.argv[1:]))
+     except (SystemExit, KeyboardInterrupt):
+         raise
+     except BaseException:
+diff --git a/packages/cli/src/repowise/cli/commands/augment_cmd.py b/packages/cli/src/repowise/cli/commands/augment_cmd.py
+index a6d749b4..6067ab1d 100644
+--- a/packages/cli/src/repowise/cli/commands/augment_cmd.py
++++ b/packages/cli/src/repowise/cli/commands/augment_cmd.py
+@@ -1,7 +1,7 @@
+ """``repowise augment`` — hook-driven context enrichment for AI coding agents.
+ 
+-Reads a Claude Code hook payload from stdin (JSON) and writes targeted
+-enrichment back as a PostToolUse hook response.
++Reads Claude Code or Codex hook payloads from stdin (JSON) and writes
++targeted enrichment back as a hook response.
+ 
+ Design philosophy: an enrichment hook is only valuable when it tells the
+ agent something the raw tool output didn't. Anything else is noise the
+@@ -21,12 +21,18 @@
+     * Skip otherwise: a focused result set means the agent already
+       found what it wanted; further graph context is just noise.
+ 
++Codex SessionStart/UserPromptSubmit: adds short repowise MCP usage guidance.
++
+   PostToolUse → Bash
+     * After a successful git commit/merge/rebase/cherry-pick/pull, if
+       the wiki HEAD has drifted from .repowise/state.json's last sync
+       commit AND no `repowise update` is in flight AND we haven't
+       already warned for this HEAD, emit a one-line stale-wiki notice.
+ 
++  PostToolUse → edit tools
++    * After file edits, emit a short reminder that the indexed context may
++      be stale.
++
+ There is intentionally NO PreToolUse handling. Earlier versions enriched
+ every Grep/Glob unconditionally with importers/dependencies/symbols; in
+ practice this added noise on the >70% of searches where the agent had
+@@ -45,6 +51,7 @@
+ 
+ import json
+ import sys
++from pathlib import Path
+ 
+ import click
+ 
+@@ -57,10 +64,16 @@
+ 
+ 
+ @click.command("augment")
+-def augment_command() -> None:
++@click.option(
++    "--client",
++    type=click.Choice(["codex"]),
++    default=None,
++    help="Hook client marker. Codex lifecycle hooks pass this explicitly.",
++)
++def augment_command(client: str | None = None) -> None:
+     """Enrich AI agent tool calls with codebase graph context (hook mode)."""
+     try:
+-        _run_augment()
++        _run_augment(client=client)
+     except (SystemExit, KeyboardInterrupt):
+         raise
+     except Exception:
+@@ -68,8 +81,8 @@ def augment_command() -> None:
+         sys.exit(0)
+ 
+ 
+-def _run_augment() -> None:
+-    """Main entry point — reads stdin, dispatches to the post handler."""
++def _run_augment(*, client: str | None = None) -> None:
++    """Main entry point — reads stdin, dispatches to hook handlers."""
+     raw = sys.stdin.read()
+     if not raw.strip():
+         return
+@@ -80,25 +93,21 @@ def _run_augment() -> None:
+         return
+ 
+     event = payload.get("hook_event_name", "")
+-    if event != "PostToolUse":
+-        return
+-
+     tool_name = payload.get("tool_name", "")
+     tool_input = payload.get("tool_input", {})
+-    tool_output = (
+-        payload.get("tool_output")
+-        or payload.get("tool_response")
+-        or {}
+-    )
+     cwd = payload.get("cwd", "")
+ 
+-    if tool_name == "Bash":
+-        result = _handle_bash_post(tool_input, tool_output, cwd)
+-    elif tool_name in ("Grep", "Glob"):
+-        result = _handle_search_post(tool_name, tool_input, tool_output, cwd)
+-    else:
+-        result = None
++    if client == "codex" and event in ("SessionStart", "UserPromptSubmit"):
++        result = _handle_codex_context_event(event, cwd)
++        if result:
++            _emit_response(event, result)
++        return
++
++    if event != "PostToolUse":
++        return
+ 
++    tool_output = payload.get("tool_response", payload.get("tool_output", {}))
++    result = _handle_post_tool_use(tool_name, tool_input, tool_output, cwd)
+     if result:
+         _emit_response(event, result)
+ 
+@@ -115,6 +124,29 @@ def _emit_response(event: str, context: str) -> None:
+     sys.stdout.flush()
+ 
+ 
++# ---------------------------------------------------------------------------
++# Codex SessionStart/UserPromptSubmit — lightweight MCP guidance
++# ---------------------------------------------------------------------------
++
++
++def _handle_codex_context_event(event: str, cwd: str) -> str | None:
++    """Return short Codex developer context when repowise is initialized."""
++    if event not in ("SessionStart", "UserPromptSubmit"):
++        return None
++
++    repo_path = _find_repo_root(Path(cwd))
++    if repo_path is None:
++        return None
++
++    return (
++        "[repowise] This repository has a local codebase wiki and graph index. "
++        "Use the repowise MCP tools for architecture overview, semantic search, "
++        "implementation context, risk/hotspot checks, decision history, and "
++        "dead-code analysis. After meaningful edits or git operations, run "
++        "`repowise update` when refreshed context is needed."
++    )
++
++
+ # ---------------------------------------------------------------------------
+ # PostToolUse — Grep / Glob: smart enrichment
+ # ---------------------------------------------------------------------------
+@@ -136,8 +168,6 @@ def _handle_search_post(
+     if _looks_like_path_lookup(pattern):
+         return None
+ 
+-    from pathlib import Path
+-
+     repo_path = _find_repo_root(Path(cwd))
+     if repo_path is None:
+         return None
+@@ -246,7 +276,6 @@ async def _search_enrich(
+     """Run the rescue or triage query against the wiki and format output."""
+     import re
+ 
+-    from pathlib import Path
+     from sqlalchemy import select
+ 
+     from repowise.core.persistence import (
+@@ -486,19 +515,54 @@ def _name_variants(token: str) -> list[str]:
+     "git pull",
+ )
+ 
++_EDIT_TOOL_NAMES = {"apply_patch", "Edit", "Write"}
++
++
++def _handle_post_tool_use(
++    tool_name: str,
++    tool_input: dict,
++    tool_output: dict | str,
++    cwd: str,
++) -> str | None:
++    """Dispatch PostToolUse events from Claude or Codex."""
++    if tool_name in _EDIT_TOOL_NAMES:
++        return _handle_post_edit_use(cwd)
++    if tool_name == "Bash":
++        return _handle_bash_post(tool_input, tool_output, cwd)
++    if tool_name in ("Grep", "Glob"):
++        return _handle_search_post(tool_name, tool_input, tool_output, cwd)
++    return None
++
++
++def _handle_post_edit_use(cwd: str) -> str | None:
++    """After a Codex edit tool completes, flag that indexed context may be stale."""
++    repo_path = _find_repo_root(Path(cwd))
++    if repo_path is None:
++        return None
++
++    state_path = repo_path / ".repowise" / "state.json"
++    if not state_path.exists():
++        return None
++
++    return (
++        "[repowise] Files were edited after the last indexed snapshot. "
++        "Run `repowise update` before relying on refreshed docs, graph context, "
++        "risk checks, or dead-code results."
++    )
++
+ 
+ def _handle_bash_post(tool_input: dict, tool_output: object, cwd: str) -> str | None:
+     """After a successful git commit, check if the wiki needs updating."""
+-    if isinstance(tool_output, dict):
+-        exit_code = tool_output.get("exit_code")
+-        if exit_code is None:
+-            stdout = tool_output.get("stdout", "")
+-            if isinstance(stdout, str) and (
+-                "error" in stdout.lower() or "fatal" in stdout.lower()
+-            ):
+-                return None
+-        elif exit_code != 0:
++    output = tool_output if isinstance(tool_output, dict) else {"stdout": str(tool_output)}
++    exit_code = _extract_exit_code(output)
++    if exit_code is None:
++        stdout = output.get("stdout", "")
++        stderr = output.get("stderr", "")
++        combined = f"{stdout}\n{stderr}".lower()
++        if "error" in combined or "fatal" in combined:
+             return None
++    elif exit_code != 0:
++        return None
+ 
+     cmd = tool_input.get("command", "")
+     if not isinstance(cmd, str) or not any(
+@@ -506,8 +570,6 @@ def _handle_bash_post(tool_input: dict, tool_output: object, cwd: str) -> str |
+     ):
+         return None
+ 
+-    from pathlib import Path
+-
+     repo_path = _find_repo_root(Path(cwd))
+     if repo_path is None:
+         return None
+@@ -604,15 +666,26 @@ def _record_warning(repo_path: "object", head: str) -> None:
+         pass
+ 
+ 
++def _extract_exit_code(tool_output: dict) -> int | None:
++    """Extract a process exit code from known hook output shapes."""
++    for key in ("exit_code", "exitCode", "status"):
++        value = tool_output.get(key)
++        if value is None:
++            continue
++        try:
++            return int(value)
++        except (TypeError, ValueError):
++            return None
++    return None
++
++
+ # ---------------------------------------------------------------------------
+ # Helpers
+ # ---------------------------------------------------------------------------
+ 
+ 
+-def _find_repo_root(cwd: "object") -> "object | None":
+-    """Walk up from cwd to find a directory with ``.repowise/``."""
+-    from pathlib import Path
+-
++def _find_repo_root(cwd: Path) -> Path | None:
++    """Walk up from cwd to find a directory with .repowise/."""
+     current = Path(cwd).resolve()
+     for _ in range(20):
+         if (current / ".repowise").is_dir():
+diff --git a/packages/cli/src/repowise/cli/commands/init_cmd.py b/packages/cli/src/repowise/cli/commands/init_cmd.py
+index 1b89ae09..b25bbf16 100644
+--- a/packages/cli/src/repowise/cli/commands/init_cmd.py
++++ b/packages/cli/src/repowise/cli/commands/init_cmd.py
+@@ -171,6 +171,61 @@ def _register_mcp_with_claude(console_obj: Any, repo_path: Path) -> None:
+         )
+ 
+ 
++def _register_mcp_with_codex(
++    console_obj: Any,
++    repo_path: Path,
++    *,
++    codex_setup: bool | None = None,
++) -> None:
++    """Register the repowise MCP server in project-local Codex config."""
++    from repowise.cli.mcp_config import (
++        is_codex_cli_installed,
++        is_codex_logged_in,
++        save_codex_hooks_config,
++        save_codex_mcp_config,
++    )
++
++    installed = is_codex_cli_installed()
++    logged_in = is_codex_logged_in() if installed else False
++
++    if codex_setup is None:
++        if not (installed and logged_in):
++            return
++        if not sys.stdin.isatty():
++            console_obj.print(
++                "  [dim]Codex CLI detected. Run 'repowise init --codex' to write "
++                "project-local Codex config and hooks, or '--no-codex' to skip.[/dim]"
++            )
++            return
++        console_obj.print()
++        console_obj.print(
++            "[bold]Codex:[/bold] Generate project-local .codex config and hooks?"
++        )
++        if not click.confirm(
++            "  Write .codex/config.toml and .codex/hooks.json?",
++            default=False,
++        ):
++            console_obj.print(
++                "  [dim]Skipped. Run 'repowise init --codex' later to set up Codex.[/dim]"
++            )
++            return
++
++    config_path = save_codex_mcp_config(repo_path)
++    console_obj.print(f"  [green]✓[/green] Codex MCP registered ({config_path})")
++    hooks_path = save_codex_hooks_config(repo_path)
++    console_obj.print(f"  [green]✓[/green] Codex hooks registered ({hooks_path})")
++
++    if codex_setup is True and not installed:
++        console_obj.print(
++            "  [yellow]Codex CLI was not detected; install with "
++            "'npm install -g @openai/codex' before using this config.[/yellow]"
++        )
++    elif codex_setup is True and not logged_in:
++        console_obj.print(
++            "  [yellow]Codex CLI is not logged in; run 'codex login' before using this config.[/yellow]"
++        )
++
++
+ def _maybe_generate_claude_md(
+     console_obj: Any,
+     repo_path: Path,
+@@ -178,24 +233,13 @@ def _maybe_generate_claude_md(
+     no_claude_md: bool = False,
+ ) -> None:
+     """Generate CLAUDE.md if enabled in config and not opted out."""
+-    cfg = load_config(repo_path)
+-    enabled = cfg.get("editor_files", {}).get("claude_md", True)
+-    if no_claude_md:
+-        # Persist opt-out so 'repowise update' respects it
+-        ef_cfg = dict(cfg.get("editor_files", {}))
+-        ef_cfg["claude_md"] = False
+-        cfg["editor_files"] = ef_cfg
+-        try:
+-            import yaml  # type: ignore[import-untyped]
++    from repowise.cli.editor_files import set_editor_file_enabled
+ 
+-            cfg_path = repo_path / ".repowise" / "config.yaml"
+-            cfg_path.write_text(
+-                yaml.dump(cfg, default_flow_style=False, sort_keys=False),
+-                encoding="utf-8",
+-            )
+-        except ImportError:
+-            pass
++    if no_claude_md:
++        set_editor_file_enabled(repo_path, "claude_md", False)
+         return
++    cfg = load_config(repo_path)
++    enabled = cfg.get("editor_files", {}).get("claude_md", True)
+     if not enabled:
+         return
+     try:
+@@ -206,32 +250,37 @@ def _maybe_generate_claude_md(
+         console_obj.print(f"  [yellow].claude/CLAUDE.md skipped: {exc}[/yellow]")
+ 
+ 
++def _maybe_generate_agents_md(
++    console_obj: Any,
++    repo_path: Path,
++    *,
++    agents_md: bool | None = None,
++) -> None:
++    """Generate AGENTS.md if enabled in config and not opted out."""
++    from repowise.cli.editor_files import should_generate_editor_file
++
++    if not should_generate_editor_file(repo_path, "agents_md", override=agents_md):
++        return
++    try:
++        with console_obj.status("  Generating AGENTS.md…", spinner="dots"):
++            run_async(_write_agents_md_async(repo_path))
++        console_obj.print("  [green]✓[/green] AGENTS.md updated")
++    except Exception as exc:
++        console_obj.print(f"  [yellow]AGENTS.md skipped: {exc}[/yellow]")
++
++
+ async def _write_claude_md_async(repo_path: Path) -> None:
+     """Fetch data from DB and write CLAUDE.md (async helper)."""
+-    from repowise.cli.helpers import get_db_url_for_repo
+-    from repowise.core.generation.editor_files import ClaudeMdGenerator, EditorFileDataFetcher
+-    from repowise.core.persistence import (
+-        create_engine,
+-        create_session_factory,
+-        get_session,
+-        init_db,
+-    )
+-    from repowise.core.persistence.crud import get_repository_by_path
++    from repowise.cli.editor_files import write_claude_md
++
++    await write_claude_md(repo_path)
+ 
+-    url = get_db_url_for_repo(repo_path)
+-    engine = create_engine(url)
+-    await init_db(engine)
+-    sf = create_session_factory(engine)
+-    try:
+-        async with get_session(sf) as session:
+-            repo = await get_repository_by_path(session, str(repo_path))
+-            if repo is None:
+-                return  # Not indexed yet — skip silently
+-            fetcher = EditorFileDataFetcher(session, repo.id, repo_path)
+-            data = await fetcher.fetch()
+-    finally:
+-        await engine.dispose()
+-    ClaudeMdGenerator().write(repo_path, data)
++
++async def _write_agents_md_async(repo_path: Path) -> None:
++    """Fetch data from DB and write AGENTS.md (async helper)."""
++    from repowise.cli.editor_files import write_agents_md
++
++    await write_agents_md(repo_path)
+ 
+ 
+ # ---------------------------------------------------------------------------
+@@ -496,6 +545,8 @@ def _workspace_init(
+     commit_limit: int | None,
+     follow_renames: bool,
+     no_claude_md: bool,
++    agents_md: bool | None,
++    codex_setup: bool | None,
+     include_submodules: bool,
+     # Generation params (passed through from init_command)
+     provider_name: str | None = None,
+@@ -784,6 +835,8 @@ def _workspace_init(
+         save_mcp_config(repo.path)
+         save_root_mcp_config(repo.path)
+         _maybe_generate_claude_md(console, repo.path, no_claude_md=no_claude_md)
++        _maybe_generate_agents_md(console, repo.path, agents_md=agents_md)
++        _register_mcp_with_codex(console, repo.path, codex_setup=codex_setup)
+ 
+         # Persist provider/model config per-repo when doing full generation
+         if not index_only and provider is not None:
+@@ -911,7 +964,7 @@ def _workspace_init(
+     default=None,
+     help=(
+         "LLM provider name (anthropic, openai, openrouter, gemini, "
+-        "deepseek, ollama, litellm, mock)."
++        "deepseek, ollama, litellm, codex_cli, mock)."
+     ),
+ )
+ @click.option("--model", default=None, help="Model identifier override.")
+@@ -977,6 +1030,18 @@ def _workspace_init(
+     default=False,
+     help="Skip generating CLAUDE.md. Saves 'editor_files.claude_md: false' to config.",
+ )
++@click.option(
++    "--agents/--no-agents",
++    "agents_md",
++    default=None,
++    help="Generate managed AGENTS.md (default: config or enabled).",
++)
++@click.option(
++    "--codex/--no-codex",
++    "codex_setup",
++    default=None,
++    help="Generate or skip project-local Codex MCP config and hooks.",
++)
+ @click.option(
+     "--include-submodules",
+     is_flag=True,
+@@ -1009,6 +1074,8 @@ def init_command(
+     commit_limit: int | None,
+     follow_renames: bool,
+     no_claude_md: bool,
++    agents_md: bool | None,
++    codex_setup: bool | None,
+     include_submodules: bool,
+     init_all: bool,
+ ) -> None:
+@@ -1056,6 +1123,8 @@ def init_command(
+             commit_limit=commit_limit,
+             follow_renames=follow_renames,
+             no_claude_md=no_claude_md,
++            agents_md=agents_md,
++            codex_setup=codex_setup,
+             include_submodules=include_submodules,
+             provider_name=provider_name,
+             model=model,
+@@ -1543,8 +1612,10 @@ async def _make_cost_tracker() -> CostTracker:
+     save_mcp_config(repo_path)
+     save_root_mcp_config(repo_path)
+     _register_mcp_with_claude(console, repo_path)
++    _register_mcp_with_codex(console, repo_path, codex_setup=codex_setup)
+ 
+     _maybe_generate_claude_md(console, repo_path, no_claude_md=no_claude_md)
++    _maybe_generate_agents_md(console, repo_path, agents_md=agents_md)
+ 
+     # ---- State (always) ----
+     # Even in index-only mode we persist `last_sync_commit` so that a
+diff --git a/packages/cli/src/repowise/cli/commands/mcp_cmd.py b/packages/cli/src/repowise/cli/commands/mcp_cmd.py
+index 32ae6567..e2f56612 100644
+--- a/packages/cli/src/repowise/cli/commands/mcp_cmd.py
++++ b/packages/cli/src/repowise/cli/commands/mcp_cmd.py
+@@ -2,9 +2,11 @@
+ 
+ from __future__ import annotations
+ 
++from pathlib import Path
++
+ import click
+ 
+-from repowise.cli.helpers import console, resolve_repo_path
++from repowise.cli.helpers import console, find_repowise_repo_root, resolve_repo_path
+ from repowise.cli.ui import load_dotenv
+ 
+ 
+@@ -38,7 +40,10 @@ def mcp_command(path: str | None, transport: str, port: int) -> None:
+         repowise mcp /path/to/repo       # stdio, specific repo
+         repowise mcp --transport sse     # SSE on port 7338
+     """
+-    repo_path = resolve_repo_path(path)
++    if path is None:
++        repo_path = find_repowise_repo_root(Path.cwd()) or resolve_repo_path(None)
++    else:
++        repo_path = resolve_repo_path(path)
+     load_dotenv(repo_path)
+ 
+     repowise_dir = repo_path / ".repowise"
+diff --git a/packages/cli/src/repowise/cli/commands/update_cmd.py b/packages/cli/src/repowise/cli/commands/update_cmd.py
+index ee854fd3..fd549fe7 100644
+--- a/packages/cli/src/repowise/cli/commands/update_cmd.py
++++ b/packages/cli/src/repowise/cli/commands/update_cmd.py
+@@ -229,6 +229,12 @@ def _on_done(result: "RepoUpdateResult") -> None:
+         "(set during `repowise init`)."
+     ),
+ )
++@click.option(
++    "--agents/--no-agents",
++    "agents_md",
++    default=None,
++    help="Generate managed AGENTS.md after update (default: config or enabled).",
++)
+ def update_command(
+     path: str | None,
+     provider_name: str | None,
+@@ -242,6 +248,7 @@ def update_command(
+     repo_alias: str | None,
+     index_only: bool = False,
+     docs_flag: bool | None = None,
++    agents_md: bool | None = None,
+     concurrency: int = 5,
+ ) -> None:
+     """Incrementally update wiki pages for files changed since last sync.
+@@ -770,6 +777,15 @@ async def _update_claude_md() -> None:
+         except Exception:
+             pass  # CLAUDE.md update must never fail the update command
+ 
++    # ---- AGENTS.md (best-effort) ----
++    try:
++        from repowise.cli.editor_files import should_generate_editor_file, write_agents_md
++
++        if should_generate_editor_file(repo_path, "agents_md", override=agents_md):
++            run_async(write_agents_md(repo_path))
++    except Exception:
++        pass  # AGENTS.md update must never fail the update command
++
+     # Update state
+     state["last_sync_commit"] = head
+     state["total_pages"] = state.get("total_pages", 0) + len(generated_pages)
+diff --git a/packages/cli/src/repowise/cli/cost_estimator.py b/packages/cli/src/repowise/cli/cost_estimator.py
+index 38a7f38e..720695ce 100644
+--- a/packages/cli/src/repowise/cli/cost_estimator.py
++++ b/packages/cli/src/repowise/cli/cost_estimator.py
+@@ -107,6 +107,7 @@ class CostEstimate:
+     "gemini": (0.00025, 0.0015),
+     "llama": (0.0, 0.0),
+     "mock": (0.0, 0.0),
++    "codex_cli/": (0.0, 0.0),
+ }
+ 
+ 
+diff --git a/packages/cli/src/repowise/cli/editor_files.py b/packages/cli/src/repowise/cli/editor_files.py
+new file mode 100644
+index 00000000..3a8ccd96
+--- /dev/null
++++ b/packages/cli/src/repowise/cli/editor_files.py
+@@ -0,0 +1,85 @@
++"""Shared helpers for managed AI editor instruction files."""
++
++from __future__ import annotations
++
++from pathlib import Path
++
++from repowise.cli.helpers import get_db_url_for_repo, load_config
++from repowise.core.generation.editor_files import (
++    AgentsMdGenerator,
++    ClaudeMdGenerator,
++    EditorFileData,
++    EditorFileDataFetcher,
++)
++from repowise.core.persistence import (
++    create_engine,
++    create_session_factory,
++    get_session,
++    init_db,
++)
++from repowise.core.persistence.crud import get_repository_by_path
++
++
++def set_editor_file_enabled(repo_path: Path, key: str, enabled: bool) -> None:
++    """Persist an editor_files.<key> preference in .repowise/config.yaml."""
++    import yaml  # type: ignore[import-untyped]
++
++    cfg = load_config(repo_path)
++    editor_files = dict(cfg.get("editor_files", {}))
++    editor_files[key] = enabled
++    cfg["editor_files"] = editor_files
++
++    cfg_path = repo_path / ".repowise" / "config.yaml"
++    cfg_path.parent.mkdir(parents=True, exist_ok=True)
++    cfg_path.write_text(
++        yaml.dump(cfg, default_flow_style=False, sort_keys=False),
++        encoding="utf-8",
++    )
++
++
++def should_generate_editor_file(
++    repo_path: Path,
++    key: str,
++    *,
++    default: bool = True,
++    override: bool | None = None,
++) -> bool:
++    """Resolve and persist an optional per-command editor file override."""
++    if override is not None:
++        set_editor_file_enabled(repo_path, key, override)
++        return override
++    cfg = load_config(repo_path)
++    return bool(cfg.get("editor_files", {}).get(key, default))
++
++
++async def fetch_editor_file_data(repo_path: Path) -> EditorFileData | None:
++    """Fetch indexed repo data for editor-file generation."""
++    url = get_db_url_for_repo(repo_path)
++    engine = create_engine(url)
++    await init_db(engine)
++    sf = create_session_factory(engine)
++    try:
++        async with get_session(sf) as session:
++            repo = await get_repository_by_path(session, str(repo_path))
++            if repo is None:
++                return None
++            fetcher = EditorFileDataFetcher(session, repo.id, repo_path)
++            return await fetcher.fetch()
++    finally:
++        await engine.dispose()
++
++
++async def write_claude_md(repo_path: Path) -> Path | None:
++    """Fetch editor data and write .claude/CLAUDE.md."""
++    data = await fetch_editor_file_data(repo_path)
++    if data is None:
++        return None
++    return ClaudeMdGenerator().write(repo_path, data)
++
++
++async def write_agents_md(repo_path: Path) -> Path | None:
++    """Fetch editor data and write AGENTS.md."""
++    data = await fetch_editor_file_data(repo_path)
++    if data is None:
++        return None
++    return AgentsMdGenerator().write(repo_path, data)
+diff --git a/packages/cli/src/repowise/cli/helpers.py b/packages/cli/src/repowise/cli/helpers.py
+index 0b11e91a..f256df04 100644
+--- a/packages/cli/src/repowise/cli/helpers.py
++++ b/packages/cli/src/repowise/cli/helpers.py
+@@ -56,6 +56,25 @@ def resolve_repo_path(path: str | None) -> Path:
+     return Path(path).resolve()
+ 
+ 
++def find_repowise_repo_root(start: Path | None = None) -> Path | None:
++    """Walk upward from *start* looking for a repo with ``.repowise``."""
++    current = (start or Path.cwd()).resolve()
++    home = Path.home().resolve()
++    for candidate in (current, *current.parents):
++        if _same_path(candidate, home):
++            return None
++        if (candidate / REPOWISE_DIR).is_dir():
++            return candidate
++    return None
++
++
++def _same_path(left: Path, right: Path) -> bool:
++    try:
++        return left.samefile(right)
++    except OSError:
++        return left == right
++
++
+ def find_workspace_root(start: Path | None = None) -> Path | None:
+     """Walk up from *start* (default: cwd) looking for ``.repowise-workspace.yaml``.
+ 
+@@ -292,6 +311,13 @@ def save_config(
+ # ---------------------------------------------------------------------------
+ 
+ 
++def _is_codex_cli_available() -> bool:
++    """Check if the Codex CLI binary is available."""
++    import shutil
++
++    return shutil.which("codex") is not None
++
++
+ def resolve_provider(
+     provider_name: str | None,
+     model: str | None,
+@@ -355,6 +381,8 @@ def _resolve_base_url(name: str) -> str | None:
+         base_url = _resolve_base_url(provider_name)
+         if base_url:
+             kwargs["base_url"] = base_url
++        if provider_name == "codex_cli" and repo_path is not None:
++            kwargs["repo_path"] = repo_path
+ 
+         # Pass API key from environment if available
+         if provider_name == "anthropic" and os.environ.get("ANTHROPIC_API_KEY"):
+@@ -433,7 +461,10 @@ def _resolve_base_url(name: str) -> str | None:
+ 
+     raise click.ClickException(
+         "No provider configured. Use --provider, set REPOWISE_PROVIDER, "
+-        "or set ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY / OLLAMA_BASE_URL / GEMINI_API_KEY / GOOGLE_API_KEY / DEEPSEEK_API_KEY / LITELLM_API_KEY."
++        "or set ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY / "
++        "OLLAMA_BASE_URL / GEMINI_API_KEY / GOOGLE_API_KEY / DEEPSEEK_API_KEY / "
++        "LITELLM_API_KEY. Use REPOWISE_PROVIDER=codex_cli to use an authenticated "
++        "Codex CLI subscription."
+     )
+ 
+ 
+@@ -475,6 +506,14 @@ def _is_env_var_exists(var_name: str) -> bool:
+     }
+ 
+     if provider_name:
++        if provider_name == "codex_cli":
++            if not _is_codex_cli_available():
++                warnings.append(
++                    "Provider 'codex_cli' requires the Codex CLI. "
++                    "Install it with: npm install -g @openai/codex"
++                )
++            return warnings
++
+         # Validate specific provider
+         if provider_name not in provider_env_vars:
+             warnings.append(f"Unknown provider '{provider_name}' - cannot validate configuration")
+diff --git a/packages/cli/src/repowise/cli/mcp_config.py b/packages/cli/src/repowise/cli/mcp_config.py
+index fc933575..a698c4ed 100644
+--- a/packages/cli/src/repowise/cli/mcp_config.py
++++ b/packages/cli/src/repowise/cli/mcp_config.py
+@@ -1,9 +1,13 @@
+-"""Auto-generated MCP config for Claude Code, Claude Desktop, Cursor, and Cline."""
++"""Auto-generated MCP config for Codex, Claude Code, Claude Desktop, Cursor, and Cline."""
+ 
+ from __future__ import annotations
+ 
+ import json
++import re
++import shutil
++import subprocess
+ import sys
++import tomllib
+ from pathlib import Path
+ 
+ import click
+@@ -31,6 +35,43 @@ def _claude_code_settings_path() -> Path:
+     return Path.home() / ".claude" / "settings.json"
+ 
+ 
++def is_codex_cli_installed() -> bool:
++    """Return True when the Codex CLI is on PATH and runnable."""
++    if not shutil.which("codex"):
++        return False
++    try:
++        result = subprocess.run(
++            ["codex", "--version"],
++            capture_output=True,
++            text=True,
++            timeout=5,
++        )
++    except (OSError, subprocess.TimeoutExpired):
++        return False
++    return result.returncode == 0
++
++
++def is_codex_logged_in() -> bool:
++    """Return True when the local Codex CLI reports an authenticated session.
++
++    Verified with ``codex-cli 0.130.0``: ``codex login status`` exits 0 when
++    authenticated and non-zero otherwise. Avoid matching human-readable text
++    because it may change across versions or locales.
++    """
++    if not is_codex_cli_installed():
++        return False
++    try:
++        result = subprocess.run(
++            ["codex", "login", "status"],
++            capture_output=True,
++            text=True,
++            timeout=10,
++        )
++    except (OSError, subprocess.TimeoutExpired):
++        return False
++    return result.returncode == 0
++
++
+ def generate_mcp_config(repo_path: Path) -> dict:
+     """Generate MCP config JSON for a repository.
+ 
+@@ -48,6 +89,69 @@ def generate_mcp_config(repo_path: Path) -> dict:
+     }
+ 
+ 
++def generate_codex_mcp_server_config(repo_path: Path) -> dict[str, object]:
++    """Generate the Codex config.toml server table for repowise."""
++    return {
++        "command": "repowise",
++        "args": ["mcp"],
++        "cwd": str(repo_path.resolve()),
++        "startup_timeout_sec": 20,
++    }
++
++
++def generate_codex_hooks_config() -> dict[str, object]:
++    """Generate project-local Codex hooks for repowise context and freshness checks."""
++    context_hook = {
++        "type": "command",
++        "command": "repowise-augment --client codex",
++        "timeout": 30,
++        "statusMessage": "Loading repowise context...",
++    }
++    freshness_hook = {
++        "type": "command",
++        "command": "repowise-augment --client codex",
++        "timeout": 30,
++        "statusMessage": "Checking repowise freshness...",
++    }
++    return {
++        "hooks": {
++            "SessionStart": [{"matcher": "startup|resume|clear", "hooks": [context_hook]}],
++            "UserPromptSubmit": [{"hooks": [context_hook]}],
++            "PostToolUse": [
++                {"matcher": "Bash", "hooks": [freshness_hook]},
++                {"matcher": "apply_patch|Edit|Write", "hooks": [freshness_hook]},
++            ],
++        }
++    }
++
++
++def _toml_value(value: object) -> str:
++    if isinstance(value, bool):
++        return "true" if value else "false"
++    if isinstance(value, str):
++        return json.dumps(value)
++    if isinstance(value, int):
++        return str(value)
++    if isinstance(value, list) and all(isinstance(item, str) for item in value):
++        return f"[{', '.join(json.dumps(item) for item in value)}]"
++    raise TypeError(f"Unsupported TOML value: {value!r}")
++
++
++def _codex_mcp_server_toml(repo_path: Path) -> str:
++    lines = ["[mcp_servers.repowise]"]
++    lines.extend(
++        f"{key} = {_toml_value(value)}"
++        for key, value in generate_codex_mcp_server_config(repo_path).items()
++    )
++    return "\n".join(lines)
++
++
++def _toml_table_block(table_name: str, values: dict[str, object]) -> str:
++    lines = [f"[{table_name}]"]
++    lines.extend(f"{key} = {_toml_value(value)}" for key, value in values.items())
++    return "\n".join(lines)
++
++
+ def save_mcp_config(repo_path: Path) -> Path:
+     """Save MCP config to .repowise/mcp.json and return the path."""
+     repowise_dir = repo_path / ".repowise"
+@@ -58,6 +162,117 @@ def save_mcp_config(repo_path: Path) -> Path:
+     return config_path
+ 
+ 
++def enable_codex_hooks_feature(repo_path: Path) -> Path:
++    """Enable Codex hooks in project-local .codex/config.toml without inline hooks."""
++    config_path = repo_path / ".codex" / "config.toml"
++
++    try:
++        if config_path.exists():
++            existing_text = config_path.read_text(encoding="utf-8")
++            doc = tomllib.loads(existing_text)
++        else:
++            config_path.parent.mkdir(parents=True, exist_ok=True)
++            existing_text = ""
++            doc = {}
++    except tomllib.TOMLDecodeError as exc:
++        raise click.ClickException(
++            f"Cannot update {config_path}: existing file is not valid TOML. "
++            "Fix or remove it and retry; no changes were written."
++        ) from exc
++
++    existing_features = doc.get("features", {})
++    if not isinstance(existing_features, dict):
++        raise click.ClickException(
++            f"Cannot update {config_path}: [features] must be a TOML table. "
++            "Fix or remove it and retry; no changes were written."
++        )
++
++    features = dict(existing_features)
++    features["hooks"] = True
++    feature_block = _toml_table_block("features", features)
++    table_re = re.compile(r"(?ms)^\s*\[features\]\s*\n.*?(?=^\s*\[|\Z)")
++    merged_text = table_re.sub("", existing_text).rstrip()
++    merged_text = (
++        f"{merged_text}\n\n{feature_block}\n" if merged_text else f"{feature_block}\n"
++    )
++    config_path.write_text(merged_text, encoding="utf-8")
++    return config_path
++
++
++def save_codex_mcp_config(repo_path: Path) -> Path:
++    """Merge the repowise MCP server into project-local .codex/config.toml."""
++    config_path = repo_path / ".codex" / "config.toml"
++    server_block = _codex_mcp_server_toml(repo_path)
++
++    try:
++        if config_path.exists():
++            existing_text = config_path.read_text(encoding="utf-8")
++            doc = tomllib.loads(existing_text)
++        else:
++            config_path.parent.mkdir(parents=True, exist_ok=True)
++            config_path.write_text(f"{server_block}\n", encoding="utf-8")
++            return config_path
++    except tomllib.TOMLDecodeError as exc:
++        raise click.ClickException(
++            f"Cannot update {config_path}: existing file is not valid TOML. "
++            "Fix or remove it and retry; no changes were written."
++        ) from exc
++
++    servers = doc.get("mcp_servers")
++    if servers is not None and not isinstance(servers, dict):
++        raise click.ClickException(
++            f"Cannot update {config_path}: [mcp_servers] must be a TOML table. "
++            "Fix or remove it and retry; no changes were written."
++        )
++    if isinstance(servers, dict):
++        repowise = servers.get("repowise")
++        if repowise is not None and not isinstance(repowise, dict):
++            raise click.ClickException(
++                f"Cannot update {config_path}: [mcp_servers.repowise] must be a TOML table. "
++                "Fix or remove it and retry; no changes were written."
++            )
++
++    table_re = re.compile(r"(?ms)^\s*\[mcp_servers\.repowise\]\s*\n.*?(?=^\s*\[|\Z)")
++    merged_text = table_re.sub("", existing_text).rstrip()
++    merged_text = f"{merged_text}\n\n{server_block}\n" if merged_text else f"{server_block}\n"
++    config_path.write_text(merged_text, encoding="utf-8")
++    return config_path
++
++
++def save_codex_hooks_config(repo_path: Path) -> Path:
++    """Merge repowise hooks into project-local .codex/hooks.json."""
++    hooks_path = repo_path / ".codex" / "hooks.json"
++    new_config = generate_codex_hooks_config()
++
++    if hooks_path.exists():
++        existing = _load_existing_config(hooks_path)
++    else:
++        hooks_path.parent.mkdir(parents=True, exist_ok=True)
++        existing = {}
++
++    hooks = existing.setdefault("hooks", {})
++    if not isinstance(hooks, dict):
++        raise click.ClickException(
++            f"Cannot update {hooks_path}: hooks must contain a JSON object. "
++            "Fix or remove it and retry; no changes were written."
++        )
++
++    for event, entries in new_config["hooks"].items():
++        event_hooks = hooks.setdefault(event, [])
++        if not isinstance(event_hooks, list):
++            raise click.ClickException(
++                f"Cannot update {hooks_path}: hooks.{event} must contain a JSON array. "
++                "Fix or remove it and retry; no changes were written."
++            )
++        for entry in entries:
++            if not _has_repowise_hook_for_matcher(event_hooks, entry.get("matcher")):
++                event_hooks.append(entry)
++
++    hooks_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
++    enable_codex_hooks_feature(repo_path)
++    return hooks_path
++
++
+ def save_root_mcp_config(repo_path: Path) -> Path:
+     """Write .mcp.json at repo root for Claude Code auto-discovery.
+ 
+@@ -352,6 +567,17 @@ def migrate_claude_code_hooks() -> bool:
+     return True
+ 
+ 
++def _has_repowise_hook_for_matcher(hook_list: list, matcher: object) -> bool:
++    """Check if a repowise augment hook is registered for a matcher group."""
++    for entry in hook_list:
++        if entry.get("matcher") != matcher:
++            continue
++        for hook in entry.get("hooks", []):
++            if _is_repowise_hook(hook):
++                return True
++    return False
++
++
+ def format_setup_instructions(repo_path: Path) -> str:
+     """Return human-readable setup instructions for MCP clients."""
+     config = generate_mcp_config(repo_path)
+diff --git a/packages/cli/src/repowise/cli/ui.py b/packages/cli/src/repowise/cli/ui.py
+index 57b7064a..049542be 100644
+--- a/packages/cli/src/repowise/cli/ui.py
++++ b/packages/cli/src/repowise/cli/ui.py
+@@ -281,6 +281,7 @@ def print_phase_header(
+     "openai": "gpt-4.1",
+     "anthropic": "claude-sonnet-4-6",
+     "deepseek": "deepseek-v4-flash",
++    "codex_cli": "codex_cli/default",
+     "ollama": "llama3.2",
+     "openrouter": "anthropic/claude-sonnet-4.6",
+     "litellm": "groq/llama-3.1-70b-versatile",
+@@ -291,6 +292,7 @@ def print_phase_header(
+     "openai": "OPENAI_API_KEY",
+     "anthropic": "ANTHROPIC_API_KEY",
+     "deepseek": "DEEPSEEK_API_KEY",
++    "codex_cli": "__CODEX_CLI__",
+     "ollama": "OLLAMA_BASE_URL",
+     "openrouter": "OPENROUTER_API_KEY",
+ }
+@@ -300,6 +302,7 @@ def print_phase_header(
+     "openai": "https://platform.openai.com/api-keys",
+     "anthropic": "https://console.anthropic.com/settings/keys",
+     "deepseek": "https://platform.deepseek.com/api_keys",
++    "codex_cli": "https://developers.openai.com/codex/cli",
+     "ollama": "https://ollama.com/download",
+     "openrouter": "https://openrouter.ai/keys",
+ }
+@@ -454,11 +457,16 @@ def interactive_mode_select(console: Console) -> str:
+ 
+ def _detect_provider_status() -> dict[str, str]:
+     """Return {provider: env_var_name} for providers whose key is set."""
++    import shutil
++
+     status: dict[str, str] = {}
+     for prov, env_var in _PROVIDER_ENV.items():
+         if prov == "gemini":
+             if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+                 status[prov] = env_var
++        elif prov == "codex_cli":
++            if shutil.which("codex"):
++                status[prov] = "codex CLI"
+         elif os.environ.get(env_var):
+             status[prov] = env_var
+     return status
+@@ -491,12 +499,21 @@ def interactive_provider_select(
+     table.add_column("Default Model", style="dim")
+ 
+     for idx, prov in enumerate(providers, 1):
+-        status_text = f"[{OK}]✓ API key set[/]" if prov in detected else "[dim]✗ no key[/dim]"
++        if prov == "codex_cli":
++            status_text = (
++                f"[{OK}]✓ codex CLI found[/]"
++                if prov in detected
++                else "[dim]✗ codex CLI not found[/dim]"
++            )
++        else:
++            status_text = f"[{OK}]✓ API key set[/]" if prov in detected else "[dim]✗ no key[/dim]"
+         default_model = _PROVIDER_DEFAULTS.get(prov, "")
+         # Mark gemini as recommended
+         label = prov
+         if prov == "gemini":
+             label = f"{prov} [dim](recommended)[/dim]"
++        elif prov == "codex_cli":
++            label = f"{prov} [dim](uses Codex CLI auth)[/dim]"
+         table.add_row(f"[{idx}]", label, status_text, default_model)
+ 
+     console.print()
+@@ -522,6 +539,17 @@ def interactive_provider_select(
+ 
+     # --- inline API key entry if missing ---
+     if chosen not in detected:
++        if chosen == "codex_cli":
++            console.print()
++            console.print(
++                "  [bold]codex_cli[/bold] requires the Codex CLI on PATH "
++                "and an authenticated Codex session."
++            )
++            console.print(f"  Install CLI: [{BRAND}]npm install -g @openai/codex[/]")
++            console.print(f"  Authenticate: [{BRAND}]codex login[/]")
++            console.print()
++            console.print(f"  [{WARN}]Codex CLI not detected. Please install and retry, or select another provider.[/]")
++            return interactive_provider_select(console, model_flag, repo_path=repo_path)
+         env_var = _PROVIDER_ENV[chosen]
+         signup_url = _PROVIDER_SIGNUP.get(chosen, "")
+         console.print()
+diff --git a/packages/core/src/repowise/core/generation/__init__.py b/packages/core/src/repowise/core/generation/__init__.py
+index d0b4701b..f4d20233 100644
+--- a/packages/core/src/repowise/core/generation/__init__.py
++++ b/packages/core/src/repowise/core/generation/__init__.py
+@@ -20,6 +20,7 @@
+     SymbolSpotlightContext,
+ )
+ from .editor_files import (
++    AgentsMdGenerator,
+     ClaudeMdGenerator,
+     DecisionSummary,
+     EditorFileData,
+@@ -49,6 +50,7 @@
+ __all__ = [
+     "GENERATION_LEVELS",
+     "SYSTEM_PROMPTS",
++    "AgentsMdGenerator",
+     "ApiContractContext",
+     "ArchitectureDiagramContext",
+     "Checkpoint",
+diff --git a/packages/core/src/repowise/core/generation/cost_tracker.py b/packages/core/src/repowise/core/generation/cost_tracker.py
+index 234df4e6..32729964 100644
+--- a/packages/core/src/repowise/core/generation/cost_tracker.py
++++ b/packages/core/src/repowise/core/generation/cost_tracker.py
+@@ -49,6 +49,8 @@
+ 
+ def _get_pricing(model: str) -> dict[str, float]:
+     """Return pricing for *model*, falling back and warning if unknown."""
++    if model.startswith("codex_cli/"):
++        return {"input": 0.0, "output": 0.0}
+     if model in _PRICING:
+         return _PRICING[model]
+     if model not in _warned_models:
+diff --git a/packages/core/src/repowise/core/generation/editor_files/__init__.py b/packages/core/src/repowise/core/generation/editor_files/__init__.py
+index 3af8106a..aab870ec 100644
+--- a/packages/core/src/repowise/core/generation/editor_files/__init__.py
++++ b/packages/core/src/repowise/core/generation/editor_files/__init__.py
+@@ -6,6 +6,7 @@
+ No LLM calls are made — all content is derived from the repowise DB.
+ """
+ 
++from .agents_md import AgentsMdGenerator
+ from .claude_md import ClaudeMdGenerator, WorkspaceClaudeMdGenerator
+ from .data import (
+     DecisionSummary,
+@@ -19,17 +20,15 @@
+ from .fetcher import EditorFileDataFetcher
+ 
+ __all__ = [
+-    # Generators
++    "AgentsMdGenerator",
+     "ClaudeMdGenerator",
+-    "WorkspaceClaudeMdGenerator",
+-    # Data containers
+     "DecisionSummary",
+     "EditorFileData",
++    "EditorFileDataFetcher",
+     "HotspotFile",
+     "KeyModule",
+     "TechStackItem",
++    "WorkspaceClaudeMdGenerator",
+     "WorkspaceEditorFileData",
+     "WorkspaceRepoSummary",
+-    # Fetcher
+-    "EditorFileDataFetcher",
+ ]
+diff --git a/packages/core/src/repowise/core/generation/editor_files/agents_md.py b/packages/core/src/repowise/core/generation/editor_files/agents_md.py
+new file mode 100644
+index 00000000..f19a8205
+--- /dev/null
++++ b/packages/core/src/repowise/core/generation/editor_files/agents_md.py
+@@ -0,0 +1,23 @@
++"""AgentsMdGenerator - generates and maintains AGENTS.md for Codex."""
++
++from __future__ import annotations
++
++from .base import BaseEditorFileGenerator
++
++
++class AgentsMdGenerator(BaseEditorFileGenerator):
++    """Generates and maintains a repo-level AGENTS.md file.
++
++    The file has two sections:
++      - User section outside the REPOWISE_AGENTS markers: never touched.
++      - Repowise section between markers: regenerated from indexed data.
++    """
++
++    filename = "AGENTS.md"
++    marker_tag = "REPOWISE_AGENTS"
++    template_name = "agents_md.j2"
++    user_placeholder = (
++        "# AGENTS.md\n\n"
++        "<!-- Add your project instructions above or below the Repowise section. "
++        "Repowise only updates the managed section between markers. -->\n"
++    )
+diff --git a/packages/core/src/repowise/core/generation/templates/agents_md.j2 b/packages/core/src/repowise/core/generation/templates/agents_md.j2
+new file mode 100644
+index 00000000..06f1e9e6
+--- /dev/null
++++ b/packages/core/src/repowise/core/generation/templates/agents_md.j2
+@@ -0,0 +1,50 @@
++## Repowise Codebase Context For {{ data.repo_name }}
++
++This repository is indexed by Repowise. Use the Repowise MCP tools for codebase orientation, discovery, implementation context, modification risk, design rationale, and cleanup planning. MCP data reflects the last index run; verify against source files before editing.
++
++Last indexed: {{ data.indexed_at }}{% if data.indexed_commit %} (commit {{ data.indexed_commit }}){% endif %}{% if data.avg_confidence %}. Confidence: {{ (data.avg_confidence * 100) | int }}%.{% endif %}
++
++{% if data.architecture_summary %}
++### Architecture
++{{ data.architecture_summary }}
++{% endif %}
++{% if data.key_modules %}
++### Key Modules
++| Module | Purpose | Owner |
++|--------|---------|-------|
++{% for mod in data.key_modules %}
++| `{{ mod.name }}` | {{ mod.purpose or "-" }} | {{ mod.owner or "-" }} |
++{% endfor %}
++{% endif %}
++{% if data.entry_points %}
++### Entry Points
++{% for ep in data.entry_points %}
++- `{{ ep }}`
++{% endfor %}
++{% endif %}
++{% if data.hotspots %}
++### Risk Hotspots
++| File | Churn | 90d Commits | Owner |
++|------|-------|-------------|-------|
++{% for h in data.hotspots %}
++| `{{ h.path }}` | {{ h.churn_percentile }}th percentile | {{ h.commit_count_90d }} | {{ h.owner or "-" }} |
++{% endfor %}
++{% endif %}
++
++### Repowise MCP Workflow
++
++- Overview: call `get_overview()` at the start of an unfamiliar task to orient on architecture, modules, entry points, and tech stack.
++- Search: call `search_codebase(query="...")` when locating where a concept, symbol, feature, or behavior is implemented.
++- Context: call `get_context(targets=["path/or/symbol", "..."])` for enriched docs, ownership, decisions, callers, and related files before relying on raw source alone.
++- Risk: call `get_risk(targets=["path/to/file.py"])` before modifying shared utilities, public APIs, hotspots, high-coupling modules, or files with unknown dependents.
++- Why: call `get_why(query="...")` before architectural changes or when the user asks why code is structured a certain way.
++- Dead code: call `get_dead_code(safe_only=true)` before cleanup or removal work; treat lower-confidence findings as candidates to investigate.
++- Connections: call `get_dependency_path(source="...", target="...")` when tracing how modules connect.
++- Diagrams: call `get_architecture_diagram(scope="...")` when a visual structure would clarify the change.
++{% if data.build_commands %}
++
++### Commands
++{% for label, cmd in data.build_commands.items() %}
++- {{ label | capitalize }}: `{{ cmd }}`
++{% endfor %}
++{% endif %}
+diff --git a/packages/core/src/repowise/core/providers/llm/__init__.py b/packages/core/src/repowise/core/providers/llm/__init__.py
+index 7b1d272b..e65f2529 100644
+--- a/packages/core/src/repowise/core/providers/llm/__init__.py
++++ b/packages/core/src/repowise/core/providers/llm/__init__.py
+@@ -16,6 +16,7 @@
+     deepseek   — deepseek-v4-flash, deepseek-v4-pro via api.deepseek.com
+     ollama     — local inference (llama3.2, codellama, etc.)
+     litellm    — 100+ providers via LiteLLM proxy
++    codex_cli  — Codex CLI subscription/auth via codex exec
+     mock       — deterministic test provider
+ """
+ 
+diff --git a/packages/core/src/repowise/core/providers/llm/codex_cli.py b/packages/core/src/repowise/core/providers/llm/codex_cli.py
+new file mode 100644
+index 00000000..b8ed26b6
+--- /dev/null
++++ b/packages/core/src/repowise/core/providers/llm/codex_cli.py
+@@ -0,0 +1,279 @@
++"""Codex CLI provider for repowise.
++
++This provider delegates generation to the authenticated local Codex CLI via
++``codex exec``. It is intended for users with Codex subscription/auth already
++configured by ``codex login`` and does not require an OpenAI API key.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import contextlib
++import json
++import shutil
++from pathlib import Path
++from typing import Any
++
++import structlog
++
++from repowise.core.providers.llm.base import (
++    BaseProvider,
++    GeneratedResponse,
++    ProviderError,
++    ensure_reasoning_supported,
++)
++from repowise.core.rate_limiter import RateLimiter
++from repowise.core.reasoning import ReasoningMode
++
++log = structlog.get_logger(__name__)
++
++_DEFAULT_MODEL_LABEL = "codex_cli/default"
++_EXEC_TIMEOUT_SECONDS = 600
++
++
++def _normalize_model(model: str | None) -> str | None:
++    """Return the native Codex model slug, or None to use CLI config."""
++    if not model:
++        return None
++    if model == _DEFAULT_MODEL_LABEL:
++        return None
++    if model.startswith("codex_cli/"):
++        suffix = model.removeprefix("codex_cli/")
++        return suffix or None
++    return model
++
++
++def _model_label(model: str | None) -> str:
++    """Return the persisted attribution label for a Codex CLI model."""
++    native = _normalize_model(model)
++    return f"codex_cli/{native}" if native else _DEFAULT_MODEL_LABEL
++
++
++def _codex_reasoning_config(model: str, reasoning: ReasoningMode) -> str | None:
++    mode = ensure_reasoning_supported(
++        "codex_cli",
++        model,
++        reasoning,
++        ("auto", "minimal"),
++        detail=(
++            "CodexCliProvider maps reasoning='minimal' to "
++            "model_reasoning_effort='low'. reasoning='off' is not supported "
++            "by the Codex CLI provider."
++        ),
++    )
++    if mode == "minimal":
++        return 'model_reasoning_effort="low"'
++    return None
++
++
++def _combine_prompt(system_prompt: str, user_prompt: str) -> str:
++    return (
++        "Follow these system instructions for this one-shot documentation task:\n\n"
++        f"{system_prompt.strip()}\n\n"
++        "User request and context:\n\n"
++        f"{user_prompt.strip()}\n"
++    )
++
++
++def _parse_jsonl(stdout: str) -> tuple[str, dict[str, Any]]:
++    """Parse Codex JSONL output, ignoring non-JSON noise."""
++    content_parts: list[str] = []
++    usage: dict[str, Any] = {}
++
++    for raw_line in stdout.splitlines():
++        line = raw_line.strip()
++        if not line:
++            continue
++        try:
++            event = json.loads(line)
++        except json.JSONDecodeError:
++            continue
++
++        if event.get("type") == "item.completed":
++            item = event.get("item") or {}
++            if item.get("type") == "agent_message":
++                text = item.get("text")
++                if isinstance(text, str) and text:
++                    content_parts.append(text)
++        elif event.get("type") == "turn.completed":
++            event_usage = event.get("usage")
++            if isinstance(event_usage, dict):
++                usage = event_usage
++
++    return "\n".join(content_parts), usage
++
++
++def _tail(text: str, max_chars: int = 2_000) -> str:
++    text = text.strip()
++    if len(text) <= max_chars:
++        return text
++    return text[-max_chars:]
++
++
++def _error_message(stderr: str, stdout: str, returncode: int) -> str:
++    for candidate in (_tail(stderr), _tail(stdout)):
++        if not candidate:
++            continue
++        if candidate.lstrip().startswith(("{", "[")):
++            continue
++        return candidate
++    return f"codex exec exited with {returncode}"
++
++
++class CodexCliProvider(BaseProvider):
++    """LLM provider backed by ``codex exec``.
++
++    Args:
++        model: Optional native Codex model slug. If omitted, Codex CLI config
++            chooses the model. Persisted labels like ``codex_cli/gpt-5.5`` are
++            accepted and normalized before calling the CLI.
++        repo_path: Working directory passed to ``codex exec --cd``.
++        rate_limiter: Accepted for interface consistency, but the provider
++            serializes subprocess calls by default.
++    """
++
++    def __init__(
++        self,
++        model: str | None = None,
++        repo_path: str | Path | None = None,
++        rate_limiter: RateLimiter | None = None,
++    ) -> None:
++        if not shutil.which("codex"):
++            raise ProviderError(
++                "codex_cli",
++                "Codex CLI not found. Install it with: npm install -g @openai/codex",
++            )
++        self._model = _normalize_model(model)
++        self._repo_path = Path(repo_path).resolve() if repo_path is not None else Path.cwd().resolve()
++        self._rate_limiter = rate_limiter
++        self._subprocess_semaphore: asyncio.Semaphore | None = None
++        self._semaphore_loop: asyncio.AbstractEventLoop | None = None
++
++    @property
++    def provider_name(self) -> str:
++        return "codex_cli"
++
++    @property
++    def model_name(self) -> str:
++        return _model_label(self._model)
++
++    def _get_semaphore(self) -> asyncio.Semaphore:
++        loop = asyncio.get_running_loop()
++        if self._semaphore_loop is not loop:
++            self._subprocess_semaphore = asyncio.Semaphore(1)
++            self._semaphore_loop = loop
++        return self._subprocess_semaphore  # type: ignore[return-value]
++
++    def _build_command(self, *, reasoning: ReasoningMode = "auto") -> list[str]:
++        cmd = [
++            "codex",
++            "exec",
++            "--ephemeral",
++            "--sandbox",
++            "read-only",
++            "--json",
++            "--cd",
++            str(self._repo_path),
++        ]
++        reasoning_config = _codex_reasoning_config(self.model_name, reasoning)
++        if reasoning_config:
++            cmd.extend(["--config", reasoning_config])
++        if self._model:
++            cmd.extend(["--model", self._model])
++        cmd.append("-")
++        return cmd
++
++    async def generate(
++        self,
++        system_prompt: str,
++        user_prompt: str,
++        max_tokens: int = 4096,
++        temperature: float = 0.3,
++        request_id: str | None = None,
++        reasoning: ReasoningMode = "auto",
++    ) -> GeneratedResponse:
++        if self._rate_limiter:
++            await self._rate_limiter.acquire(estimated_tokens=max_tokens)
++
++        cmd = self._build_command(reasoning=reasoning)
++        prompt = _combine_prompt(system_prompt, user_prompt)
++        log.debug(
++            "codex_cli.generate.start",
++            model=self.model_name,
++            repo_path=str(self._repo_path),
++            request_id=request_id,
++        )
++
++        async with self._get_semaphore():
++            try:
++                proc = await asyncio.create_subprocess_exec(
++                    *cmd,
++                    stdin=asyncio.subprocess.PIPE,
++                    stdout=asyncio.subprocess.PIPE,
++                    stderr=asyncio.subprocess.PIPE,
++                )
++            except FileNotFoundError as exc:
++                raise ProviderError(
++                    "codex_cli",
++                    "Codex CLI not found. Install it with: npm install -g @openai/codex",
++                ) from exc
++
++            try:
++                stdout_bytes, stderr_bytes = await asyncio.wait_for(
++                    proc.communicate(prompt.encode("utf-8")),
++                    timeout=_EXEC_TIMEOUT_SECONDS,
++                )
++            except asyncio.TimeoutError as exc:
++                proc.kill()
++                with contextlib.suppress(ProcessLookupError):
++                    await proc.wait()
++                raise ProviderError(
++                    "codex_cli",
++                    f"codex exec timed out after {_EXEC_TIMEOUT_SECONDS} seconds.",
++                ) from exc
++
++        stdout = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
++        stderr = stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else ""
++
++        if proc.returncode != 0:
++            raise ProviderError(
++                "codex_cli",
++                _error_message(stderr, stdout, proc.returncode),
++                status_code=proc.returncode,
++            )
++
++        content, usage = _parse_jsonl(stdout)
++        if not content:
++            raise ProviderError(
++                "codex_cli",
++                "codex exec completed but no agent_message was found in JSONL output.",
++            )
++
++        usage_missing = not usage
++        input_tokens = int(usage.get("input_tokens", 0) or 0)
++        output_tokens = int(usage.get("output_tokens", 0) or 0)
++        cached_tokens = int(usage.get("cached_input_tokens", 0) or 0)
++
++        log.debug(
++            "codex_cli.generate.done",
++            input_tokens=input_tokens,
++            output_tokens=output_tokens,
++            cached_tokens=cached_tokens,
++            request_id=request_id,
++        )
++        usage_payload = {
++            **usage,
++            "source": "codex_exec",
++            "model": self.model_name,
++            "stderr": _tail(stderr, max_chars=1_000) if stderr.strip() else "",
++        }
++        if usage_missing:
++            usage_payload["estimated"] = True
++
++        return GeneratedResponse(
++            content=content,
++            input_tokens=input_tokens,
++            output_tokens=output_tokens,
++            cached_tokens=cached_tokens,
++            usage=usage_payload,
++        )
+diff --git a/packages/core/src/repowise/core/providers/llm/registry.py b/packages/core/src/repowise/core/providers/llm/registry.py
+index ac9603f1..c0b43a42 100644
+--- a/packages/core/src/repowise/core/providers/llm/registry.py
++++ b/packages/core/src/repowise/core/providers/llm/registry.py
+@@ -11,6 +11,7 @@
+     - deepseek    → DeepSeekProvider
+     - ollama      → OllamaProvider
+     - litellm     → LiteLLMProvider
++    - codex_cli   → CodexCliProvider
+     - mock        → MockProvider (testing only)
+ 
+ Custom provider registration:
+@@ -43,6 +44,7 @@
+     "ollama": ("repowise.core.providers.llm.ollama", "OllamaProvider"),
+     "litellm": ("repowise.core.providers.llm.litellm", "LiteLLMProvider"),
+     "deepseek": ("repowise.core.providers.llm.deepseek", "DeepSeekProvider"),
++    "codex_cli": ("repowise.core.providers.llm.codex_cli", "CodexCliProvider"),
+     "mock": ("repowise.core.providers.llm.mock", "MockProvider"),
+ }
+ 
+@@ -123,7 +125,7 @@ def get_provider(
+         )
+ 
+     # Attach rate limiter (skip for mock — tests should run without limits)
+-    if with_rate_limiter and name != "mock":
++    if with_rate_limiter and name not in ("mock", "codex_cli"):
+         config = rate_limit_config or PROVIDER_DEFAULTS.get(name)
+         if config and "rate_limiter" not in kwargs:
+             kwargs["rate_limiter"] = RateLimiter(config)
+@@ -141,6 +143,7 @@ def get_provider(
+             "openrouter": "openai",  # openrouter uses the openai package
+             "deepseek": "openai",  # deepseek uses the openai package
+             "litellm": "litellm",
++            "codex_cli": "@openai/codex",
+         }
+         package = _missing.get(name, name)
+         raise ImportError(
+diff --git a/plugins/codex/.codex-plugin/plugin.json b/plugins/codex/.codex-plugin/plugin.json
+new file mode 100644
+index 00000000..562b0301
+--- /dev/null
++++ b/plugins/codex/.codex-plugin/plugin.json
+@@ -0,0 +1,45 @@
++{
++  "name": "codex",
++  "version": "0.1.0",
++  "description": "Repowise codebase intelligence for Codex.",
++  "author": {
++    "name": "Repowise",
++    "email": "hello@repowise.dev",
++    "url": "https://repowise.dev"
++  },
++  "homepage": "https://repowise.dev",
++  "repository": "https://github.com/repowise/repowise",
++  "license": "AGPL-3.0-only",
++  "keywords": [
++    "codebase",
++    "documentation",
++    "architecture",
++    "mcp",
++    "codex",
++    "graph",
++    "git"
++  ],
++  "skills": "./skills/",
++  "hooks": "./hooks/hooks.json",
++  "mcpServers": "./.mcp.json",
++  "interface": {
++    "displayName": "Repowise",
++    "shortDescription": "Codebase wiki, graph, git signals, and decisions for Codex.",
++    "longDescription": "Adds Repowise MCP tools, lifecycle hooks, and focused skills so Codex can explore indexed repositories, assess edit risk, recover design rationale, and plan cleanup work.",
++    "developerName": "Repowise",
++    "category": "Productivity",
++    "capabilities": [
++      "Read",
++      "MCP",
++      "Hooks",
++      "Skills"
++    ],
++    "websiteURL": "https://repowise.dev",
++    "defaultPrompt": [
++      "Explain this repository with Repowise.",
++      "Find risk before changing this module.",
++      "Identify safe dead-code cleanup candidates."
++    ],
++    "brandColor": "#2563EB"
++  }
++}
+diff --git a/plugins/codex/.mcp.json b/plugins/codex/.mcp.json
+new file mode 100644
+index 00000000..7d691343
+--- /dev/null
++++ b/plugins/codex/.mcp.json
+@@ -0,0 +1,9 @@
++{
++  "repowise": {
++    "command": "repowise",
++    "args": [
++      "mcp"
++    ],
++    "startup_timeout_sec": 20
++  }
++}
+diff --git a/plugins/codex/hooks/hooks.json b/plugins/codex/hooks/hooks.json
+new file mode 100644
+index 00000000..e0f4826d
+--- /dev/null
++++ b/plugins/codex/hooks/hooks.json
+@@ -0,0 +1,53 @@
++{
++  "hooks": {
++    "SessionStart": [
++      {
++        "matcher": "startup|resume|clear",
++        "hooks": [
++          {
++            "type": "command",
++            "command": "repowise-augment --client codex",
++            "timeout": 30,
++            "statusMessage": "Loading repowise context..."
++          }
++        ]
++      }
++    ],
++    "UserPromptSubmit": [
++      {
++        "hooks": [
++          {
++            "type": "command",
++            "command": "repowise-augment --client codex",
++            "timeout": 30,
++            "statusMessage": "Loading repowise context..."
++          }
++        ]
++      }
++    ],
++    "PostToolUse": [
++      {
++        "matcher": "Bash",
++        "hooks": [
++          {
++            "type": "command",
++            "command": "repowise-augment --client codex",
++            "timeout": 30,
++            "statusMessage": "Checking repowise freshness..."
++          }
++        ]
++      },
++      {
++        "matcher": "apply_patch|Edit|Write",
++        "hooks": [
++          {
++            "type": "command",
++            "command": "repowise-augment --client codex",
++            "timeout": 30,
++            "statusMessage": "Checking repowise freshness..."
++          }
++        ]
++      }
++    ]
++  }
++}
+diff --git a/plugins/codex/skills/architectural-decisions/SKILL.md b/plugins/codex/skills/architectural-decisions/SKILL.md
+new file mode 100644
+index 00000000..9808c49b
+--- /dev/null
++++ b/plugins/codex/skills/architectural-decisions/SKILL.md
+@@ -0,0 +1,30 @@
++---
++name: architectural-decisions
++description: Use when a task asks why code is built a certain way, proposes architectural changes, compares implementation approaches, or mentions decision markers such as WHY, DECISION, TRADEOFF, or ADR in a Repowise-indexed repository.
++---
++
++# Architectural Decisions With Repowise
++
++Repowise captures architectural decisions: the rationale behind how code is built.
++
++## When The User Asks Why Something Exists
++
++Call `get_why(query="specific area or decision")` to search captured decisions. This covers inline decision markers, git-derived rationale, and decisions mined from documentation.
++
++## Before Architectural Changes
++
++1. Call `get_why(query="the area being changed")` before introducing new patterns, restructuring modules, replacing infrastructure, or choosing between approaches.
++2. If decisions are found, summarize the relevant rationale and tradeoffs before editing.
++3. If no decision is found, state that no recorded decision governs the area and continue with normal source inspection.
++
++## When No Specific Query Exists
++
++Call `get_why()` to inspect decision health: stale decisions, conflicts, and ungoverned hotspots.
++
++## When Decision Markers Appear In Code
++
++If a file contains `WHY:`, `DECISION:`, `TRADEOFF:`, or `ADR:`, call `get_context(targets=["path/to/file"])` to retrieve the full file context and related decisions.
++
++## Recording New Decisions
++
++When the user makes a new architectural decision, suggest recording it with a `DECISION:` comment in the relevant code or with `repowise decision add`.
+diff --git a/plugins/codex/skills/codebase-exploration/SKILL.md b/plugins/codex/skills/codebase-exploration/SKILL.md
+new file mode 100644
+index 00000000..22fc1b75
+--- /dev/null
++++ b/plugins/codex/skills/codebase-exploration/SKILL.md
+@@ -0,0 +1,32 @@
++---
++name: codebase-exploration
++description: Use when exploring, understanding, or answering questions about a Repowise-indexed codebase, including architecture, where code is implemented, how a module works, or which files are relevant before reading source.
++---
++
++# Codebase Exploration With Repowise
++
++This project has a Repowise intelligence layer. Use Repowise MCP tools before broad source browsing so the answer starts from indexed docs, ownership, graph structure, git signals, and decisions.
++
++## Starting A New Exploration Task
++
++Call `get_overview()` first. It returns the architecture summary, module map, entry points, and tech stack.
++
++## Answering How Or Where Questions
++
++1. Call `search_codebase(query="topic or symbol")` to find relevant documented modules and files.
++2. Call `get_context(targets=[...])` with all relevant files from the search results in one batch.
++3. Read raw source only after the indexed context is not specific enough for the user’s question.
++
++## Understanding Connections Between Modules
++
++Call `get_dependency_path(source="module_a", target="module_b")` when the user asks how two areas connect.
++
++## Getting Diagrams
++
++Call `get_architecture_diagram(scope="module", path="path/to/module")` for a subsystem diagram, or `get_architecture_diagram()` for the full repository.
++
++## Error Handling
++
++- If tools report that no repositories were found, suggest running `repowise init`.
++- If `search_codebase` has no useful results, the repository may be index-only; fall back to `get_context` with specific paths.
++- If MCP tools are unavailable, proceed with normal source inspection and mention that Repowise context was unavailable.
+diff --git a/plugins/codex/skills/dead-code-cleanup/SKILL.md b/plugins/codex/skills/dead-code-cleanup/SKILL.md
+new file mode 100644
+index 00000000..99b66ca1
+--- /dev/null
++++ b/plugins/codex/skills/dead-code-cleanup/SKILL.md
+@@ -0,0 +1,39 @@
++---
++name: dead-code-cleanup
++description: Use when the user asks about unused code, cleanup, deleting files or exports, refactoring old areas, reducing bundle size, code hygiene, technical debt, or maintenance in a Repowise-indexed repository.
++---
++
++# Dead Code Cleanup With Repowise
++
++Repowise detects dead code through graph analysis and git context. Treat findings as a cleanup plan, not automatic permission to delete.
++
++## Finding Dead Or Unused Code
++
++Call `get_dead_code()` to get findings organized by confidence tier. Useful parameters:
++
++- `safe_only=true` for findings already marked safe to delete.
++- `min_confidence=0.7` for high-confidence cleanup work.
++- `kind="unreachable_file"` for files with no importers.
++- `kind="unused_export"` for public symbols with no known consumers.
++- `kind="zombie_package"` for monorepo packages with no consumers.
++- `directory="src/old/"` to limit scope.
++- `tier="high"` for the highest-confidence band.
++
++## Presenting Findings
++
++- Only recommend deletion for findings with `safe_to_delete: true`.
++- Present lower-confidence findings as candidates to investigate.
++- Flag dynamic loading, plugin systems, route handlers, adapters, and public APIs as common false-positive zones.
++
++## Before Deleting Anything
++
++1. Confirm with the user.
++2. Present the file or symbol, confidence score, and why Repowise thinks it is dead.
++3. Call `get_risk(targets=["path/to/file"])` before deleting files or exports.
++4. If the finding has recent git activity, note the higher false-positive risk.
++
++## Safe Deletion Order
++
++1. Unreachable files first.
++2. Unused internal symbols next.
++3. Unused exports last.
+diff --git a/plugins/codex/skills/pre-modification-check/SKILL.md b/plugins/codex/skills/pre-modification-check/SKILL.md
+new file mode 100644
+index 00000000..eebf3a11
+--- /dev/null
++++ b/plugins/codex/skills/pre-modification-check/SKILL.md
+@@ -0,0 +1,41 @@
++---
++name: pre-modification-check
++description: Use before modifying, refactoring, moving, or deleting files in a Repowise-indexed repository, especially shared utilities, core modules, public APIs, or files the user did not explicitly identify.
++---
++
++# Pre-Modification Check With Repowise
++
++Before editing a Repowise-indexed codebase, assess impact with the graph and git signals.
++
++## Before Editing Files
++
++Call `get_risk(targets=["path/to/file.py"])` to understand:
++
++- Hotspot status and churn trend.
++- Dependents and likely blast radius.
++- Co-change partners that may need updates.
++- Ownership and recommended review context.
++- Bus factor and maintenance concentration.
++- Test gaps or security signals.
++
++## When Editing Multiple Files
++
++Batch all targets in one call: `get_risk(targets=["file1.py", "file2.py", "module/"])`.
++
++## When To Warn The User
++
++Warn before editing when `get_risk` shows:
++
++- Hotspot score above the 90th percentile.
++- More than 10 dependents.
++- Bus factor of 1.
++- Risk type such as `bug-prone` or `high-coupling`.
++- Missing tests around changed or affected files.
++
++## Before Refactoring Or Moving Code
++
++Call `get_context(targets=["path/to/file.py"])` first to understand what uses the file, which decisions govern it, and why it is structured that way.
++
++## Error Handling
++
++If `get_risk` fails or the MCP server is unavailable, proceed with normal inspection and mention that Repowise risk assessment was unavailable.
+diff --git a/tests/providers/test_registry.py b/tests/providers/test_registry.py
+index e9aa3707..cdc66d62 100644
+--- a/tests/providers/test_registry.py
++++ b/tests/providers/test_registry.py
+@@ -26,6 +26,7 @@ def test_includes_all_builtin_providers(self) -> None:
+         assert "openrouter" in providers
+         assert "ollama" in providers
+         assert "litellm" in providers
++        assert "codex_cli" in providers
+         assert "mock" in providers
+ 
+     def test_returns_sorted_list(self) -> None:
+@@ -115,5 +116,5 @@ def factory(**kw: object) -> MockProvider:
+         assert received.get("api_key") == "key-123"
+ 
+     def test_builtin_count(self) -> None:
+-        """Sanity check: we have exactly 8 built-in providers."""
+-        assert len(_BUILTIN_PROVIDERS) == 8
++        """Sanity check: we have exactly 9 built-in providers."""
++        assert len(_BUILTIN_PROVIDERS) == 9
+diff --git a/tests/unit/cli/test_augment_cmd.py b/tests/unit/cli/test_augment_cmd.py
+new file mode 100644
+index 00000000..d711c567
+--- /dev/null
++++ b/tests/unit/cli/test_augment_cmd.py
+@@ -0,0 +1,146 @@
++from __future__ import annotations
++
++import json
++import subprocess
++from pathlib import Path
++from typing import Any
++
++import pytest
++from click.testing import CliRunner
++
++from repowise.cli.main import cli
++
++
++@pytest.fixture
++def runner() -> CliRunner:
++    return CliRunner()
++
++
++def _invoke_augment(
++    runner: CliRunner,
++    payload: dict[str, Any],
++    args: list[str] | None = None,
++):
++    return runner.invoke(cli, ["augment", *(args or [])], input=json.dumps(payload))
++
++
++def _hook_context(output: str) -> str:
++    response = json.loads(output)
++    return response["hookSpecificOutput"]["additionalContext"]
++
++
++def _init_repowise_repo(path: Path) -> None:
++    repowise_dir = path / ".repowise"
++    repowise_dir.mkdir()
++    (repowise_dir / "state.json").write_text(
++        json.dumps({"last_sync_commit": "1111111111111111111111111111111111111111"}),
++        encoding="utf-8",
++    )
++
++
++def test_codex_session_start_payload_returns_mcp_context(
++    runner: CliRunner, tmp_path: Path
++) -> None:
++    _init_repowise_repo(tmp_path)
++
++    result = _invoke_augment(
++        runner,
++        {
++            "hook_event_name": "SessionStart",
++            "source": "startup",
++            "cwd": str(tmp_path),
++        },
++        ["--client", "codex"],
++    )
++
++    assert result.exit_code == 0
++    assert "repowise MCP tools" in _hook_context(result.output)
++
++
++def test_codex_user_prompt_submit_payload_returns_mcp_context(
++    runner: CliRunner, tmp_path: Path
++) -> None:
++    _init_repowise_repo(tmp_path)
++
++    result = _invoke_augment(
++        runner,
++        {
++            "hook_event_name": "UserPromptSubmit",
++            "turn_id": "turn-1",
++            "prompt": "Where is the auth flow?",
++            "cwd": str(tmp_path),
++        },
++        ["--client", "codex"],
++    )
++
++    assert result.exit_code == 0
++    assert "semantic search" in _hook_context(result.output)
++
++
++def test_claude_lifecycle_payload_stays_silent_without_codex_client(
++    runner: CliRunner, tmp_path: Path
++) -> None:
++    _init_repowise_repo(tmp_path)
++
++    result = _invoke_augment(
++        runner,
++        {
++            "hook_event_name": "SessionStart",
++            "source": "startup",
++            "cwd": str(tmp_path),
++        },
++    )
++
++    assert result.exit_code == 0
++    assert result.output == ""
++
++
++def test_codex_post_tool_use_bash_detects_stale_wiki(
++    runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    _init_repowise_repo(tmp_path)
++
++    def fake_run(args: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
++        assert args == ["git", "rev-parse", "HEAD"]
++        return subprocess.CompletedProcess(
++            args, 0, stdout="2222222222222222222222222222222222222222\n", stderr=""
++        )
++
++    monkeypatch.setattr("subprocess.run", fake_run)
++
++    result = _invoke_augment(
++        runner,
++        {
++            "hook_event_name": "PostToolUse",
++            "tool_name": "Bash",
++            "tool_input": {"command": "git commit -m hook-test"},
++            "tool_response": {"exit_code": 0, "stdout": "[main abc123] hook-test"},
++            "cwd": str(tmp_path),
++        },
++    )
++
++    assert result.exit_code == 0
++    context = _hook_context(result.output)
++    assert "Wiki is stale" in context
++    assert "11111111" in context
++    assert "22222222" in context
++
++
++def test_codex_post_tool_use_apply_patch_flags_stale_context(
++    runner: CliRunner, tmp_path: Path
++) -> None:
++    _init_repowise_repo(tmp_path)
++
++    result = _invoke_augment(
++        runner,
++        {
++            "hook_event_name": "PostToolUse",
++            "tool_name": "apply_patch",
++            "tool_input": {"command": "*** Begin Patch\n*** End Patch"},
++            "tool_response": {"success": True},
++            "cwd": str(tmp_path),
++        },
++    )
++
++    assert result.exit_code == 0
++    assert "Files were edited" in _hook_context(result.output)
+diff --git a/tests/unit/cli/test_claude_md_prompt.py b/tests/unit/cli/test_claude_md_prompt.py
+index 1c57ed90..03de3fdc 100644
+--- a/tests/unit/cli/test_claude_md_prompt.py
++++ b/tests/unit/cli/test_claude_md_prompt.py
+@@ -18,7 +18,7 @@
+ from click.testing import CliRunner
+ from rich.console import Console
+ 
+-from repowise.cli.commands.init_cmd import _maybe_generate_claude_md
++from repowise.cli.commands.init_cmd import _maybe_generate_agents_md, _maybe_generate_claude_md
+ from repowise.cli.ui import interactive_claude_md_prompt
+ 
+ 
+@@ -83,3 +83,25 @@ def test_maybe_generate_skips_write_when_config_disabled(tmp_path: Path) -> None
+ 
+     fake_write.assert_not_called()
+     assert not (tmp_path / ".claude" / "CLAUDE.md").exists()
++
++
++def test_maybe_generate_agents_skips_and_persists_opt_out(tmp_path: Path) -> None:
++    (tmp_path / ".repowise").mkdir()
++
++    _maybe_generate_agents_md(_silent_console(), tmp_path, agents_md=False)
++
++    assert not (tmp_path / "AGENTS.md").exists()
++    cfg_path = tmp_path / ".repowise" / "config.yaml"
++    assert "agents_md: false" in cfg_path.read_text(encoding="utf-8")
++
++
++def test_maybe_generate_agents_respects_config_disabled(tmp_path: Path) -> None:
++    (tmp_path / ".repowise").mkdir()
++    cfg_path = tmp_path / ".repowise" / "config.yaml"
++    cfg_path.write_text("editor_files:\n  agents_md: false\n", encoding="utf-8")
++
++    with patch("repowise.cli.commands.init_cmd._write_agents_md_async") as fake_write:
++        _maybe_generate_agents_md(_silent_console(), tmp_path)
++
++    fake_write.assert_not_called()
++    assert not (tmp_path / "AGENTS.md").exists()
+diff --git a/tests/unit/cli/test_codex_plugin.py b/tests/unit/cli/test_codex_plugin.py
+new file mode 100644
+index 00000000..eb3d968b
+--- /dev/null
++++ b/tests/unit/cli/test_codex_plugin.py
+@@ -0,0 +1,89 @@
++from __future__ import annotations
++
++import json
++import re
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[3]
++PLUGIN_ROOT = ROOT / "plugins" / "codex"
++
++
++def _load_json(path: Path) -> dict:
++    return json.loads(path.read_text(encoding="utf-8"))
++
++
++def test_codex_plugin_manifest_paths() -> None:
++    manifest_path = PLUGIN_ROOT / ".codex-plugin" / "plugin.json"
++    manifest = _load_json(manifest_path)
++
++    assert manifest["name"] == "codex"
++    assert manifest["skills"] == "./skills/"
++    assert manifest["mcpServers"] == "./.mcp.json"
++    assert manifest["hooks"] == "./hooks/hooks.json"
++    assert "apps" not in manifest
++    assert "[TODO" not in manifest_path.read_text(encoding="utf-8")
++
++
++def test_codex_plugin_mcp_uses_repowise_no_path_mode() -> None:
++    config = _load_json(PLUGIN_ROOT / ".mcp.json")
++
++    assert config["repowise"]["command"] == "repowise"
++    assert config["repowise"]["args"] == ["mcp"]
++    assert config["repowise"]["startup_timeout_sec"] == 20
++
++
++def test_codex_plugin_hooks_match_supported_codex_events() -> None:
++    hooks = _load_json(PLUGIN_ROOT / "hooks" / "hooks.json")["hooks"]
++
++    assert set(hooks) == {"SessionStart", "UserPromptSubmit", "PostToolUse"}
++    assert hooks["SessionStart"][0]["matcher"] == "startup|resume|clear"
++    assert [entry["matcher"] for entry in hooks["PostToolUse"]] == [
++        "Bash",
++        "apply_patch|Edit|Write",
++    ]
++
++    commands = [
++        hook["command"]
++        for entries in hooks.values()
++        for entry in entries
++        for hook in entry["hooks"]
++    ]
++    assert commands == ["repowise-augment --client codex"] * 4
++    assert [
++        hook["timeout"]
++        for entries in hooks.values()
++        for entry in entries
++        for hook in entry["hooks"]
++    ] == [30] * 4
++
++
++def test_codex_plugin_skills_have_metadata_and_neutral_wording() -> None:
++    skill_paths = sorted((PLUGIN_ROOT / "skills").glob("*/SKILL.md"))
++
++    assert {path.parent.name for path in skill_paths} == {
++        "architectural-decisions",
++        "codebase-exploration",
++        "dead-code-cleanup",
++        "pre-modification-check",
++    }
++
++    for path in skill_paths:
++        text = path.read_text(encoding="utf-8")
++        assert re.search(r"^---\nname: .+\ndescription: .+\n---", text)
++        assert "Claude" not in text
++        assert "/repowise:" not in text
++
++
++def test_codex_plugin_marketplace_entry() -> None:
++    marketplace = _load_json(ROOT / ".agents" / "plugins" / "marketplace.json")
++    entry = marketplace["plugins"][0]
++
++    assert marketplace["name"] == "repowise"
++    assert marketplace["interface"]["displayName"] == "Repowise"
++    assert entry["name"] == "codex"
++    assert entry["source"] == {"source": "local", "path": "./plugins/codex"}
++    assert entry["policy"] == {
++        "installation": "AVAILABLE",
++        "authentication": "ON_INSTALL",
++    }
++    assert entry["category"] == "Productivity"
+diff --git a/tests/unit/cli/test_commands.py b/tests/unit/cli/test_commands.py
+index 0da4bab5..90415bc8 100644
+--- a/tests/unit/cli/test_commands.py
++++ b/tests/unit/cli/test_commands.py
+@@ -2,10 +2,16 @@
+ 
+ from __future__ import annotations
+ 
++import os
++import sys
++from io import StringIO
++
+ import pytest
+ from click.testing import CliRunner
++from rich.console import Console
+ 
+ from repowise.cli import __version__
++from repowise.cli.commands.init_cmd import _register_mcp_with_codex
+ from repowise.cli.main import cli
+ 
+ 
+@@ -35,6 +41,8 @@ def test_init_help(self, runner):
+         result = runner.invoke(cli, ["init", "--help"])
+         assert result.exit_code == 0
+         assert "--provider" in result.output
++        assert "--codex" in result.output
++        assert "--agents" in result.output
+         assert "--dry-run" in result.output
+         assert "--skip-tests" in result.output
+         assert "--reasoning" in result.output
+@@ -44,6 +52,7 @@ def test_update_help(self, runner):
+         assert result.exit_code == 0
+         assert "--since" in result.output
+         assert "--reasoning" in result.output
++        assert "--agents" in result.output
+ 
+     def test_search_help(self, runner):
+         result = runner.invoke(cli, ["search", "--help"])
+@@ -86,6 +95,30 @@ def test_mcp_help(self, runner):
+         assert "--transport" in result.output
+         assert "stdio" in result.output
+ 
++    def test_mcp_without_path_resolves_parent_repowise_dir(self, runner, tmp_path, monkeypatch):
++        repo = tmp_path / "repo"
++        subdir = repo / "src" / "pkg"
++        (repo / ".repowise").mkdir(parents=True)
++        subdir.mkdir(parents=True)
++        captured = {}
++
++        def fake_run_mcp(*, transport, repo_path, port):
++            captured["transport"] = transport
++            captured["repo_path"] = repo_path
++            captured["port"] = port
++
++        monkeypatch.setattr("repowise.server.mcp_server.run_mcp", fake_run_mcp)
++        old = os.getcwd()
++        try:
++            os.chdir(subdir)
++            result = runner.invoke(cli, ["mcp"])
++        finally:
++            os.chdir(old)
++
++        assert result.exit_code == 0
++        assert captured["transport"] == "stdio"
++        assert captured["repo_path"] == str(repo.resolve())
++
+ 
+ # ---------------------------------------------------------------------------
+ # Error cases
+@@ -102,9 +135,12 @@ def test_init_no_provider(self, runner, tmp_path, monkeypatch):
+         """init with no provider configured should error."""
+         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
++        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
++        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+         monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
++        monkeypatch.delenv("LITELLM_API_KEY", raising=False)
+         monkeypatch.delenv("REPOWISE_PROVIDER", raising=False)
+         result = runner.invoke(cli, ["init", str(tmp_path)])
+         assert result.exit_code != 0
+@@ -119,3 +155,52 @@ def test_update_no_state(self, runner, tmp_path):
+         (tmp_path / ".repowise").mkdir()
+         result = runner.invoke(cli, ["update", str(tmp_path)])
+         assert result.exit_code != 0
++
++
++class TestCodexSetup:
++    def _console(self):
++        out = StringIO()
++        return Console(file=out, force_terminal=False, color_system=None), out
++
++    def test_codex_auto_setup_noninteractive_only_prints_hint(self, tmp_path, monkeypatch):
++        from repowise.cli import mcp_config
++
++        monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
++        monkeypatch.setattr(mcp_config, "is_codex_cli_installed", lambda: True)
++        monkeypatch.setattr(mcp_config, "is_codex_logged_in", lambda: True)
++
++        def fail_save(_repo_path):
++            raise AssertionError("Codex config should not be written implicitly")
++
++        monkeypatch.setattr(mcp_config, "save_codex_mcp_config", fail_save)
++        monkeypatch.setattr(mcp_config, "save_codex_hooks_config", fail_save)
++
++        console, out = self._console()
++        _register_mcp_with_codex(console, tmp_path, codex_setup=None)
++
++        assert "--codex" in out.getvalue()
++
++    def test_codex_auto_setup_interactive_prompt_can_accept(self, tmp_path, monkeypatch):
++        from repowise.cli import mcp_config
++
++        written = []
++        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
++        monkeypatch.setattr("click.confirm", lambda *_args, **_kwargs: True)
++        monkeypatch.setattr(mcp_config, "is_codex_cli_installed", lambda: True)
++        monkeypatch.setattr(mcp_config, "is_codex_logged_in", lambda: True)
++        monkeypatch.setattr(
++            mcp_config,
++            "save_codex_mcp_config",
++            lambda repo_path: written.append("mcp") or repo_path / ".codex" / "config.toml",
++        )
++        monkeypatch.setattr(
++            mcp_config,
++            "save_codex_hooks_config",
++            lambda repo_path: written.append("hooks") or repo_path / ".codex" / "hooks.json",
++        )
++
++        console, out = self._console()
++        _register_mcp_with_codex(console, tmp_path, codex_setup=None)
++
++        assert written == ["mcp", "hooks"]
++        assert "Codex MCP registered" in out.getvalue()
+diff --git a/tests/unit/cli/test_cost_estimator.py b/tests/unit/cli/test_cost_estimator.py
+index 64f5a400..15a5ad4c 100644
+--- a/tests/unit/cli/test_cost_estimator.py
++++ b/tests/unit/cli/test_cost_estimator.py
+@@ -146,6 +146,12 @@ def test_mock_provider_zero_cost(self):
+         assert est.estimated_cost_usd == 0.0
+         assert est.total_pages == 5
+ 
++    def test_codex_cli_provider_zero_cost(self):
++        plans = [PageTypePlan("file_page", 5, 2)]
++        est = estimate_cost(plans, "codex_cli", "codex_cli/default")
++        assert est.estimated_cost_usd == 0.0
++        assert est.total_pages == 5
++
+     def test_anthropic_has_cost(self):
+         plans = [PageTypePlan("file_page", 10, 2)]
+         est = estimate_cost(plans, "anthropic", "claude-sonnet-4-6")
+diff --git a/tests/unit/cli/test_editor_files.py b/tests/unit/cli/test_editor_files.py
+new file mode 100644
+index 00000000..c069301c
+--- /dev/null
++++ b/tests/unit/cli/test_editor_files.py
+@@ -0,0 +1,46 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++from repowise.cli.editor_files import set_editor_file_enabled, should_generate_editor_file
++
++
++def test_should_generate_editor_file_defaults_enabled(tmp_path: Path) -> None:
++    (tmp_path / ".repowise").mkdir()
++
++    assert should_generate_editor_file(tmp_path, "agents_md")
++
++
++def test_should_generate_editor_file_reads_config(tmp_path: Path) -> None:
++    repowise_dir = tmp_path / ".repowise"
++    repowise_dir.mkdir()
++    (repowise_dir / "config.yaml").write_text(
++        "editor_files:\n  agents_md: false\n",
++        encoding="utf-8",
++    )
++
++    assert not should_generate_editor_file(tmp_path, "agents_md")
++
++
++def test_should_generate_editor_file_persists_override(tmp_path: Path) -> None:
++    (tmp_path / ".repowise").mkdir()
++
++    assert not should_generate_editor_file(tmp_path, "agents_md", override=False)
++    assert "agents_md: false" in (tmp_path / ".repowise" / "config.yaml").read_text(
++        encoding="utf-8"
++    )
++
++
++def test_set_editor_file_enabled_preserves_existing_keys(tmp_path: Path) -> None:
++    repowise_dir = tmp_path / ".repowise"
++    repowise_dir.mkdir()
++    (repowise_dir / "config.yaml").write_text(
++        "editor_files:\n  claude_md: false\n",
++        encoding="utf-8",
++    )
++
++    set_editor_file_enabled(tmp_path, "agents_md", True)
++
++    saved = (repowise_dir / "config.yaml").read_text(encoding="utf-8")
++    assert "claude_md: false" in saved
++    assert "agents_md: true" in saved
+diff --git a/tests/unit/cli/test_helpers.py b/tests/unit/cli/test_helpers.py
+index 0383b5da..0c3c3c9e 100644
+--- a/tests/unit/cli/test_helpers.py
++++ b/tests/unit/cli/test_helpers.py
+@@ -10,6 +10,7 @@
+ from repowise.cli.helpers import (
+     CONFIG_FILENAME,
+     ensure_repowise_dir,
++    find_repowise_repo_root,
+     get_db_url_for_repo,
+     get_head_commit,
+     get_repowise_dir,
+@@ -68,6 +69,33 @@ def test_resolves_absolute_path(self, tmp_path):
+         assert result == tmp_path.resolve()
+ 
+ 
++class TestFindrepowiseRepoRoot:
++    def test_finds_current_repowise_dir(self, tmp_path):
++        (tmp_path / ".repowise").mkdir()
++
++        assert find_repowise_repo_root(tmp_path) == tmp_path.resolve()
++
++    def test_walks_up_to_parent_repowise_dir(self, tmp_path):
++        root = tmp_path / "repo"
++        subdir = root / "src" / "pkg"
++        (root / ".repowise").mkdir(parents=True)
++        subdir.mkdir(parents=True)
++
++        assert find_repowise_repo_root(subdir) == root.resolve()
++
++    def test_returns_none_when_missing(self, tmp_path):
++        assert find_repowise_repo_root(tmp_path) is None
++
++    def test_ignores_nested_git_dirs(self, tmp_path):
++        root = tmp_path / "repo"
++        nested = root / "vendor" / "dep" / "src"
++        nested.mkdir(parents=True)
++        (root / ".repowise").mkdir()
++        (root / "vendor" / "dep" / ".git").mkdir()
++
++        assert find_repowise_repo_root(nested) == root.resolve()
++
++
+ # ---------------------------------------------------------------------------
+ # .repowise/ directory
+ # ---------------------------------------------------------------------------
+@@ -297,6 +325,19 @@ def test_unknown_provider(self, monkeypatch):
+         assert len(warnings) == 1
+         assert "unknown provider" in warnings[0].lower()
+ 
++    def test_codex_cli_valid_when_binary_exists(self, monkeypatch):
++        monkeypatch.setattr("shutil.which", lambda cmd: "codex" if cmd == "codex" else None)
++
++        assert validate_provider_config("codex_cli") == []
++
++    def test_codex_cli_missing_binary(self, monkeypatch):
++        monkeypatch.setattr("shutil.which", lambda _cmd: None)
++
++        warnings = validate_provider_config("codex_cli")
++
++        assert len(warnings) == 1
++        assert "Codex CLI" in warnings[0]
++
+     def test_auto_detect_anthropic(self, monkeypatch):
+         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+@@ -382,3 +423,48 @@ def fake_get_provider(name: str, **kwargs: Any):
+         assert result == "provider"
+         assert captured["name"] == "ollama"
+         assert captured["kwargs"].get("base_url") == "http://ollama.local:11434"
++
++
++class TestResolveCodexCliProvider:
++    @staticmethod
++    def test_env_provider_forwards_repo_path(monkeypatch, tmp_path):
++        captured: dict[str, Any] = {}
++
++        def fake_get_provider(name: str, **kwargs: Any):
++            captured["name"] = name
++            captured["kwargs"] = kwargs
++            return "provider"
++
++        monkeypatch.setattr("repowise.core.providers.get_provider", fake_get_provider)
++        monkeypatch.setattr("shutil.which", lambda cmd: "codex" if cmd == "codex" else None)
++        monkeypatch.setenv("REPOWISE_PROVIDER", "codex_cli")
++
++        result = resolve_provider(None, None, repo_path=tmp_path)
++
++        assert result == "provider"
++        assert captured["name"] == "codex_cli"
++        assert captured["kwargs"]["repo_path"] == tmp_path
++
++    @staticmethod
++    def test_config_model_passed_through(monkeypatch, tmp_path):
++        captured: dict[str, Any] = {}
++
++        def fake_get_provider(name: str, **kwargs: Any):
++            captured["name"] = name
++            captured["kwargs"] = kwargs
++            return "provider"
++
++        monkeypatch.setattr("repowise.core.providers.get_provider", fake_get_provider)
++        monkeypatch.setattr("shutil.which", lambda cmd: "codex" if cmd == "codex" else None)
++        repowise_dir = ensure_repowise_dir(tmp_path)
++        (repowise_dir / CONFIG_FILENAME).write_text(
++            "provider: codex_cli\nmodel: codex_cli/default\nembedder: mock\n",
++            encoding="utf-8",
++        )
++
++        result = resolve_provider(None, None, repo_path=tmp_path)
++
++        assert result == "provider"
++        assert captured["name"] == "codex_cli"
++        assert captured["kwargs"]["model"] == "codex_cli/default"
++        assert captured["kwargs"]["repo_path"] == tmp_path
+diff --git a/tests/unit/cli/test_mcp_config.py b/tests/unit/cli/test_mcp_config.py
+index 59238110..7c6cdb9d 100644
+--- a/tests/unit/cli/test_mcp_config.py
++++ b/tests/unit/cli/test_mcp_config.py
+@@ -1,6 +1,9 @@
+ import json
+ import re
++import subprocess
++import tomllib
+ from pathlib import Path
++from typing import Any
+ 
+ import click
+ import pytest
+@@ -12,6 +15,199 @@ def _repowise_entry(repo_path: Path) -> dict:
+     return mcp_config.generate_mcp_config(repo_path)["mcpServers"]
+ 
+ 
++def test_generate_codex_mcp_server_config_uses_no_path_mcp(tmp_path: Path) -> None:
++    server = mcp_config.generate_codex_mcp_server_config(tmp_path)
++
++    assert server["command"] == "repowise"
++    assert server["args"] == ["mcp"]
++    assert server["cwd"] == str(tmp_path.resolve())
++
++
++def test_save_codex_mcp_config_creates_project_config(tmp_path: Path) -> None:
++    config_path = mcp_config.save_codex_mcp_config(tmp_path)
++
++    assert config_path == tmp_path / ".codex" / "config.toml"
++    saved = tomllib.loads(config_path.read_text(encoding="utf-8"))
++    assert saved["mcp_servers"]["repowise"]["command"] == "repowise"
++    assert saved["mcp_servers"]["repowise"]["args"] == ["mcp"]
++    assert saved["mcp_servers"]["repowise"]["cwd"] == str(tmp_path.resolve())
++
++
++def test_save_codex_mcp_config_merges_valid_existing_file(tmp_path: Path) -> None:
++    config_path = tmp_path / ".codex" / "config.toml"
++    config_path.parent.mkdir(parents=True)
++    config_path.write_text(
++        'model = "gpt-5.5"\n\n[mcp_servers.other]\ncommand = "other"\n',
++        encoding="utf-8",
++    )
++
++    mcp_config.save_codex_mcp_config(tmp_path)
++
++    saved = tomllib.loads(config_path.read_text(encoding="utf-8"))
++    assert saved["model"] == "gpt-5.5"
++    assert saved["mcp_servers"]["other"]["command"] == "other"
++    assert saved["mcp_servers"]["repowise"]["command"] == "repowise"
++
++
++def test_save_codex_mcp_config_rejects_invalid_existing_file(tmp_path: Path) -> None:
++    config_path = tmp_path / ".codex" / "config.toml"
++    config_path.parent.mkdir(parents=True)
++    original = 'model = "gpt-5.5"\nmodel = "duplicate"\n'
++    config_path.write_text(original, encoding="utf-8")
++
++    with pytest.raises(click.ClickException, match=re.escape(str(config_path))):
++        mcp_config.save_codex_mcp_config(tmp_path)
++
++    assert config_path.read_text(encoding="utf-8") == original
++
++
++def test_generate_codex_hooks_config_uses_supported_events_only() -> None:
++    config = mcp_config.generate_codex_hooks_config()
++    hooks = config["hooks"]
++
++    assert set(hooks) == {"SessionStart", "UserPromptSubmit", "PostToolUse"}
++    assert hooks["SessionStart"][0]["matcher"] == "startup|resume|clear"
++    assert hooks["PostToolUse"][0]["matcher"] == "Bash"
++    assert hooks["PostToolUse"][1]["matcher"] == "apply_patch|Edit|Write"
++    assert [
++        hook["timeout"]
++        for entries in hooks.values()
++        for entry in entries
++        for hook in entry["hooks"]
++    ] == [30] * 4
++
++
++def test_save_codex_hooks_config_creates_hooks_json_and_feature_flag(tmp_path: Path) -> None:
++    hooks_path = mcp_config.save_codex_hooks_config(tmp_path)
++
++    assert hooks_path == tmp_path / ".codex" / "hooks.json"
++    saved_hooks = json.loads(hooks_path.read_text(encoding="utf-8"))
++    assert "PreToolUse" not in saved_hooks["hooks"]
++    assert saved_hooks["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == (
++        "repowise-augment --client codex"
++    )
++
++    saved_config = tomllib.loads((tmp_path / ".codex" / "config.toml").read_text())
++    assert saved_config["features"]["hooks"] is True
++    assert "hooks" not in saved_config
++
++
++def test_save_codex_hooks_config_merges_without_duplicates(tmp_path: Path) -> None:
++    hooks_path = tmp_path / ".codex" / "hooks.json"
++    hooks_path.parent.mkdir(parents=True)
++    hooks_path.write_text(
++        json.dumps(
++            {
++                "hooks": {
++                    "SessionStart": [
++                        {
++                            "matcher": "startup",
++                            "hooks": [{"type": "command", "command": "echo existing"}],
++                        }
++                    ]
++                },
++                "custom": {"preserved": True},
++            }
++        ),
++        encoding="utf-8",
++    )
++    config_path = tmp_path / ".codex" / "config.toml"
++    config_path.write_text("[features]\nfoo = true\n", encoding="utf-8")
++
++    mcp_config.save_codex_hooks_config(tmp_path)
++    mcp_config.save_codex_hooks_config(tmp_path)
++
++    saved_hooks = json.loads(hooks_path.read_text(encoding="utf-8"))
++    assert saved_hooks["custom"] == {"preserved": True}
++    assert saved_hooks["hooks"]["SessionStart"][0]["matcher"] == "startup"
++    repowise_commands = [
++        hook["command"]
++        for entries in saved_hooks["hooks"].values()
++        for entry in entries
++        for hook in entry["hooks"]
++        if hook["command"] == "repowise-augment --client codex"
++    ]
++    assert len(repowise_commands) == 4
++
++    saved_config = tomllib.loads(config_path.read_text(encoding="utf-8"))
++    assert saved_config["features"]["foo"] is True
++    assert saved_config["features"]["hooks"] is True
++
++
++def test_save_codex_hooks_config_rejects_invalid_existing_file(tmp_path: Path) -> None:
++    hooks_path = tmp_path / ".codex" / "hooks.json"
++    hooks_path.parent.mkdir(parents=True)
++    original = '{\n  "hooks": {},\n}\n'
++    hooks_path.write_text(original, encoding="utf-8")
++
++    with pytest.raises(click.ClickException, match=re.escape(str(hooks_path))):
++        mcp_config.save_codex_hooks_config(tmp_path)
++
++    assert hooks_path.read_text(encoding="utf-8") == original
++
++
++def test_codex_detection_requires_binary(monkeypatch: pytest.MonkeyPatch) -> None:
++    monkeypatch.setattr("shutil.which", lambda _cmd: None)
++
++    assert not mcp_config.is_codex_cli_installed()
++    assert not mcp_config.is_codex_logged_in()
++
++
++def test_codex_detection_uses_login_status(monkeypatch: pytest.MonkeyPatch) -> None:
++    calls: list[list[str]] = []
++
++    def fake_run(args: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
++        calls.append(args)
++        if args == ["codex", "--version"]:
++            return subprocess.CompletedProcess(args, 0, stdout="codex-cli 0.128.0", stderr="")
++        if args == ["codex", "login", "status"]:
++            return subprocess.CompletedProcess(
++                args, 0, stdout="Logged in using ChatGPT", stderr=""
++            )
++        return subprocess.CompletedProcess(args, 1, stdout="", stderr="")
++
++    monkeypatch.setattr("shutil.which", lambda cmd: "codex" if cmd == "codex" else None)
++    monkeypatch.setattr("subprocess.run", fake_run)
++
++    assert mcp_config.is_codex_cli_installed()
++    assert mcp_config.is_codex_logged_in()
++    assert ["codex", "login", "status"] in calls
++
++
++def test_codex_login_detection_uses_exit_code_not_text(
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    monkeypatch.setattr("shutil.which", lambda cmd: "codex" if cmd == "codex" else None)
++
++    def fake_run(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
++        if args == ["codex", "--version"]:
++            return subprocess.CompletedProcess(args, 0, stdout="codex-cli 0.130.0", stderr="")
++        if args == ["codex", "login", "status"]:
++            return subprocess.CompletedProcess(args, 0, stdout="Authenticated", stderr="")
++        raise AssertionError(f"Unexpected args: {args}")
++
++    monkeypatch.setattr("subprocess.run", fake_run)
++
++    assert mcp_config.is_codex_logged_in()
++
++
++def test_codex_login_detection_fails_on_nonzero_status(
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    monkeypatch.setattr("shutil.which", lambda cmd: "codex" if cmd == "codex" else None)
++
++    def fake_run(args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
++        if args == ["codex", "--version"]:
++            return subprocess.CompletedProcess(args, 0, stdout="codex-cli 0.130.0", stderr="")
++        if args == ["codex", "login", "status"]:
++            return subprocess.CompletedProcess(args, 1, stdout="Logged in cached text", stderr="")
++        raise AssertionError(f"Unexpected args: {args}")
++
++    monkeypatch.setattr("subprocess.run", fake_run)
++
++    assert not mcp_config.is_codex_logged_in()
++
++
+ # ---------------------------------------------------------------------------
+ # Root .mcp.json
+ # ---------------------------------------------------------------------------
+diff --git a/tests/unit/generation/test_agents_md.py b/tests/unit/generation/test_agents_md.py
+new file mode 100644
+index 00000000..443281a2
+--- /dev/null
++++ b/tests/unit/generation/test_agents_md.py
+@@ -0,0 +1,64 @@
++from __future__ import annotations
++
++from repowise.core.generation.editor_files.agents_md import AgentsMdGenerator
++from repowise.core.generation.editor_files.data import EditorFileData
++
++
++def _data() -> EditorFileData:
++    return EditorFileData(
++        repo_name="demo-repo",
++        indexed_at="2026-05-03",
++        indexed_commit="abc1234",
++        architecture_summary="A small service.",
++        build_commands={"test": "pytest"},
++    )
++
++
++def test_agents_md_renders_repowise_workflows() -> None:
++    rendered = AgentsMdGenerator().render(_data())
++
++    assert "get_overview()" in rendered
++    assert "search_codebase" in rendered
++    assert "get_context" in rendered
++    assert "get_risk" in rendered
++    assert "get_why" in rendered
++    assert "get_dead_code" in rendered
++
++
++def test_agents_md_writes_repo_root_file(tmp_path) -> None:
++    written = AgentsMdGenerator().write(tmp_path, _data())
++
++    assert written == tmp_path / "AGENTS.md"
++    content = written.read_text(encoding="utf-8")
++    assert "<!-- REPOWISE_AGENTS:START" in content
++    assert "<!-- REPOWISE_AGENTS:END -->" in content
++    assert "demo-repo" in content
++
++
++def test_agents_md_preserves_user_content(tmp_path) -> None:
++    target = tmp_path / "AGENTS.md"
++    target.write_text("# Team Rules\n\nKeep this instruction.\n", encoding="utf-8")
++
++    AgentsMdGenerator().write(tmp_path, _data())
++
++    content = target.read_text(encoding="utf-8")
++    assert "Keep this instruction." in content
++    assert content.count("<!-- REPOWISE_AGENTS:START") == 1
++
++
++def test_agents_md_replaces_only_managed_section(tmp_path) -> None:
++    gen = AgentsMdGenerator()
++    marker_start = gen.MARKER_START_FMT.format(tag=gen.marker_tag)
++    marker_end = gen.MARKER_END_FMT.format(tag=gen.marker_tag)
++    target = tmp_path / "AGENTS.md"
++    target.write_text(
++        f"# Team Rules\n\nKeep this.\n\n{marker_start}\nold managed text\n{marker_end}\n",
++        encoding="utf-8",
++    )
++
++    gen.write(tmp_path, _data())
++
++    content = target.read_text(encoding="utf-8")
++    assert "Keep this." in content
++    assert "old managed text" not in content
++    assert "demo-repo" in content
+diff --git a/tests/unit/generation/test_cost_tracker.py b/tests/unit/generation/test_cost_tracker.py
+new file mode 100644
+index 00000000..0532865c
+--- /dev/null
++++ b/tests/unit/generation/test_cost_tracker.py
+@@ -0,0 +1,20 @@
++"""Unit tests for runtime LLM cost tracking."""
++
++from __future__ import annotations
++
++from repowise.core.generation.cost_tracker import CostTracker
++
++
++async def test_codex_cli_records_tokens_with_zero_cost():
++    tracker = CostTracker()
++
++    cost = await tracker.record(
++        model="codex_cli/default",
++        input_tokens=1_000,
++        output_tokens=500,
++        operation="doc_generation",
++    )
++
++    assert cost == 0.0
++    assert tracker.session_cost == 0.0
++    assert tracker.session_tokens == 1_500
+diff --git a/tests/unit/test_providers/test_codex_cli_provider.py b/tests/unit/test_providers/test_codex_cli_provider.py
+new file mode 100644
+index 00000000..08132b19
+--- /dev/null
++++ b/tests/unit/test_providers/test_codex_cli_provider.py
+@@ -0,0 +1,268 @@
++"""Unit tests for CodexCliProvider.
++
++All tests mock the Codex subprocess; no real Codex CLI calls are made.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import json
++from typing import Any
++
++import pytest
++
++from repowise.core.providers.llm.base import GeneratedResponse, ProviderError
++from repowise.core.providers.llm.codex_cli import CodexCliProvider
++
++
++class FakeProcess:
++    def __init__(
++        self,
++        *,
++        returncode: int = 0,
++        stdout: str = "",
++        stderr: str = "",
++        on_communicate: Any | None = None,
++    ) -> None:
++        self.returncode = returncode
++        self._stdout = stdout
++        self._stderr = stderr
++        self._on_communicate = on_communicate
++        self.stdin_input: bytes | None = None
++        self.killed = False
++
++    async def communicate(self, input: bytes | None = None) -> tuple[bytes, bytes]:
++        self.stdin_input = input
++        if self._on_communicate is not None:
++            await self._on_communicate()
++        return self._stdout.encode("utf-8"), self._stderr.encode("utf-8")
++
++    def kill(self) -> None:
++        self.killed = True
++
++    async def wait(self) -> int:
++        return self.returncode
++
++
++def _jsonl(*events: dict[str, Any], noise: bool = False) -> str:
++    lines = [json.dumps(event) for event in events]
++    if noise:
++        lines.insert(1, "warning: this is not JSON")
++    return "\n".join(lines) + "\n"
++
++
++def _success_jsonl(text: str = "OK") -> str:
++    return _jsonl(
++        {"type": "thread.started", "thread_id": "t1"},
++        {"type": "turn.started"},
++        {"type": "item.completed", "item": {"type": "agent_message", "text": text}},
++        {
++            "type": "turn.completed",
++            "usage": {
++                "input_tokens": 120,
++                "cached_input_tokens": 30,
++                "output_tokens": 40,
++                "reasoning_output_tokens": 10,
++            },
++        },
++        noise=True,
++    )
++
++
++def test_provider_name_and_default_model(monkeypatch, tmp_path):
++    monkeypatch.setattr("shutil.which", lambda cmd: "codex" if cmd == "codex" else None)
++
++    provider = CodexCliProvider(repo_path=tmp_path)
++
++    assert provider.provider_name == "codex_cli"
++    assert provider.model_name == "codex_cli/default"
++
++
++def test_custom_model_is_normalized_for_attribution(monkeypatch, tmp_path):
++    monkeypatch.setattr("shutil.which", lambda cmd: "codex" if cmd == "codex" else None)
++
++    assert CodexCliProvider(model="gpt-5.5", repo_path=tmp_path).model_name == "codex_cli/gpt-5.5"
++    assert (
++        CodexCliProvider(model="codex_cli/gpt-5.5", repo_path=tmp_path).model_name
++        == "codex_cli/gpt-5.5"
++    )
++    assert (
++        CodexCliProvider(model="codex_cli/default", repo_path=tmp_path).model_name
++        == "codex_cli/default"
++    )
++
++
++def test_missing_cli_raises(monkeypatch, tmp_path):
++    monkeypatch.setattr("shutil.which", lambda _cmd: None)
++
++    with pytest.raises(ProviderError, match="Codex CLI not found"):
++        CodexCliProvider(repo_path=tmp_path)
++
++
++async def test_generate_invokes_codex_exec_with_stdin(monkeypatch, tmp_path):
++    monkeypatch.setattr("shutil.which", lambda cmd: "codex" if cmd == "codex" else None)
++    captured: dict[str, Any] = {}
++    proc = FakeProcess(stdout=_success_jsonl("Hello from Codex"), stderr="plugin sync warning")
++
++    async def fake_exec(*args: str, **kwargs: Any) -> FakeProcess:
++        captured["args"] = args
++        captured["kwargs"] = kwargs
++        return proc
++
++    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
++
++    provider = CodexCliProvider(model="gpt-5.5", repo_path=tmp_path)
++    result = await provider.generate("system rules", "user context", reasoning="minimal")
++
++    assert isinstance(result, GeneratedResponse)
++    assert result.content == "Hello from Codex"
++    assert proc.stdin_input is not None
++    prompt = proc.stdin_input.decode("utf-8")
++    assert "system rules" in prompt
++    assert "user context" in prompt
++    args = list(captured["args"])
++    assert args[:6] == ["codex", "exec", "--ephemeral", "--sandbox", "read-only", "--json"]
++    assert args[args.index("--cd") + 1] == str(tmp_path.resolve())
++    assert args[args.index("--config") + 1] == 'model_reasoning_effort="low"'
++    assert args[args.index("--model") + 1] == "gpt-5.5"
++    assert args[-1] == "-"
++    assert captured["kwargs"]["stdin"] == asyncio.subprocess.PIPE
++
++
++async def test_generate_uses_jsonl_usage_and_ignores_noise(monkeypatch, tmp_path):
++    monkeypatch.setattr("shutil.which", lambda cmd: "codex" if cmd == "codex" else None)
++
++    async def fake_exec(*_args: str, **_kwargs: Any) -> FakeProcess:
++        return FakeProcess(stdout=_success_jsonl("OK"))
++
++    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
++
++    result = await CodexCliProvider(repo_path=tmp_path).generate("sys", "user")
++
++    assert result.input_tokens == 120
++    assert result.output_tokens == 40
++    assert result.cached_tokens == 30
++    assert result.usage["reasoning_output_tokens"] == 10
++    assert result.usage["source"] == "codex_exec"
++    assert "estimated" not in result.usage
++
++
++async def test_generate_marks_missing_usage_as_estimated(monkeypatch, tmp_path):
++    monkeypatch.setattr("shutil.which", lambda cmd: "codex" if cmd == "codex" else None)
++
++    async def fake_exec(*_args: str, **_kwargs: Any) -> FakeProcess:
++        return FakeProcess(
++            stdout=_jsonl(
++                {
++                    "type": "item.completed",
++                    "item": {"type": "agent_message", "text": "OK"},
++                }
++            )
++        )
++
++    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
++
++    result = await CodexCliProvider(repo_path=tmp_path).generate("sys", "user")
++
++    assert result.input_tokens == 0
++    assert result.output_tokens == 0
++    assert result.usage["estimated"] is True
++
++
++async def test_generate_raises_on_nonzero_exit(monkeypatch, tmp_path):
++    monkeypatch.setattr("shutil.which", lambda cmd: "codex" if cmd == "codex" else None)
++
++    async def fake_exec(*_args: str, **_kwargs: Any) -> FakeProcess:
++        return FakeProcess(returncode=1, stdout="", stderr="not logged in")
++
++    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
++
++    with pytest.raises(ProviderError, match="not logged in"):
++        await CodexCliProvider(repo_path=tmp_path).generate("sys", "user")
++
++
++async def test_generate_hides_structured_error_stdout(monkeypatch, tmp_path):
++    monkeypatch.setattr("shutil.which", lambda cmd: "codex" if cmd == "codex" else None)
++
++    async def fake_exec(*_args: str, **_kwargs: Any) -> FakeProcess:
++        return FakeProcess(returncode=2, stdout='{"error":{"message":"secret details"}}')
++
++    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
++
++    with pytest.raises(ProviderError, match="codex exec exited with 2") as exc_info:
++        await CodexCliProvider(repo_path=tmp_path).generate("sys", "user")
++
++    assert "secret details" not in str(exc_info.value)
++
++
++async def test_generate_raises_when_jsonl_has_no_agent_message(monkeypatch, tmp_path):
++    monkeypatch.setattr("shutil.which", lambda cmd: "codex" if cmd == "codex" else None)
++
++    async def fake_exec(*_args: str, **_kwargs: Any) -> FakeProcess:
++        return FakeProcess(stdout=_jsonl({"type": "turn.completed", "usage": {}}))
++
++    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
++
++    with pytest.raises(ProviderError, match="no agent_message"):
++        await CodexCliProvider(repo_path=tmp_path).generate("sys", "user")
++
++
++async def test_generate_serializes_subprocess_calls(monkeypatch, tmp_path):
++    monkeypatch.setattr("shutil.which", lambda cmd: "codex" if cmd == "codex" else None)
++    active = 0
++    max_active = 0
++
++    async def on_communicate() -> None:
++        nonlocal active, max_active
++        active += 1
++        max_active = max(max_active, active)
++        await asyncio.sleep(0.01)
++        active -= 1
++
++    async def fake_exec(*_args: str, **_kwargs: Any) -> FakeProcess:
++        return FakeProcess(stdout=_success_jsonl("OK"), on_communicate=on_communicate)
++
++    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
++    provider = CodexCliProvider(repo_path=tmp_path)
++
++    await asyncio.gather(
++        provider.generate("sys", "user 1"),
++        provider.generate("sys", "user 2"),
++    )
++
++    assert max_active == 1
++
++
++async def test_generate_times_out_and_kills_codex_exec(monkeypatch, tmp_path):
++    monkeypatch.setattr("shutil.which", lambda cmd: "codex" if cmd == "codex" else None)
++    monkeypatch.setattr(
++        "repowise.core.providers.llm.codex_cli._EXEC_TIMEOUT_SECONDS",
++        0.01,
++    )
++
++    async def on_communicate() -> None:
++        await asyncio.sleep(1)
++
++    proc = FakeProcess(stdout="", on_communicate=on_communicate)
++
++    async def fake_exec(*_args: str, **_kwargs: Any) -> FakeProcess:
++        return proc
++
++    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
++
++    with pytest.raises(ProviderError, match="timed out"):
++        await CodexCliProvider(repo_path=tmp_path).generate("sys", "user")
++
++    assert proc.killed
++
++
++async def test_generate_rejects_unsupported_reasoning_off(monkeypatch, tmp_path):
++    monkeypatch.setattr("shutil.which", lambda cmd: "codex" if cmd == "codex" else None)
++
++    async def fake_exec(*_args: str, **_kwargs: Any) -> FakeProcess:
++        raise AssertionError("subprocess should not be started")
++
++    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
++
++    with pytest.raises(ProviderError, match="reasoning='off' is not supported"):
++        await CodexCliProvider(repo_path=tmp_path).generate("sys", "user", reasoning="off")
+diff --git a/tests/unit/test_providers/test_cost_estimator.py b/tests/unit/test_providers/test_cost_estimator.py
+index d5ddd950..26e7e5db 100644
+--- a/tests/unit/test_providers/test_cost_estimator.py
++++ b/tests/unit/test_providers/test_cost_estimator.py
+@@ -29,6 +29,8 @@
+         # Free/local models
+         ("mock", 0.0, 0.0),
+         ("llama3", 0.0, 0.0),
++        ("codex_cli/default", 0.0, 0.0),
++        ("codex_cli/gpt-5.5", 0.0, 0.0),
+     ],
+ )
+ def test_lookup_cost(model, expected_input, expected_output):
+diff --git a/website/cli-reference.md b/website/cli-reference.md
+index d0906e12..6cba04e6 100644
+--- a/website/cli-reference.md
++++ b/website/cli-reference.md
+@@ -44,7 +44,7 @@ repowise init [PATH] [OPTIONS]
+ 
+ | Flag | Type | Default | Description |
+ |------|------|---------|-------------|
+-| `--provider` | string | auto | LLM provider: `anthropic`, `openai`, `openrouter`, `gemini`, `deepseek`, `ollama`, `litellm`, `mock` |
++| `--provider` | string | auto | LLM provider: `anthropic`, `openai`, `openrouter`, `gemini`, `deepseek`, `ollama`, `litellm`, `codex_cli`, `mock` |
+ | `--model` | string | — | Model override (e.g., `claude-sonnet-4-6`, `gpt-4.1`) |
+ | `--embedder` | choice | auto | Embedding provider: `gemini`, `openai`, `mock` |
+ | `--index-only` | flag | false | Skip LLM generation — parse, graph, git, dead code only |
+@@ -61,6 +61,8 @@ repowise init [PATH] [OPTIONS]
+ | `--commit-limit` | int | 500 | Max commits per file for git analysis (max 5000, saved to config) |
+ | `--follow-renames` | flag | false | Track file renames in git history (saved to config) |
+ | `--no-claude-md` | flag | false | Skip generating `.claude/CLAUDE.md` |
++| `--agents` / `--no-agents` | flag | config | Generate or skip managed `AGENTS.md` for Codex |
++| `--codex` / `--no-codex` | flag | prompt | Generate or skip project-local Codex MCP/hooks setup |
+ | `--yes` / `-y` | flag | false | Skip the cost confirmation prompt |
+ 
+ ### Examples
+@@ -78,6 +80,9 @@ repowise init --provider openai --model qwen3 --reasoning off
+ # OpenRouter with minimal reasoning effort
+ repowise init --provider openrouter --model openai/gpt-5 --reasoning minimal
+ 
++# Use the authenticated Codex CLI subscription
++repowise init --provider codex_cli --codex --yes
++
+ # Analysis only — free, no API key needed
+ repowise init --index-only
+ 
+@@ -102,7 +107,7 @@ repowise init --resume
+ 1. **Ingestion** — parses all files with tree-sitter, builds dependency graph
+ 2. **Analysis** — git churn/ownership, dead code detection, decision mining
+ 3. **Generation** — LLM writes wiki pages at repo/module/file level (skipped with `--index-only`)
+-4. **Persistence** — writes to SQLite, builds vector index, generates `.claude/CLAUDE.md`
++4. **Persistence** — writes to SQLite, builds vector index, generates `.claude/CLAUDE.md` and `AGENTS.md`, registers editor MCP/hooks config
+ 
+ ### Provider auto-detection
+ 
+@@ -131,6 +136,7 @@ repowise update [PATH] [OPTIONS]
+ | `--reasoning` | choice | auto | Reasoning mode for supported providers: `auto`, `off`, or `minimal` |
+ | `--cascade-budget` | int | auto | Max pages to regenerate from cascading changes |
+ | `--dry-run` | flag | false | Show affected pages without regenerating |
++| `--agents` / `--no-agents` | flag | config | Generate or skip managed `AGENTS.md` after update |
+ 
+ ### Examples
+ 
+@@ -186,10 +192,12 @@ repowise mcp [PATH] [OPTIONS]
+ ### Examples
+ 
+ ```bash
+-repowise mcp                              # stdio (Claude Code, Cursor, Cline)
++repowise mcp                              # stdio (Claude Code, Codex, Cursor, Cline)
+ repowise mcp --transport sse --port 7338  # SSE for web clients
+ ```
+ 
++When `PATH` is omitted, `repowise mcp` resolves upward to the nearest initialized `.repowise` repository. Codex project config uses this with `cwd` set to the repo root.
++
+ See [MCP Server →](mcp-server) for editor-specific configuration.
+ 
+ ---
+@@ -398,6 +406,8 @@ repowise generate-claude-md --stdout # Preview without writing
+ 
+ See [CLAUDE.md Generator →](claude-md-generator) for how the file is structured.
+ 
++`repowise init` and `repowise update` also generate managed `AGENTS.md` for Codex by default. Use `--agents` / `--no-agents` on either command to control it.
++
+ ---
+ 
+ ## `export`
+@@ -433,6 +443,9 @@ Settings are saved to `.repowise/config.yaml` after the first `init`. You can ed
+ provider: anthropic
+ model: claude-sonnet-4-6
+ embedder: gemini
++editor_files:
++  claude_md: true
++  agents_md: true
+ exclude_patterns:
+   - vendor/
+   - "*.generated.*"
+diff --git a/website/codex.md b/website/codex.md
+new file mode 100644
+index 00000000..ccbe6803
+--- /dev/null
++++ b/website/codex.md
+@@ -0,0 +1,120 @@
++---
++layout: default
++title: Codex Integration
++nav_order: 7
++---
++
++# Codex Integration
++{: .no_toc }
++
++Use Repowise with Codex MCP, lifecycle hooks, `AGENTS.md`, the `codex_cli` provider, and a local plugin.
++{: .fs-6 .fw-300 }
++
++---
++
++## Table of contents
++{: .no_toc .text-delta }
++
++1. TOC
++{:toc}
++
++---
++
++## Quick setup
++
++```bash
++npm install -g @openai/codex
++codex login
++codex login status
++
++cd /path/to/your-repo
++repowise init --codex --provider codex_cli --yes
++```
++
++`--codex` generates project-local `.codex/config.toml` and `.codex/hooks.json`. It does not write to global `~/.codex/config.toml`.
++
++## MCP
++
++Repowise writes:
++
++```toml
++[mcp_servers.repowise]
++command = "repowise"
++args = ["mcp"]
++cwd = "/path/to/your-repo"
++startup_timeout_sec = 20
++
++[features]
++hooks = true
++```
++
++`repowise mcp` can run without a path because it resolves upward to the nearest `.repowise` repository.
++
++Smoke check:
++
++```bash
++codex mcp list
++```
++
++## Hooks
++
++Codex hooks are written to `.codex/hooks.json`:
++
++| Event | Purpose |
++|-------|---------|
++| `SessionStart` | Add Repowise MCP workflow guidance |
++| `UserPromptSubmit` | Remind Codex that Repowise context is available |
++| `PostToolUse` `Bash` | Detect git operations and stale wiki state |
++| `PostToolUse` `apply_patch\|Edit\|Write` | Remind after edits that context may need refresh |
++
++Repowise keeps Codex hooks focused on lifecycle guidance and freshness checks rather than trying to reuse Claude-specific search enrichment.
++
++## Provider
++
++`codex_cli` uses your local Codex CLI auth/subscription:
++
++```bash
++repowise init --provider codex_cli --yes
++```
++
++It runs:
++
++```bash
++codex exec --ephemeral --sandbox read-only --json --cd <repo> -
++```
++
++Repowise records token usage from Codex JSONL and treats `codex_cli/*` cost as `$0.00`. `--model` is passed to Codex only when explicitly configured.
++
++## Plugin and skills
++
++The Repowise repository includes a local Codex plugin at `plugins/codex` and a marketplace entry at `.agents/plugins/marketplace.json`.
++
++```bash
++cd /path/to/repowise
++codex plugin marketplace add .
++codex
++/plugins
++```
++
++Install Repowise from the plugin browser. The plugin bundles MCP config, lifecycle hooks, and Codex-neutral skills. It does not add Claude-style slash commands. Plugin-bundled hooks are opt-in in current Codex releases; enable `[features] plugin_hooks = true` if you want hooks loaded from an installed plugin.
++
++## AGENTS.md
++
++`repowise init` and `repowise update` generate managed `AGENTS.md` by default. Use:
++
++```bash
++repowise init --no-agents
++repowise update --agents
++```
++
++User content outside the Repowise managed markers is preserved.
++
++## Official docs
++
++- [Codex hooks](https://developers.openai.com/codex/hooks)
++- [Codex MCP](https://developers.openai.com/codex/mcp)
++- [Codex non-interactive mode](https://developers.openai.com/codex/noninteractive)
++- [Codex plugins](https://developers.openai.com/codex/plugins)
++- [Build plugins](https://developers.openai.com/codex/plugins/build)
++- [Codex skills](https://developers.openai.com/codex/skills)
++- [AGENTS.md](https://developers.openai.com/codex/guides/agents-md)
+diff --git a/website/concepts.md b/website/concepts.md
+index 3593cb3b..cf7a28c6 100644
+--- a/website/concepts.md
++++ b/website/concepts.md
+@@ -161,7 +161,7 @@ The dependency graph is loaded into memory at server startup for fast traversal.
+ 
+ ## The MCP server
+ 
+-The MCP server sits on top of the persistence layer and exposes everything to AI coding assistants via 10 tools. It's the primary interface between repowise and Claude Code, Cursor, Cline, or any other MCP-compatible editor.
++The MCP server sits on top of the persistence layer and exposes everything to AI coding assistants via 10 tools. It's the primary interface between repowise and Claude Code, Codex, Cursor, Cline, or any other MCP-compatible editor.
+ 
+ When you run `repowise mcp`, the server starts in stdio mode and your editor can begin calling tools. The tools are designed to answer the questions an AI needs to make good decisions about your code — not just "what is this file" but "should I edit it", "why is it structured this way", and "what will break if I change it".
+ 
+diff --git a/website/configuration.md b/website/configuration.md
+index dededdd7..579aaf45 100644
+--- a/website/configuration.md
++++ b/website/configuration.md
+@@ -38,6 +38,21 @@ repowise adds `.repowise/` to your `.gitignore` automatically. The directory sho
+ 
+ ---
+ 
++## Codex project files
++
++When the Codex CLI is installed and logged in, interactive `repowise init` can also write project-local Codex files. Non-interactive runs require `--codex`:
++
++```text
++.codex/
++├── config.toml      # [mcp_servers.repowise] and [features] hooks = true
++└── hooks.json       # SessionStart, UserPromptSubmit, PostToolUse hooks
++AGENTS.md            # Managed Codex instructions; user content is preserved
++```
++
++Use `--codex` or `--no-codex` to control `.codex/` generation. Use `--agents` or `--no-agents` to control `AGENTS.md`. Repowise does not write global `~/.codex/config.toml`.
++
++---
++
+ ## `config.yaml`
+ 
+ The main configuration file. Created after first `init`, updated when you pass `--commit-limit` or `--follow-renames` flags.
+@@ -122,6 +137,20 @@ repowise init --provider openrouter --model x-ai/grok-4 --reasoning off
+ 
+ ---
+ 
++### Codex CLI
++
++Use your authenticated Codex CLI subscription for generation without an OpenAI API key:
++
++```bash
++npm install -g @openai/codex
++codex login
++repowise init --provider codex_cli --codex --yes
++```
++
++`codex_cli` runs `codex exec --ephemeral --sandbox read-only --json --cd <repo> -`, reads prompts from stdin, records token usage, and reports `$0.00` Repowise cost for `codex_cli/*` models. Pass `--model` only when you want to override the Codex CLI default.
++
++---
++
+ ### Gemini (Google)
+ 
+ ```bash
+@@ -179,6 +208,8 @@ If you don't pass `--provider`, repowise detects your provider by checking:
+ 2. `provider` in `.repowise/config.yaml`
+ 3. API key environment variables, in order: `ANTHROPIC_API_KEY` → `OPENAI_API_KEY` → `OLLAMA_BASE_URL` → `GEMINI_API_KEY`
+ 
++For Codex CLI, set `REPOWISE_PROVIDER=codex_cli` or pass `--provider codex_cli`; Repowise does not auto-select it from `codex login status` because Codex setup and LLM provider selection are separate choices.
++
+ ---
+ 
+ ## Embeddings (for semantic search)
+diff --git a/website/getting-started.md b/website/getting-started.md
+index 77e84c49..14136c59 100644
+--- a/website/getting-started.md
++++ b/website/getting-started.md
+@@ -22,13 +22,14 @@ The 60-second path to codebase intelligence.
+ 
+ ## Choose your path
+ 
+-There are three ways to set up repowise. Pick the one that fits how you work.
++There are four ways to set up repowise. Pick the one that fits how you work.
+ 
+ | Path | Best for | Time |
+ |------|----------|------|
+ | [Claude Code Plugin](#path-1-claude-code-plugin) | Claude Code users | ~30 seconds |
+ | [pip + Claude Code](#path-2-pip--claude-code) | Manual control + Claude Code | ~2 minutes |
+-| [Standalone CLI](#path-3-standalone-cli) | No Claude Code, or CI use | ~2 minutes |
++| [pip + Codex CLI](#path-3-pip--codex-cli) | Codex users with a CLI subscription | ~2 minutes |
++| [Standalone CLI](#path-4-standalone-cli) | No AI editor, or CI use | ~2 minutes |
+ 
+ ---
+ 
+@@ -145,7 +146,49 @@ To verify the MCP server is connected:
+ 
+ ---
+ 
+-## Path 3: Standalone CLI
++## Path 3: pip + Codex CLI
++
++Use your existing Codex CLI login for generation, MCP, hooks, skills, and `AGENTS.md`.
++
++### Step 1: Install and authenticate
++
++```bash
++pip install repowise
++npm install -g @openai/codex
++codex login
++codex login status
++```
++
++### Step 2: Index your repo
++
++```bash
++cd /path/to/your-repo
++repowise init --codex --provider codex_cli --yes
++```
++
++This writes project-local `.codex/config.toml`, `.codex/hooks.json`, and managed `AGENTS.md`. It does not write to global `~/.codex/config.toml`.
++
++### Step 3: Verify Codex can see Repowise
++
++```bash
++codex mcp list
++codex exec --ephemeral --sandbox read-only --json "Return exactly OK"
++```
++
++For the local plugin and skills, add the Repowise source checkout as a marketplace and install Repowise from the Codex plugin browser:
++
++```bash
++cd /path/to/repowise
++codex plugin marketplace add .
++codex
++/plugins
++```
++
++See [Codex Integration →](codex) for hooks, provider behavior, and plugin details.
++
++---
++
++## Path 4: Standalone CLI
+ 
+ Use repowise without Claude Code — with the web dashboard, REST API, or any MCP-compatible editor.
+ 
+@@ -219,4 +262,5 @@ Or in Claude Code, run `/repowise:update` — Claude detects changed files and r
+ 
+ - [Core concepts →](concepts) — understand the four layers
+ - [CLI reference →](cli-reference) — all commands and flags
+-- [MCP server →](mcp-server) — connecting to Claude Code, Cursor, Cline
++- [MCP server →](mcp-server) — connecting to Claude Code, Codex, Cursor, Cline
++- [Codex integration →](codex) — Codex MCP, hooks, provider, plugin, and skills
+diff --git a/website/index.md b/website/index.md
+index 1534f8a3..46ae0d46 100644
+--- a/website/index.md
++++ b/website/index.md
+@@ -24,7 +24,7 @@ repowise generates and maintains a structured wiki for any codebase. It tracks c
+ | **Git intelligence** | Churn hotspots, ownership, bus factor, change patterns |
+ | **Dead code detection** | Finds confirmed unused exports, functions, and types |
+ | **Decision intelligence** | Captures *why* code is structured the way it is |
+-| **MCP server** | 10 tools for AI assistants (Claude Code, Cursor, Windsurf, Cline) |
++| **MCP server** | 10 tools for AI assistants (Claude Code, Codex, Cursor, Windsurf, Cline) |
+ | **Web dashboard** | Browse wiki, search, and explore architecture diagrams |
+ | **Multi-language** | Python, TypeScript, JavaScript, Go, Rust, Java, C/C++, Kotlin, Ruby, C#, Swift, Scala, PHP |
+ 
+@@ -43,5 +43,6 @@ pip install repowise
+ | | |
+ |---|---|
+ | [**60-second quickstart →**](getting-started) | The fastest path to a working setup. |
++| [**Codex integration →**](codex) | Codex MCP, hooks, provider, plugin, skills, and AGENTS.md. |
+ | [**Core concepts →**](concepts) | Understand the four layers before diving in. |
+ | [**CLI reference →**](cli-reference) | Every command, flag, and option. |
+diff --git a/website/mcp-server.md b/website/mcp-server.md
+index e1d421ec..681a66e5 100644
+--- a/website/mcp-server.md
++++ b/website/mcp-server.md
+@@ -7,7 +7,7 @@ nav_order: 5
+ # MCP Server
+ {: .no_toc }
+ 
+-Connect repowise to Claude Code, Cursor, Cline, or any MCP-compatible editor.
++Connect repowise to Claude Code, Codex, Cursor, Cline, or any MCP-compatible editor.
+ {: .fs-6 .fw-300 }
+ 
+ ---
+@@ -65,6 +65,39 @@ If you're running repowise for the current directory, you can omit the path:
+ }
+ ```
+ 
++### Codex
++
++`repowise init` offers Codex setup in interactive runs when `codex --version` and `codex login status` succeed. Non-interactive runs require `--codex`. You can force or skip it:
++
++```bash
++repowise init --codex
++repowise init --no-codex
++```
++
++Generated project-local files:
++
++```text
++.codex/config.toml
++.codex/hooks.json
++AGENTS.md
++```
++
++The Codex MCP config uses no-path mode:
++
++```toml
++[mcp_servers.repowise]
++command = "repowise"
++args = ["mcp"]
++cwd = "/path/to/your-repo"
++startup_timeout_sec = 20
++```
++
++In no-path mode, `repowise mcp` walks upward to the nearest initialized `.repowise` repository. Verify the setup with:
++
++```bash
++codex mcp list
++```
++
+ ### Cursor
+ 
+ Add to `.cursor/mcp.json` in your repo or `~/.cursor/mcp.json` globally:
+@@ -118,7 +151,7 @@ Add to Windsurf's MCP configuration:
+ 
+ ### stdio (default)
+ 
+-The default transport. The MCP server runs as a subprocess of your editor, communicating over stdin/stdout. This is the correct option for Claude Code, Cursor, Cline, and Windsurf.
++The default transport. The MCP server runs as a subprocess of your editor, communicating over stdin/stdout. This is the correct option for Claude Code, Codex, Cursor, Cline, and Windsurf.
+ 
+ ```bash
+ repowise mcp                         # stdio, current directory
+@@ -126,6 +159,8 @@ repowise mcp /path/to/repo           # stdio, specific repo
+ repowise mcp --transport stdio       # explicit
+ ```
+ 
++If the path is omitted, Repowise first searches upward for `.repowise`, then falls back to the current directory. This is useful for Codex project-local config that sets `cwd`.
++
+ ### SSE (Server-Sent Events)
+ 
+ For web-based MCP clients or headless setups where a persistent HTTP server is preferable.

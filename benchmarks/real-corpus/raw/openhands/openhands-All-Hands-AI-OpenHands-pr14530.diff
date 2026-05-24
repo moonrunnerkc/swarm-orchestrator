@@ -1,0 +1,227 @@
+diff --git a/enterprise/server/routes/org_models.py b/enterprise/server/routes/org_models.py
+index 38c574b25398..49d0152afd69 100644
+--- a/enterprise/server/routes/org_models.py
++++ b/enterprise/server/routes/org_models.py
+@@ -607,7 +607,7 @@ def validate_max_budget_per_task(cls, v: float | None) -> float | None:
+         return v
+ 
+ 
+-VALID_GIT_PROVIDERS = {'github', 'gitlab', 'bitbucket'}
++VALID_GIT_PROVIDERS = {'github', 'gitlab', 'bitbucket', 'bitbucket_data_center'}
+ 
+ 
+ class GitOrgClaimRequest(BaseModel):
+diff --git a/enterprise/server/routes/users_v1.py b/enterprise/server/routes/users_v1.py
+index 9557b5eb8526..c96e97610352 100644
+--- a/enterprise/server/routes/users_v1.py
++++ b/enterprise/server/routes/users_v1.py
+@@ -133,6 +133,8 @@ async def get_current_user_git_organizations(
+         orgs = await client.get_gitlab_groups()
+     elif provider == ProviderType.BITBUCKET:
+         orgs = await client.get_bitbucket_workspaces()
++    elif provider == ProviderType.BITBUCKET_DATA_CENTER:
++        orgs = await client.get_bitbucket_dc_projects()
+     else:
+         raise HTTPException(
+             status_code=status.HTTP_400_BAD_REQUEST,
+diff --git a/enterprise/tests/unit/server/routes/test_org_git_claims.py b/enterprise/tests/unit/server/routes/test_org_git_claims.py
+index c2df5fade6c2..c7e10571aac4 100644
+--- a/enterprise/tests/unit/server/routes/test_org_git_claims.py
++++ b/enterprise/tests/unit/server/routes/test_org_git_claims.py
+@@ -348,7 +348,7 @@ def test_valid_providers_are_accepted(self):
+         """Each supported provider is accepted and normalized to lowercase."""
+         from server.routes.org_models import GitOrgClaimRequest
+ 
+-        for provider in ['github', 'GitLab', 'BITBUCKET']:
++        for provider in ['github', 'GitLab', 'BITBUCKET', 'BITBUCKET_DATA_CENTER']:
+             req = GitOrgClaimRequest(provider=provider, git_organization='test-org')
+             assert req.provider == provider.lower().strip()
+ 
+diff --git a/enterprise/tests/unit/test_user_git_organizations.py b/enterprise/tests/unit/test_user_git_organizations.py
+index f5b96c4a1cb1..3e92a509ea4c 100644
+--- a/enterprise/tests/unit/test_user_git_organizations.py
++++ b/enterprise/tests/unit/test_user_git_organizations.py
+@@ -84,8 +84,13 @@ async def test_raises_400_when_provider_unsupported():
+             'get_installations',
+             ['my-workspace'],
+         ),
++        (
++            ProviderType.BITBUCKET_DATA_CENTER,
++            'get_installations',
++            ['PROJ'],
++        ),
+     ],
+-    ids=['github', 'gitlab', 'bitbucket'],
++    ids=['github', 'gitlab', 'bitbucket', 'bitbucket_data_center'],
+ )
+ async def test_returns_organizations_for_supported_provider(
+     provider, service_method, service_return
+diff --git a/frontend/__tests__/components/features/org/git-conversation-routing.test.tsx b/frontend/__tests__/components/features/org/git-conversation-routing.test.tsx
+index e6d585de37d7..690a9e784080 100644
+--- a/frontend/__tests__/components/features/org/git-conversation-routing.test.tsx
++++ b/frontend/__tests__/components/features/org/git-conversation-routing.test.tsx
+@@ -54,12 +54,12 @@ describe("GitConversationRouting", () => {
+   it("should render organizations from API data", () => {
+     renderWithProviders(<GitConversationRouting />);
+ 
+-    expect(
+-      screen.getByTestId("org-row-github:openhands"),
+-    ).toHaveTextContent("github/OpenHands");
+-    expect(
+-      screen.getByTestId("org-row-github:acmeco"),
+-    ).toHaveTextContent("github/AcmeCo");
++    expect(screen.getByTestId("org-row-github:openhands")).toHaveTextContent(
++      "GitHub/OpenHands",
++    );
++    expect(screen.getByTestId("org-row-github:acmeco")).toHaveTextContent(
++      "GitHub/AcmeCo",
++    );
+   });
+ 
+   it("should show claimed org with 'Claimed' label", () => {
+@@ -72,9 +72,9 @@ describe("GitConversationRouting", () => {
+   it("should show unclaimed orgs with 'Claim' label", () => {
+     renderWithProviders(<GitConversationRouting />);
+ 
+-    expect(
+-      screen.getByTestId("claim-button-github:acmeco"),
+-    ).toHaveTextContent("ORG$CLAIM");
++    expect(screen.getByTestId("claim-button-github:acmeco")).toHaveTextContent(
++      "ORG$CLAIM",
++    );
+   });
+ 
+   it("should call claim mutation when clicking claim on unclaimed org", async () => {
+@@ -100,5 +100,4 @@ describe("GitConversationRouting", () => {
+       expect.objectContaining({ onSettled: expect.any(Function) }),
+     );
+   });
+-
+ });
+diff --git a/frontend/__tests__/components/features/org/git-org-row.test.tsx b/frontend/__tests__/components/features/org/git-org-row.test.tsx
+index ce7dbbf92cc4..cfb3dce284de 100644
+--- a/frontend/__tests__/components/features/org/git-org-row.test.tsx
++++ b/frontend/__tests__/components/features/org/git-org-row.test.tsx
+@@ -43,4 +43,24 @@ describe("GitOrgRow", () => {
+     // Assert
+     expect(screen.getByTestId("claim-button-1")).toBeInTheDocument();
+   });
++
++  it("renders a readable Bitbucket Data Center provider label", () => {
++    // Arrange & Act
++    renderWithProviders(
++      <GitOrgRow
++        org={createOrg({
++          provider: "bitbucket_data_center",
++          name: "PROJ",
++        })}
++        isLast={false}
++        onClaim={vi.fn()}
++        onDisconnect={vi.fn()}
++      />,
++    );
++
++    // Assert
++    expect(screen.getByTestId("org-row-1")).toHaveTextContent(
++      "Bitbucket Data Center/PROJ",
++    );
++  });
+ });
+diff --git a/frontend/__tests__/hooks/use-git-conversation-routing.test.ts b/frontend/__tests__/hooks/use-git-conversation-routing.test.ts
+index 6050bbfca88c..ed386ab41388 100644
+--- a/frontend/__tests__/hooks/use-git-conversation-routing.test.ts
++++ b/frontend/__tests__/hooks/use-git-conversation-routing.test.ts
+@@ -89,9 +89,7 @@ describe("useGitConversationRouting", () => {
+ 
+     expect(result.current.orgs).toHaveLength(2);
+ 
+-    const claimedOrg = result.current.orgs.find(
+-      (o) => o.name === "OpenHands",
+-    );
++    const claimedOrg = result.current.orgs.find((o) => o.name === "OpenHands");
+     expect(claimedOrg).toMatchObject({
+       id: "github:openhands",
+       claimId: "claim-1",
+@@ -99,9 +97,7 @@ describe("useGitConversationRouting", () => {
+       status: "claimed",
+     });
+ 
+-    const unclaimedOrg = result.current.orgs.find(
+-      (o) => o.name === "AcmeCo",
+-    );
++    const unclaimedOrg = result.current.orgs.find((o) => o.name === "AcmeCo");
+     expect(unclaimedOrg).toMatchObject({
+       id: "github:acmeco",
+       claimId: null,
+@@ -137,6 +133,35 @@ describe("useGitConversationRouting", () => {
+     });
+   });
+ 
++  it("supports Bitbucket Data Center projects", () => {
++    setupMocks({
++      userOrgs: {
++        provider: "bitbucket_data_center",
++        organizations: ["PROJ"],
++      },
++      claims: [
++        {
++          id: "claim-1",
++          org_id: "org-1",
++          provider: "bitbucket_data_center",
++          git_organization: "proj",
++          claimed_by: "user-1",
++          claimed_at: "2026-01-01T00:00:00",
++        },
++      ],
++    });
++
++    const { result } = renderHook(() => useGitConversationRouting());
++
++    expect(result.current.orgs[0]).toMatchObject({
++      id: "bitbucket_data_center:proj",
++      claimId: "claim-1",
++      provider: "bitbucket_data_center",
++      name: "PROJ",
++      status: "claimed",
++    });
++  });
++
+   it("returns unclaimed when no claims data is available", () => {
+     setupMocks({ claims: [] });
+ 
+@@ -200,10 +225,7 @@ describe("useGitConversationRouting", () => {
+     setupMocks();
+ 
+     mockClaimMutate.mockImplementation(
+-      (
+-        _args: unknown,
+-        options: { onSettled?: () => void },
+-      ) => {
++      (_args: unknown, options: { onSettled?: () => void }) => {
+         options?.onSettled?.();
+       },
+     );
+diff --git a/frontend/src/components/features/org/git-org-row.tsx b/frontend/src/components/features/org/git-org-row.tsx
+index 50ba11e1be45..a826d1fd8def 100644
+--- a/frontend/src/components/features/org/git-org-row.tsx
++++ b/frontend/src/components/features/org/git-org-row.tsx
+@@ -1,6 +1,7 @@
+-import { cn } from "#/utils/utils";
++import { cn, getProviderName } from "#/utils/utils";
+ import { Text } from "#/ui/typography";
+ import type { GitOrg } from "#/types/org";
++import type { Provider } from "#/types/settings";
+ import { ClaimButton } from "./claim-button";
+ 
+ interface GitOrgRowProps {
+@@ -25,7 +26,9 @@ export function GitOrgRow({
+       )}
+     >
+       <span className="text-sm font-normal leading-5">
+-        <Text className="text-[#8c8c8c]">{org.provider}/</Text>
++        <Text className="text-[#8c8c8c]">
++          {getProviderName(org.provider.toLowerCase() as Provider)}/
++        </Text>
+         <Text className="text-[#fafafa]">{org.name}</Text>
+       </span>
+       <ClaimButton org={org} onClaim={onClaim} onDisconnect={onDisconnect} />

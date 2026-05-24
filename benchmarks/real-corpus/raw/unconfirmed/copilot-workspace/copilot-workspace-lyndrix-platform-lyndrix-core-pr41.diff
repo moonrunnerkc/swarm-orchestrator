@@ -1,0 +1,362 @@
+diff --git a/app/core/components/plugins/logic/context.py b/app/core/components/plugins/logic/context.py
+index b7a00e4..caa0317 100644
+--- a/app/core/components/plugins/logic/context.py
++++ b/app/core/components/plugins/logic/context.py
+@@ -28,7 +28,12 @@ def decorator(callback):
+                 self.log.debug(f"SUBSCRIBE: Subscribed to topic: {topic}")
+                 global_bus.subscribe(topic)(callback)
+             else:
+-                self.log.warning(f"PERMISSION: Module not allowed to subscribe to '{topic}'!")
++                message = (
++                    f"Plugin '{self.manifest.id}' is not permitted to subscribe to "
++                    f"'{topic}'. Declare it in permissions.subscribe."
++                )
++                self.log.error(message)
++                raise PermissionError(message)
+             return callback
+         return decorator
+ 
+@@ -36,7 +41,12 @@ def emit(self, topic: str, payload: dict = None):
+         if topic in self.manifest.permissions.emit or "*" in self.manifest.permissions.emit:
+             global_bus.emit(topic, payload)
+         else:
+-            self.log.warning(f"PERMISSION: Module not allowed to emit '{topic}'!")
++            message = (
++                f"Plugin '{self.manifest.id}' is not permitted to emit topic "
++                f"'{topic}'. Declare it in permissions.emit."
++            )
++            self.log.error(message)
++            raise PermissionError(message)
+ 
+     def create_task(self, coro, *, name: str = None):
+         """Create an observed background task owned by this module."""
+diff --git a/app/core/components/plugins/logic/manager.py b/app/core/components/plugins/logic/manager.py
+index e9b0eba..b2e8145 100644
+--- a/app/core/components/plugins/logic/manager.py
++++ b/app/core/components/plugins/logic/manager.py
+@@ -6,6 +6,8 @@
+ import asyncio
+ from typing import List
+ from sqlalchemy import inspect as sqlalchemy_inspect, text
++from packaging.version import Version, InvalidVersion
++from packaging.specifiers import SpecifierSet, InvalidSpecifier
+ from core.logger import get_logger
+ from core.bus import bus
+ from core.components.database.logic.db_service import db_instance
+@@ -130,7 +132,8 @@ def load_module(self, module_name: str, is_plugin: bool = True):
+                 vendor_path_str = str(vendor_path)
+                 if vendor_path_str not in sys.path:
+                     log.debug(f"VENDORS: Adding {vendor_path_str} to sys.path for '{module_name}'")
+-                    sys.path.insert(0, vendor_path_str)
++                    # Append (not insert at 0) so vendored packages never shadow core packages.
++                    sys.path.append(vendor_path_str)
+                     path_added = True
+         
+         try:
+@@ -144,12 +147,16 @@ def load_module(self, module_name: str, is_plugin: bool = True):
+             manifest = ModuleManifest(**raw_manifest) if isinstance(raw_manifest, dict) else raw_manifest
+ 
+             # Validate manifest constraints
++            validation_issues: List[str] = []
++            critical_issues: List[str] = []
+             if is_plugin:
+-                issues = self._validate_manifest(manifest)
+-                if issues:
+-                    log.warning(f"VALIDATION: Plugin '{module_name}' has issues: {'; '.join(issues)}")
+-                    # Non-fatal: load but mark as degraded
+-                    
++                validation_issues, critical_issues = self._validate_manifest(manifest)
++                if validation_issues:
++                    log.warning(
++                        f"VALIDATION: Plugin '{module_name}' has issues: "
++                        f"{'; '.join(validation_issues)}"
++                    )
++
+             if manifest.id in self.registry:
+                 return False
+ 
+@@ -160,12 +167,18 @@ def load_module(self, module_name: str, is_plugin: bool = True):
+                 plugin_dir_path = Path(self.base_path) / "plugins" / module_name
+                 register_plugin_locales(plugin_dir_path)
+ 
+-            # Register as initializing/parked
++            # Determine initial status. Any validation issues mark the plugin
++            # as 'degraded'; critical issues additionally block setup.
++            initial_status = "initializing"
++            if is_plugin and validation_issues:
++                initial_status = "degraded"
++
++            # Register as initializing/parked/degraded
+             self.registry[manifest.id] = {
+                 "manifest": manifest,
+                 "module": module,
+                 "context": ctx,
+-                "status": "initializing" 
++                "status": initial_status
+             }
+ 
+             if not is_plugin:
+@@ -173,8 +186,14 @@ def load_module(self, module_name: str, is_plugin: bool = True):
+                 self._execute_setup(manifest.id)
+                 log.info(f"LOAD_SUCCESS: CORE '{manifest.name}' is online")
+             else:
+-                # Plugins wait for the DB event
+-                log.info(f"LOAD_PENDING: PLUGIN '{manifest.name}' loaded, awaiting DB state...")
++                if critical_issues:
++                    log.error(
++                        f"LOAD_DEGRADED: PLUGIN '{manifest.name}' loaded but blocked "
++                        f"from activation due to critical issues: {'; '.join(critical_issues)}"
++                    )
++                else:
++                    # Plugins wait for the DB event
++                    log.info(f"LOAD_PENDING: PLUGIN '{manifest.name}' loaded, awaiting DB state...")
+ 
+             return True
+ 
+@@ -222,6 +241,13 @@ def _execute_setup(self, module_id):
+         if entry.get("status") == "active":
+             return
+ 
++        # Degraded plugins (critical manifest issues) must not be activated.
++        if entry.get("status") == "degraded":
++            log.warning(
++                f"SETUP_BLOCKED: Module '{module_id}' is degraded; skipping setup()."
++            )
++            return
++
+         module = entry["module"]
+         ctx = entry["context"]
+ 
+@@ -232,8 +258,16 @@ def _execute_setup(self, module_id):
+                     name=f"module_setup:{module_id}"
+                 )
+             else:
+-                module.setup(ctx)
+-                entry["status"] = "active"
++                try:
++                    module.setup(ctx)
++                    entry["status"] = "active"
++                except Exception as e:
++                    log.error(f"RUNTIME_ERROR: Sync setup failed for '{module_id}': {e}")
++                    entry["status"] = "failed"
++                    try:
++                        bus.emit("plugin:setup_failed", {"plugin_id": module_id, "error": str(e)})
++                    except Exception as emit_err:
++                        log.error(f"BUS_ERROR: Failed to emit plugin:setup_failed for '{module_id}': {emit_err}")
+ 
+     def _persist_plugin_state(self, module_id: str, is_active: bool):
+         """Persist plugin activation without duplicating lifecycle work."""
+@@ -272,6 +306,13 @@ async def _safe_async_setup(self, module, ctx, module_id):
+                 self.registry[module_id]["status"] = "active"
+         except Exception as e:
+             log.error(f"RUNTIME_ERROR: Async setup failed for '{module_id}': {e}")
++            if module_id in self.registry:
++                self.registry[module_id]["status"] = "failed"
++            # Emit on the global bus directly (bypass plugin permissions in ctx).
++            try:
++                bus.emit("plugin:setup_failed", {"plugin_id": module_id, "error": str(e)})
++            except Exception as emit_err:
++                log.error(f"BUS_ERROR: Failed to emit plugin:setup_failed for '{module_id}': {emit_err}")
+ 
+     async def _activate_saved_plugins(self, payload=None):
+         """Called when DB connects. Reads states and boots active plugins."""
+@@ -480,30 +521,78 @@ async def reload_module(self, module_id: str):
+         bus.emit("ui:needs_refresh", {"reason": f"Plugin {module_id} reloaded."})
+         return success
+ 
+-    def _validate_manifest(self, manifest: ModuleManifest) -> List[str]:
+-        """Validate manifest constraints. Returns list of issues (empty = valid)."""
+-        issues = []
++    def _validate_manifest(self, manifest: ModuleManifest):
++        """Validate manifest constraints.
++
++        Returns a tuple ``(issues, critical_issues)`` where ``issues`` is the
++        full list of human-readable problems and ``critical_issues`` is the
++        subset that must block activation (e.g. incompatible core version,
++        missing dependencies, malformed version metadata).
++        """
++        issues: List[str] = []
++        critical: List[str] = []
++
+         if manifest.min_core_version:
+             from core.api import __api_version__
+-            if manifest.min_core_version > __api_version__:
+-                issues.append(
+-                    f"Requires core API >= {manifest.min_core_version}, "
+-                    f"but running {__api_version__}"
+-                )
++            try:
++                if Version(manifest.min_core_version) > Version(__api_version__):
++                    msg = (
++                        f"Requires min core version {manifest.min_core_version}, "
++                        f"but running {__api_version__}"
++                    )
++                    issues.append(msg)
++                    critical.append(msg)
++            except InvalidVersion:
++                msg = f"Invalid min_core_version format: '{manifest.min_core_version}'"
++                issues.append(msg)
++                critical.append(msg)
++
+         if manifest.dependencies:
+             for dep in manifest.dependencies:
+                 if dep.id not in self.registry:
+-                    issues.append(f"Missing dependency: {dep.id}")
+-        return issues
++                    msg = f"Missing dependency: {dep.id}"
++                    issues.append(msg)
++                    critical.append(msg)
++
++        # Non-critical hygiene checks (warn-only, never block activation).
++        if not manifest.description or manifest.description == "No description provided":
++            issues.append("Missing 'description' in manifest")
++        if not manifest.icon or manifest.icon == "extension":
++            issues.append("Missing custom 'icon' in manifest")
++
++        return issues, critical
+ 
+     def _check_dependencies_met(self, manifest: ModuleManifest) -> bool:
+-        """Check if all plugin dependencies are loaded and active."""
++        """Check if all plugin dependencies are loaded, active, and version-compatible."""
+         if not manifest.dependencies:
+             return True
+         for dep in manifest.dependencies:
+             entry = self.registry.get(dep.id)
+             if not entry or entry.get("status") != "active":
+                 return False
++
++            # Evaluate optional semver constraint declared on the dependency.
++            constraint = getattr(dep, "version_constraint", None)
++            if constraint and constraint != "*":
++                try:
++                    spec = SpecifierSet(constraint)
++                    dep_version = entry["manifest"].version
++                    if Version(dep_version) not in spec:
++                        log.error(
++                            f"Dependency constraint failed: {manifest.id} requires "
++                            f"{dep.id} {constraint}, found {dep_version}"
++                        )
++                        return False
++                except (InvalidSpecifier, InvalidVersion) as e:
++                    log.error(
++                        f"Invalid version constraint '{constraint}' for {dep.id}: {e}"
++                    )
++                    return False
++                except Exception as e:
++                    log.error(
++                        f"Invalid version constraint '{constraint}' for {dep.id}: {e}"
++                    )
++                    return False
+         return True
+ 
+     async def reconcile_desired_plugins(self):
+diff --git a/app/core/components/plugins/logic/models.py b/app/core/components/plugins/logic/models.py
+index 7203bd3..bb53612 100644
+--- a/app/core/components/plugins/logic/models.py
++++ b/app/core/components/plugins/logic/models.py
+@@ -42,7 +42,7 @@ class ModuleManifest(BaseModel):
+     # --- NEW: Dependency & lifecycle declarations ---
+     dependencies: List[ModuleDependency] = Field(default_factory=list)
+     min_core_version: Optional[str] = Field(default=None, description="Minimum compatible core API version")
+-    auto_enable_on_install: bool = Field(default=True, description="Activate immediately after install")
++    auto_enable_on_install: bool = Field(default=False, description="Activate immediately after install")
+     repo_url: Optional[str] = Field(default=None, description="Source repository URL for updates")
+ 
+ 
+diff --git a/app/core/components/plugins/logic/plugin_service.py b/app/core/components/plugins/logic/plugin_service.py
+index a28aa83..3d98041 100644
+--- a/app/core/components/plugins/logic/plugin_service.py
++++ b/app/core/components/plugins/logic/plugin_service.py
+@@ -7,6 +7,7 @@
+ import time
+ import tempfile
+ import subprocess
++import importlib.util
+ import httpx
+ import re
+ from pathlib import Path
+@@ -62,6 +63,59 @@ def _extract_repo_info(self, github_url: str):
+             return parts[-2], repo
+         raise ValueError("Invalid GitHub URL format")
+ 
++    def _read_manifest_id(self, plugin_path: Path) -> str | None:
++        """Best-effort load of manifest.id from an entrypoint.py without
++        importing the module into the application's sys.modules namespace."""
++        entrypoint_path = plugin_path / "entrypoint.py"
++        if not entrypoint_path.exists():
++            return None
++        try:
++            spec = importlib.util.spec_from_file_location(
++                f"_lyndrix_manifest_probe_{plugin_path.name}", str(entrypoint_path)
++            )
++            if spec is None or spec.loader is None:
++                return None
++            staged = importlib.util.module_from_spec(spec)
++            spec.loader.exec_module(staged)
++            manifest = getattr(staged, "manifest", None)
++            if isinstance(manifest, dict):
++                return manifest.get("id")
++            return getattr(manifest, "id", None)
++        except Exception as e:
++            log.error(f"Failed to read manifest id from '{plugin_path}': {e}")
++            return None
++
++    def _verify_plugin_identity(self, staging_path: str, expected_id: str) -> bool:
++        """Verify the extracted plugin's manifest.id matches the expected
++        identity, to prevent install/upgrade-time substitution attacks."""
++        entrypoint_path = os.path.join(staging_path, "entrypoint.py")
++        if not os.path.exists(entrypoint_path):
++            log.error("No entrypoint.py found in downloaded archive.")
++            return False
++        try:
++            spec = importlib.util.spec_from_file_location("_staged_ep", entrypoint_path)
++            if spec is None or spec.loader is None:
++                log.error("Unable to load entrypoint.py from staged archive.")
++                return False
++            staged = importlib.util.module_from_spec(spec)
++            spec.loader.exec_module(staged)
++            raw_manifest = getattr(staged, "manifest", None)
++            actual_id = (
++                raw_manifest.get("id")
++                if isinstance(raw_manifest, dict)
++                else getattr(raw_manifest, "id", None)
++            )
++            if actual_id != expected_id:
++                log.error(
++                    f"Identity mismatch: expected '{expected_id}', "
++                    f"archive contains '{actual_id}'"
++                )
++                return False
++            return True
++        except Exception as e:
++            log.error(f"Failed to verify plugin identity: {e}")
++            return False
++
+     def _normalize_repo_name(self, repo_name: str) -> str:
+         return repo_name.replace("-", "_")
+ 
+@@ -319,6 +373,24 @@ async def install_plugin(self, github_url: str, version: str = "latest", upgrade
+             # 4. Dependency Management in Staging
+             await self._install_requirements(extracted_dir)
+ 
++            # 4b. Identity verification — when upgrading an existing plugin we
++            # know the expected manifest.id from the installed copy. Refuse the
++            # swap if the freshly downloaded archive declares a different id.
++            if upgrade and plugin_path.exists():
++                expected_id = self._read_manifest_id(plugin_path)
++                if expected_id and not self._verify_plugin_identity(
++                    str(extracted_dir), expected_id
++                ):
++                    log.error(
++                        f"SECURITY: Aborting upgrade of '{safe_repo_name}' — "
++                        f"plugin identity mismatch."
++                    )
++                    bus.emit(
++                        "plugin:install_failed",
++                        {"repo": repo, "error": "identity_mismatch"},
++                    )
++                    return False
++
+             # 5. ATOMIC SWAP (Protects against dev server hot-reload crashes)
+             backup_path = self.plugin_dir / f".backup_{safe_repo_name}"
+             if plugin_path.exists():

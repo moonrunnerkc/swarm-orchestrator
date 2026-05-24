@@ -1,0 +1,346 @@
+diff --git a/codex-rs/tui/src/app/background_requests.rs b/codex-rs/tui/src/app/background_requests.rs
+index dcf1f672bee5..63772c9db054 100644
+--- a/codex-rs/tui/src/app/background_requests.rs
++++ b/codex-rs/tui/src/app/background_requests.rs
+@@ -529,14 +529,13 @@ impl App {
+     /// Process the completed MCP inventory fetch: clear the loading spinner, then
+     /// render either the full tool/resource listing or an error into chat history.
+     ///
+-    /// When both the local config and the app-server report zero servers, a special
+-    /// "empty" cell is shown instead of the full table.
++    /// When the app-server reports zero servers, a special "empty" cell is shown
++    /// instead of the full table.
+     pub(super) fn handle_mcp_inventory_result(
+         &mut self,
+         result: Result<Vec<McpServerStatus>, String>,
+         detail: McpServerStatusDetail,
+     ) {
+-        let config = self.chat_widget.config_ref().clone();
+         self.chat_widget.clear_mcp_inventory_loading();
+         self.clear_committed_mcp_inventory_loading();
+ 
+@@ -549,7 +548,7 @@ impl App {
+             }
+         };
+ 
+-        if config.mcp_servers.get().is_empty() && statuses.is_empty() {
++        if statuses.is_empty() {
+             self.chat_widget
+                 .add_to_history(history_cell::empty_mcp_output());
+             return;
+@@ -557,7 +556,7 @@ impl App {
+ 
+         self.chat_widget
+             .add_to_history(history_cell::new_mcp_tools_output_from_statuses(
+-                &config, &statuses, detail,
++                &statuses, detail,
+             ));
+     }
+ 
+diff --git a/codex-rs/tui/src/history_cell/mcp.rs b/codex-rs/tui/src/history_cell/mcp.rs
+index 435cc6164f8d..5b761c1ef51b 100644
+--- a/codex-rs/tui/src/history_cell/mcp.rs
++++ b/codex-rs/tui/src/history_cell/mcp.rs
+@@ -512,14 +512,13 @@ pub(crate) fn new_mcp_tools_output(
+ /// Build the `/mcp` history cell from app-server `McpServerStatus` responses.
+ ///
+ /// The server list comes directly from the app-server status response, sorted
+-/// alphabetically. Local config is only used to enrich returned servers with
+-/// transport details such as command, URL, cwd, and environment display.
++/// alphabetically. The TUI deliberately does not enrich these rows from
++/// client-local config because the app-server owns the remote MCP state.
+ ///
+ /// This mirrors the layout of [`new_mcp_tools_output`] but sources data from
+ /// the paginated RPC response rather than the in-process `McpManager`. The
+ /// `detail` flag controls whether resources and resource templates are rendered.
+ pub(crate) fn new_mcp_tools_output_from_statuses(
+-    config: &Config,
+     statuses: &[McpServerStatus],
+     detail: McpServerStatusDetail,
+ ) -> PlainHistoryCell {
+@@ -530,13 +529,8 @@ pub(crate) fn new_mcp_tools_output_from_statuses(
+         "".into(),
+     ];
+ 
+-    let mut statuses_by_name = HashMap::new();
+-    for status in statuses {
+-        statuses_by_name.insert(status.name.as_str(), status);
+-    }
+-
+-    let mut server_names: Vec<String> = statuses.iter().map(|status| status.name.clone()).collect();
+-    server_names.sort();
++    let mut statuses = statuses.iter().collect::<Vec<_>>();
++    statuses.sort_by(|a, b| a.name.cmp(&b.name));
+ 
+     let has_any_tools = statuses.iter().any(|status| !status.tools.is_empty());
+     if !has_any_tools {
+@@ -544,32 +538,16 @@ pub(crate) fn new_mcp_tools_output_from_statuses(
+         lines.push("".into());
+     }
+ 
+-    for server in server_names {
+-        let cfg = config.mcp_servers.get().get(server.as_str());
+-        let status = statuses_by_name.get(server.as_str()).copied();
+-        let header: Vec<Span<'static>> = vec!["  • ".into(), server.clone().into()];
++    for status in statuses {
++        let header: Vec<Span<'static>> = vec!["  • ".into(), status.name.clone().into()];
+ 
+         lines.push(header.into());
+-        if matches!(detail, McpServerStatusDetail::Full) {
+-            let enabled = cfg.map(|cfg| cfg.enabled).unwrap_or(true);
+-            let status_text = if enabled {
+-                "enabled".green()
+-            } else {
+-                "disabled".red()
+-            };
+-            lines.push(vec!["    • Status: ".into(), status_text].into());
+-            if let Some(reason) = cfg.and_then(|cfg| cfg.disabled_reason.as_ref()) {
+-                lines.push(vec!["    • Reason: ".into(), reason.to_string().dim()].into());
+-            }
+-        }
+-        let auth_status = status
+-            .map(|status| match status.auth_status {
+-                codex_app_server_protocol::McpAuthStatus::Unsupported => McpAuthStatus::Unsupported,
+-                codex_app_server_protocol::McpAuthStatus::NotLoggedIn => McpAuthStatus::NotLoggedIn,
+-                codex_app_server_protocol::McpAuthStatus::BearerToken => McpAuthStatus::BearerToken,
+-                codex_app_server_protocol::McpAuthStatus::OAuth => McpAuthStatus::OAuth,
+-            })
+-            .unwrap_or(McpAuthStatus::Unsupported);
++        let auth_status = match status.auth_status {
++            codex_app_server_protocol::McpAuthStatus::Unsupported => McpAuthStatus::Unsupported,
++            codex_app_server_protocol::McpAuthStatus::NotLoggedIn => McpAuthStatus::NotLoggedIn,
++            codex_app_server_protocol::McpAuthStatus::BearerToken => McpAuthStatus::BearerToken,
++            codex_app_server_protocol::McpAuthStatus::OAuth => McpAuthStatus::OAuth,
++        };
+         lines.push(
+             vec![
+                 "    • Auth: ".into(),
+@@ -578,72 +556,7 @@ pub(crate) fn new_mcp_tools_output_from_statuses(
+             .into(),
+         );
+ 
+-        if let Some(cfg) = cfg {
+-            match &cfg.transport {
+-                McpServerTransportConfig::Stdio {
+-                    command,
+-                    args,
+-                    env,
+-                    env_vars,
+-                    cwd,
+-                } => {
+-                    let args_suffix = if args.is_empty() {
+-                        String::new()
+-                    } else {
+-                        format!(" {}", args.join(" "))
+-                    };
+-                    let cmd_display = format!("{command}{args_suffix}");
+-                    lines.push(vec!["    • Command: ".into(), cmd_display.into()].into());
+-
+-                    if let Some(cwd) = cwd.as_ref() {
+-                        lines.push(
+-                            vec!["    • Cwd: ".into(), cwd.display().to_string().into()].into(),
+-                        );
+-                    }
+-
+-                    let env_display = format_env_display(env.as_ref(), env_vars.as_slice());
+-                    if env_display != "-" {
+-                        lines.push(vec!["    • Env: ".into(), env_display.into()].into());
+-                    }
+-                }
+-                McpServerTransportConfig::StreamableHttp {
+-                    url,
+-                    http_headers,
+-                    env_http_headers,
+-                    ..
+-                } => {
+-                    lines.push(vec!["    • URL: ".into(), url.clone().into()].into());
+-                    if let Some(headers) = http_headers.as_ref()
+-                        && !headers.is_empty()
+-                    {
+-                        let mut pairs: Vec<_> = headers.iter().collect();
+-                        pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
+-                        let display = pairs
+-                            .into_iter()
+-                            .map(|(name, _)| format!("{name}=*****"))
+-                            .collect::<Vec<_>>()
+-                            .join(", ");
+-                        lines.push(vec!["    • HTTP headers: ".into(), display.into()].into());
+-                    }
+-                    if let Some(headers) = env_http_headers.as_ref()
+-                        && !headers.is_empty()
+-                    {
+-                        let mut pairs: Vec<_> = headers.iter().collect();
+-                        pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
+-                        let display = pairs
+-                            .into_iter()
+-                            .map(|(name, var)| format!("{name}={var}"))
+-                            .collect::<Vec<_>>()
+-                            .join(", ");
+-                        lines.push(vec!["    • Env HTTP headers: ".into(), display.into()].into());
+-                    }
+-                }
+-            }
+-        }
+-
+-        let mut names = status
+-            .map(|status| status.tools.keys().cloned().collect::<Vec<_>>())
+-            .unwrap_or_default();
++        let mut names = status.tools.keys().cloned().collect::<Vec<_>>();
+         names.sort();
+         if names.is_empty() {
+             lines.push("    • Tools: (none)".into());
+@@ -652,9 +565,7 @@ pub(crate) fn new_mcp_tools_output_from_statuses(
+         }
+ 
+         if matches!(detail, McpServerStatusDetail::Full) {
+-            let server_resources = status
+-                .map(|status| status.resources.clone())
+-                .unwrap_or_default();
++            let server_resources = status.resources.clone();
+             if server_resources.is_empty() {
+                 lines.push("    • Resources: (none)".into());
+             } else {
+@@ -674,9 +585,7 @@ pub(crate) fn new_mcp_tools_output_from_statuses(
+                 lines.push(spans.into());
+             }
+ 
+-            let server_templates = status
+-                .map(|status| status.resource_templates.clone())
+-                .unwrap_or_default();
++            let server_templates = status.resource_templates.clone();
+             if server_templates.is_empty() {
+                 lines.push("    • Resource templates: (none)".into());
+             } else {
+diff --git a/codex-rs/tui/src/history_cell/mod.rs b/codex-rs/tui/src/history_cell/mod.rs
+index 797037a33b01..12788a59f0d8 100644
+--- a/codex-rs/tui/src/history_cell/mod.rs
++++ b/codex-rs/tui/src/history_cell/mod.rs
+@@ -54,6 +54,7 @@ use codex_app_server_protocol::McpServerStatusDetail;
+ use codex_app_server_protocol::ToolRequestUserInputAnswer;
+ use codex_app_server_protocol::ToolRequestUserInputQuestion;
+ use codex_app_server_protocol::WebSearchAction;
++#[cfg(test)]
+ use codex_config::types::McpServerTransportConfig;
+ #[cfg(test)]
+ use codex_mcp::qualified_mcp_tool_name_prefix;
+@@ -75,6 +76,7 @@ use codex_protocol::plan_tool::StepStatus;
+ use codex_protocol::plan_tool::UpdatePlanArgs;
+ use codex_protocol::user_input::TextElement;
+ use codex_utils_absolute_path::AbsolutePathBuf;
++#[cfg(test)]
+ use codex_utils_cli::format_env_display;
+ use image::DynamicImage;
+ use image::ImageReader;
+diff --git a/codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__mcp_tools_output_from_statuses_renders_status_only_servers.snap b/codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__mcp_tools_output_from_statuses_renders_status_only_servers.snap
+index 709ce6d69133..52bd34c3ac3a 100644
+--- a/codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__mcp_tools_output_from_statuses_renders_status_only_servers.snap
++++ b/codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__mcp_tools_output_from_statuses_renders_status_only_servers.snap
+@@ -1,5 +1,5 @@
+ ---
+-source: tui/src/history_cell.rs
++source: tui/src/history_cell/tests.rs
+ expression: rendered
+ ---
+ /mcp
+@@ -8,5 +8,4 @@ expression: rendered
+ 
+   • plugin_docs
+     • Auth: Unsupported
+-    • Command: docs-server --stdio
+     • Tools: lookup
+diff --git a/codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__mcp_tools_output_from_statuses_renders_verbose_inventory.snap b/codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__mcp_tools_output_from_statuses_renders_verbose_inventory.snap
+index fb06c8493098..54bdfc9eff29 100644
+--- a/codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__mcp_tools_output_from_statuses_renders_verbose_inventory.snap
++++ b/codex-rs/tui/src/history_cell/snapshots/codex_tui__history_cell__tests__mcp_tools_output_from_statuses_renders_verbose_inventory.snap
+@@ -1,5 +1,5 @@
+ ---
+-source: tui/src/history_cell.rs
++source: tui/src/history_cell/tests.rs
+ expression: rendered
+ ---
+ /mcp
+@@ -7,9 +7,7 @@ expression: rendered
+ 🔌  MCP Tools
+ 
+   • plugin_docs
+-    • Status: enabled
+     • Auth: Unsupported
+-    • Command: docs-server --stdio
+     • Tools: lookup
+     • Resources: Docs (file:///docs)
+     • Resource templates: Doc Template (file:///docs/{id})
+diff --git a/codex-rs/tui/src/history_cell/tests.rs b/codex-rs/tui/src/history_cell/tests.rs
+index 1307f9a828f3..ca1bae863a8b 100644
+--- a/codex-rs/tui/src/history_cell/tests.rs
++++ b/codex-rs/tui/src/history_cell/tests.rs
+@@ -11,7 +11,6 @@ use crate::wrapping::word_wrap_lines;
+ use codex_app_server_protocol::AskForApproval;
+ use codex_app_server_protocol::McpAuthStatus;
+ use codex_config::types::McpServerConfig;
+-use codex_config::types::McpServerDisabledReason;
+ use codex_otel::RuntimeMetricTotals;
+ use codex_otel::RuntimeMetricsSummary;
+ use codex_protocol::ThreadId;
+@@ -803,19 +802,8 @@ async fn mcp_tools_output_lists_tools_for_hyphenated_server_names() {
+     insta::assert_snapshot!(rendered);
+ }
+ 
+-#[tokio::test]
+-async fn mcp_tools_output_from_statuses_renders_status_only_servers() {
+-    let mut config = test_config().await;
+-    let mut plugin_docs =
+-        stdio_server_config("docs-server", vec!["--stdio"], /*env*/ None, vec![]);
+-    plugin_docs.enabled = false;
+-    plugin_docs.disabled_reason = Some(McpServerDisabledReason::Unknown);
+-    let servers = HashMap::from([("plugin_docs".to_string(), plugin_docs)]);
+-    config
+-        .mcp_servers
+-        .set(servers)
+-        .expect("test mcp servers should accept any configuration");
+-
++#[test]
++fn mcp_tools_output_from_statuses_renders_status_only_servers() {
+     let statuses = vec![McpServerStatus {
+         name: "plugin_docs".to_string(),
+         tools: HashMap::from([(
+@@ -836,27 +824,15 @@ async fn mcp_tools_output_from_statuses_renders_status_only_servers() {
+         auth_status: codex_app_server_protocol::McpAuthStatus::Unsupported,
+     }];
+ 
+-    let cell = new_mcp_tools_output_from_statuses(
+-        &config,
+-        &statuses,
+-        McpServerStatusDetail::ToolsAndAuthOnly,
+-    );
++    let cell =
++        new_mcp_tools_output_from_statuses(&statuses, McpServerStatusDetail::ToolsAndAuthOnly);
+     let rendered = render_lines(&cell.display_lines(/*width*/ 120)).join("\n");
+ 
+     insta::assert_snapshot!(rendered);
+ }
+ 
+-#[tokio::test]
+-async fn mcp_tools_output_from_statuses_renders_verbose_inventory() {
+-    let mut config = test_config().await;
+-    let plugin_docs =
+-        stdio_server_config("docs-server", vec!["--stdio"], /*env*/ None, vec![]);
+-    let servers = HashMap::from([("plugin_docs".to_string(), plugin_docs)]);
+-    config
+-        .mcp_servers
+-        .set(servers)
+-        .expect("test mcp servers should accept any configuration");
+-
++#[test]
++fn mcp_tools_output_from_statuses_renders_verbose_inventory() {
+     let statuses = vec![McpServerStatus {
+         name: "plugin_docs".to_string(),
+         tools: HashMap::from([(
+@@ -894,7 +870,7 @@ async fn mcp_tools_output_from_statuses_renders_verbose_inventory() {
+         auth_status: codex_app_server_protocol::McpAuthStatus::Unsupported,
+     }];
+ 
+-    let cell = new_mcp_tools_output_from_statuses(&config, &statuses, McpServerStatusDetail::Full);
++    let cell = new_mcp_tools_output_from_statuses(&statuses, McpServerStatusDetail::Full);
+     let rendered = render_lines(&cell.display_lines(/*width*/ 120)).join("\n");
+ 
+     insta::assert_snapshot!(rendered);

@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-kupecraig-spectatr-pr41",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 41,
+    "headSha": "2ae6546d6f0c75643f514fdca0baab8893ef8f99",
+    "baseSha": "911942519f0c4eb2dbd92e558fd16e4a1dcf957c",
+    "title": "fix: backfill TeamPlayerSnapshot for unchanged teams on round finalisation",
+    "body": "`calculateRoundPoints` reads `TeamPlayerSnapshot` rows to score teams, but snapshots only exist when `teams.saveSquad` is called. Teams that made no transfers in a round had no snapshot → scored 0 points regardless of their players' scoring events.\n\n## Changes\n\n### `packages/server/src/utils/scoring.ts`\n- New exported `backfillRoundSnapshots(prisma, tenantId, roundId)` utility\n- For each team without a snapshot for the round, derives one from current `TeamPlayer` rows and inserts via `createMany({ skipDuplicates: true })`\n- Idempotent: teams that already have a snapshot are skipped entirely\n\n### `packages/server/src/trpc/routers/gameweek.ts`\n- `finaliseRound` now calls `backfillRoundSnapshots` inside the existing transaction, before `calculateRoundPoints`\n\n```typescript\nawait prisma.$transaction(async (tx) => {\n  await tx.round.update({ where: { id: roundId }, data: { status: 'complete' } });\n  await backfillRoundSnapshots(tx, tenantId, roundId); // ← new\n  return calculateRoundPoints(tx, tenantId, roundId);\n});\n```\n\n### Tests\n- `scoring.test.ts`: unit-level coverage for `backfillRoundSnapshots` — creates snapshots from `TeamPlayer` rows, is idempotent, and that `calculateRoundPoints` uses backfilled snapshots to produce correct team points\n- `gameweek.test.ts`: end-to-end regression — team with `TeamPlayer` rows but no snapshot receives correct points after `finaliseRound`\n- `packages/server/src/test/helpers/database.ts`: new `createTestTeamPlayer` helper\n\n### Docs\n- `ARCHITECTURE.md`: documents the `TeamPlayerSnapshot` lifecycle — when snapshots are materialised and the guarantee on finalisation\n- `.github/copilot-instructions/backend-api.md`: notes the backfill invariant for anyone implementing scoring or round lifecycle logic\n\n> [!WARNING]\n>\n> <details>\n> <summary>Firewall rules blocked me from connecting to one or more addresses (expand for details)</summary>\n>\n> #### I tried to connect to the following addresses, but was blocked by firewall rules:\n>\n> - `checkpoint.prisma.io`\n>   - Triggering command: `/opt/hostedtoolcache/node/20.20.2/x64/bin/node /opt/hostedtoolcache/node/20.20.2/x64/bin/node /home/REDACTED/work/spectatr/spectatr/node_modules/prisma/build/child {&#34;product&#34;:&#34;prisma&#34;,&#34;version&#34;:&#34;6.19.2&#34;,&#34;cli_install_type&#34;:&#34;local&#34;,&#34;information&#34;:&#34;&#34;,&#34;local_timestamp&#34;:&#34;2026-05-23T22:40:50Z&#34;,&#34;project_hash&#34;:&#34;bb85faed&#34;,&#34;cli_path&#34;:&#34;/home/REDACTED/work/spectatr/spectatr/node_modules/.bin/prisma&#34;,&#34;cli_path_hash&#34;:&#34;fd0196e1&#34;,&#34;end b825.pid` (dns block)\n>\n> If you need me to access, download, or install something from one of these locations, you can either:\n>\n> - Configure [Actions setup steps](https://gh.io/copilot/actions-setup-steps) to set up my environment, which run before the firewall is enabled\n> - Add the appropriate URLs or hosts to the custom allowlist in this repository's [Copilot coding agent settings](https://github.com/kupecraig/spectatr/settings/copilot/coding_agent) (admins only)\n>\n> </details>",
+    "author": "Copilot",
+    "headRef": "copilot/fix-backfill-teamplayer-snapshot",
+    "repository": "kupecraig/spectatr"
+  },
+  "diffRef": {
+    "repository": "kupecraig/spectatr",
+    "headSha": "2ae6546d6f0c75643f514fdca0baab8893ef8f99",
+    "baseSha": "911942519f0c4eb2dbd92e558fd16e4a1dcf957c"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/copilot-workspace/copilot-workspace-kupecraig-spectatr-pr41.diff",
+  "vendoredAt": "2026-05-24T04:28:30.617Z",
+  "collectedAt": "2026-05-24T04:28:30.617Z"
+}

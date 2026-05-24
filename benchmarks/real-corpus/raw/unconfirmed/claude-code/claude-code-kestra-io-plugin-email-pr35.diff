@@ -1,0 +1,21 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.email.md b/src/main/resources/doc/io.kestra.plugin.email.md
+new file mode 100644
+index 0000000..5c5b721
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.email.md
+@@ -0,0 +1,15 @@
++# How to use the Email plugin
++
++Send email from flows and trigger flows from incoming email using standard SMTP and IMAP connections.
++
++## Authentication
++
++Set `host`, `port`, `username`, and `password` on each task, or apply them globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults) to avoid repetition. Store credentials in [secrets](https://kestra.io/docs/concepts/secret). Control encryption via `transportStrategy`: the default `SMTPS` uses implicit TLS on port 465; set it to `SMTP_TLS` for STARTTLS on port 587; or `SMTP` for unencrypted connections.
++
++## Tasks
++
++`MailSend` sends an email as a step within a flow — set `to`, `subject`, and `htmlTextContent` (or `plainTextContent` for plain-text only). Use it for ad hoc notifications and alerts where you control the message body.
++
++`MailExecution` sends a structured execution summary including status, duration, and an execution link, and is designed to be used with a [Flow trigger](https://kestra.io/docs/workflow-components/triggers) in a dedicated monitoring namespace that watches other namespaces for failures — the same pattern as `SlackExecution`.
++
++For inbound email, `MailReceivedTrigger` polls an IMAP inbox on a schedule and starts one execution per batch of new messages; `RealTimeTrigger` starts one execution per message as it arrives. Use `MailReceivedTrigger` for controlled batch processing and `RealTimeTrigger` when you need low-latency response to incoming email.

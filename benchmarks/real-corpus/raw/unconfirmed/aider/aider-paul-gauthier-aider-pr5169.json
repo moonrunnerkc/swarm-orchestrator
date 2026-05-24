@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5169",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5169,
+    "headSha": "e9a65b96ee8ef7d4e8ec2bb9bc0069fe86d06152",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "Add model settings for DeepSeek R1 and V3 family on Azure AI Foundry",
+    "body": "## Summary\n\nAdds four entries to \\`aider/resources/model-settings.yml\\` for the DeepSeek family hosted on **Azure AI Foundry** (\\`azure_ai/\\` provider — distinct from the native \\`deepseek/\\` provider):\n\n| Model | weak_model_name |\n|---|---|\n| \\`azure_ai/deepseek-r1\\` (reasoner) | \\`azure_ai/deepseek-v3\\` |\n| \\`azure_ai/deepseek-v3\\` (chat) | (no weak, defaults) |\n| \\`azure_ai/deepseek-v3-0324\\` (chat, pinned) | (no weak, defaults) |\n| \\`azure_ai/deepseek-v3.2\\` (chat, newer) | (no weak, defaults) |\n\nThese models exist in litellm's pricing JSON (aider's upstream source for model metadata via \\`ModelInfoManager.MODEL_INFO_URL\\`) but were missing project-side settings. Without them, aider falls back to defaults that don't match the DeepSeek family conventions (\\`reminder: sys\\`, \\`caches_by_default: true\\`, \\`use_temperature: false\\` for the reasoner).\n\n## Settings shape\n\nMirrors the existing native \\`deepseek/deepseek-reasoner\\` and \\`deepseek/deepseek-chat\\` blocks exactly:\n\n- \\`edit_format: diff\\` (the DeepSeek family's preferred edit grammar)\n- \\`use_repo_map: true\\`\n- \\`examples_as_sys_msg: true\\`\n- \\`caches_by_default: true\\` (DeepSeek-style implicit caching)\n- \\`reminder: sys\\` for chat variants\n- \\`use_temperature: false\\` + \\`max_tokens: 64000\\` for the reasoner; \\`max_tokens: 8192\\` for chat variants\n- Reasoner routes to v3 for weak/editor model duties\n\n## Test plan\n\n- YAML validity: \\`python -c \\\"import yaml; yaml.safe_load(open('aider/resources/model-settings.yml'))\\\"\\` parses cleanly.\n- Diff is purely additive: 40 lines in model-settings.yml + 1 line in HISTORY.md.",
+    "author": "Cyberfilo",
+    "headRef": "feat/add-azure-ai-deepseek-models",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "e9a65b96ee8ef7d4e8ec2bb9bc0069fe86d06152",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5169.diff",
+  "vendoredAt": "2026-05-24T03:19:02.074Z",
+  "collectedAt": "2026-05-24T03:19:02.074Z"
+}

@@ -1,0 +1,57 @@
+diff --git a/src/cli/adapters/codex.ts b/src/cli/adapters/codex.ts
+index f8585eb2a8..d1359f7576 100644
+--- a/src/cli/adapters/codex.ts
++++ b/src/cli/adapters/codex.ts
+@@ -46,7 +46,10 @@ function cloneToolInput(toolInput: unknown): unknown {
+ function buildBaseOutput(result: HookResult): Record<string, unknown> {
+   const output: Record<string, unknown> = {};
+   if (result.continue !== undefined) output.continue = result.continue;
+-  if (result.suppressOutput !== undefined) output.suppressOutput = result.suppressOutput;
++  // Codex CLI rejects `suppressOutput` in hook stdout (see thedotmack/claude-mem 2486).
++  // Shared HookResults from hook handlers (observation, summarize, …) set
++  // `suppressOutput: true`, but it is a Claude-Code-only field. Stripping it
++  // unconditionally keeps the Codex adapter contract narrow.
+   if (result.systemMessage) output.systemMessage = result.systemMessage;
+   if (result.decision === 'block') output.decision = 'block';
+   if (result.reason) output.reason = result.reason;
+diff --git a/tests/hook-lifecycle.test.ts b/tests/hook-lifecycle.test.ts
+index d7fc8c3864..8709f12955 100644
+--- a/tests/hook-lifecycle.test.ts
++++ b/tests/hook-lifecycle.test.ts
+@@ -207,7 +207,35 @@ describe('Codex CLI Compatibility (#744)', () => {
+         },
+       }) as any;
+ 
+-      expect(output).toEqual({ continue: true, suppressOutput: true });
++      expect(output).toEqual({ continue: true });
++    });
++
++    it('strips suppressOutput from Codex output (Codex CLI rejects it)', async () => {
++      const { codexAdapter } = await import('../src/cli/adapters/codex.js');
++
++      const stopOutput = codexAdapter.formatOutput({
++        continue: true,
++        suppressOutput: true,
++      }) as Record<string, unknown>;
++      expect(stopOutput).not.toHaveProperty('suppressOutput');
++      expect(stopOutput).toEqual({ continue: true });
++
++      const postToolOutput = codexAdapter.formatOutput({
++        continue: true,
++        suppressOutput: true,
++        hookSpecificOutput: {
++          hookEventName: 'PostToolUse',
++          additionalContext: 'ctx',
++        },
++      }) as Record<string, unknown>;
++      expect(postToolOutput).not.toHaveProperty('suppressOutput');
++      expect(postToolOutput).toEqual({
++        continue: true,
++        hookSpecificOutput: {
++          hookEventName: 'PostToolUse',
++          additionalContext: 'ctx',
++        },
++      });
+     });
+   });
+ 

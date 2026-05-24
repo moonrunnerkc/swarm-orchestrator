@@ -1,0 +1,143 @@
+diff --git a/_locales/en/messages.json b/_locales/en/messages.json
+index 44d1079..3d1f849 100644
+--- a/_locales/en/messages.json
++++ b/_locales/en/messages.json
+@@ -11,6 +11,12 @@
+   "keyboardHelp": {
+     "message": "Use Tab to move between items, and press Enter or Space to activate buttons."
+   },
++  "onboardingGuide": {
++    "message": "Open this on a page, then copy a cleaner link with the button below."
++  },
++  "emptyStateNoUrl": {
++    "message": "No page URL is available. Open a web page, then open Link Cleaner again."
++  },
+   "originalUrlAriaLabel": {
+     "message": "Original URL"
+   },
+diff --git a/_locales/ja/messages.json b/_locales/ja/messages.json
+index 4fd148f..4edbee2 100644
+--- a/_locales/ja/messages.json
++++ b/_locales/ja/messages.json
+@@ -11,6 +11,12 @@
+   "keyboardHelp": {
+     "message": "Tabキーで項目を移動し、EnterまたはSpaceでボタンを実行できます。"
+   },
++  "onboardingGuide": {
++    "message": "ページを開いたら、このボタンからすっきりした共有リンクをコピーできます。"
++  },
++  "emptyStateNoUrl": {
++    "message": "URLを取得できませんでした。Webページを開いてから拡張機能をもう一度開いてください。"
++  },
+   "originalUrlAriaLabel": {
+     "message": "除去前のURL"
+   },
+diff --git a/popup.html b/popup.html
+index b5eff33..3ea75db 100644
+--- a/popup.html
++++ b/popup.html
+@@ -43,6 +43,24 @@
+       margin-bottom: 10px;
+     }
+ 
++    .guide-text,
++    .empty-state {
++      margin: 0 0 12px;
++      color: var(--muted);
++      font-size: 12px;
++    }
++
++    .empty-state {
++      padding: 10px;
++      border: 1px solid var(--border-subtle);
++      border-radius: 6px;
++      background: #f9fafb;
++    }
++
++    .empty-state[hidden] {
++      display: none;
++    }
++
+     .url-label,
+     .field-label {
+       display: block;
+@@ -195,6 +213,8 @@
+ <main id="app" aria-labelledby="app-title">
+   <h1 id="app-title" data-i18n="appName">すっきりリンク</h1>
+   <p id="keyboard-help" class="visually-hidden" data-i18n="keyboardHelp">Tabキーで項目を移動し、EnterまたはSpaceでボタンを実行できます。</p>
++  <p id="onboarding-guide" class="guide-text" data-i18n="onboardingGuide">ページを開いたら、このボタンからすっきりした共有リンクをコピーできます。</p>
++  <p id="empty-state" class="empty-state" data-i18n="emptyStateNoUrl" role="status" aria-live="polite" hidden>URLを取得できませんでした。Webページを開いてから拡張機能をもう一度開いてください。</p>
+ 
+   <section class="url-section" aria-labelledby="original-url-label">
+     <div id="original-url-label" class="url-label" data-i18n="labelBefore">除去前：</div>
+diff --git a/src/core/popup-view-model.test.ts b/src/core/popup-view-model.test.ts
+index bb3456d..b7be4a3 100644
+--- a/src/core/popup-view-model.test.ts
++++ b/src/core/popup-view-model.test.ts
+@@ -17,6 +17,18 @@ describe('popup view model', () => {
+     });
+   });
+ 
++  it('exposes an empty state when the current URL is unavailable', () => {
++    const viewModel = createUrlViewModel(undefined, ['utm_source'], 'URL not found');
++
++    expect(viewModel).toEqual({
++      originalText: 'URL not found',
++      cleanedText: 'URL not found',
++      cleanedUrl: '',
++      canCopy: false,
++      emptyStateMessageKey: 'emptyStateNoUrl'
++    });
++  });
++
+   it('keeps subscription UI decisions platform independent', () => {
+     const viewModel = createSubscriptionViewModel({
+       isPremium: false,
+diff --git a/src/core/popup-view-model.ts b/src/core/popup-view-model.ts
+index 96f879a..50ccc0b 100644
+--- a/src/core/popup-view-model.ts
++++ b/src/core/popup-view-model.ts
+@@ -6,6 +6,7 @@ export interface UrlViewModel {
+   cleanedText: string;
+   cleanedUrl: string;
+   canCopy: boolean;
++  emptyStateMessageKey?: 'emptyStateNoUrl';
+ }
+ 
+ export type SubscriptionMessageKey = 'premiumStatus' | 'trialStatus' | 'trialStatusOneDay' | 'freeStatus';
+@@ -27,7 +28,8 @@ export function createUrlViewModel(
+       originalText: notFoundText,
+       cleanedText: notFoundText,
+       cleanedUrl: '',
+-      canCopy: false
++      canCopy: false,
++      emptyStateMessageKey: 'emptyStateNoUrl'
+     };
+   }
+ 
+diff --git a/src/popup.ts b/src/popup.ts
+index 471816f..5e657ca 100644
+--- a/src/popup.ts
++++ b/src/popup.ts
+@@ -17,6 +17,7 @@ async function init() {
+   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+   const originalDisplay = document.getElementById('original-url');
+   const cleanedDisplay = document.getElementById('cleaned-url');
++  const emptyStateDisplay = document.getElementById('empty-state');
+   const copyBtn = document.getElementById('copy-btn') as HTMLButtonElement | null;
+   const statusDisplay = document.getElementById('status');
+ 
+@@ -58,6 +59,13 @@ async function init() {
+     cleanedUrl = viewModel.cleanedUrl;
+     if (originalDisplay) originalDisplay.textContent = viewModel.originalText;
+     if (cleanedDisplay) cleanedDisplay.textContent = viewModel.cleanedText;
++    if (emptyStateDisplay) {
++      emptyStateDisplay.hidden = !viewModel.emptyStateMessageKey;
++      emptyStateDisplay.textContent = viewModel.emptyStateMessageKey
++        ? chrome.i18n.getMessage(viewModel.emptyStateMessageKey)
++        : '';
++    }
++    setDisabled(copyBtn, !viewModel.canCopy);
+   };
+ 
+   const refreshSubscriptionUI = async () => {

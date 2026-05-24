@@ -1,0 +1,27 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.meta.md b/src/main/resources/doc/io.kestra.plugin.meta.md
+new file mode 100644
+index 0000000..715a918
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.meta.md
+@@ -0,0 +1,21 @@
++# How to use the Meta plugin
++
++Publish to Facebook and Instagram, send Messenger messages, and trigger WhatsApp notifications from Kestra flows using the Meta Graph API.
++
++## Authentication
++
++**Facebook posts and Messenger**: set `pageId` (your Facebook Page ID) and `accessToken` (a page access token with the required permissions) on each task. Store `accessToken` in a [secret](https://kestra.io/docs/concepts/secret) and apply both globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults) when all tasks target the same page.
++
++**Instagram media**: set `igId` (your Instagram professional account ID) and `accessToken`. The same token can cover both Facebook and Instagram if the account is connected to the same app.
++
++**WhatsApp**: set `url` to a WhatsApp incoming webhook URL. Auth is embedded in the URL.
++
++## Tasks
++
++`facebook.posts.Create` publishes a post to a Facebook Page — set `message` and optionally `link`. `facebook.posts.Schedule` schedules a post by setting `scheduledPublishTime` (Unix timestamp or ISO-8601). `facebook.posts.List` retrieves recent posts; use `fields` to select Graph API fields and `fetchType` to control output format. `facebook.posts.Delete` removes posts by `postIds`. `facebook.posts.GetInsights` fetches engagement metrics for a list of `postIds`; use `metrics`, `period`, and `datePreset` to scope the data.
++
++`instagram.media.CreateImage` publishes a single image — set `imageUrl` to a public JPEG URL and optionally `caption`. `instagram.media.CreateVideo` publishes a video from `videoUrl`; set `videoType` to `REELS` to post as a reel. `instagram.media.CreateCarousel` publishes a multi-image carousel from a `mediaUrls` list (2–10 items). `instagram.media.GetInsights` fetches media performance metrics.
++
++`messenger.MessengerExecution` sends a structured execution summary to one or more Messenger recipients identified by `recipientIds` (page-scoped user IDs). Set `textBody` for a direct message or use `templateUri` with `templateRenderMap` for a templated message.
++
++`whatsapp.WhatsAppIncomingWebhook` sends a message via a WhatsApp webhook — set `payload` to a JSON body in the WhatsApp Cloud API message format. `whatsapp.WhatsAppExecution` sends a structured execution summary and is designed for use with a [Flow trigger](https://kestra.io/docs/workflow-components/triggers) in a dedicated monitoring namespace.

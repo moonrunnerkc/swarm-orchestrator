@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-EeroEternal-MemmapFS-pr1",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "3c5202019cc1b1387f615af3078fd8be54f93a41",
+    "baseSha": "8f0bd1b0213131668c31248518fea276067c2786",
+    "title": "feat: bootstrap MemMapFS — WAL, zero-copy block storage, Tantivy search, async API",
+    "body": "Implements the full MemMapFS project from scratch: a database-less, local-first memory and state sync file system for AI Agents, backed by an append-only WAL, memmap2 zero-copy block reads, and an embedded Tantivy full-text index.\n\n## Storage (`storage.rs`)\n- `LogManager` — length-prefixed bincode WAL; `replay()` reconstructs state linearly from offset 0, tolerating truncated tail records from unclean shutdowns\n- `BlockStorage` — sequential appends to partitioned 64 MiB chunk files; reads via `memmap2::Mmap` for zero kernel-copy access\n\n## Engine (`engine.rs`)\n- `MemMapEngine` — `BTreeMap<u64, MemoryMetadata>` index + `HashMap` KV store\n- `AgentState` broadcast via `tokio::sync::watch`; `send_replace` keeps the channel live with no active subscribers\n\n## Search (`search.rs`)\n- `SearchProvider` wraps a Tantivy `MmapDirectory` index\n- Commits after each `index_memory` call for immediate searchability; reader uses `OnCommitWithDelay` reload policy\n\n## Public API (`lib.rs`)\nAll mutable state behind `Arc<RwLock<…>>` — `MemMapFS` is `Clone`able and safe to share across tasks.\n\n```rust\nlet fs = MemMapFS::init(\".memmap_fs_root\").await?;\n\nlet id = fs.append_memory(\"context payload\", vec![\"tag\".into()]).await?;\nlet hits = fs.query_memory(\"context\").await?;\n\nfs.update_state(AgentState { status: \"running\".into(), last_updated_id: id, .. Default::default() }).await?;\n```\n\nWAL replay is exercised across two independent sessions in the integration test suite, verifying crash recovery semantics.",
+    "author": "Copilot",
+    "headRef": "copilot/create-memmapfs-project",
+    "repository": "EeroEternal/MemmapFS"
+  },
+  "diffRef": {
+    "repository": "EeroEternal/MemmapFS",
+    "headSha": "3c5202019cc1b1387f615af3078fd8be54f93a41",
+    "baseSha": "8f0bd1b0213131668c31248518fea276067c2786"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-EeroEternal-MemmapFS-pr1.diff",
+  "vendoredAt": "2026-05-24T03:05:39.241Z",
+  "collectedAt": "2026-05-24T03:05:39.241Z"
+}

@@ -1,0 +1,1341 @@
+diff --git a/README.md b/README.md
+index ed000aa..e90665b 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1,58 @@
+ # acordgraph
++
++ACORD-aligned **Insurance Knowledge Graph** with a **GraphRAG** (graph-
++augmented retrieval-augmented generation) serving layer.
++
++> **Stage:** Requirements & Architecture — no runtime code yet.
++> Specifications are authored using the [OpenSpec](https://github.com/Fission-AI/OpenSpec)
++> conventions.
++
++## Repository layout
++
++```
++acordgraph/
++├── openspec/
++│   ├── project.md                          # Project context for OpenSpec
++│   └── changes/
++│       └── bootstrap-acord-kg/             # First change (greenfield)
++│           ├── proposal.md                 # Why & what
++│           ├── design.md                   # How & best-practice upgrades
++│           ├── tasks.md                    # Implementation backlog
++│           └── specs/                      # Delta specs per domain
++│               ├── ontology/spec.md
++│               ├── ingestion/spec.md
++│               ├── retrieval/spec.md
++│               ├── governance/spec.md
++│               └── api/spec.md
++├── docs/
++│   ├── technical-spec.md                   # Inbound brief v1.1 (verbatim)
++│   └── architecture-optimizations.md       # Deviations & rationale
++└── assets/
++    ├── cypher/
++    │   ├── 01_constraints_indexes.cypher   # Schema bootstrap (Neo4j 5.13+)
++    │   └── 10_graphrag_lookup.cypher       # Parameterised retrieval query
++    ├── prompts/
++    │   ├── extractor_system.md             # LLM extraction System Prompt
++    │   └── answerer_system.md              # Grounded answer System Prompt
++    └── schemas/
++        └── extraction.schema.json          # JSON Schema for extractor output
++```
++
++## Where to start
++
++| You want to…                              | Read…                                                  |
++|-------------------------------------------|--------------------------------------------------------|
++| Understand the project at a glance        | `openspec/project.md`                                  |
++| See the original brief                    | `docs/technical-spec.md`                               |
++| Understand the upgrades over the brief    | `docs/architecture-optimizations.md`                   |
++| Review formal requirements                | `openspec/changes/bootstrap-acord-kg/specs/*/spec.md`  |
++| See what the next change must build       | `openspec/changes/bootstrap-acord-kg/tasks.md`         |
++| Pull schema / queries / prompts as-is     | `assets/`                                              |
++
++## Next change
++
++The next OpenSpec change (`implement-acord-kg`) will:
++1. Stand up the Neo4j instance and apply `assets/cypher/01_constraints_indexes.cypher`.
++2. Build the ingestion pipelines (structured ETL + LLM extraction).
++3. Implement the GraphRAG serving layer per `specs/api/spec.md`.
++4. Wire the evaluation harness and CI quality gate.
+diff --git a/assets/cypher/01_constraints_indexes.cypher b/assets/cypher/01_constraints_indexes.cypher
+new file mode 100644
+index 0000000..935766b
+--- /dev/null
++++ b/assets/cypher/01_constraints_indexes.cypher
+@@ -0,0 +1,68 @@
++// =====================================================================
++// acordgraph — Constraints & Indexes (Neo4j 5.13+ syntax)
++// Apply with: cypher-shell -f 01_constraints_indexes.cypher
++// =====================================================================
++
++// ---------- 1. Uniqueness constraints (identity) ---------------------
++CREATE CONSTRAINT party_id_unique IF NOT EXISTS
++FOR (p:Party)            REQUIRE p.id IS UNIQUE;
++
++CREATE CONSTRAINT product_id_unique IF NOT EXISTS
++FOR (p:InsuranceProduct) REQUIRE p.id IS UNIQUE;
++
++CREATE CONSTRAINT policy_id_unique IF NOT EXISTS
++FOR (p:Policy)           REQUIRE p.id IS UNIQUE;
++
++CREATE CONSTRAINT policy_num_unique IF NOT EXISTS
++FOR (p:Policy)           REQUIRE p.policy_number IS UNIQUE;
++
++CREATE CONSTRAINT clause_id_unique IF NOT EXISTS
++FOR (c:Clause)           REQUIRE c.id IS UNIQUE;
++
++CREATE CONSTRAINT subject_id_unique IF NOT EXISTS
++FOR (s:Subject)          REQUIRE s.id IS UNIQUE;
++
++CREATE CONSTRAINT peril_id_unique IF NOT EXISTS
++FOR (r:RiskPeril)        REQUIRE r.id IS UNIQUE;
++
++CREATE CONSTRAINT claim_id_unique IF NOT EXISTS
++FOR (cl:Claim)           REQUIRE cl.id IS UNIQUE;
++
++CREATE CONSTRAINT claim_num_unique IF NOT EXISTS
++FOR (cl:Claim)           REQUIRE cl.claim_number IS UNIQUE;
++
++CREATE CONSTRAINT endorsement_id_unique IF NOT EXISTS
++FOR (e:Endorsement)      REQUIRE e.id IS UNIQUE;
++
++// ---------- 2. Existence constraints (NOT NULL semantics) ------------
++CREATE CONSTRAINT clause_text_not_null IF NOT EXISTS
++FOR (c:Clause) REQUIRE c.text_content IS NOT NULL;
++
++CREATE CONSTRAINT clause_type_not_null IF NOT EXISTS
++FOR (c:Clause) REQUIRE c.clause_type IS NOT NULL;
++
++// ---------- 3. Range indexes (filters in hot paths) ------------------
++CREATE INDEX policy_status_idx     IF NOT EXISTS FOR (p:Policy)    ON (p.status);
++CREATE INDEX policy_effective_idx  IF NOT EXISTS FOR (p:Policy)    ON (p.effective_date);
++CREATE INDEX claim_date_idx        IF NOT EXISTS FOR (c:Claim)     ON (c.date_of_loss);
++CREATE INDEX peril_icd_idx         IF NOT EXISTS FOR (r:RiskPeril) ON (r.icd_code);
++CREATE INDEX clause_type_idx       IF NOT EXISTS FOR (c:Clause)    ON (c.clause_type);
++CREATE INDEX clause_lang_idx       IF NOT EXISTS FOR (c:Clause)    ON (c.lang);
++
++// ---------- 4. Full-text index (lexical recall + BM25 fusion) --------
++CREATE FULLTEXT INDEX clause_fulltext IF NOT EXISTS
++FOR (c:Clause) ON EACH [c.title, c.text_content];
++
++CREATE FULLTEXT INDEX peril_fulltext IF NOT EXISTS
++FOR (r:RiskPeril) ON EACH [r.name, r.aliases];
++
++// ---------- 5. Vector index (semantic recall) ------------------------
++// Neo4j 5.13+ uses underscore keys, not hyphen.
++CREATE VECTOR INDEX clause_text_embeddings IF NOT EXISTS
++FOR (c:Clause) ON (c.embedding)
++OPTIONS {
++  indexConfig: {
++    `vector.dimensions`: 1536,
++    `vector.similarity_function`: 'cosine'
++  }
++};
+diff --git a/assets/cypher/10_graphrag_lookup.cypher b/assets/cypher/10_graphrag_lookup.cypher
+new file mode 100644
+index 0000000..887178f
+--- /dev/null
++++ b/assets/cypher/10_graphrag_lookup.cypher
+@@ -0,0 +1,59 @@
++// =====================================================================
++// acordgraph — GraphRAG Sub-graph Lookup (parameterised, as-of aware)
++// Parameters:
++//   $party_id              : String   — resolved Party node id
++//   $retrieved_clause_ids  : [String] — top-N clause ids after rerank
++//   $target_peril_name     : String   — normalised RiskPeril.name / alias
++//   $as_of                 : Date     — point-in-time filter (default today)
++// =====================================================================
++WITH coalesce($as_of, date()) AS asof
++
++// 1) Anchor on Party → Policy → Product, honouring bitemporal edges
++MATCH (p:Party {id: $party_id})-[buys:BUYS]->(pol:Policy)
++WHERE buys.is_active = true
++  AND buys.valid_from <= asof
++  AND (buys.valid_to IS NULL OR buys.valid_to >= asof)
++
++MATCH (pol)-[:BASED_ON]->(prod:InsuranceProduct)
++
++// 2) Filter the candidate clauses to those that actually belong to this product
++MATCH (prod)-[contains:CONTAINS]->(c:Clause)
++WHERE c.id IN $retrieved_clause_ids
++  AND contains.is_active = true
++  AND contains.valid_from <= asof
++  AND (contains.valid_to IS NULL OR contains.valid_to >= asof)
++
++// 3) Resolve the target peril — exact name OR alias OR ICD-code hit
++OPTIONAL MATCH (rp:RiskPeril)
++WHERE rp.name = $target_peril_name
++   OR $target_peril_name IN coalesce(rp.aliases, [])
++
++// 4) Coverage vs Exclusion on the active clause-set
++OPTIONAL MATCH (c)-[cov:COVERS]->(rp)
++  WHERE cov.is_active = true
++    AND cov.valid_from <= asof
++    AND (cov.valid_to IS NULL OR cov.valid_to >= asof)
++
++OPTIONAL MATCH (c)-[exc:EXCLUDES]->(rp)
++  WHERE exc.is_active = true
++    AND exc.valid_from <= asof
++    AND (exc.valid_to IS NULL OR exc.valid_to >= asof)
++
++RETURN
++  prod.product_name        AS product,
++  pol.policy_number        AS policy_number,
++  c.id                     AS clause_id,
++  c.title                  AS clause_title,
++  c.text_content           AS clause_text,
++  c.clause_type            AS clause_type,
++  c.lang                   AS clause_lang,
++  rp.name                  AS peril_name,
++  rp.icd_code              AS peril_icd,
++  cov.payout_ratio         AS payout_ratio,
++  cov.waiting_period_days  AS waiting_period_days,
++  CASE
++    WHEN exc IS NOT NULL THEN 'EXCLUDED'
++    WHEN cov IS NOT NULL THEN 'COVERED'
++    ELSE 'UNDETERMINED'
++  END                      AS coverage_status
++ORDER BY coverage_status DESC, clause_id ASC;
+diff --git a/assets/prompts/answerer_system.md b/assets/prompts/answerer_system.md
+new file mode 100644
+index 0000000..7a22a98
+--- /dev/null
++++ b/assets/prompts/answerer_system.md
+@@ -0,0 +1,56 @@
++# Answerer System Prompt — Grounded Insurance QA
++
++You are a **rigorous insurance underwriting and claims expert**. Your
++sole task is to compose an answer from the **structured contractual
++facts** provided by the knowledge graph. You are not permitted to
++introduce facts that are not present in the supplied context.
++
++## Inputs you will receive
++- `question`: the customer's question.
++- `as_of`: the effective date for the policy state under review.
++- `facts`: an array of rows from the GraphRAG sub-graph lookup. Each
++  row contains: `product`, `policy_number`, `clause_id`,
++  `clause_title`, `clause_text`, `clause_type`, `clause_lang`,
++  `peril_name`, `peril_icd`, `payout_ratio`, `waiting_period_days`,
++  `coverage_status` (one of `COVERED`, `EXCLUDED`, `UNDETERMINED`).
++
++## Decision policy
++1. If **any** fact row has `coverage_status = EXCLUDED` for the asked
++   peril, the answer is **not covered**. Cite the excluding clause.
++2. Else if at least one row is `COVERED`, the answer is **covered**.
++   Cite the covering clause(s) and report `payout_ratio` and
++   `waiting_period_days`.
++3. Otherwise (only `UNDETERMINED` rows or no rows at all), respond
++   that the contract does not contain a definitive provision and
++   recommend escalation.
++
++## Output format (two-pass contract)
++Emit a **single JSON object** with this shape:
++
++```json
++{
++  "verdict": "COVERED" | "EXCLUDED" | "UNDETERMINED",
++  "payout_ratio": number | null,
++  "waiting_period_days": integer | null,
++  "answer_text": "...natural-language explanation...",
++  "citations": [
++    { "clause_id": "CL_...", "title": "...", "quote": "..." }
++  ]
++}
++```
++
++### Citation rules
++- Every clause referenced in `answer_text` MUST appear in `citations`.
++- Every `clause_id` in `citations` MUST also appear in the supplied
++  `facts` rows. The downstream validator will reject otherwise.
++- `quote` MUST be a verbatim substring of the corresponding
++  `clause_text`. Do not paraphrase inside the quote.
++- Keep `quote` short (≤ 200 characters). Truncate with `…` if needed.
++
++### Language
++Respond in the language of the user's question. If the cited clause is
++in a different language, include both the original quote and a brief
++parenthetical translation.
++
++### Tone
++Concise, professional, no hedging beyond the verdict policy above.
+diff --git a/assets/prompts/extractor_system.md b/assets/prompts/extractor_system.md
+new file mode 100644
+index 0000000..60a103a
+--- /dev/null
++++ b/assets/prompts/extractor_system.md
+@@ -0,0 +1,46 @@
++# Extractor System Prompt — Insurance Clause → ACORD-aligned JSON
++
++You are an expert **Insurance Ontology Extractor** specialising in the
++ACORD Information Model (AIM v2.x). Given a chunk of clause text from a
++policy wording, you MUST emit a single JSON object that conforms to the
++schema `assets/schemas/extraction.schema.json`.
++
++## Hard rules
++1. Output **only** JSON. Never wrap it in Markdown code fences or add
++   commentary.
++2. Use stable id prefixes: `PROD_` for `InsuranceProduct`, `CL_` for
++   `Clause`, `PER_` for `RiskPeril`. Build a deterministic id from a
++   short, slugified, hash-style suffix of the surface form
++   (e.g., `PER_I21_9_ami`).
++3. **Never invent identifiers** for entities not present in the chunk.
++4. `clause_type` MUST be one of `Coverage`, `Exclusion`, `Limit`.
++5. For `RiskPeril`, if the text references a recognised disease, fill
++   `icd_code` with the most specific ICD-10 code you are confident in.
++   If unsure, **omit** the field rather than guessing.
++6. Populate `lang` on every `Clause` with the ISO 639-1 code of the
++   chunk's language (`zh`, `en`, ...).
++7. Extract only these relationships:
++   - `(InsuranceProduct)-[:CONTAINS]->(Clause)`
++   - `(Clause)-[:COVERS {payout_ratio?, waiting_period_days?}]->(RiskPeril)`
++   - `(Clause)-[:EXCLUDES]->(RiskPeril)`
++8. Set `payout_ratio` as a fraction in `[0,1]` (e.g., 0.8, not "80%").
++   `waiting_period_days` is a non-negative integer count of days.
++9. The `provenance` block MUST be copied verbatim from the
++   `metadata` block passed in the user message; do not modify it.
++10. If the chunk contains no extractable triple, return
++    `{"nodes": [], "edges": [], "provenance": {...}}` rather than
++    making things up.
++
++## Disambiguation guidance
++- "保障" / "covers" / "pays" → `COVERS`
++- "免责" / "除外" / "not covered" → `EXCLUDES`
++- "等待期 N 天" → `waiting_period_days: N`
++- "赔付比例 X%" → `payout_ratio: X/100`
++
++## Self-check before emitting
++- Does every edge reference ids that also appear in `nodes`?
++- Is each id prefix correct for its label?
++- Are all required schema fields present?
++- Are `payout_ratio` and `waiting_period_days` numeric, not strings?
++
++Emit the JSON now.
+diff --git a/assets/schemas/extraction.schema.json b/assets/schemas/extraction.schema.json
+new file mode 100644
+index 0000000..163c1ec
+--- /dev/null
++++ b/assets/schemas/extraction.schema.json
+@@ -0,0 +1,75 @@
++{
++  "$schema": "http://json-schema.org/draft-07/schema#",
++  "$id": "https://acordgraph/schemas/extraction.schema.json",
++  "title": "AcordGraph LLM Extraction Payload",
++  "type": "object",
++  "additionalProperties": false,
++  "required": ["nodes", "edges", "provenance"],
++  "properties": {
++    "nodes": {
++      "type": "array",
++      "items": {
++        "type": "object",
++        "additionalProperties": false,
++        "required": ["id", "label", "properties"],
++        "properties": {
++          "id": {
++            "type": "string",
++            "pattern": "^(PROD|CL|PER)_[A-Za-z0-9_-]{1,64}$"
++          },
++          "label": {
++            "type": "string",
++            "enum": ["InsuranceProduct", "Clause", "RiskPeril"]
++          },
++          "properties": {
++            "type": "object",
++            "additionalProperties": true,
++            "properties": {
++              "product_name":       { "type": "string" },
++              "line_of_business":   { "type": "string", "enum": ["L&A", "P&C"] },
++              "title":              { "type": "string" },
++              "text_content":       { "type": "string" },
++              "clause_type":        { "type": "string", "enum": ["Coverage", "Exclusion", "Limit"] },
++              "lang":               { "type": "string", "pattern": "^[a-z]{2}(-[A-Z]{2})?$" },
++              "name":               { "type": "string" },
++              "icd_code":           { "type": "string", "pattern": "^[A-Z][0-9]{2}(\\.[0-9A-Z]{1,3})?$" },
++              "aliases":            { "type": "array", "items": { "type": "string" } }
++            }
++          }
++        }
++      }
++    },
++    "edges": {
++      "type": "array",
++      "items": {
++        "type": "object",
++        "additionalProperties": false,
++        "required": ["source", "target", "type"],
++        "properties": {
++          "source": { "type": "string" },
++          "target": { "type": "string" },
++          "type":   { "type": "string", "enum": ["CONTAINS", "COVERS", "EXCLUDES"] },
++          "properties": {
++            "type": "object",
++            "additionalProperties": false,
++            "properties": {
++              "payout_ratio":        { "type": "number", "minimum": 0, "maximum": 1 },
++              "waiting_period_days": { "type": "integer", "minimum": 0 }
++            }
++          }
++        }
++      }
++    },
++    "provenance": {
++      "type": "object",
++      "additionalProperties": false,
++      "required": ["source_doc_id", "source_page", "extractor_version", "confidence"],
++      "properties": {
++        "source_doc_id":     { "type": "string" },
++        "source_page":       { "type": "integer", "minimum": 1 },
++        "extractor_version": { "type": "string" },
++        "confidence":        { "type": "number", "minimum": 0, "maximum": 1 }
++      }
++    }
++  }
++}
+diff --git a/docs/architecture-optimizations.md b/docs/architecture-optimizations.md
+new file mode 100644
+index 0000000..ed9405b
+--- /dev/null
++++ b/docs/architecture-optimizations.md
+@@ -0,0 +1,77 @@
++# Architecture Optimizations vs. Inbound Brief v1.1
++
++This document summarises the **industry-best-practice** upgrades applied
++on top of the inbound technical brief. It is the human-friendly mirror
++of section 2 in
++`openspec/changes/bootstrap-acord-kg/design.md`.
++
++## TL;DR
++
++| Theme            | Inbound v1.1                              | This design                                                                    |
++|------------------|-------------------------------------------|--------------------------------------------------------------------------------|
++| Reasoning model  | Vector → Cypher → LLM                     | Vector + Lexical → RRF → Cross-encoder rerank → Cypher → Two-pass grounded LLM |
++| Truth source     | Graph (implicit)                          | Graph (explicit, LLM-Cypher forbidden in prod)                                 |
++| Versioning       | `is_active` flag                          | Bitemporal (`valid_from`, `valid_to`, `recorded_at`) + `Endorsement` event     |
++| Provenance       | —                                         | `source_doc_id`, `source_page`, `extractor_version`, `confidence` everywhere   |
++| Entity Resolution| Cosine > 0.89 + LLM                       | Blocking-key → cosine → LLM judge → HITL queue                                 |
++| Citations        | "do not fabricate"                        | Validator rejects any cited `clause_id` not in retrieved sub-graph             |
++| Eval             | —                                         | Golden set + Ragas + custom subgraph-overlap metric, gated in CI               |
++| PII              | —                                         | Tokenised at ingest; vault-resolved at serving                                 |
++| Cypher syntax    | `vector.similarity-function` (hyphen)     | `vector.similarity_function` (underscore — required by Neo4j 5.13+)            |
++| Multi-lingual    | Implicit                                  | `lang` property; ICD-10 used as cross-lingual peril anchor                     |
++
++## Why these matter
++
++### 1. Cross-encoder reranking
++Bi-encoder cosine alone collapses on near-synonyms common in medical
++clauses ("心肌梗塞" / "心肌梗死" / "myocardial infarction"). A
++cross-encoder evaluates query-document pairs jointly and improves
++precision at top-5 dramatically — this is the single largest lift in
++GraphRAG quality at low marginal cost.
++
++### 2. Forbidding LLM-generated Cypher in production
++LLM-written Cypher is a tempting demo but fails in audit reviews: a
++malformed traversal can silently widen the set of returned clauses and
++turn a "covered" answer into a regulatory liability. Templated,
++parameterised Cypher is mandatory.
++
++### 3. Bitemporality
++Claims are evaluated against the policy state at **date of loss**, not
++the current state. A simple `is_active` flag cannot answer "what did the
++policy cover on 2024-09-12?". Bitemporal edges make as-of queries a
++one-line filter.
++
++### 4. Confidence-aware promotion
++Extractor outputs vary in quality. Surfacing low-confidence clauses to
++the retrieval layer pollutes recall metrics and erodes user trust. A
++hard cutoff (`confidence < 0.6` blocked, 0.6–0.8 staged, ≥ 0.8 active)
++matches what mature RAG products do.
++
++### 5. Two-pass answerer with citation validation
++The LLM emits a JSON of {answer_skeleton, citations[]}; a deterministic
++renderer verifies that every cited id exists in the retrieved sub-graph
++before producing the user-visible answer. This shifts hallucination
++detection from human eyeballs to a unit-testable invariant.
++
++### 6. HITL queue for the ambiguous band
++Cosine 0.80–0.89 is a known false-positive zone for medical entities.
++Routing those to a human-review queue protects against silent merging
++of distinct conditions (e.g., "脑梗塞" vs "脑出血" — both stroke-like
++embeddings but opposite clinical meaning).
++
++### 7. Latency budget breakdown
++Single SLO numbers ("p95 < 1.5s") are necessary but insufficient. Per
++stage budgets make regressions diagnosable in production without
++instrumenting from scratch during the incident.
++
++## Risks deliberately accepted at this stage
++
++- Vendor selection (LLM, embeddings, reranker) is **deferred**. The
++  contract is written so any vendor satisfying the dimension/quality
++  bar can be slotted in.
++- `Coverage` reified node is offered as **optional** — only required
++  when riders / endorsements override base product economics. Starting
++  with the edge form keeps the v1 schema simple.
++- HITL queue tooling is **out of scope** here; the requirement is
++  captured so the next change can choose the implementation (e.g.,
++  Argilla, custom Streamlit, Jira ticket).
+diff --git a/docs/technical-spec.md b/docs/technical-spec.md
+new file mode 100644
+index 0000000..927921f
+--- /dev/null
++++ b/docs/technical-spec.md
+@@ -0,0 +1,85 @@
++# Insurance Knowledge Graph — Technical Specification (Inbound v1.1)
++
++> This file preserves the original technical brief verbatim for traceability.
++> Authoritative requirements live in `openspec/changes/bootstrap-acord-kg/specs/`.
++> Industry-best-practice deviations are documented in
++> `docs/architecture-optimizations.md`.
++
++---
++
++# 保险知识图谱（基于 ACORD 模型）技术规范说明书
++**Version:** 1.1
++**Target Architecture:** Neo4j (LPG) + LLM (Hybrid GraphRAG)
++**Industry Standard Alignment:** ACORD Information Model (AIM) v2.x
++
++---
++
++## 1. 系统架构与数据流设计 (System Architecture)
++
++系统整体采用**双路摄入、统一语义、混合检索**的架构体系。
++
++```
++【数据源层】
++ ├── A. 结构化系统 (核心/CRM系统)  ───> ETL (映射映射) ────┐
++ └── B. 非结构化文档 (PDF条款/理赔单) ─> LLM 结构化抽取 ──┼─> 【存储与索引层】
++                                                          │   Neo4j (LPG)
++                                                          │   ├── 关系网络 (Cypher)
++ 【检索与服务层】                                          │   └── 向量索引 (Vector Index)
++  User Query ──> [实体识别/意图解析] ──────────────────────┼─> 混合检索 (Hybrid Retrieve)
++                      │                                   │
++                      └─> [Cypher 生成 / 向量邻居匹配] ────┘
++                                │
++                                ▼
++                       [子图上下文拼接] ──> [LLM生成] ──> 回答与推理路径
++```
++
++---
++
++## 2. 本体 Schema 规范 (Ontology Schema Spec)
++
++本规范提取 ACORD 框架中 `Party`、`Agreement`、`Subject`、`Claim` 四大支柱进行轻量级 LPG 建模，以满足生产环境下的高性能查询需求。
++
++### 2.1 节点定义 (Nodes Definition)
++
++| 节点标签 (Label) | 说明 | 核心属性定义 (Property: Type) | 示例 |
++| :--- | :--- | :--- | :--- |
++| **`Party`** | 契约或流程中的相关方 | `id: String` (Unique)<br>`name: String`<br>`type: String` (Individual / Organization)<br>`acord_code: String` | `{"id": "P_001", "name": "张三", "type": "Individual"}` |
++| **`InsuranceProduct`**| 保险产品定义 | `id: String` (Unique)<br>`product_name: String`<br>`line_of_business: String` (L&A / P&C) | `{"id": "PROD_99", "product_name": "臻爱医疗险", "line_of_business": "L&A"}` |
++| **`Policy`** | 保单实例（具体的保险合同） | `id: String` (Unique)<br>`policy_number: String`<br>`status: String`<br>`effective_date: Date`<br>`expiration_date: Date` | `{"id": "POL_102", "policy_number": "POL-88122", "status": "InForce"}` |
++| **`Clause`** | 合同条款细则 | `id: String` (Unique)<br>`clause_type: String` (Coverage / Exclusion / Limit)<br>`title: String`<br>`text_content: String`<br>`embedding: List<Float>` (1536维向量) | `{"id": "CL_502", "clause_type": "Exclusion", "title": "既往症免责"}` |
++| **`Subject`** | 承保标的（人或物） | `id: String` (Unique)<br>`subject_type: String` (Person / Vehicle / Property)<br>`description: String` | `{"id": "SUB_901", "subject_type": "Person", "description": "被保人健康状态"}` |
++| **`RiskPeril`** | 承保风险或疾病 | `id: String` (Unique)<br>`name: String`<br>`icd_code: String` (若为疾病) | `{"id": "PER_401", "name": "急性心肌梗塞", "icd_code": "I21.9"}` |
++| **`Claim`** | 理赔案件事件 | `id: String` (Unique)<br>`claim_number: String`<br>`date_of_loss: Date`<br>`amount_claimed: Decimal` | `{"id": "CLM_301", "claim_number": "CLM-2026-003", "amount_claimed": 50000.0}` |
++
++### 2.2 关系与边定义 (Edges & Relationships)
++
++| 关系类型 (Type) | 起点标签 | 终点标签 | 属性定义 (Properties) | 业务语义 |
++| :--- | :--- | :--- | :--- | :--- |
++| **`BUYS`** | `Party` | `Policy` | `role: String` (PolicyHolder/Insured) | 相关方购买/投保了某张保单 |
++| **`BASED_ON`** | `Policy` | `InsuranceProduct` | - | 保单所关联的具体产品设计原型 |
++| **`CONTAINS`** | `InsuranceProduct`| `Clause` | - | 产品条款构成 |
++| **`INSURES`** | `Policy` | `Subject` | - | 保单承保的具体标的物 |
++| **`COVERS`** | `Clause` | `RiskPeril` | `waiting_period_days: Int`<br>`payout_ratio: Float` | 条款所**保障**的风险/疾病及赔付比例 |
++| **`EXCLUDES`** | `Clause` | `RiskPeril` | - | 条款所**免除/排除**的风险 |
++| **`FILED_UNDER`** | `Claim` | `Policy` | `file_date: Date` | 客户就该理赔案件向具体保单报案 |
++| **`TRIGGERED_BY`**| `Claim` | `RiskPeril` | - | 该理赔是由于特定风险/疾病引发的 |
++
++---
++
++## 3. 数据库约束与索引策略 (Constraints & Indexing)
++
++详见 `assets/cypher/01_constraints_indexes.cypher`（已按 Neo4j 5.13+ 语法修订）。
++
++## 4. 非结构化文档抽取规范 (LLM Ingestion Pipeline)
++
++System Prompt 详见 `assets/prompts/extractor_system.md`；
++JSON Schema 详见 `assets/schemas/extraction.schema.json`。
++
++## 5. GraphRAG 混合检索及 API 规范 (GraphRAG Retrieval Spec)
++
++参数化 Cypher 详见 `assets/cypher/10_graphrag_lookup.cypher`；
++回答 Prompt 详见 `assets/prompts/answerer_system.md`。
++
++## 6. 运维与质量保证标准 (Governance & QA)
++
++参见 `openspec/changes/bootstrap-acord-kg/specs/governance/spec.md`。
+diff --git a/openspec/changes/bootstrap-acord-kg/design.md b/openspec/changes/bootstrap-acord-kg/design.md
+new file mode 100644
+index 0000000..6db1df6
+--- /dev/null
++++ b/openspec/changes/bootstrap-acord-kg/design.md
+@@ -0,0 +1,82 @@
++# Design: Bootstrap ACORD-aligned Insurance Knowledge Graph
++
++This document records the **architecture decisions** and the **best-practice
++optimizations** applied on top of the inbound technical brief
++(`docs/technical-spec.md`, v1.1). Each section calls out the original
++proposal, the upgrade, and the rationale so reviewers can audit deltas
++quickly.
++
++## 1. Architectural Stance
++
++### 1.1 Hybrid GraphRAG, graph-first
++
++Vector search is treated as a **candidate generator** for `Clause`
++nodes; the **graph** is the authoritative reasoner. The final answer is
++*always* assembled from a deterministic Cypher traversal so that:
++
++- Coverage / exclusion decisions are reproducible and citeable.
++- The LLM operates as a renderer of facts, not a reasoner over ambiguous
++  prose (mitigates hallucination on payout ratios, waiting periods,
++  exclusions).
++
++### 1.2 Three logical layers
++
++```
++        ┌──────────────────────────────────────────────┐
++        │ L3 — Serving:    Resolver · Hybrid Retriever │
++        │                  · Reranker · Answerer       │
++        ├──────────────────────────────────────────────┤
++        │ L2 — Knowledge:  Neo4j LPG (nodes/edges) +   │
++        │                  native Vector Index +       │
++        │                  Full-text Index             │
++        ├──────────────────────────────────────────────┤
++        │ L1 — Ingestion:  ETL (structured) · LLM      │
++        │                  Extractor (unstructured) ·  │
++        │                  Entity Resolver · Validator │
++        └──────────────────────────────────────────────┘
++```
++
++L1 produces idempotent `MERGE` upserts keyed on stable `id`s. L2 enforces
++schema and indexing. L3 owns latency budgets and grounding rules.
++
++## 2. Optimizations over the v1.1 Brief
++
++| # | Topic                                  | Brief (v1.1)                              | Upgrade in this design                                                                                                                                 | Rationale                                                                                              |
++|---|----------------------------------------|-------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------|
++| 1 | Vector index option key                | `` `vector.similarity-function` ``        | `` `vector.similarity_function` `` (underscore)                                                                                                        | Matches Neo4j 5.13+ syntax; hyphen form is rejected by the planner.                                    |
++| 2 | Coverage modelled only on edges        | `(Clause)-[:COVERS]->(RiskPeril)`         | Optional first-class `Coverage` node when payout structures vary by **Policy** (endorsements, riders), keeping the simple edge form for the base case. | Endorsements / riders frequently override `payout_ratio`, `waiting_period_days` per **policy**, not per product. A reified node admits per-policy overrides without exploding edge cardinality. |
++| 3 | Bitemporality                          | `is_active` flag on `[:CONTAINS]`         | Bitemporal triple `valid_from`, `valid_to`, `recorded_at` on every endorseable edge; archived edges retained, never deleted.                          | Enables "as-of" queries needed by claims & audit; aligns with ACORD's temporal model.                  |
++| 4 | Provenance                             | Not addressed                             | Every extracted node/edge carries `source_doc_id`, `source_page`, `extractor_version`, `confidence ∈ [0,1]`.                                          | Required for SOC2 audit, regulator drill-down, and confidence-weighted reranking.                      |
++| 5 | Entity Resolution                      | Cosine > 0.89 + LLM judge                 | Two-stage: blocking on `icd_code` / `acord_code` / normalised name → cosine ≥ 0.89 → LLM judge → human-in-the-loop queue for 0.80–0.89 band.          | Reduces LLM cost; preserves human review where automated confidence is low.                            |
++| 6 | Multi-lingual                          | Implicit                                  | `lang` property on `Clause` and `RiskPeril.aliases[]`; embeddings produced by a multilingual model; ICD-10 codes act as cross-lingual anchors.        | Insurance products are sold across markets; aliases prevent duplicate `RiskPeril` per locale.          |
++| 7 | Retrieval pipeline                     | Vector → Cypher → LLM                     | Vector (top-k=20) → **cross-encoder rerank** (top-n=5) → Cypher sub-graph → context shrink → grounded answer with citations.                          | Cross-encoder cuts false positives that pure cosine cannot separate (e.g., "心肌梗塞" vs "心包炎"). |
++| 8 | Indexes                                | Range + Vector                            | Adds **Full-text** index on `Clause.title`, `Clause.text_content` and `RiskPeril.name + aliases` for keyword fallback and BM25 fusion (RRF).          | Hybrid lexical-semantic fusion materially improves recall on rare named perils.                        |
++| 9 | Identifiers                            | Single `id` field                         | Distinguishes **internal `id`** (opaque, hash-of-source) from **business keys** (`policy_number`, `claim_number`, `icd_code`) — both indexed.        | Prevents accidental coupling of graph identity to mutable business data.                               |
++|10 | Grounding contract                     | "Must not fabricate"                      | **Two-pass answerer**: (a) JSON of cited facts produced by LLM, (b) renderer validates every cited `clause_id` exists in retrieved sub-graph; reject otherwise. | Hard guardrail against hallucinated clauses; deterministic citation rendering.                         |
++|11 | Evaluation                             | Not addressed                             | A versioned **golden set** of Q→expected-subgraph pairs lives under `assets/eval/` (deferred to next change); CI gate on recall@k, faithfulness, citation-precision. | Required to detect drift when prompts, embeddings or ontologies change.                                |
++|12 | PII / Security                         | Not addressed                             | `Party` PII fields tokenized at ingestion; raw values held in a separate encrypted store, joined only at serving with row-level authorization.        | GDPR / data-residency compliance; minimises blast radius of graph backups.                             |
++|13 | Endorsement semantics                  | Soft via `is_active`                      | Endorsement modelled as an `Endorsement` event node referenced by archived and superseding edges; provides explainability and roll-back.              | Aligns with ACORD `Agreement` change events; supports "what changed on date D" queries.                |
++|14 | Scale guardrails                       | Not addressed                             | Documented anti-patterns (super-nodes on common `RiskPeril`, runaway `OPTIONAL MATCH` fan-out); recommended sharding strategy by `line_of_business` partition labels. | Prevents perf cliffs at >10⁷ nodes; Neo4j operators have known cures listed.                          |
++
++## 3. Component Decisions
++
++| Concern               | Decision                                                                                          | Note                                              |
++|-----------------------|---------------------------------------------------------------------------------------------------|---------------------------------------------------|
++| Graph DB              | Neo4j 5.13+ (Community or Aura)                                                                   | Required for vector index GA + bitemporal indexes |
++| Embedding             | Provider-agnostic; dimension fixed at **1536** for portability across OpenAI / Cohere / BGE-M3   | Selected per environment by config                |
++| LLM extraction        | JSON-Schema-constrained decoding; temperature=0; max one retry on validation failure              | Determinism for ingest                            |
++| Orchestration         | Plain Python service first; pluggable adapter so LangChain / LlamaIndex can be slotted in         | Avoid framework lock-in pre-PMF                   |
++| Eval harness          | Pytest + Ragas (faithfulness, answer-correctness) + custom subgraph-overlap metric                | Implementation deferred                           |
++| Observability         | OpenTelemetry traces for `resolve → retrieve → rerank → cypher → answer`                          | Latency budget per stage in `specs/api/spec.md`   |
++
++## 4. Open Questions (parked, not blocking)
++
++1. Reranker model selection (BGE-Reranker-v2 vs Cohere Rerank 3)?
++2. Should `Party` PII tokenisation use deterministic encryption (joinable)
++   or HMAC pseudonyms (non-joinable)?
++3. Endorsement event sourcing: do we keep an `EndorsementLog` graph or
++   delegate to an outside event store (Kafka topic) and only project
++   active state into the graph?
++
++These will be resolved in follow-up OpenSpec changes; the requirements
++in this change are written so that any decision satisfies the contract.
+diff --git a/openspec/changes/bootstrap-acord-kg/proposal.md b/openspec/changes/bootstrap-acord-kg/proposal.md
+new file mode 100644
+index 0000000..fd9ad99
+--- /dev/null
++++ b/openspec/changes/bootstrap-acord-kg/proposal.md
+@@ -0,0 +1,63 @@
++# Proposal: Bootstrap ACORD-aligned Insurance Knowledge Graph
++
++## Intent
++Establish the foundational **requirements** and **architecture** for an
++insurance knowledge graph built on the ACORD Information Model and served
++through a GraphRAG hybrid retrieval API. The first change in this
++greenfield repository captures the *source-of-truth* specs so that all
++subsequent implementation changes have a stable contract to delta against.
++
++## Why now
++- The business needs deterministic, citation-able answers to multi-hop
++  policy / coverage / claim questions; pure vector RAG cannot guarantee
++  this.
++- Aligning early with **ACORD AIM v2.x** prevents semantic drift between
++  core systems, CRM, claims and the LLM layer.
++- Locking the **Labeled Property Graph (LPG)** shape in Neo4j unblocks
++  parallel work on (a) structured ETL from core, (b) LLM clause
++  extraction, and (c) retrieval API engineering.
++
++## Scope
++This change adds, as new requirements (no MODIFIED / REMOVED — the
++repository is empty):
++
++- **Ontology** — node labels, properties, relationships, identifier and
++  cardinality rules, bitemporal endorsement model, multilingual support.
++- **Ingestion** — dual-track ingestion (structured ETL + LLM extraction
++  from unstructured PDFs); extraction prompt contract; JSON Schema
++  validation; provenance & confidence capture.
++- **Retrieval** — hybrid GraphRAG flow (vector pre-filter → Cypher
++  sub-graph extraction → context assembly → grounded answer); reranking;
++  must-cite policy.
++- **Governance** — entity resolution thresholds, PII handling, audit
++  trail, versioning / endorsements, evaluation harness expectations.
++- **API** — public contract surface (resolve, query, explain) without
++  binding to a specific framework.
++
++## Approach
++1. Adopt OpenSpec layout under `openspec/`.
++2. Persist the inbound technical brief (v1.1) under `docs/` as the
++   canonical reference and complement it with
++   `docs/architecture-optimizations.md` documenting deviations and
++   industry-best-practice upgrades agreed in `design.md`.
++3. Ship reference assets (Cypher DDL, extraction prompt, JSON Schema,
++   GraphRAG Cypher) under `assets/` so the next change ("implement-*")
++   can lift them unmodified.
++4. Defer all runtime code, vendor selection and SLA numbers.
++
++## Non-goals
++- No application code, package manifests, CI pipelines or deployment
++  manifests are introduced in this change.
++- No commitment to a specific LLM, embedding model, reranker, or
++  orchestration framework (LangChain / LlamaIndex / DSPy). The design
++  identifies the integration seams only.
++
++## Acceptance Summary
++- All five domain delta specs exist with at least one Scenario per
++  Requirement.
++- `design.md` enumerates architecture decisions and the optimizations
++  applied on top of the inbound brief.
++- `tasks.md` lists the implementation backlog (unchecked) for the next
++  change.
++- `assets/` contains validated Cypher / JSON-Schema / prompt files
++  referenced by the specs.
+diff --git a/openspec/changes/bootstrap-acord-kg/specs/api/spec.md b/openspec/changes/bootstrap-acord-kg/specs/api/spec.md
+new file mode 100644
+index 0000000..fc918af
+--- /dev/null
++++ b/openspec/changes/bootstrap-acord-kg/specs/api/spec.md
+@@ -0,0 +1,89 @@
++# Delta for API Contract
++
++## ADDED Requirements
++
++### Requirement: Public endpoint surface
++The serving layer SHALL expose at minimum the following logical
++endpoints (transport / framework is not prescribed at this stage):
++
++- `POST /v1/resolve` — resolve free-text entities to graph ids
++  (`party_id`, `policy_id`, `product_id`, `peril_id`).
++- `POST /v1/answer` — execute the full GraphRAG pipeline and return a
++  grounded answer with citations.
++- `POST /v1/explain` — return the Cypher path(s) and the retrieved
++  sub-graph that supported a given answer id.
++- `GET  /v1/health` — readiness/liveness, including index health.
++
++#### Scenario: Health surfaces index status
++- GIVEN the Neo4j vector index is in `POPULATING` state
++- WHEN `GET /v1/health` is called
++- THEN the response indicates `status=degraded`
++- AND lists the affected index.
++
++### Requirement: Answer payload shape
++Responses from `/v1/answer` SHALL include:
++`answer_id`, `answer_text`, `citations: [{clause_id, title,
++source_doc_id, source_page}]`, `reasoning_path: [Cypher segments]`,
++`as_of`, `latency_ms_breakdown`.
++
++#### Scenario: Empty citations forbidden
++- GIVEN the retrieval produced a non-empty sub-graph
++- WHEN the answerer returns a payload with `citations=[]`
++- THEN the serving layer rejects the response and regenerates.
++
++### Requirement: Latency budgets
++The end-to-end p95 latency for `/v1/answer` SHALL be ≤ **1.5 s** under
++nominal load (≤ 50 RPS), allocated approximately as:
++
++| Stage             | p95 budget |
++|-------------------|-----------:|
++| Resolve           | 80 ms      |
++| Vector + Lexical  | 150 ms     |
++| Rerank            | 200 ms     |
++| Cypher traversal  | 120 ms     |
++| LLM grounded gen  | 900 ms     |
++| Overhead          | 50 ms      |
++
++Concrete numbers MAY be tuned in a future change; the stage breakdown
++contract MUST be preserved.
++
++#### Scenario: Budget surfaced for ops
++- GIVEN a successful `/v1/answer` response
++- WHEN the operator inspects `latency_ms_breakdown`
++- THEN keys for `resolve`, `recall`, `rerank`, `cypher`, `llm`,
++      `overhead` are present.
++
++### Requirement: Idempotency and tracing
++All write endpoints SHALL accept an `Idempotency-Key` header. All
++endpoints SHALL emit OpenTelemetry spans named per stage
++(`acordgraph.resolve`, `acordgraph.recall`, `acordgraph.rerank`,
++`acordgraph.cypher`, `acordgraph.answer`).
++
++#### Scenario: Replay-safe ingestion
++- GIVEN a write request with `Idempotency-Key: K1` is processed
++- WHEN the same request is retried with the same key within 24 h
++- THEN the server returns the original response
++- AND no second mutation occurs.
++
++### Requirement: Authentication & authorisation
++Endpoints SHALL require authenticated callers. Row-level authorisation
++MUST restrict `Party`-scoped responses to callers entitled to that
++party's data. Unauthorised access MUST NOT leak existence of a party
++(return 404, not 403, for missing entitlement).
++
++#### Scenario: Existence not leaked
++- GIVEN caller C without entitlement to party `P_001`
++- WHEN C calls `/v1/answer` with a question that resolves to `P_001`
++- THEN the response is `404 Not Found`
++- AND no party identifier appears in the error body.
++
++### Requirement: API versioning
++Breaking changes to request / response shape SHALL bump the URL major
++version (`/v1/` → `/v2/`). Minor additive fields MUST be backwards
++compatible.
++
++#### Scenario: Additive field is backwards compatible
++- GIVEN a client built against `/v1/answer` v1.0
++- WHEN the server adds a new optional field `confidence` to the
++        response
++- THEN the existing client continues to parse responses successfully.
+diff --git a/openspec/changes/bootstrap-acord-kg/specs/governance/spec.md b/openspec/changes/bootstrap-acord-kg/specs/governance/spec.md
+new file mode 100644
+index 0000000..111ef58
+--- /dev/null
++++ b/openspec/changes/bootstrap-acord-kg/specs/governance/spec.md
+@@ -0,0 +1,76 @@
++# Delta for Governance & QA
++
++## ADDED Requirements
++
++### Requirement: PII tokenisation
++Personally identifiable fields on `Party` (legal name, national id,
++date of birth, contact) SHALL be tokenised at ingest. Raw PII MUST NOT
++be stored in the graph; tokens MUST be resolvable only through a
++separate, access-controlled vault.
++
++#### Scenario: Graph backup contains no raw PII
++- GIVEN a database export of the graph
++- WHEN any `Party` node is inspected
++- THEN no field contains a national id, full date of birth, address or
++      phone number in clear form.
++
++### Requirement: Endorsement event traceability
++Every change to an endorseable edge SHALL be linked to an
++`Endorsement` event node carrying `id`, `effective_date`,
++`reason_code`, `actor`. The superseded and superseding edges MUST both
++reference the same `Endorsement` event.
++
++#### Scenario: Audit trail of a coverage change
++- GIVEN an endorsement event E1 effective 2025-06-01
++- WHEN the operator inspects the change history of policy POL_102
++- THEN both the closed (`is_active=false`) and the new
++      (`is_active=true`) `[:CONTAINS]` edges link back to E1.
++
++### Requirement: Evaluation harness gating
++A versioned golden set of question → expected-sub-graph examples SHALL
++exist. CI MUST run the harness on every change touching prompts,
++schema, ontology or retrieval logic, and MUST fail the build if any of:
++
++- `recall@5` drops by more than 2 absolute points,
++- `citation_precision` falls below 0.95,
++- `faithfulness` (per Ragas) falls below 0.90.
++
++#### Scenario: Regression blocks merge
++- GIVEN the baseline `citation_precision` is 0.97
++- WHEN a change lowers it to 0.93
++- THEN CI marks the run as failed
++- AND the change cannot be archived until the metric is restored.
++
++### Requirement: Quarantine and replay
++All ingestion errors (schema-invalid extractor outputs, ER conflicts,
++provenance-missing payloads) SHALL be persisted in a quarantine store
++with the raw input and reason. Operators MUST be able to replay
++quarantined items after fixing the upstream issue without manual data
++surgery.
++
++#### Scenario: Replay after fix
++- GIVEN 12 documents quarantined due to a prompt bug
++- WHEN the prompt is corrected and a replay job is started
++- THEN the 12 documents are re-extracted and, on success, written to
++      the graph
++- AND the quarantine entries are marked resolved with the new run id.
++
++### Requirement: Confidence-aware promotion
++Extracted nodes/edges with `confidence < 0.6` MUST NOT be served to
++retrieval. They MAY be stored under a separate label / property flag
++for staging and review only.
++
++#### Scenario: Low-confidence clause not surfaced
++- GIVEN a Clause stored with `confidence=0.55`
++- WHEN the retriever performs hybrid recall
++- THEN this Clause MUST NOT appear in the candidate list.
++
++### Requirement: Lineage
++For any node or edge returned at serving time, the system MUST be able
++to surface, in O(1) hops, the originating source document or source
++system record.
++
++#### Scenario: Drill-down from an answer
++- GIVEN an answer citing Clause CL_502
++- WHEN an operator follows the lineage link
++- THEN the original PDF file and page number are displayed.
+diff --git a/openspec/changes/bootstrap-acord-kg/specs/ingestion/spec.md b/openspec/changes/bootstrap-acord-kg/specs/ingestion/spec.md
+new file mode 100644
+index 0000000..5b18529
+--- /dev/null
++++ b/openspec/changes/bootstrap-acord-kg/specs/ingestion/spec.md
+@@ -0,0 +1,101 @@
++# Delta for Ingestion
++
++## ADDED Requirements
++
++### Requirement: Dual-track ingestion
++The system SHALL support two ingestion tracks that converge on the same
++graph schema:
++1. **Structured track** — batch / CDC ETL from core policy admin and CRM
++   systems. Mappings MUST be declarative (config-driven) and produce
++   idempotent `MERGE` Cypher.
++2. **Unstructured track** — LLM-driven extraction from PDF / DOCX policy
++   wordings, claim forms and endorsements.
++
++#### Scenario: Same Policy via both tracks reconciles
++- GIVEN a Policy `POL_102` already present from the structured track
++- WHEN the unstructured track surfaces references to the same
++        `policy_number`
++- THEN the resolver MUST link to the existing node
++- AND no duplicate Policy is created.
++
++### Requirement: Idempotent upserts
++All writers SHALL use `MERGE` on stable identifiers. Re-running the
++same input batch MUST be a no-op on graph state (excluding
++`recorded_at`).
++
++#### Scenario: Replay produces no diffs
++- GIVEN a batch B1 already applied
++- WHEN B1 is replayed
++- THEN the resulting graph diff is empty for node and edge counts
++- AND only audit fields (e.g., `recorded_at`) may change.
++
++### Requirement: Heading-aware chunking
++The PDF chunker SHALL respect document headings and clause boundaries.
++Chunks MUST be ≤ 1500 tokens with ≤ 15% overlap, and MUST carry
++`source_doc_id`, `source_page`, and a `path` such as
++`"§3.2 / Exclusions"`.
++
++#### Scenario: Clause is not split mid-sentence
++- GIVEN a clause that begins on page 4 and ends on page 5
++- WHEN the chunker processes the document
++- THEN at least one chunk contains the full clause body
++- AND no chunk ends mid-sentence within a heading section.
++
++### Requirement: JSON-Schema-constrained extraction
++The LLM extractor SHALL use structured-output decoding bound to
++`assets/schemas/extraction.schema.json`. Outputs that fail schema
++validation SHALL be retried once with a corrective message, then
++quarantined.
++
++#### Scenario: Invalid output is quarantined
++- GIVEN an LLM response missing the required `edges` array
++- WHEN one retry also fails validation
++- THEN the payload is written to the quarantine queue with the raw
++      response, source reference and validator error
++- AND no graph mutation occurs.
++
++### Requirement: Entity resolution pipeline
++Before writing extracted `RiskPeril` and `Party` nodes the resolver
++SHALL apply the cascade:
++1. Exact match on a controlled key (`icd_code`, `acord_code`,
++   normalized national-id hash).
++2. Cosine similarity on the entity-name embedding against existing
++   nodes. Match if `cosine ≥ 0.89`.
++3. If `0.80 ≤ cosine < 0.89`, route to a **Human-in-the-loop** review
++   queue with both candidates.
++4. Otherwise create a new node.
++
++#### Scenario: High-confidence merge
++- GIVEN existing peril `PER_401 {name:"急性心肌梗塞", icd_code:"I21.9"}`
++- WHEN extractor emits `{name:"心肌梗死", icd_code:"I21.9"}`
++- THEN the resolver merges via step 1 (icd_code)
++- AND appends `"心肌梗死"` to `PER_401.aliases`.
++
++#### Scenario: Ambiguous proposal sent to review
++- GIVEN no exact-key match exists
++- AND the cosine similarity is 0.84
++- WHEN the resolver evaluates the candidate
++- THEN the proposal is written to the review queue
++- AND no graph node is created until a reviewer decides.
++
++### Requirement: Provenance and confidence
++Every extracted node and edge SHALL include `source_doc_id`,
++`source_page`, `extractor_version`, and `confidence`. The writer SHALL
++reject payloads missing any of these fields.
++
++#### Scenario: Missing provenance is rejected
++- GIVEN an extractor payload without `source_doc_id`
++- WHEN the writer validates the payload
++- THEN the write MUST fail with a "missing provenance" error.
++
++### Requirement: Embedding generation
++`Clause.embedding` SHALL be produced by a configured embedding model
++whose output dimension matches the vector index (1536). The embedding
++input MUST be the chunk text after light normalization (whitespace
++collapse, no semantic rewriting).
++
++#### Scenario: Dimension mismatch is rejected
++- GIVEN the vector index is configured at dimension 1536
++- WHEN the embedding model is swapped to one producing 768-d vectors
++- THEN the ingestion job MUST refuse to start
++- AND surface a configuration error referencing the index.
+diff --git a/openspec/changes/bootstrap-acord-kg/specs/ontology/spec.md b/openspec/changes/bootstrap-acord-kg/specs/ontology/spec.md
+new file mode 100644
+index 0000000..e6372ce
+--- /dev/null
++++ b/openspec/changes/bootstrap-acord-kg/specs/ontology/spec.md
+@@ -0,0 +1,124 @@
++# Delta for Ontology
++
++## ADDED Requirements
++
++### Requirement: ACORD-aligned core node labels
++The system SHALL model insurance domain entities as a Labeled Property
++Graph using the following node labels: `Party`, `InsuranceProduct`,
++`Policy`, `Clause`, `Subject`, `RiskPeril`, `Claim`. Each label MUST
++carry a stable, opaque `id: String` property that is unique across the
++graph and is decoupled from any business key.
++
++#### Scenario: Required labels are present
++- GIVEN an empty Neo4j 5.13+ instance configured with the project schema
++- WHEN the schema bootstrap script is applied
++- THEN uniqueness constraints exist for `Party.id`, `Policy.policy_number`,
++      `Clause.id`, `Claim.id`
++- AND a node created without `id` is rejected by the writer layer.
++
++#### Scenario: Business key is separate from identity
++- GIVEN a `Policy` node with `id="POL_102"` and `policy_number="POL-88122"`
++- WHEN the policy number is corrected to `policy_number="POL-88123"`
++- THEN the node `id` MUST NOT change
++- AND inbound edges remain valid without rewrite.
++
++### Requirement: Property data types and required fields
++Each node label SHALL define a typed property contract:
++
++- `Party`: `id`, `name`, `type ∈ {Individual, Organization}`,
++  `acord_code?`, `lang?`
++- `InsuranceProduct`: `id`, `product_name`, `line_of_business ∈ {L&A, P&C}`
++- `Policy`: `id`, `policy_number`, `status`, `effective_date`,
++  `expiration_date`
++- `Clause`: `id`, `clause_type ∈ {Coverage, Exclusion, Limit}`, `title`,
++  `text_content`, `lang`, `embedding: List<Float>` (dimension 1536)
++- `Subject`: `id`, `subject_type ∈ {Person, Vehicle, Property}`,
++  `description`
++- `RiskPeril`: `id`, `name`, `icd_code?`, `aliases: List<String>`,
++  `lang?`
++- `Claim`: `id`, `claim_number`, `date_of_loss`, `amount_claimed: Decimal`
++
++#### Scenario: Writer rejects invalid enums
++- GIVEN a Party node with `type="Robot"`
++- WHEN the writer attempts to MERGE the node
++- THEN the write MUST fail with a schema validation error
++- AND no node is created.
++
++#### Scenario: Embedding dimension enforced
++- GIVEN the vector index is configured for 1536 dimensions
++- WHEN a Clause is written with a 1024-dimensional embedding
++- THEN the writer MUST reject the payload before reaching Neo4j.
++
++### Requirement: Relationship catalogue
++The graph SHALL only contain relationships from the closed set below,
++each with the prescribed start/end labels and properties:
++
++- `(:Party)-[:BUYS {role}]->(:Policy)`
++- `(:Policy)-[:BASED_ON]->(:InsuranceProduct)`
++- `(:InsuranceProduct)-[:CONTAINS]->(:Clause)`
++- `(:Policy)-[:INSURES]->(:Subject)`
++- `(:Clause)-[:COVERS {waiting_period_days, payout_ratio}]->(:RiskPeril)`
++- `(:Clause)-[:EXCLUDES]->(:RiskPeril)`
++- `(:Claim)-[:FILED_UNDER {file_date}]->(:Policy)`
++- `(:Claim)-[:TRIGGERED_BY]->(:RiskPeril)`
++
++Any other relationship type MUST be rejected at the writer boundary.
++
++#### Scenario: Disallowed relationship rejected
++- GIVEN a request to create `(:Party)-[:OWNS]->(:Claim)`
++- WHEN the writer validates the payload
++- THEN the request MUST be rejected with an "unknown relationship type"
++      error.
++
++### Requirement: Bitemporal endorseable edges
++Every relationship whose semantics can be amended by a future
++endorsement (initially `CONTAINS`, `COVERS`, `EXCLUDES`, `INSURES`,
++`BUYS`) SHALL carry the temporal triple `valid_from: Date`,
++`valid_to: Date | null`, `recorded_at: DateTime` and a boolean
++`is_active`. Updates MUST be append-only: a superseded edge keeps its
++original `valid_from`, gets `valid_to` set, `is_active=false`, and a new
++edge is written for the new state.
++
++#### Scenario: Endorsement preserves history
++- GIVEN a `[:CONTAINS]` edge with `valid_from=2024-01-01`,
++        `valid_to=null`, `is_active=true`
++- WHEN an endorsement effective `2025-06-01` replaces the clause
++- THEN the original edge has `valid_to=2025-05-31`, `is_active=false`
++- AND a new `[:CONTAINS]` edge exists with `valid_from=2025-06-01`,
++      `is_active=true`
++- AND an "as-of 2025-01-15" traversal still returns the original clause.
++
++### Requirement: Provenance on extracted entities
++Every node and edge written by the LLM extraction pipeline SHALL carry
++`source_doc_id`, `source_page`, `extractor_version` and
++`confidence ∈ [0,1]` as properties. Nodes created from structured ETL
++SHALL carry `source_system` and `source_record_id`.
++
++#### Scenario: Confidence is queryable
++- GIVEN a Clause extracted with `confidence=0.72`
++- WHEN an operator queries Clauses with `confidence < 0.8`
++- THEN the Clause is returned.
++
++### Requirement: Identifier prefix convention
++Internal `id` values SHALL be opaque strings prefixed by label:
++`P_` (Party), `PROD_` (InsuranceProduct), `POL_` (Policy), `CL_`
++(Clause), `SUB_` (Subject), `PER_` (RiskPeril), `CLM_` (Claim).
++
++#### Scenario: Prefix mismatch rejected
++- GIVEN a Policy node payload with `id="P_900"`
++- WHEN the writer validates the payload
++- THEN the write MUST be rejected.
++
++### Requirement: Multilingual perils with alias set
++`RiskPeril` SHALL be deduplicated across locales by ICD code first, then
++by normalized name + alias set. The canonical node MUST store the
++preferred display name in `name` and all locale variants under
++`aliases`.
++
++#### Scenario: Bilingual alias merging
++- GIVEN an existing `RiskPeril {name:"急性心肌梗塞", icd_code:"I21.9"}`
++- WHEN extractor proposes `RiskPeril {name:"Acute Myocardial Infarction",
++        icd_code:"I21.9"}`
++- THEN the resolver MUST MERGE on `icd_code`
++- AND the English name is appended to `aliases`
++- AND no second `RiskPeril` node is created.
+diff --git a/openspec/changes/bootstrap-acord-kg/specs/retrieval/spec.md b/openspec/changes/bootstrap-acord-kg/specs/retrieval/spec.md
+new file mode 100644
+index 0000000..47c449c
+--- /dev/null
++++ b/openspec/changes/bootstrap-acord-kg/specs/retrieval/spec.md
+@@ -0,0 +1,88 @@
++# Delta for Retrieval (GraphRAG)
++
++## ADDED Requirements
++
++### Requirement: Hybrid retrieval pipeline
++The retrieval pipeline SHALL execute the ordered stages
++**Resolve → Vector-Recall → Lexical-Recall → Fuse → Rerank →
++Graph-Traverse → Ground**. The graph traversal MUST be the
++authoritative source of facts presented to the LLM; vector and lexical
++recall serve only as candidate generators for `Clause` nodes.
++
++#### Scenario: Pipeline ordering
++- GIVEN a user question about coverage for a specific disease
++- WHEN the retriever processes the query
++- THEN entities (Party, Product, Peril) are resolved first
++- AND candidate clauses are recalled by vector + lexical search
++- AND the candidates are reranked before graph traversal
++- AND only after the Cypher traversal is the LLM invoked.
++
++### Requirement: Vector + lexical fusion
++Top-k candidate clauses SHALL be drawn from the `clause_text_embeddings`
++vector index (k=20) **and** the full-text index over
++`Clause.title`/`Clause.text_content`. The two lists MUST be fused using
++Reciprocal Rank Fusion (RRF) before reranking.
++
++#### Scenario: Lexical fallback catches rare named perils
++- GIVEN a query mentioning a rare named peril absent from the embedding
++        model's training distribution
++- WHEN the vector recall returns it at rank > 20
++- THEN the lexical recall MUST return it within its top-20
++- AND RRF fusion places it in the reranker input.
++
++### Requirement: Reranking
++A cross-encoder reranker SHALL reduce the fused candidate list to at
++most 5 clauses before the graph traversal. The retriever MUST log the
++reranker score alongside each surviving clause.
++
++#### Scenario: Top-5 cap respected
++- GIVEN 20 fused candidate clauses
++- WHEN the reranker scores them
++- THEN at most 5 clauses are forwarded to the Cypher executor.
++
++### Requirement: As-of graph traversal
++The graph traversal SHALL accept an optional `as_of: Date` parameter and
++filter edges by `valid_from ≤ as_of ≤ coalesce(valid_to, as_of)`. The
++default `as_of` is "now".
++
++#### Scenario: Historical coverage answered correctly
++- GIVEN an endorsement effective 2025-06-01 removed a coverage
++- WHEN the user asks about coverage as of 2025-03-15
++- THEN the traversal MUST return the pre-endorsement coverage
++- AND the answer cites the original clause.
++
++### Requirement: Authoritative Cypher template
++The traversal SHALL use the parameterised template under
++`assets/cypher/10_graphrag_lookup.cypher`. Free-form Cypher generated by
++the LLM is forbidden for production queries. New traversal templates
++MUST be added via a future OpenSpec change.
++
++#### Scenario: LLM-generated Cypher rejected
++- GIVEN the LLM produces a Cypher string at runtime
++- WHEN the executor receives it
++- THEN it MUST refuse to execute and log a security event.
++
++### Requirement: Citation contract
++Every answer surfaced to the user MUST cite at least one Clause by its
++`id` and `title`. The serving layer MUST verify that each cited
++`clause_id` is present in the sub-graph returned by the Cypher
++traversal; otherwise the answer is rejected and regenerated.
++
++#### Scenario: Hallucinated citation rejected
++- GIVEN the LLM answer references `CL_999` which is not in the
++        retrieved sub-graph
++- WHEN the validator inspects the citation set
++- THEN the answer is rejected
++- AND a regeneration is requested with a stricter prompt.
++
++### Requirement: Exclusion takes precedence over coverage
++If the same `RiskPeril` is reachable via both `[:COVERS]` and
++`[:EXCLUDES]` edges from clauses of the same active policy, the
++answerer MUST report **not covered** and surface the exclusion clause.
++
++#### Scenario: Conflicting clauses
++- GIVEN peril P is covered by clause CA and excluded by clause CB on the
++        same active policy
++- WHEN the user asks whether P is covered
++- THEN the answer states the peril is excluded
++- AND cites CB.
+diff --git a/openspec/changes/bootstrap-acord-kg/tasks.md b/openspec/changes/bootstrap-acord-kg/tasks.md
+new file mode 100644
+index 0000000..b88a585
+--- /dev/null
++++ b/openspec/changes/bootstrap-acord-kg/tasks.md
+@@ -0,0 +1,52 @@
++# Tasks — bootstrap-acord-kg
++
++> This change ships **specifications and reference assets only**; the
++> tasks below are the implementation backlog handed to the next change.
++> All checkboxes start unchecked on purpose.
++
++## 1. Knowledge layer
++
++- [ ] 1.1 Provision Neo4j 5.13+ instance (dev / staging / prod)
++- [ ] 1.2 Apply `assets/cypher/01_constraints_indexes.cypher`
++- [ ] 1.3 Validate vector index dimensions match the chosen embedding model
++- [ ] 1.4 Seed reference data (ACORD codes, ICD-10 lookups, line-of-business)
++
++## 2. Ingestion — structured
++
++- [ ] 2.1 Build CDC / batch ETL from core / CRM sources
++- [ ] 2.2 Implement idempotent `MERGE` writers per node label
++- [ ] 2.3 Emit OpenTelemetry spans per batch with row counts and errors
++- [ ] 2.4 Reconciliation report (graph row counts vs source-of-record)
++
++## 3. Ingestion — unstructured (LLM)
++
++- [ ] 3.1 PDF chunker (heading-aware, ≤ 1.5k token windows, 10% overlap)
++- [ ] 3.2 Extractor wired with `assets/prompts/extractor_system.md` and
++      `assets/schemas/extraction.schema.json` (JSON-Schema-constrained decode)
++- [ ] 3.3 Provenance enrichment (`source_doc_id`, `source_page`,
++      `extractor_version`, `confidence`)
++- [ ] 3.4 Entity resolver (blocking → cosine ≥ 0.89 → LLM judge → HITL queue)
++- [ ] 3.5 Quarantine queue for schema-invalid payloads
++
++## 4. Retrieval & serving
++
++- [ ] 4.1 `/resolve` endpoint — NER + party-id + product-id resolution
++- [ ] 4.2 Hybrid retriever (vector + full-text, RRF fusion, k=20)
++- [ ] 4.3 Cross-encoder reranker, top-n=5
++- [ ] 4.4 GraphRAG Cypher executor using `assets/cypher/10_graphrag_lookup.cypher`
++- [ ] 4.5 Two-pass answerer with citation validation
++      (`assets/prompts/answerer_system.md`)
++- [ ] 4.6 Per-stage latency budgets enforced (see `specs/api/spec.md`)
++
++## 5. Governance
++
++- [ ] 5.1 PII tokenisation pipeline + audit log
++- [ ] 5.2 Bitemporal endorsement writer + as-of query helpers
++- [ ] 5.3 Evaluation harness with golden set + CI quality gate
++- [ ] 5.4 Lineage dashboard (entity → source doc / row)
++
++## 6. Documentation
++
++- [ ] 6.1 Operator runbook
++- [ ] 6.2 ER review SOP
++- [ ] 6.3 Onboarding guide for new domains (e.g., commercial P&C)
+diff --git a/openspec/project.md b/openspec/project.md
+new file mode 100644
+index 0000000..bbd2417
+--- /dev/null
++++ b/openspec/project.md
+@@ -0,0 +1,41 @@
++# Project Context — acordgraph
++
++## Mission
++Build a production-grade **Insurance Knowledge Graph** aligned with the
++**ACORD Information Model (AIM v2.x)** and exposed through a **GraphRAG**
++(Graph-augmented Retrieval-Augmented Generation) service so that downstream
++underwriting, policy-servicing and claims assistants can answer multi-hop
++contractual questions deterministically.
++
++## Target Architecture (one-liner)
++Neo4j (Labeled Property Graph) + native Vector Index + LLM extraction pipeline
+++ Hybrid (graph ⨯ vector) retrieval API → grounded LLM answers with citation
++paths.
++
++## Stage Scope
++This repository is currently in the **Requirements & Architecture** stage.
++No runtime code is produced yet; only:
++1. OpenSpec change proposal(s) under `openspec/changes/`
++2. Authoritative technical specification under `docs/`
++3. Reference assets (Cypher DDL, JSON Schema, prompt templates) under
++   `assets/` that downstream implementation changes will consume verbatim.
++
++## Conventions
++- **Spec authoring**: follow OpenSpec — every requirement uses
++  `### Requirement:` headings with at least one `#### Scenario:` block in
++  GIVEN / WHEN / THEN form.
++- **Identifier conventions**: all node `id` properties are stable, opaque
++  strings prefixed by entity-type (`P_`, `POL_`, `CL_`, `CLM_`, `SUB_`,
++  `PER_`, `PROD_`). External business keys (`policy_number`,
++  `claim_number`, `icd_code`) are modelled as separate indexed properties.
++- **Language**: documentation may be authored in English or Simplified
++  Chinese; embeddings and clause text MUST preserve original language and
++  store ISO 639-1 `lang` on `Clause` nodes.
++- **Versioning**: bitemporal — every relationship that can be amended via
++  endorsement carries `valid_from`, `valid_to`, `is_active`; specs are
++  versioned through OpenSpec change archives.
++
++## Out of Scope (this stage)
++- Production code (ETL, API server, UI)
++- Vendor selection for LLM provider, embedding model, observability stack
++- Concrete SLA numbers (placeholders only; finalised in a future change)

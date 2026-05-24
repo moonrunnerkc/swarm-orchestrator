@@ -1,0 +1,128 @@
+diff --git a/.codex/config.yaml b/.codex/config.yaml
+new file mode 100644
+index 0000000..51af222
+--- /dev/null
++++ b/.codex/config.yaml
+@@ -0,0 +1,16 @@
++# OpenAI Codex CLI — project configuration
++# Reference: https://github.com/openai/codex
++
++model: o4-mini
++
++# Approval mode: "suggest" | "auto-edit" | "full-auto"
++# "suggest"   — show diffs and ask before applying (default, safest)
++# "auto-edit" — apply file edits automatically, ask before shell commands
++# "full-auto" — apply everything without prompting (CI / scripted use)
++approvalMode: suggest
++
++# Providers: "openai" (default) | "azure" | "gemini" | "ollama" | "mistral" | etc.
++provider: openai
++
++# Notify when a long-running task finishes
++notify: true
+diff --git a/AGENTS.md b/AGENTS.md
+new file mode 100644
+index 0000000..89cb8b7
+--- /dev/null
++++ b/AGENTS.md
+@@ -0,0 +1,54 @@
++# altavida-projects — Agent Instructions
++
++This file is read by OpenAI Codex CLI and other AI coding agents to understand the project.
++
++## Project Overview
++
++`altavida-projects` is the monorepo for Altavida's internal and client-facing applications.
++
++## Development Setup
++
++### Prerequisites
++- Node.js >= 18
++- npm >= 9
++- OpenAI Codex CLI: `npm install -g @openai/codex`
++
++### Environment Variables
++Copy `.env.example` to `.env` and fill in the required values before running any service.
++`OPENAI_API_KEY` must be set for Codex CLI to function.
++
++## Repository Structure
++
++```
++altavida-projects/
++├── AGENTS.md          # AI agent instructions (this file)
++├── README.md          # Project overview
++└── .codex/
++    └── config.yaml    # Codex CLI project configuration
++```
++
++## Coding Guidelines
++
++- Write clear, minimal code — avoid over-engineering.
++- No unnecessary comments; only add one when the WHY is non-obvious.
++- Prefer editing existing files over creating new ones.
++- Run tests before committing.
++
++## Git Workflow
++
++- Branch naming: `<type>/<short-description>` (e.g. `feat/add-login`, `fix/broken-auth`)
++- Commit messages: imperative mood, present tense (e.g. "Add login endpoint")
++- Always open a PR; never push directly to `main`.
++
++## Running Codex CLI
++
++```bash
++# Interactive session in the project root
++codex
++
++# One-shot prompt
++codex "explain the authentication flow"
++
++# Full-auto mode (use with care)
++codex --approval-mode full-auto "fix the broken test in src/auth"
++```
+diff --git a/README.md b/README.md
+index c92c2f0..ee4cb5c 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1,39 @@
+-# altavida-projects
+\ No newline at end of file
++# altavida-projects
++
++Monorepo for Altavida's applications.
++
++## Getting Started
++
++### Prerequisites
++
++- Node.js >= 18
++- npm >= 9
++- An OpenAI API key
++
++### Install OpenAI Codex CLI
++
++```bash
++npm install -g @openai/codex
++```
++
++Set your API key:
++
++```bash
++export OPENAI_API_KEY="sk-..."
++```
++
++### Run Codex in this project
++
++```bash
++# Interactive REPL
++codex
++
++# One-shot question
++codex "what does this codebase do?"
++
++# Automated edit with confirmation
++codex --approval-mode auto-edit "add input validation to the login form"
++```
++
++Project-level configuration lives in [`.codex/config.yaml`](.codex/config.yaml).  
++Agent instructions for AI tools live in [`AGENTS.md`](AGENTS.md).

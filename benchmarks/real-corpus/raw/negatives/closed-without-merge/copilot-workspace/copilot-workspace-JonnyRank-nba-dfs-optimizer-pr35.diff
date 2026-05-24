@@ -1,0 +1,155 @@
+diff --git a/.github/copilot-instructions.md b/.github/copilot-instructions.md
+new file mode 100644
+index 0000000..b6c8958
+--- /dev/null
++++ b/.github/copilot-instructions.md
+@@ -0,0 +1,149 @@
++# Copilot Cloud Agent Instructions
++
++## Quick Start
++
++Read the codebase documentation before making changes — it is comprehensive and accurate:
++
++- `docs/codebase/STACK.md` — runtime, dependencies, key commands
++- `docs/codebase/STRUCTURE.md` — file map, entry points, module boundaries
++- `docs/codebase/ARCHITECTURE.md` — pipeline flow, module responsibilities, reused patterns
++- `docs/codebase/CONVENTIONS.md` — naming rules, import conventions, error handling style
++- `docs/codebase/CONCERNS.md` — known risks, tech debt, fragile areas
++- `docs/codebase/TESTING.md` — testing status (no automated tests exist)
++- `docs/codebase/INTEGRATIONS.md` — external systems, data stores, file I/O
++
++Also read `AGENTS.md` (project guidelines) and `BACKLOG.md` (task tracking).
++
++## What This Project Is
++
++An NBA DFS lineup optimizer for DraftKings. It generates, ranks, and exports fantasy lineups using linear programming (PuLP + HiGHS solver). It is a **single-user, locally-run desktop tool** with no web API, no database, and no network calls.
++
++## Architecture (Sequential File-Based Pipeline)
++
++```
++DKEntries.csv + NBA-Projs-*.csv
++       │
++       ▼
++[Engine] → lineup-pool-{timestamp}.csv
++       │
++       ▼
++[Ranker] → ranked-lineups-{timestamp}.csv
++       │
++       ▼
++[Exporter] → upload-ready-DKEntries-{timestamp}.csv
++       │
++       ▼
++[Exposure Report] → console output
++```
++
++**Alternate path:** `--late_swap` runs `late_swapper.py` instead of the standard pipeline.
++
++### Key modules and their responsibilities
++
++| Module | Owns | Must NOT own |
++|--------|------|-------------|
++| `src/nba_optimizer/engine.py` | LP model, parallel solving, slot optimization | Ranking, export |
++| `src/nba_optimizer/ranker.py` | Lineup scoring by weighted rank metrics | Generation, export |
++| `src/nba_optimizer/exporter.py` | DraftKings CSV template mapping | Ranking, optimization |
++| `src/nba_optimizer/exposure_report.py` | Post-export player exposure analytics | Everything else |
++| `src/nba_optimizer/late_swapper.py` | Lock detection, constrained re-optimization | Full lineup generation |
++| `src/nba_optimizer/config.py` | Config dataclass, env var loading, constants | Business logic |
++| `src/nba_optimizer/utils.py` | File discovery, ID parsing, CSV utilities | Module-specific logic |
++| `src/nba_optimizer/orchestrator.py` | Pipeline orchestration, Config injection | Core logic |
++| `scripts/run_optimizer.py` | CLI entry point (thin wrapper) | Core logic |
++
++**Do not move export, ranking, or report logic into the engine.** Keep module responsibilities separated.
++
++## Environment Setup
++
++```bash
++# Install the project in editable mode (this is the standard install path)
++pip install -e .
++```
++
++### Environment variables (configured via `.env`, loaded by python-dotenv)
++
++| Variable | Purpose |
++|----------|---------|
++| `NBA_ENTRIES_PATH` | Path to DKEntries.csv template from DraftKings |
++| `NBA_PROJS_DIR` | Directory containing NBA-Projs-*.csv projection files |
++| `NBA_LINEUP_DIR` | Base directory for intermediate lineup pools and ranked lineups |
++| `NBA_OUTPUT_DIR` | Directory for final upload-ready CSV exports |
++
++Copy `.env.example` to `.env` and set paths. Without real CSV input files, the pipeline will fail at data loading — this is expected.
++
++## Build and Run
++
++```bash
++# Install
++pip install -e .
++
++# Run full pipeline (CLI)
++python scripts/run_optimizer.py -n 2500 -r 0.25
++
++# Run with GUI (requires wxPython display)
++python scripts/run_optimizer_gui.py
++
++# Run late swap
++python scripts/run_optimizer.py --late_swap
++
++# Run individual modules standalone
++python -m nba_optimizer.engine
++python -m nba_optimizer.ranker
++python -m nba_optimizer.exposure_report
++```
++
++**There are no linters, formatters, build steps, or automated tests configured.** Do not add them unless explicitly asked.
++
++## Coding Conventions
++
++### Naming
++
++- Files and functions: `snake_case`
++- Constants: `UPPER_SNAKE_CASE`
++- Classes: `PascalCase`
++- DataFrame variables: `df_` prefix (e.g., `df_players`, `df_ranked`)
++- Lookup dicts/maps: `_dict` or `_map` suffix (e.g., `salary_dict`, `proj_map`)
++- Config instances: `cfg` or `config`
++
++### Imports
++
++- **Inside `src/nba_optimizer/`**: Use relative imports (`from . import config`, `from .utils import get_latest_file`)
++- **In `scripts/`**: Use absolute package imports (`from nba_optimizer import engine, ranker`)
++- Import order: stdlib → third-party → local
++
++### Error handling and logging
++
++- Use `print()` for all output — no logging framework
++- Wrap `run()` functions in `try/except` with `print(f"Error: {e}")` and `traceback.print_exc()`
++- Progress is printed at 20% intervals during engine generation
++
++### Configuration pattern
++
++- All module `run()` functions accept a `Config` instance (dependency injection)
++- Use `dataclasses.replace()` to override Config defaults with CLI arguments
++- Each module has its own `main()` with `argparse` for standalone execution
++
++## Critical Pitfalls
++
++1. **Stale file pickup**: Stages communicate via timestamped CSVs. If a stage fails, stale outputs from a previous run may be picked up by the next stage. Be careful with any "latest file" logic.
++
++2. **Dual data loading**: `engine.py` and `late_swapper.py` each have their own `load_data()` with subtly different CSV parsing. If you change projection or DKEntries parsing, **check both files for parity**.
++
++3. **Cross-module coupling**: `ranker.py` imports `engine.load_data()`. Avoid creating more cross-module dependencies unless intentionally refactoring shared data loading.
++
++4. **High-risk files**: `engine.py` and `late_swapper.py` are the largest, highest-churn, and untested files. Changes here require extra care and manual verification.
++
++5. **No automated tests**: There is no test suite. Verify changes manually with real CSV inputs and output inspection. Do not add generic tests just for coverage — any future tests must be transparent, domain-relevant, and directly tied to real optimizer behavior.
++
++6. **GUI dependencies**: `Gooey` and `wxPython` require a display server. The GUI will not work in headless/CI environments. This is expected.
++
++7. **Windows-specific considerations**: `ProcessPoolExecutor` pickles the full DataFrame per worker on Windows (no copy-on-write). The project was originally designed for Windows paths.
++
++## Working on Issues
++
++Check `BACKLOG.md` for existing task descriptions. If your task matches one, update its status upon completion.
++
++## Documentation Updates
++
++When making code changes, update the corresponding docs in `docs/codebase/` if module responsibilities, architecture, conventions, or integrations change. Prefer linking to existing docs rather than duplicating content. Follow the instructions in `.github/instructions/update-docs-on-code-change.instructions.md`.

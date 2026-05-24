@@ -1,0 +1,26 @@
+{
+  "id": "devin-Juan-Lucas-memoire-master-rl-logistique-pr3",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 3,
+    "headSha": "5b6404f6f4215ed9d9a6003ddb2fe4071dbd6033",
+    "baseSha": "fd737f11b8060447ad2dcf0bdfeb014b4620f65e",
+    "title": "fix: Simulation parallèle (DES) + corrections module simulation",
+    "body": "## Summary\n\nCorrige 4 problèmes identifiés dans le module `simulation/` :\n\n### 1. Simulation parallèle via tas d'événements (MAJEUR)\n**Avant** : les camions étaient simulés séquentiellement (`for truck in self.trucks`). T1 faisait tous ses cycles, puis T2, etc. → les files d'attente et la congestion n'étaient pas réalistes.\n\n**Après** : tous les camions opèrent en concurrence via un tas min (`heapq`). À chaque instant, le camion dont l'événement est le plus proche dans le temps est traité en premier. Cela garantit :\n- Des files d'attente réalistes aux pelles et aux dumps\n- Une concurrence réelle entre camions pour les ressources\n- Des temps d'attente distribués de manière réaliste (ex: T5 attend plus car il arrive souvent en dernier)\n\n### 2. Distribution log-normale pour les durées de service\n`_sample_duration()` utilisait `rng.gauss` (normale) malgré un docstring mentionnant \"log-normale\". Corrigé pour utiliser `rng.lognormvariate`, cohérent avec `graph_model.py` et l'Eq. 3.2 du mémoire.\n\n### 3. Vérification post-panne avant comptage du cycle\nUn cycle est maintenant compté comme complet **seulement si** `time_min < episode_minutes` après la panne éventuelle. Évite de compter du tonnage fictif en fin de shift.\n\n### 4. Docstrings et imports nettoyés\n- Docstrings raccourcis pour respecter la limite ruff de 99 caractères\n- Import inutilisé `deepcopy` retiré de `mine_env.py`\n- Imports réordonnés par ruff (isort)\n\n## Review & Testing Checklist for Human\n- [ ] Vérifier que la simulation parallèle produit des résultats réalistes : `python -m memoire_master_rl_logistique.simulation.run_mvp` — les temps d'attente doivent être distribués différemment entre camions\n- [ ] Vérifier que l'env Gymnasium fonctionne toujours : `python -c \"from gymnasium.utils.env_checker import check_env; from memoire_master_rl_logistique.env.mine_env import MineEnv; check_env(MineEnv(), skip_render_check=True); print('OK')\"`\n- [ ] Comparer les KPIs avant/après : la productivité devrait être similaire mais les temps d'attente mieux répartis\n\n### Notes\n- Les valeurs numériques des KPIs changent par rapport à l'ancienne version (simulation séquentielle → parallèle), c'est attendu et correct.\n- L'architecture `heapq` est standard pour les simulations à événements discrets (DES).\n\n\nLink to Devin session: https://app.devin.ai/sessions/f64d4823601e47a6830aa405d6d73ba0\nRequested by: @Juan-Lucas",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779574738-fix-simulation",
+    "repository": "Juan-Lucas/memoire-master-rl-logistique"
+  },
+  "diffRef": {
+    "repository": "Juan-Lucas/memoire-master-rl-logistique",
+    "headSha": "5b6404f6f4215ed9d9a6003ddb2fe4071dbd6033",
+    "baseSha": "fd737f11b8060447ad2dcf0bdfeb014b4620f65e"
+  },
+  "vendoredDiffPath": "devin/devin-Juan-Lucas-memoire-master-rl-logistique-pr3.diff",
+  "vendoredAt": "2026-05-24T03:05:08.444Z",
+  "collectedAt": "2026-05-24T03:05:08.444Z"
+}

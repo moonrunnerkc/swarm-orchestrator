@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24157",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24157,
+    "headSha": "c2b54fbedef40ba4d2cbda6c78806840b6744c9b",
+    "baseSha": "7924743c38e9a28795c1533ab5143dceea5ca566",
+    "title": "[codex] Remove external client session reset plumbing",
+    "body": "## Why\n\nThe turn loop no longer needs to decide when a `ModelClientSession` should reset its websocket state after compaction. That reset behavior belongs inside the model client, where the websocket cache and retry state are owned. The repo guidance now calls this out explicitly so future changes let the incremental request logic decide whether the previous request can be reused.\n\n## What Changed\n\n- Removed the `reset_client_session` return value from pre-sampling and auto-compact helpers in `core/src/session/turn.rs`.\n- Changed compaction helpers to return `CodexResult<()>` so callers only handle success or failure.\n- Made `ModelClientSession::reset_websocket_session` private to `core/src/client.rs`, leaving it callable only from model-client internals.\n- Added `AGENTS.md` guidance not to call `reset_client_session` unnecessarily.\n\n## Validation\n\n- `just test -p codex-core session::turn`\n",
+    "author": "pakrym-oai",
+    "headRef": "pakrym/remove-external-reset-client-session",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "c2b54fbedef40ba4d2cbda6c78806840b6744c9b",
+    "baseSha": "7924743c38e9a28795c1533ab5143dceea5ca566"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24157.diff",
+  "vendoredAt": "2026-05-24T03:20:49.595Z",
+  "collectedAt": "2026-05-24T03:20:49.595Z"
+}

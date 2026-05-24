@@ -1,0 +1,89 @@
+diff --git a/Makefile b/Makefile
+index 799bc9c42fc..2f8bc709d3a 100644
+--- a/Makefile
++++ b/Makefile
+@@ -106,13 +106,16 @@ install-python-dependencies-minimal: ## Install minimal Python dependencies usin
+ install-python-dependencies-ci: ## Install Python CI dependencies using uv pip sync
+ 	# Create virtualenv if it doesn't exist
+ 	uv venv .venv
+-	# Install CPU-only torch first to prevent CUDA dependency issues (Linux only)
++	# Install all dependencies from PyPI first, then replace torch with CPU-only
++	# builds on Linux. This avoids querying the PyTorch index for non-torch
++	# packages, which can fail with 503 errors.
++	uv pip sync sdk/python/requirements/py$(PYTHON_VERSION)-ci-requirements.txt
+ 	@if [ "$$(uname -s)" = "Linux" ]; then \
+-		echo "Installing dependencies with torch CPU index for Linux..."; \
+-		uv pip sync --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match sdk/python/requirements/py$(PYTHON_VERSION)-ci-requirements.txt; \
+-	else \
+-		echo "Installing dependencies from PyPI for macOS..."; \
+-		uv pip sync sdk/python/requirements/py$(PYTHON_VERSION)-ci-requirements.txt; \
++		echo "Replacing torch with CPU-only version for Linux..."; \
++		uv pip install --no-deps --reinstall \
++			--index-url https://download.pytorch.org/whl/cpu \
++			-c sdk/python/requirements/py$(PYTHON_VERSION)-ci-requirements.txt \
++			torch torchvision; \
+ 	fi
+ 	uv pip install --no-deps -e .
+ 
+diff --git a/infra/feast-operator/internal/controller/featurestore_controller_test.go b/infra/feast-operator/internal/controller/featurestore_controller_test.go
+index 1baeba7f057..e4e2141997e 100644
+--- a/infra/feast-operator/internal/controller/featurestore_controller_test.go
++++ b/infra/feast-operator/internal/controller/featurestore_controller_test.go
+@@ -369,6 +369,10 @@ var _ = Describe("FeatureStore Controller", func() {
+ 				Type: services.OnlineRemoteConfigType,
+ 				Path: "http://feast-test-resource-online.default.svc.cluster.local:80",
+ 			}
++			clientConfig.Registry = services.RegistryConfig{
++				RegistryType: services.RegistryFileConfigType,
++				Path:         services.EphemeralPath + "/" + services.DefaultRegistryPath,
++			}
+ 			Expect(repoConfigClient).To(Equal(&clientConfig))
+ 
+ 			// change feast project and reconcile
+diff --git a/infra/feast-operator/internal/controller/services/repo_config.go b/infra/feast-operator/internal/controller/services/repo_config.go
+index 42ca5373fd9..6f4da4086b2 100644
+--- a/infra/feast-operator/internal/controller/services/repo_config.go
++++ b/infra/feast-operator/internal/controller/services/repo_config.go
+@@ -523,6 +523,8 @@ func getClientRepoConfig(
+ 		} else if remoteRegistryTls(featureStore) {
+ 			clientRepoConfig.Registry.Cert = getCertificatePath(feast, RegistryFeastType, appliedServices.Registry.Remote.TLS.CertName)
+ 		}
++	} else if !isRemoteRegistry(featureStore) {
++		clientRepoConfig.Registry = defaultRegistryConfig(featureStore)
+ 	}
+ 
+ 	return clientRepoConfig
+diff --git a/sdk/python/tests/utils/cli_repo_creator.py b/sdk/python/tests/utils/cli_repo_creator.py
+index 25c3fdd1198..ed5a2813aef 100644
+--- a/sdk/python/tests/utils/cli_repo_creator.py
++++ b/sdk/python/tests/utils/cli_repo_creator.py
+@@ -60,14 +60,14 @@ def run(self, args: List[str], cwd: Path) -> subprocess.CompletedProcess:
+ 
+         try:
+             return subprocess.run(
+-                [sys.executable, cli.__file__] + args,
++                [sys.executable, "-u", cli.__file__] + args,
+                 cwd=cwd,
+                 capture_output=True,
+                 timeout=timeout,
+             )
+         except subprocess.TimeoutExpired:
+             return subprocess.CompletedProcess(
+-                args=[sys.executable, cli.__file__] + args,
++                args=[sys.executable, "-u", cli.__file__] + args,
+                 returncode=-1,
+                 stdout=b"",
+                 stderr=f"Command timed out after {timeout}s: {args}".encode(),
+@@ -80,10 +80,10 @@ def run_with_output(self, args: List[str], cwd: Path) -> Tuple[int, bytes]:
+         # This matters when feast prints an error and then hangs in the Dask atexit
+         # handler — the error text is already in the pipe buffer and can be read after
+         # the process is killed.
+-        timeout = 120 if is_teardown else 60
++        timeout = 120
+ 
+         proc = subprocess.Popen(
+-            [sys.executable, cli.__file__] + args,
++            [sys.executable, "-u", cli.__file__] + args,
+             cwd=cwd,
+             stdout=subprocess.PIPE,
+             stderr=subprocess.STDOUT,

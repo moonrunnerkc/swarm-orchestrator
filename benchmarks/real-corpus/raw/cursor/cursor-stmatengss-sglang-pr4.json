@@ -1,0 +1,26 @@
+{
+  "id": "cursor-stmatengss-sglang-pr4",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 4,
+    "headSha": "0cd4d7b97e4c62b272f34ec0ec30b21e50b08830",
+    "baseSha": "dda276fb21cce986644f5d8a045285bfad1f93f3",
+    "title": "Fix Mooncake dummy client to include hybrid (Mamba) buffers",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n### What\n- In Mooncake standalone (dummy client) mode, compute the `setup_dummy()` shared mapping size from **all host buffers** that may be passed to `register_buffer()` (KV anchor + hybrid pools like Mamba temporal/conv).\n- Register the regression test in CPU CI.\n- Refactor the regression test to follow `.claude/skills/write-sglang-test` conventions.\n\n### Why\n- Hybrid Mamba models register additional host buffers after initialization (`register_mem_host_pool_v2`). In dummy mode the real `mooncake_client` must be able to map these buffers; previously `setup_dummy()` only sized the mapping based on KV, so Mamba buffers were not guaranteed to be visible.\n\n### Changes\n- `python/sglang/srt/mem_cache/storage/mooncake_store/mooncake_store.py`\n  - Add `_standalone_required_bytes()` and use it for `setup_dummy()`.\n- `test/registered/unit/mem_cache/test_mooncake_standalone_dummy_mamba.py`\n  - Unit test asserting `setup_dummy(required_bytes, ...)` includes hybrid buffers.\n  - Registered with `register_cpu_ci(est_time=1, suite=\"base-a-test-cpu\")`.\n  - Uses `CustomTestCase`, `unittest.main()`, and `patch.dict` for fake module injection.\n\n### Notes\n- No behavior change for non-standalone mode.\n\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-56f41d7f-38c3-4b13-95e9-8b07a638f2b1\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-56f41d7f-38c3-4b13-95e9-8b07a638f2b1\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "stmatengss",
+    "headRef": "cursor/mooncake-dummy-mamba-f2b1",
+    "repository": "stmatengss/sglang"
+  },
+  "diffRef": {
+    "repository": "stmatengss/sglang",
+    "headSha": "0cd4d7b97e4c62b272f34ec0ec30b21e50b08830",
+    "baseSha": "dda276fb21cce986644f5d8a045285bfad1f93f3"
+  },
+  "vendoredDiffPath": "cursor/cursor-stmatengss-sglang-pr4.diff",
+  "vendoredAt": "2026-05-24T03:12:06.951Z",
+  "collectedAt": "2026-05-24T03:12:06.951Z"
+}

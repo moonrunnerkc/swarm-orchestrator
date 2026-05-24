@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-ChadFarrow-MSP-2.0-pr65",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor+branch=claude/"
+  },
+  "pr": {
+    "number": 65,
+    "headSha": "a3b76a62b890aba8ad500f05b305936be18f39f6",
+    "baseSha": "a66f9093fb032f24cd794ef1b131b83242da7cf6",
+    "title": "Fix publisher feed Podcast Index submission",
+    "body": "Three bugs prevented publisher feeds from correctly submitting to Podcast\nIndex and reporting results in the UI:\n\n1. publisherPublish.ts: notifyPodcastIndex never passed podcastGuid to\n   /api/pubnotify. Without it, PI could only do a URL-based lookup, which\n   returns nothing for freshly created feeds — resulting in 'pending'\n   forever instead of 'indexed' with a PI page link. Now passes guid so the\n   faster GUID-based lookup runs immediately after publish.\n\n2. PublishSection.tsx: piStatus 'failed' was rendered identically to\n   'pending' (both showed \"Notified\" in neutral colour, PI result block\n   hidden on failure). Now shows \"Failed\" in danger colour and a visible\n   error message with retry instructions.\n\n3. PublisherFeedReminderSection.tsx: handleHostOnMSP called /api/pisubmit\n   (POST, add/byfeedurl only) instead of /api/pubnotify (GET, full\n   pubnotify + podping + lookup flow). Replaced with /api/pubnotify passing\n   url, medium, and guid.\n\nCo-Authored-By: claude <noreply@anthropic.com>\n\nhttps://claude.ai/code/session_01HMrJTuT51v5ooAkayJ3CQG",
+    "author": "ChadFarrow",
+    "headRef": "claude/publisher-feeds-podcastindex-V4jap",
+    "repository": "ChadFarrow/MSP-2.0"
+  },
+  "diffRef": {
+    "repository": "ChadFarrow/MSP-2.0",
+    "headSha": "a3b76a62b890aba8ad500f05b305936be18f39f6",
+    "baseSha": "a66f9093fb032f24cd794ef1b131b83242da7cf6"
+  },
+  "vendoredDiffPath": "claude-code/claude-code-ChadFarrow-MSP-2.0-pr65.diff",
+  "vendoredAt": "2026-05-24T03:08:44.883Z",
+  "collectedAt": "2026-05-24T03:08:44.883Z"
+}

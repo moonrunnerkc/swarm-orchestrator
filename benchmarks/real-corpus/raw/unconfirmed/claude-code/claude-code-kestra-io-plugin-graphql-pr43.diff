@@ -1,0 +1,17 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.graphql.md b/src/main/resources/doc/io.kestra.plugin.graphql.md
+new file mode 100644
+index 0000000..1158d14
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.graphql.md
+@@ -0,0 +1,11 @@
++# How to use the GraphQL plugin
++
++Execute GraphQL queries and mutations from Kestra flows.
++
++## Authentication
++
++Set `uri` to your GraphQL endpoint. Pass authentication credentials via `headers` (e.g. an `Authorization` bearer token) or via `options.auth` for basic auth. Store secrets in [secrets](https://kestra.io/docs/concepts/secret) and apply connection properties globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
++
++## Tasks
++
++`Request` executes a GraphQL operation — set `query` (required, the GraphQL query or mutation string). Pass runtime values via `variables` (a map) and set `operationName` when the document contains multiple operations. The request uses `POST` by default; set `method` to override. Set `failOnGraphQLErrors: true` to fail the task when the response contains GraphQL errors (default is `false` — errors are surfaced in the `error` output field). The output includes `body` (the `data` field), `error`, `code`, and `headers`.

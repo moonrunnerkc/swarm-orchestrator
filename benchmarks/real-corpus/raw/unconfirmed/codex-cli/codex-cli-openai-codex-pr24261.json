@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24261",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24261,
+    "headSha": "d0fe8a77ae7ffe27d3abdc22cc8752bfb629dceb",
+    "baseSha": "7d47056ea42636271ac020b86347fbbef49490aa",
+    "title": "feat(doctor): add environment diagnostics",
+    "body": "## Why\n\nIssue #23031 was hard to diagnose from existing `codex doctor` output because support could not see the OS language, resolved Git install, Git repo metadata, Windows console mode/code page, or terminal-title inputs that affect the TUI startup path. This adds those read-only signals to `codex doctor` so Windows, Linux, and macOS reports carry the context needed to investigate similar terminal rendering regressions.\n\nRefs #23031\n\n## What Changed\n\n- Add a `system.environment` check for OS type/version, OS language, and locale env vars.\n- Add a `git.environment` check for the selected Git executable, PATH Git candidates, version, exec path/build options, repository root, branch, `.git` entry, and `core.fsmonitor`.\n- Add Windows console code page and VT-processing mode details to terminal diagnostics.\n- Add a `terminal.title` check for configured/default title items and resolved project-title source/value.\n- Surface startup warning counts in config diagnostics and teach human output to render the new categories.\n\n## How to Test\n\n1. On Windows, check out this branch and run `cargo run -p codex-cli -- doctor --summary`.\n2. Confirm the Environment section includes `system`, `git`, `terminal`, and `title` rows.\n3. Run `cargo run -p codex-cli -- doctor --json`.\n4. Confirm the JSON contains `system.environment`, `git.environment`, and `terminal.title`; on Windows, confirm `terminal.env` details include console code pages and `VT processing` for stdout/stderr.\n5. From a non-git directory, run the same `doctor --json` command and confirm the Git check reports `repo detected: false` rather than warning.\n\nTargeted tests:\n\n- `cargo test -p codex-cli doctor`\n- `cargo test -p codex-cli`\n",
+    "author": "fcoury-oai",
+    "headRef": "fcoury/doctor-improvements",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "d0fe8a77ae7ffe27d3abdc22cc8752bfb629dceb",
+    "baseSha": "7d47056ea42636271ac020b86347fbbef49490aa"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24261.diff",
+  "vendoredAt": "2026-05-24T03:13:03.982Z",
+  "collectedAt": "2026-05-24T03:13:03.982Z"
+}

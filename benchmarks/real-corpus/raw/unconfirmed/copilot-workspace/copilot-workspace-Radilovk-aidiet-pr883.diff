@@ -1,0 +1,122 @@
+diff --git a/game-analytics.html b/game-analytics.html
+index 971bc68a..9e39a6bd 100644
+--- a/game-analytics.html
++++ b/game-analytics.html
+@@ -195,10 +195,6 @@
+             align-items: center;
+             justify-content: space-between;
+             gap: 10px;
+-            cursor: pointer;
+-            user-select: none;
+-            -webkit-user-select: none;
+-            -webkit-tap-highlight-color: transparent;
+         }
+         .game-analytics-title {
+             display: flex;
+@@ -216,14 +212,7 @@
+             font-weight: 600;
+             white-space: nowrap;
+         }
+-        .game-analytics-chevron {
+-            font-size: 0.8rem;
+-            transition: transform 0.3s ease;
+-            opacity: 0.85;
+-        }
+-        .game-analytics-section.open .game-analytics-chevron {
+-            transform: rotate(180deg);
+-        }
++
+         .game-analytics-body {
+             padding: 14px 16px 16px;
+         }
+@@ -681,14 +670,13 @@
+     <!-- Main Content -->
+     <div class="container">
+         <div class="game-analytics-section open" id="gameAnalyticsSection">
+-            <div class="game-analytics-header" onclick="toggleGameAnalytics()" role="button" tabindex="0" aria-expanded="true" aria-controls="gameAnalyticsBody" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleGameAnalytics();}">
++            <div class="game-analytics-header">
+                 <div class="game-analytics-title">
+                     <i class="fas fa-brain"></i>
+                     <span>Текущ анализ</span>
+                 </div>
+                 <div style="display:flex;align-items:center;gap:8px;">
+                     <span id="gameAnalyticsBadge" class="game-analytics-badge"></span>
+-                    <i class="fas fa-chevron-up game-analytics-chevron" id="gameAnalyticsChevron"></i>
+                 </div>
+             </div>
+             <div class="game-analytics-body" id="gameAnalyticsBody">
+@@ -742,19 +730,6 @@
+             updateThemeIcon(t);
+         })();
+ 
+-        function toggleGameAnalytics() {
+-            var section = document.getElementById('gameAnalyticsSection');
+-            var body    = document.getElementById('gameAnalyticsBody');
+-            var chevron = document.getElementById('gameAnalyticsChevron');
+-            var header  = section ? section.querySelector('.game-analytics-header') : null;
+-            if (!section || !body) return;
+-            var isOpen = body.style.display !== 'block';
+-            body.style.display = isOpen ? 'block' : 'none';
+-            section.classList.toggle('open', isOpen);
+-            if (chevron) chevron.className = 'fas game-analytics-chevron ' + (isOpen ? 'fa-chevron-up' : 'fa-chevron-down');
+-            if (header)  header.setAttribute('aria-expanded', String(isOpen));
+-        }
+-
+         function toggleDetailedMetrics() {
+             var details = document.getElementById('gameMetricsDetails');
+             var chevron = document.getElementById('gameMetricsChevron');
+@@ -816,8 +791,6 @@
+             // Always expand the container on this page
+             body.style.display = 'block';
+             section.classList.add('open');
+-            var header = section.querySelector('.game-analytics-header');
+-            if (header) header.setAttribute('aria-expanded', 'true');
+ 
+             // ── Helpers ───────────────────────────────────────────────────────
+             function zp(n) { return n < 10 ? '0' + n : '' + n; }
+diff --git a/logtasks.md b/logtasks.md
+index 5bf6cf88..9d88670b 100644
+--- a/logtasks.md
++++ b/logtasks.md
+@@ -1768,3 +1768,23 @@ Both changes are minimal, zero-bloat edits to existing code paths.
+ 
+ **guidelines.html**
+ - Swipe nav и bottom nav: Начало → Анализ.
++
++---
++
++## Задача: Единен чат за всички табове + премахване на collapse в анализ таба
++
++**Проблем:**
++1. Чат прозорецът в план таба се отваряше локално (само в plan.html iframe), вместо да използва общия shell overlay чат. При смяна на таб съдържанието на чат се губеше.
++2. В хедъра на analytics таба (game-analytics.html) имаше бутон за свиване на контейнера.
++
++### Извършени промени
++
++**plan.html**
++- `openChat()`: добавена проверка — ако plan.html работи като embedded tab (не в shellChat режим), делегира отварянето на чата към shell overlay чрез `requestShellAction('NUTRIPLAN_OPEN_CHAT')`. Така планът използва един и същи shared чат като всички останали табове. Съдържанието на чата се запазва при смяна на таб.
++
++**game-analytics.html**
++- Премахнати интерактивни атрибути от `.game-analytics-header` (`onclick`, `role="button"`, `tabindex`, `aria-expanded`, `aria-controls`, `onkeydown`).
++- Премахнат chevron иконата `<i class="fas fa-chevron-up game-analytics-chevron">`.
++- Премахнати CSS правила за `.game-analytics-chevron` и `cursor:pointer`/`user-select` от `.game-analytics-header`.
++- Премахната функция `toggleGameAnalytics()`.
++- Контейнерът остава постоянно в разгърнато (expanded) състояние.
+diff --git a/plan.html b/plan.html
+index c3ce740d..8e674ae9 100644
+--- a/plan.html
++++ b/plan.html
+@@ -6027,6 +6027,13 @@ <h2 style="color: var(--text-dark); margin-bottom: 15px;">Грешка</h2>
+ 
+         // --- Chat Logic ---
+         function openChat() {
++            // In regular embedded tab (not shellChat overlay) delegate to the shell's shared chat
++            if (document.documentElement.getAttribute('data-embedded-tab') === '1' &&
++                document.documentElement.getAttribute('data-shell-chat') !== '1') {
++                requestShellAction('NUTRIPLAN_OPEN_CHAT');
++                return;
++            }
++
+             if (chatVisible) {
+                 closeChatWindow();
+                 return;

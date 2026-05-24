@@ -1,0 +1,52 @@
+{
+  "_doc": "Seed repo list for scripts/corpus/collect-real.ts. Edit this file (no code change) to add or remove repositories. Vendor showcase repos are split from standing follow targets so the collector can prioritize the former on the first backfill. The collector also issues per-agent global GitHub searches that do not depend on this list; this file pins the minimum set of orgs/repos we always sweep.",
+  "vendorShowcaseRepos": [
+    { "vendor": "claude-code", "repo": "anthropics/claude-code" },
+    { "vendor": "claude-code", "repo": "anthropics/anthropic-sdk-typescript" },
+    { "vendor": "claude-code", "repo": "anthropics/anthropic-sdk-python" },
+    { "vendor": "openhands", "repo": "All-Hands-AI/OpenHands" },
+    { "vendor": "openhands", "repo": "All-Hands-AI/openhands-resolver" },
+    { "vendor": "aider", "repo": "paul-gauthier/aider" },
+    { "vendor": "aider", "repo": "Aider-AI/aider" },
+    { "vendor": "codex-cli", "repo": "openai/codex" },
+    { "vendor": "cursor", "repo": "getcursor/cursor" },
+    { "vendor": "devin", "repo": "cognition-ai/devin-examples" },
+    { "vendor": "replit-agent", "repo": "replit/replit-templates" },
+    { "vendor": "copilot-workspace", "repo": "githubnext/copilot-workspace-user-manual" }
+  ],
+  "standingFollowRepos": [
+    { "repo": "vercel/next.js" },
+    { "repo": "facebook/react" },
+    { "repo": "microsoft/vscode" },
+    { "repo": "denoland/deno" },
+    { "repo": "oven-sh/bun" },
+    { "repo": "rails/rails" },
+    { "repo": "django/django" },
+    { "repo": "pallets/flask" },
+    { "repo": "fastapi/fastapi" },
+    { "repo": "golang/go" },
+    { "repo": "kubernetes/kubernetes" },
+    { "repo": "hashicorp/terraform" },
+    { "repo": "supabase/supabase" },
+    { "repo": "prisma/prisma" },
+    { "repo": "tailwindlabs/tailwindcss" },
+    { "repo": "nodejs/node" },
+    { "repo": "pytest-dev/pytest" },
+    { "repo": "rust-lang/rust" },
+    { "repo": "elixir-lang/elixir" }
+  ],
+  "globalSearches": {
+    "_doc": "Per-agent text queries the collector issues against /search/issues. Each entry becomes one Octokit call per cron tick. The collector pages these to a cap of 100 results per query per run (search API per-page limit). Date filters are appended at call time.",
+    "queries": [
+      { "vendor": "devin", "q": "is:pr author:devin-ai-integration[bot]" },
+      { "vendor": "copilot-workspace", "q": "is:pr author:copilot-swe-agent[bot]" },
+      { "vendor": "openhands", "q": "is:pr author:openhands-agent[bot]" },
+      { "vendor": "claude-code", "q": "is:pr \"🤖 Generated with [Claude Code]\" in:body" },
+      { "vendor": "claude-code", "q": "is:pr \"Co-Authored-By: Claude <noreply@anthropic.com>\" in:body" },
+      { "vendor": "aider", "q": "is:pr \"aider:\" in:title" },
+      { "vendor": "cursor", "q": "is:pr head:cursor/" },
+      { "vendor": "codex-cli", "q": "is:pr \"Codex CLI\" in:body" },
+      { "vendor": "replit-agent", "q": "is:pr \"Replit Agent\" in:body" }
+    ]
+  }
+}

@@ -1,0 +1,171 @@
+diff --git a/aider/queries/tree-sitter-languages/julia-tags.scm b/aider/queries/tree-sitter-languages/julia-tags.scm
+index b7d33d93b6c..cef2511b622 100644
+--- a/aider/queries/tree-sitter-languages/julia-tags.scm
++++ b/aider/queries/tree-sitter-languages/julia-tags.scm
+@@ -1,54 +1,55 @@
+ ;; derived from: https://github.com/tree-sitter/tree-sitter-julia
+ ;; License: MIT
+ 
+-(module
++(module_definition
+   name: (identifier) @name.definition.module) @definition.module
+ 
+-(module
+-  name: (scoped_identifier) @name.definition.module) @definition.module
+-
+ (struct_definition
+-  name: (type_identifier) @name.definition.class) @definition.class
++  (type_head
++    (identifier) @name.definition.class)) @definition.class
+ 
+-(mutable_struct_definition
+-  name: (type_identifier) @name.definition.class) @definition.class
++(struct_definition
++  (type_head
++    (binary_expression
++      (identifier) @name.definition.class))) @definition.class
+ 
+-(abstract_type_declaration
+-  name: (type_identifier) @name.definition.class) @definition.class
++(abstract_definition
++  (type_head
++    (identifier) @name.definition.class)) @definition.class
+ 
+-(constant_assignment
+-  left: (identifier) @name.definition.class) @definition.class
++(abstract_definition
++  (type_head
++    (binary_expression
++      (identifier) @name.definition.class))) @definition.class
+ 
+ (function_definition
+-  name: (identifier) @name.definition.function) @definition.function
++  (signature
++    (call_expression
++      (identifier) @name.definition.function))) @definition.function
+ 
+ (function_definition
+-  name: (scoped_identifier) @name.definition.function) @definition.function
++  (signature
++    (identifier) @name.definition.function)) @definition.function
+ 
+ (assignment
+-  left: (call_expression
+-          function: (identifier) @name.definition.function)) @definition.function
+-
+-(method_definition
+-  name: (identifier) @name.definition.method) @definition.method
++  (call_expression
++    (identifier) @name.definition.function)) @definition.function
+ 
+ (macro_definition
+-  name: (identifier) @name.definition.macro) @definition.macro
+-
+-(macro_call
+-  name: (identifier) @name.reference.call) @reference.call
++  (signature
++    (call_expression
++      (identifier) @name.definition.macro))) @definition.macro
+ 
+-(call_expression
+-  function: (identifier) @name.reference.call) @reference.call
++(macro_definition
++  (signature
++    (identifier) @name.definition.macro)) @definition.macro
+ 
+ (call_expression
+-  function: (scoped_identifier) @name.reference.call) @reference.call
+-
+-(type_expression
+-  name: (type_identifier) @name.reference.type) @reference.type
++  (identifier) @name.reference.call) @reference.call
+ 
+-(constant_assignment
+-  left: (identifier) @name.definition.constant) @definition.constant
++(const_statement
++  (assignment
++    (identifier) @name.definition.constant)) @definition.constant
+ 
+ (export_statement
+   (identifier) @name.reference.export) @reference.export
+diff --git a/aider/website/assets/sample.aider.conf.yml b/aider/website/assets/sample.aider.conf.yml
+index f79b13dfb08..4a411aaa1b7 100644
+--- a/aider/website/assets/sample.aider.conf.yml
++++ b/aider/website/assets/sample.aider.conf.yml
+@@ -4,10 +4,6 @@
+ # Place in your home dir, or at the root of your git repo.
+ ##########################################################
+ 
+-# Note: You can only put OpenAI and Anthropic API keys in the YAML
+-# config file. Keys for all APIs can be stored in a .env file
+-# https://aider.chat/docs/config/dotenv.html
+-
+ ##########
+ # options:
+ 
+@@ -29,6 +25,12 @@
+ ## Specify the Anthropic API key
+ #anthropic-api-key: xxx
+ 
++## Specify API key for other providers (eg: --api-key provider=<key> sets PROVIDER_API_KEY=<key>)
++# api-key:
++# - openrouter=sk-or-v1-42424242
++# - deepseek=sk-42424242
++# - ...
++
+ ## Specify the api base url
+ #openai-api-base: xxx
+ 
+@@ -52,14 +54,6 @@
+ #  - yyy
+ #  - zzz
+ 
+-## Set an API key for a provider (eg: --api-key provider=<key> sets PROVIDER_API_KEY=<key>)
+-#api-key: xxx
+-## Specify multiple values like this:
+-#api-key:
+-#  - xxx
+-#  - yyy
+-#  - zzz
+-
+ #################
+ # Model settings:
+ 
+diff --git a/aider/website/docs/llms/openrouter.md b/aider/website/docs/llms/openrouter.md
+index e5e8a48cc8f..59c78639b06 100644
+--- a/aider/website/docs/llms/openrouter.md
++++ b/aider/website/docs/llms/openrouter.md
+@@ -19,6 +19,13 @@ export OPENROUTER_API_KEY=<key> # Mac/Linux
+ setx   OPENROUTER_API_KEY <key> # Windows, restart shell after setx
+ ```
+ 
++Alternatively, you may set the API key in the config file ~/.aider.conf.yml , just add the line:
++
++```
++api-key: openrouter=sk-...
++```
++
++
+ Start working with aider and OpenRouter on your codebase:
+ 
+ ```bash
+diff --git a/aider/website/docs/usage/tips.md b/aider/website/docs/usage/tips.md
+index f6ce03afaee..98f12567075 100644
+--- a/aider/website/docs/usage/tips.md
++++ b/aider/website/docs/usage/tips.md
+@@ -52,12 +52,12 @@ on the existing information in their contexts.
+ 
+ If your code is throwing an error, 
+ use the [`/run` command](commands.html)
+-to share the error output with the aider.
+-Or just paste the errors into the chat. Let the aider figure out how to fix the bug.
++to share the error output with aider.
++Or just paste the errors into the chat. Let aider figure out how to fix the bug.
+ 
+ If test are failing, use the [`/test` command](lint-test.html)
+ to run tests and
+-share the error output with the aider.
++share the error output with aider.
+ 
+ ## Providing docs
+ 

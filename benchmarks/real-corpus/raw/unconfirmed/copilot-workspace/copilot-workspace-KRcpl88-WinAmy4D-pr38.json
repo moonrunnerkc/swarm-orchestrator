@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-KRcpl88-WinAmy4D-pr38",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 38,
+    "headSha": "48a42aa85fe42452ac69660415bfb18ac369504b",
+    "baseSha": "e9ec438a0def6748b5cfd723674ac119ea5ebeff",
+    "title": "Revive pre-3D disabled unit tests with 3D-aware main-board test infrastructure",
+    "body": "A large portion of unit coverage had been disabled during the 2D→3D transition because tests assumed flat 8x8 offsets, legacy EPD shape, and class-level ignores. This change reactivates that coverage by standardizing tests on explicit main-board (level 7) semantics and replacing brittle 2D assumptions.\n\n- **Scope restored**\n  - Removed class-level `Ignore` gates from:\n    - `AttackDeltaTests`\n    - `MoveTests`\n    - `PositionTests`\n    - `SearchDataTests`\n  - Replaced commented/disabled legacy coverage in `AttackTests` with active 3D-compatible cases.\n\n- **3D-safe test foundation**\n  - Added shared helpers in `WinAmyTests/TestHelpers.*` to normalize legacy test intent onto main-board offsets:\n    - `MainBoardOffset`, `MainBoardCoord`\n    - `MakeMainBoardMove`, `MakeMainBoardPromotion`\n    - `CreatePositionFromLegacyMainEPD`\n  - Centralized legacy EPD handling (including en-passant translation) so tests remain concise while targeting correct 3D coordinates.\n\n- **Suite migrations**\n  - **Move/Position/SearchData**: migrated move construction and board access from flat `a1..h8` assumptions to main-board-aware helpers.\n  - **AttackDelta**: replaced brittle 2D expected-count checks with 3D-valid invariants and reference-based sliding/leaping assertions.\n  - **Attack**: revived disabled attack-map maintenance coverage (`AtkSet/AtkClr/Recalc`) and adjusted table assertions to validate 3D-validity instead of fixed 2D layouts.\n\n- **Stability fixes in tests**\n  - Updated `SearchDataTests` to avoid stack overflow from large `CSearchData` stack allocation by using heap allocation in test code.\n\n```cpp\n// New test usage pattern (main-board aware)\nPositionGuard p(CreatePositionFromLegacyMainEPD(\"4k3/8/8/3pP3/8/8/8/4K3 w - d6\"));\nCMove move = MakeMainBoardMove(e5, d6, M_ENPASSANT);\nAssert::IsTrue(p.get()->LegalMove(move));\n```",
+    "author": "Copilot",
+    "headRef": "copilot/revive-unit-tests-3d",
+    "repository": "KRcpl88/WinAmy4D"
+  },
+  "diffRef": {
+    "repository": "KRcpl88/WinAmy4D",
+    "headSha": "48a42aa85fe42452ac69660415bfb18ac369504b",
+    "baseSha": "e9ec438a0def6748b5cfd723674ac119ea5ebeff"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-KRcpl88-WinAmy4D-pr38.diff",
+  "vendoredAt": "2026-05-24T03:05:22.171Z",
+  "collectedAt": "2026-05-24T03:05:22.171Z"
+}

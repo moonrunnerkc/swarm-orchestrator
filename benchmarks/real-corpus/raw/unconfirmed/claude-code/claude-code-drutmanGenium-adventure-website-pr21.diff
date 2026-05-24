@@ -1,0 +1,604 @@
+diff --git a/components/about-content.tsx b/components/about-content.tsx
+index 81899c3..bf8eff0 100644
+--- a/components/about-content.tsx
++++ b/components/about-content.tsx
+@@ -1,72 +1,103 @@
++"use client"
++
+ import { Badge } from "@/components/ui/badge"
+ import { Card } from "@/components/ui/card"
+ import { Heart, Award, Shield, Users, Mountain, Compass } from "lucide-react"
++import { useLanguage } from "@/contexts/language-context"
+ 
+-const values = [
+-  {
+-    icon: Heart,
+-    title: "Pasión por la Naturaleza",
+-    description: "Amamos la Patagonia y queremos compartir su belleza preservándola para futuras generaciones.",
+-  },
+-  {
+-    icon: Shield,
+-    title: "Seguridad Primero",
+-    description: "Guías certificados, equipamiento de primera calidad y protocolos estrictos en cada expedición.",
+-  },
+-  {
+-    icon: Users,
+-    title: "Grupos Reducidos",
+-    description: "Experiencias íntimas con grupos pequeños para una atención personalizada y menor impacto ambiental.",
+-  },
+-  {
+-    icon: Award,
+-    title: "Experiencia Comprobada",
+-    description: "Más de 10 años guiando expediciones en la Patagonia con cientos de clientes satisfechos.",
+-  },
+-]
++export function AboutContent() {
++  const { t } = useLanguage()
+ 
+-const team = [
+-  {
+-    name: "Martín Roca",
+-    role: "Fundador & Guía Principal",
+-    description: "15 años de experiencia en trekking de alta montaña. Certificado AAGM.",
+-    image: "/placeholder.svg?key=vr3i7",
+-  },
+-  {
+-    name: "Laura Fernández",
+-    role: "Guía de Naturaleza",
+-    description: "Bióloga especializada en ecosistemas patagónicos. 8 años de experiencia.",
+-    image: "/placeholder.svg?key=39n4b",
+-  },
+-  {
+-    name: "Diego Torres",
+-    role: "Guía de Glaciares",
+-    description: "Especialista en trekking sobre hielo. Rescatista certificado.",
+-    image: "/placeholder.svg?key=w05yg",
+-  },
+-  {
+-    name: "Ana Gutiérrez",
+-    role: "Coordinadora de Expediciones",
+-    description: "Organiza cada detalle para que tu experiencia sea inolvidable.",
+-    image: "/placeholder.svg?key=m7vsu",
+-  },
+-]
++  const values = [
++    {
++      icon: Heart,
++      title: t("Pasión por la Naturaleza", "Passion for Nature"),
++      description: t(
++        "Amamos la Patagonia y queremos compartir su belleza preservándola para futuras generaciones.",
++        "We love Patagonia and want to share its beauty while preserving it for future generations."
++      ),
++    },
++    {
++      icon: Shield,
++      title: t("Seguridad Primero", "Safety First"),
++      description: t(
++        "Guías certificados, equipamiento de primera calidad y protocolos estrictos en cada expedición.",
++        "Certified guides, top-quality equipment, and strict protocols on every expedition."
++      ),
++    },
++    {
++      icon: Users,
++      title: t("Grupos Reducidos", "Small Groups"),
++      description: t(
++        "Experiencias íntimas con grupos pequeños para una atención personalizada y menor impacto ambiental.",
++        "Intimate experiences with small groups for personalized attention and lower environmental impact."
++      ),
++    },
++    {
++      icon: Award,
++      title: t("Experiencia Comprobada", "Proven Experience"),
++      description: t(
++        "Más de 10 años guiando expediciones en la Patagonia con cientos de clientes satisfechos.",
++        "Over 10 years guiding expeditions in Patagonia with hundreds of satisfied clients."
++      ),
++    },
++  ]
+ 
+-export function AboutContent() {
++  const team = [
++    {
++      name: "Martín Roca",
++      role: t("Fundador & Guía Principal", "Founder & Lead Guide"),
++      description: t(
++        "15 años de experiencia en trekking de alta montaña. Certificado AAGM.",
++        "15 years of high-mountain trekking experience. AAGM certified."
++      ),
++      image: "/placeholder.svg?key=vr3i7",
++    },
++    {
++      name: "Laura Fernández",
++      role: t("Guía de Naturaleza", "Nature Guide"),
++      description: t(
++        "Bióloga especializada en ecosistemas patagónicos. 8 años de experiencia.",
++        "Biologist specializing in Patagonian ecosystems. 8 years of experience."
++      ),
++      image: "/placeholder.svg?key=39n4b",
++    },
++    {
++      name: "Diego Torres",
++      role: t("Guía de Glaciares", "Glacier Guide"),
++      description: t(
++        "Especialista en trekking sobre hielo. Rescatista certificado.",
++        "Ice trekking specialist. Certified rescuer."
++      ),
++      image: "/placeholder.svg?key=w05yg",
++    },
++    {
++      name: "Ana Gutiérrez",
++      role: t("Coordinadora de Expediciones", "Expedition Coordinator"),
++      description: t(
++        "Organiza cada detalle para que tu experiencia sea inolvidable.",
++        "Organizes every detail to make your experience unforgettable."
++      ),
++      image: "/placeholder.svg?key=m7vsu",
++    },
++  ]
+   return (
+     <div className="min-h-screen bg-background">
+       {/* Hero Section */}
+       <section className="relative h-[50vh] overflow-hidden">
+-        <img src="/patagonia-mountain-team-hiking.jpg" alt="Nuestro equipo" className="w-full h-full object-cover" />
++        <img src="/patagonia-mountain-team-hiking.jpg" alt={t("Nuestro equipo", "Our team")} className="w-full h-full object-cover" />
+         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/40 to-transparent" />
+         <div className="absolute bottom-0 left-0 right-0 p-8">
+           <div className="max-w-7xl mx-auto">
+-            <Badge className="mb-4 bg-primary/90 text-primary-foreground">Quiénes Somos</Badge>
++            <Badge className="mb-4 bg-primary/90 text-primary-foreground">{t("Quiénes Somos", "About Us")}</Badge>
+             <h1 className="text-4xl md:text-5xl font-bold text-white mb-4 text-balance">
+-              Conectando personas con la naturaleza
++              {t("Conectando personas con la naturaleza", "Connecting people with nature")}
+             </h1>
+             <p className="text-xl text-white/90 max-w-2xl text-pretty">
+-              Somos un equipo apasionado por la Patagonia y comprometidos con el turismo sustentable
++              {t(
++                "Somos un equipo apasionado por la Patagonia y comprometidos con el turismo sustentable",
++                "We are a team passionate about Patagonia and committed to sustainable tourism"
++              )}
+             </p>
+           </div>
+         </div>
+@@ -77,22 +108,26 @@ export function AboutContent() {
+         <div className="max-w-4xl mx-auto">
+           <div className="flex items-center gap-3 mb-6">
+             <Mountain className="h-8 w-8 text-primary" />
+-            <h2 className="text-3xl font-bold">Nuestra Historia</h2>
++            <h2 className="text-3xl font-bold">{t("Nuestra Historia", "Our Story")}</h2>
+           </div>
+           <div className="space-y-4 text-lg text-muted-foreground leading-relaxed">
+             <p>
+-              Patagonia Trek nació en 2014 del sueño de Martín Roca, un guía de montaña apasionado por compartir la
+-              belleza de la Patagonia con viajeros de todo el mundo. Lo que comenzó con pequeñas expediciones al Fitz
+-              Roy se ha convertido en una empresa que organiza trekkings por toda la región.
++              {t(
++                "Patagonia Trek nació en 2014 del sueño de Martín Roca, un guía de montaña apasionado por compartir la belleza de la Patagonia con viajeros de todo el mundo. Lo que comenzó con pequeñas expediciones al Fitz Roy se ha convertido en una empresa que organiza trekkings por toda la región.",
++                "Patagonia Trek was born in 2014 from the dream of Martín Roca, a mountain guide passionate about sharing the beauty of Patagonia with travelers from around the world. What started as small expeditions to Fitz Roy has become a company that organizes treks throughout the region."
++              )}
+             </p>
+             <p>
+-              Creemos que la mejor forma de conocer un lugar es caminándolo. Cada sendero tiene una historia, cada
+-              montaña guarda secretos, y cada laguna refleja la inmensidad del paisaje patagónico. Nuestra misión es
+-              guiarte por estos lugares con seguridad, respeto por el medio ambiente y la calidez que nos caracteriza.
++              {t(
++                "Creemos que la mejor forma de conocer un lugar es caminándolo. Cada sendero tiene una historia, cada montaña guarda secretos, y cada laguna refleja la inmensidad del paisaje patagónico. Nuestra misión es guiarte por estos lugares con seguridad, respeto por el medio ambiente y la calidez que nos caracteriza.",
++                "We believe the best way to get to know a place is by walking it. Every trail has a story, every mountain holds secrets, and every lagoon reflects the vastness of the Patagonian landscape. Our mission is to guide you through these places with safety, respect for the environment, and the warmth that defines us."
++              )}
+             </p>
+             <p>
+-              Trabajamos con grupos reducidos para ofrecer experiencias auténticas y personalizadas. Nuestros guías no
+-              solo conocen las rutas, sino también la flora, fauna, historia y geología de cada rincón que visitamos.
++              {t(
++                "Trabajamos con grupos reducidos para ofrecer experiencias auténticas y personalizadas. Nuestros guías no solo conocen las rutas, sino también la flora, fauna, historia y geología de cada rincón que visitamos.",
++                "We work with small groups to offer authentic and personalized experiences. Our guides not only know the routes, but also the flora, fauna, history, and geology of every corner we visit."
++              )}
+             </p>
+           </div>
+         </div>
+@@ -104,10 +139,10 @@ export function AboutContent() {
+           <div className="text-center mb-12">
+             <div className="flex items-center gap-3 justify-center mb-4">
+               <Compass className="h-8 w-8 text-primary" />
+-              <h2 className="text-3xl font-bold">Nuestros Valores</h2>
++              <h2 className="text-3xl font-bold">{t("Nuestros Valores", "Our Values")}</h2>
+             </div>
+             <p className="text-xl text-muted-foreground max-w-2xl mx-auto text-pretty">
+-              Los principios que guían cada una de nuestras expediciones
++              {t("Los principios que guían cada una de nuestras expediciones", "The principles that guide each of our expeditions")}
+             </p>
+           </div>
+ 
+@@ -132,9 +167,12 @@ export function AboutContent() {
+       <section className="py-20 px-4">
+         <div className="max-w-7xl mx-auto">
+           <div className="text-center mb-12">
+-            <h2 className="text-3xl font-bold mb-4">Nuestro Equipo</h2>
++            <h2 className="text-3xl font-bold mb-4">{t("Nuestro Equipo", "Our Team")}</h2>
+             <p className="text-xl text-muted-foreground max-w-2xl mx-auto text-pretty">
+-              Guías profesionales certificados con años de experiencia en la Patagonia
++              {t(
++                "Guías profesionales certificados con años de experiencia en la Patagonia",
++                "Certified professional guides with years of experience in Patagonia"
++              )}
+             </p>
+           </div>
+ 
+@@ -168,19 +206,19 @@ export function AboutContent() {
+           <div className="grid md:grid-cols-4 gap-8 text-center">
+             <div>
+               <p className="text-5xl font-bold mb-2">10+</p>
+-              <p className="text-lg opacity-90">Años de experiencia</p>
++              <p className="text-lg opacity-90">{t("Años de experiencia", "Years of experience")}</p>
+             </div>
+             <div>
+               <p className="text-5xl font-bold mb-2">2,500+</p>
+-              <p className="text-lg opacity-90">Clientes felices</p>
++              <p className="text-lg opacity-90">{t("Clientes felices", "Happy clients")}</p>
+             </div>
+             <div>
+               <p className="text-5xl font-bold mb-2">15+</p>
+-              <p className="text-lg opacity-90">Rutas diferentes</p>
++              <p className="text-lg opacity-90">{t("Rutas diferentes", "Different routes")}</p>
+             </div>
+             <div>
+               <p className="text-5xl font-bold mb-2">100%</p>
+-              <p className="text-lg opacity-90">Seguridad garantizada</p>
++              <p className="text-lg opacity-90">{t("Seguridad garantizada", "Guaranteed safety")}</p>
+             </div>
+           </div>
+         </div>
+diff --git a/components/calendar-view.tsx b/components/calendar-view.tsx
+index 2ece492..74c3273 100644
+--- a/components/calendar-view.tsx
++++ b/components/calendar-view.tsx
+@@ -7,6 +7,7 @@ import { MapPin, Clock, Users, ChevronRight, X } from "lucide-react"
+ import Link from "next/link"
+ import { useState, useMemo, useEffect } from "react"
+ import { useSearchParams, useRouter } from "next/navigation"
++import { useLanguage } from "@/contexts/language-context"
+ 
+ // ─── Difficulty icons (neutral SVG, no color) ───────────────────────────────
+ 
+@@ -114,6 +115,7 @@ calendarEvents.forEach((e) => { TITLE_TO_SLUG[e.title] = e.id })
+ export function CalendarView() {
+   const searchParams = useSearchParams()
+   const router = useRouter()
++  const { t, language } = useLanguage()
+ 
+   // Resolve initial state from URL query params
+   const initialActivity = useMemo(() => {
+@@ -233,24 +235,24 @@ export function CalendarView() {
+ 
+         {/* Header */}
+         <div className="text-center mb-12">
+-          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20">Próximas Salidas</Badge>
+-          <h1 className="text-4xl md:text-5xl font-bold mb-4 text-balance">Calendario de Expediciones</h1>
++          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20">{t("Próximas Salidas", "Upcoming Departures")}</Badge>
++          <h1 className="text-4xl md:text-5xl font-bold mb-4 text-balance">{t("Calendario de Expediciones", "Expedition Calendar")}</h1>
+           <p className="text-lg text-muted-foreground max-w-xl mx-auto text-pretty">
+-            Elegí la fecha que mejor se adapte a tus planes
++            {t("Elegí la fecha que mejor se adapte a tus planes", "Choose the date that best fits your plans")}
+           </p>
+         </div>
+ 
+         {/* Filter Panel */}
+         <div className="bg-card border rounded-2xl p-6 mb-8 shadow-sm">
+           <div className="flex items-center justify-between mb-5">
+-            <p className="text-sm font-semibold text-foreground">Elegir salidas</p>
++            <p className="text-sm font-semibold text-foreground">{t("Elegir salidas", "Choose departures")}</p>
+             {hasActiveFilters && (
+               <button
+                 onClick={clearFilters}
+                 className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+               >
+                 <X className="h-3.5 w-3.5" />
+-                Limpiar filtros
++                {t("Limpiar filtros", "Clear filters")}
+               </button>
+             )}
+           </div>
+@@ -260,7 +262,7 @@ export function CalendarView() {
+             {/* Row 1 — Mes */}
+             <div className="flex flex-col gap-1.5">
+               <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+-                Mes
++                {t("Mes", "Month")}
+               </label>
+               <div className="relative">
+                 <select
+@@ -268,7 +270,7 @@ export function CalendarView() {
+                   onChange={(e) => handleMonthChange(e.target.value)}
+                   className={selectClass}
+                 >
+-                  <option value={ALL_MONTHS_KEY}>Todos los meses</option>
++                  <option value={ALL_MONTHS_KEY}>{t("Todos los meses", "All months")}</option>
+                   {availableMonthYears.map(({ key, month, year }) => (
+                     <option key={key} value={key}>
+                       {month} {year}
+@@ -282,7 +284,7 @@ export function CalendarView() {
+             {/* Row 2 — Actividad (dependent) */}
+             <div className="flex flex-col gap-1.5">
+               <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+-                {"Lugar\n"}
++                {t("Lugar", "Location")}
+               </label>
+               <div className="relative">
+                 <select
+@@ -290,7 +292,7 @@ export function CalendarView() {
+                   onChange={(e) => handleActivityChange(e.target.value)}
+                   className={selectClass}
+                 >
+-                  <option value="Todas">Todas</option>
++                  <option value="Todas">{t("Todas", "All")}</option>
+                   {Object.entries(activitiesInMonth).map(([title, count]) => (
+                     <option key={title} value={title}>
+                       {title} ({count})
+@@ -301,7 +303,7 @@ export function CalendarView() {
+               </div>
+               {activityResetMsg && (
+                 <p className="text-xs text-muted-foreground italic">
+-                  No hay salidas de esa actividad en el mes seleccionado.
++                  {t("No hay salidas de esa actividad en el mes seleccionado.", "No departures for that activity in the selected month.")}
+                 </p>
+               )}
+             </div>
+@@ -309,7 +311,7 @@ export function CalendarView() {
+             {/* Row 3 — Dificultad (segmented, persistent) */}
+             <div className="flex flex-col gap-1.5">
+               <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+-                Dificultad
++                {t("Dificultad", "Difficulty")}
+               </label>
+               <div className="flex rounded-lg border border-input overflow-hidden bg-background divide-x divide-border h-[38px]">
+                 {Object.entries(DIFFICULTY_CONFIG).map(([key, { label, icon: Icon }]) => {
+@@ -343,7 +345,7 @@ export function CalendarView() {
+             {filteredEvents.map((event, index) => {
+               const dateObj  = new Date(event.date + "T12:00:00")
+               const dayNum   = dateObj.getDate()
+-              const monthShort = dateObj.toLocaleDateString("es", { month: "short" }).toUpperCase().replace(".", "")
++              const monthShort = dateObj.toLocaleDateString(language === "es" ? "es" : "en", { month: "short" }).toUpperCase().replace(".", "")
+               const lowSpots = event.spotsLeft <= 3
+               const DiffIcon = DIFFICULTY_CONFIG[event.difficulty]?.icon
+ 
+diff --git a/components/contact-form.tsx b/components/contact-form.tsx
+index a377f25..643c540 100644
+--- a/components/contact-form.tsx
++++ b/components/contact-form.tsx
+@@ -10,8 +10,10 @@ import { Textarea } from "@/components/ui/textarea"
+ import { Label } from "@/components/ui/label"
+ import { Mail, Phone, MapPin, Clock, Send } from "lucide-react"
+ import { useState } from "react"
++import { useLanguage } from "@/contexts/language-context"
+ 
+ export function ContactForm() {
++  const { t } = useLanguage()
+   const [formData, setFormData] = useState({
+     name: "",
+     email: "",
+@@ -24,7 +26,7 @@ export function ContactForm() {
+     e.preventDefault()
+     // Handle form submission
+     console.log("Form submitted:", formData)
+-    alert("¡Gracias por contactarnos! Te responderemos pronto.")
++    alert(t("¡Gracias por contactarnos! Te responderemos pronto.", "Thank you for contacting us! We'll get back to you soon."))
+   }
+ 
+   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+@@ -39,10 +41,13 @@ export function ContactForm() {
+       <div className="max-w-7xl mx-auto">
+         {/* Header */}
+         <div className="text-center mb-12">
+-          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20">Contacto</Badge>
+-          <h1 className="text-4xl md:text-5xl font-bold mb-4 text-balance">Hablemos de tu próxima aventura</h1>
++          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20">{t("Contacto", "Contact")}</Badge>
++          <h1 className="text-4xl md:text-5xl font-bold mb-4 text-balance">{t("Hablemos de tu próxima aventura", "Let's talk about your next adventure")}</h1>
+           <p className="text-xl text-muted-foreground max-w-2xl mx-auto text-pretty">
+-            Estamos aquí para responder todas tus preguntas y ayudarte a planificar el trekking perfecto
++            {t(
++              "Estamos aquí para responder todas tus preguntas y ayudarte a planificar el trekking perfecto",
++              "We're here to answer all your questions and help you plan the perfect trek"
++            )}
+           </p>
+         </div>
+ 
+@@ -50,7 +55,7 @@ export function ContactForm() {
+           {/* Contact Info */}
+           <div className="lg:col-span-1 space-y-6">
+             <Card className="p-6 border-2">
+-              <h2 className="text-2xl font-bold mb-6">Información de Contacto</h2>
++              <h2 className="text-2xl font-bold mb-6">{t("Información de Contacto", "Contact Information")}</h2>
+               <div className="space-y-6">
+                 <div className="flex items-start gap-4">
+                   <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
+@@ -69,7 +74,7 @@ export function ContactForm() {
+                     <Phone className="h-6 w-6 text-primary" />
+                   </div>
+                   <div>
+-                    <p className="font-semibold mb-1">Teléfono</p>
++                    <p className="font-semibold mb-1">{t("Teléfono", "Phone")}</p>
+                     <a href="tel:+542902491234" className="text-muted-foreground hover:text-primary">
+                       +54 2902 49-1234
+                     </a>
+@@ -85,7 +90,7 @@ export function ContactForm() {
+                     <MapPin className="h-6 w-6 text-primary" />
+                   </div>
+                   <div>
+-                    <p className="font-semibold mb-1">Oficina</p>
++                    <p className="font-semibold mb-1">{t("Oficina", "Office")}</p>
+                     <p className="text-muted-foreground">
+                       Av. Libertador 123
+                       <br />
+@@ -101,13 +106,13 @@ export function ContactForm() {
+                     <Clock className="h-6 w-6 text-primary" />
+                   </div>
+                   <div>
+-                    <p className="font-semibold mb-1">Horario de Atención</p>
++                    <p className="font-semibold mb-1">{t("Horario de Atención", "Business Hours")}</p>
+                     <p className="text-muted-foreground">
+-                      Lunes a Viernes: 9:00 - 18:00
++                      {t("Lunes a Viernes", "Monday to Friday")}: 9:00 - 18:00
+                       <br />
+-                      Sábados: 10:00 - 14:00
++                      {t("Sábados", "Saturdays")}: 10:00 - 14:00
+                       <br />
+-                      Domingos: Cerrado
++                      {t("Domingos: Cerrado", "Sundays: Closed")}
+                     </p>
+                   </div>
+                 </div>
+@@ -115,9 +120,12 @@ export function ContactForm() {
+             </Card>
+ 
+             <Card className="p-6 bg-primary text-primary-foreground border-2 border-primary">
+-              <h3 className="text-xl font-bold mb-3">¿Necesitás ayuda inmediata?</h3>
++              <h3 className="text-xl font-bold mb-3">{t("¿Necesitás ayuda inmediata?", "Need immediate help?")}</h3>
+               <p className="mb-4 opacity-90">
+-                Nuestro equipo está disponible para consultas urgentes sobre expediciones en curso.
++                {t(
++                  "Nuestro equipo está disponible para consultas urgentes sobre expediciones en curso.",
++                  "Our team is available for urgent inquiries about ongoing expeditions."
++                )}
+               </p>
+               <Button variant="secondary" className="w-full" size="lg">
+                 WhatsApp: +54 9 11 2345-6789
+@@ -128,15 +136,15 @@ export function ContactForm() {
+           {/* Contact Form */}
+           <div className="lg:col-span-2">
+             <Card className="p-8 border-2">
+-              <h2 className="text-2xl font-bold mb-6">Envianos un mensaje</h2>
++              <h2 className="text-2xl font-bold mb-6">{t("Envianos un mensaje", "Send us a message")}</h2>
+               <form onSubmit={handleSubmit} className="space-y-6">
+                 <div className="grid md:grid-cols-2 gap-6">
+                   <div className="space-y-2">
+-                    <Label htmlFor="name">Nombre completo *</Label>
++                    <Label htmlFor="name">{t("Nombre completo *", "Full name *")}</Label>
+                     <Input
+                       id="name"
+                       name="name"
+-                      placeholder="Juan Pérez"
++                      placeholder={t("Juan Pérez", "John Doe")}
+                       value={formData.name}
+                       onChange={handleChange}
+                       required
+@@ -144,12 +152,12 @@ export function ContactForm() {
+                   </div>
+ 
+                   <div className="space-y-2">
+-                    <Label htmlFor="email">Email *</Label>
++                    <Label htmlFor="email">{t("Email *", "Email *")}</Label>
+                     <Input
+                       id="email"
+                       name="email"
+                       type="email"
+-                      placeholder="juan@ejemplo.com"
++                      placeholder={t("juan@ejemplo.com", "john@example.com")}
+                       value={formData.email}
+                       onChange={handleChange}
+                       required
+@@ -159,7 +167,7 @@ export function ContactForm() {
+ 
+                 <div className="grid md:grid-cols-2 gap-6">
+                   <div className="space-y-2">
+-                    <Label htmlFor="phone">Teléfono</Label>
++                    <Label htmlFor="phone">{t("Teléfono", "Phone")}</Label>
+                     <Input
+                       id="phone"
+                       name="phone"
+@@ -171,11 +179,11 @@ export function ContactForm() {
+                   </div>
+ 
+                   <div className="space-y-2">
+-                    <Label htmlFor="subject">Asunto *</Label>
++                    <Label htmlFor="subject">{t("Asunto *", "Subject *")}</Label>
+                     <Input
+                       id="subject"
+                       name="subject"
+-                      placeholder="Consulta sobre Fitz Roy"
++                      placeholder={t("Consulta sobre Fitz Roy", "Inquiry about Fitz Roy")}
+                       value={formData.subject}
+                       onChange={handleChange}
+                       required
+@@ -184,11 +192,14 @@ export function ContactForm() {
+                 </div>
+ 
+                 <div className="space-y-2">
+-                  <Label htmlFor="message">Mensaje *</Label>
++                  <Label htmlFor="message">{t("Mensaje *", "Message *")}</Label>
+                   <Textarea
+                     id="message"
+                     name="message"
+-                    placeholder="Contanos sobre tu experiencia de trekking previa, nivel de fitness, fechas preferidas, y cualquier pregunta que tengas..."
++                    placeholder={t(
++                      "Contanos sobre tu experiencia de trekking previa, nivel de fitness, fechas preferidas, y cualquier pregunta que tengas...",
++                      "Tell us about your previous trekking experience, fitness level, preferred dates, and any questions you may have..."
++                    )}
+                     value={formData.message}
+                     onChange={handleChange}
+                     rows={6}
+@@ -198,7 +209,7 @@ export function ContactForm() {
+ 
+                 <Button type="submit" size="lg" className="w-full md:w-auto bg-primary text-primary-foreground">
+                   <Send className="mr-2 h-5 w-5" />
+-                  Enviar Mensaje
++                  {t("Enviar Mensaje", "Send Message")}
+                 </Button>
+               </form>
+             </Card>
+@@ -207,36 +218,45 @@ export function ContactForm() {
+ 
+         {/* FAQ Section */}
+         <div className="mt-16">
+-          <h2 className="text-3xl font-bold mb-8 text-center">Preguntas Frecuentes</h2>
++          <h2 className="text-3xl font-bold mb-8 text-center">{t("Preguntas Frecuentes", "Frequently Asked Questions")}</h2>
+           <div className="grid md:grid-cols-2 gap-6 max-w-5xl mx-auto">
+             <Card className="p-6 border-2">
+-              <h3 className="font-bold mb-2">¿Cuándo es la mejor época para hacer trekking?</h3>
++              <h3 className="font-bold mb-2">{t("¿Cuándo es la mejor época para hacer trekking?", "When is the best time for trekking?")}</h3>
+               <p className="text-muted-foreground text-sm">
+-                La temporada alta es de noviembre a marzo, con días más largos y clima más estable. Diciembre y enero
+-                son los meses más populares.
++                {t(
++                  "La temporada alta es de noviembre a marzo, con días más largos y clima más estable. Diciembre y enero son los meses más populares.",
++                  "The high season runs from November to March, with longer days and more stable weather. December and January are the most popular months."
++                )}
+               </p>
+             </Card>
+ 
+             <Card className="p-6 border-2">
+-              <h3 className="font-bold mb-2">¿Qué nivel de fitness necesito?</h3>
++              <h3 className="font-bold mb-2">{t("¿Qué nivel de fitness necesito?", "What fitness level do I need?")}</h3>
+               <p className="text-muted-foreground text-sm">
+-                Depende del trekking. Tenemos opciones para todos los niveles, desde caminatas fáciles hasta
+-                expediciones avanzadas que requieren buena condición física.
++                {t(
++                  "Depende del trekking. Tenemos opciones para todos los niveles, desde caminatas fáciles hasta expediciones avanzadas que requieren buena condición física.",
++                  "It depends on the trek. We have options for all levels, from easy walks to advanced expeditions that require good physical condition."
++                )}
+               </p>
+             </Card>
+ 
+             <Card className="p-6 border-2">
+-              <h3 className="font-bold mb-2">¿Proveen equipamiento?</h3>
++              <h3 className="font-bold mb-2">{t("¿Proveen equipamiento?", "Do you provide equipment?")}</h3>
+               <p className="text-muted-foreground text-sm">
+-                Sí, incluimos equipamiento técnico (crampones, carpas, etc.). El equipamiento personal como botas y ropa
+-                es responsabilidad del participante.
++                {t(
++                  "Sí, incluimos equipamiento técnico (crampones, carpas, etc.). El equipamiento personal como botas y ropa es responsabilidad del participante.",
++                  "Yes, we include technical equipment (crampons, tents, etc.). Personal equipment such as boots and clothing is the participant's responsibility."
++                )}
+               </p>
+             </Card>
+ 
+             <Card className="p-6 border-2">
+-              <h3 className="font-bold mb-2">¿Puedo hacer un trekking privado?</h3>
++              <h3 className="font-bold mb-2">{t("¿Puedo hacer un trekking privado?", "Can I book a private trek?")}</h3>
+               <p className="text-muted-foreground text-sm">
+-                Sí, ofrecemos expediciones privadas para grupos. Contactanos para armar un itinerario personalizado.
++                {t(
++                  "Sí, ofrecemos expediciones privadas para grupos. Contactanos para armar un itinerario personalizado.",
++                  "Yes, we offer private expeditions for groups. Contact us to create a personalized itinerary."
++                )}
+               </p>
+             </Card>
+           </div>

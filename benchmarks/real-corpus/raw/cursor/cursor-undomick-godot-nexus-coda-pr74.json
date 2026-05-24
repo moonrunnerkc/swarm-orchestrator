@@ -1,0 +1,26 @@
+{
+  "id": "cursor-undomick-godot-nexus-coda-pr74",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 74,
+    "headSha": "19e656d01456f9a51dcb69ab121faf51c6c6242a",
+    "baseSha": "ffb4d2a7b85d3daf2b7a137feab808a557454f73",
+    "title": "fix(editor): purge bank event refs when deleting events",
+    "body": "## Bug and impact\n\nDeleting an event from the Events browser removed the node from the tree but left its id in every `CodaBank.event_ids` entry. Banks then showed incorrect membership counts, `validate_bank` reported missing events, and `build_manifest` silently skipped deleted events on export—producing incomplete `.coda_bank` files without a hard failure.\n\n**Trigger:** Add an event to a bank, delete the event from the tree, export or inspect the bank.\n\n## Root cause\n\n`CodaState.delete_node` only called `events_root.remove_child_by_id` and never updated bank membership.\n\n## Fix\n\nBefore removal, collect all event ids in the deleted subtree (including events inside a deleted folder) and remove them from every bank via `_purge_event_ids_from_banks`.\n\n## Validation\n\n- Added `_test_delete_event_clears_banks` in `test_editor_shell.gd`.\n- Logic reviewed against `CodaBankExport.build_manifest` (skips null events) and `validate_bank` (reports missing ids).\n\n<div><a href=\"https://cursor.com/agents/bc-7e13d430-3454-40b0-93da-2f5cd05deef0\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/automations/39bd0156-f650-49e4-8cbd-32e97c23638f\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/view-automation-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/view-automation-light.png\"><img alt=\"View Automation\" width=\"141\" height=\"28\" src=\"https://cursor.com/assets/images/view-automation-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "cursor[bot]",
+    "headRef": "cursor/critical-correctness-bugs-f7b6",
+    "repository": "undomick/godot-nexus-coda"
+  },
+  "diffRef": {
+    "repository": "undomick/godot-nexus-coda",
+    "headSha": "19e656d01456f9a51dcb69ab121faf51c6c6242a",
+    "baseSha": "ffb4d2a7b85d3daf2b7a137feab808a557454f73"
+  },
+  "vendoredDiffPath": "cursor/cursor-undomick-godot-nexus-coda-pr74.diff",
+  "vendoredAt": "2026-05-24T03:12:11.827Z",
+  "collectedAt": "2026-05-24T03:12:11.827Z"
+}

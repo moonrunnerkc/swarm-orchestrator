@@ -1,0 +1,253 @@
+diff --git a/components/GarageSaleLivePanel.tsx b/components/GarageSaleLivePanel.tsx
+index 1731c80a..5e83f393 100644
+--- a/components/GarageSaleLivePanel.tsx
++++ b/components/GarageSaleLivePanel.tsx
+@@ -2,7 +2,7 @@
+ import { useRef, useState, useCallback, useEffect } from 'react';
+ import { Video, VideoOff, Mic, MicOff, Radio, AlertTriangle, Eye, RefreshCcw, MessageCircle, Heart, Trash2, Users, PhoneOff, VolumeX, Volume2, Maximize2, X } from 'lucide-react';
+ import { getCanonicalLiveSaleId, LIVE_ENGAGEMENT_EVENTS, LIVE_ENGAGEMENT_SIGNAL_KINDS, isSameLiveSession } from '@/lib/live-engagement';
+-import { getSignalViewerId } from '@/lib/garage-sale-live-stream';
++import { getSignalViewerId, shouldRecreateGuestPeerOnOffer } from '@/lib/garage-sale-live-stream';
+ import { RTC_CONFIG, HAS_TURN_CONFIG } from '@/lib/rtc-config';
+ import { getIceCandidateType } from '@/lib/rtc-diagnostics';
+ import { LIVE_SIGNAL_EVENTS, LIVE_SIGNAL_KINDS, LIVE_SIGNAL_ROLES, getLiveRoomId, getLiveSessionId, MAX_LIVE_GUESTS } from '@/lib/live-signaling';
+@@ -237,6 +237,25 @@ export default function GarageSaleLivePanel({ saleId, initialIsLive, initialLive
+ 
+   // ── Guest Video Call — Seller side ───────────────────────────────────────────
+ 
++  const closeGuestPeer = useCallback((requestId: string, reason: string, options?: { clearVideo?: boolean }) => {
++    const peerState = guestPeersRef.current.get(requestId);
++    if (!peerState) return;
++    guestPeersRef.current.delete(requestId);
++    peerState.pc.close();
++    const shouldClearVideo = options?.clearVideo ?? true;
++    if (shouldClearVideo) {
++      const videoEl = guestVideoElsRef.current.get(requestId);
++      if (videoEl) {
++        videoEl.srcObject = null;
++      }
++    }
++    logLiveDebug('guest-peer-closed', {
++      requestId,
++      reason,
++      activePeers: guestPeersRef.current.size,
++    });
++  }, [logLiveDebug]);
++
+   const postGuestSignal = useCallback(async (kind: 'GUEST_ANSWER' | 'GUEST_ICE', payload: Record<string, unknown>) => {
+     try {
+       const res = await fetch(`/api/garage-sales/${saleId}/live/signaling`, {
+@@ -308,6 +327,18 @@ export default function GarageSaleLivePanel({ saleId, initialIsLive, initialLive
+         } catch (err) {
+           console.warn('[GuestCall] Failed to re-apply GUEST_OFFER to existing peer', err);
+         }
++      } else if (shouldRecreateGuestPeerOnOffer({
++        hasRemoteDesc: existing.hasRemoteDesc,
++        connectionState: existing.pc.connectionState,
++        remoteDescriptionSdp: existing.pc.remoteDescription?.sdp,
++        incomingOfferSdp: payload.sdp,
++      })) {
++        closeGuestPeer(requestId, 'new-offer-recreate', { clearVideo: false });
++      } else {
++        logLiveDebug('guest-offer-duplicate-ignored', {
++          requestId,
++          state: existing.pc.connectionState,
++        });
+       }
+       return;
+     }
+@@ -341,7 +372,8 @@ export default function GarageSaleLivePanel({ saleId, initialIsLive, initialLive
+     pc.onconnectionstatechange = () => {
+       logLiveDebug('guest-peer-state', { state: pc.connectionState, requestId });
+       if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+-        console.warn('[GuestCall] Guest peer disconnected/failed', { requestId });
++        console.warn('[GuestCall] Guest peer disconnected/failed', { requestId, state: pc.connectionState });
++        closeGuestPeer(requestId, `connection-${pc.connectionState}`);
+       }
+     };
+ 
+@@ -364,10 +396,9 @@ export default function GarageSaleLivePanel({ saleId, initialIsLive, initialLive
+       console.info('[GuestCall] Seller sent GUEST_ANSWER', { requestId });
+     } catch (err) {
+       console.warn('[GuestCall] Failed to handle GUEST_OFFER', err);
+-      pc.close();
+-      guestPeersRef.current.delete(requestId);
++      closeGuestPeer(requestId, 'offer-handle-failed');
+     }
+-  }, [guestRequests, logLiveDebug, postGuestSignal, saleId]);
++  }, [closeGuestPeer, guestRequests, logLiveDebug, postGuestSignal, saleId]);
+ 
+   /** Process a GUEST_ICE signal from a buyer-guest. */
+   const handleGuestIce = useCallback(async (signal: { payload: unknown }) => {
+@@ -398,16 +429,13 @@ export default function GarageSaleLivePanel({ saleId, initialIsLive, initialLive
+       for (const [reqId, peerState] of guestPeersRef.current.entries()) {
+         const req = data.requests.find((r) => r.id === reqId);
+         if (!req || ['declined', 'removed'].includes(req.status)) {
+-          peerState.pc.close();
+-          guestPeersRef.current.delete(reqId);
+-          const el = guestVideoElsRef.current.get(reqId);
+-          if (el) el.srcObject = null;
++          closeGuestPeer(reqId, 'request-inactive');
+         }
+       }
+     } catch {
+       // Silent fail — polling will retry
+     }
+-  }, [saleId]);
++  }, [closeGuestPeer, saleId]);
+ 
+   const handleAcceptGuest = useCallback(async (reqId: string) => {
+     try {
+@@ -453,15 +481,14 @@ export default function GarageSaleLivePanel({ saleId, initialIsLive, initialLive
+         setGuestRequests((prev) => prev.filter((r) => r.id !== reqId));
+         const peerState = guestPeersRef.current.get(reqId);
+         if (peerState) {
+-          peerState.pc.close();
+-          guestPeersRef.current.delete(reqId);
++          closeGuestPeer(reqId, 'seller-removed');
+         }
+         logLiveDebug(LIVE_SIGNAL_EVENTS.GUEST_REMOVED, { requestId: reqId });
+       }
+     } catch {
+       // Silent fail
+     }
+-  }, [logLiveDebug, saleId]);
++  }, [closeGuestPeer, logLiveDebug, saleId]);
+ 
+   const handleToggleMuteGuest = useCallback(async (reqId: string, currentlyMuted: boolean) => {
+     const action = currentlyMuted ? 'unmute' : 'mute';
+@@ -1497,13 +1524,12 @@ export default function GarageSaleLivePanel({ saleId, initialIsLive, initialLive
+       closePeerConnection();
+       streamRef.current?.getTracks().forEach((t) => t.stop());
+       // Clean up all guest peer connections
+-      for (const peerState of guestPeersRef.current.values()) {
+-        peerState.pc.close();
++      for (const reqId of Array.from(guestPeersRef.current.keys())) {
++        closeGuestPeer(reqId, 'component-unmount');
+       }
+-      guestPeersRef.current.clear();
+       if (guestPollRef.current) clearInterval(guestPollRef.current);
+     };
+-  }, [clearReconnectRetryTimeout, closePeerConnection, endLiveOnPageLeave, stopChatPolling, stopReactionPolling, stopSignalPolling]);
++  }, [clearReconnectRetryTimeout, closeGuestPeer, closePeerConnection, endLiveOnPageLeave, stopChatPolling, stopReactionPolling, stopSignalPolling]);
+ 
+   // Start/stop guest request polling when live state changes
+   useEffect(() => {
+@@ -1516,10 +1542,9 @@ export default function GarageSaleLivePanel({ saleId, initialIsLive, initialLive
+         guestPollRef.current = null;
+       }
+       // Close all guest peers when live ends
+-      for (const peerState of guestPeersRef.current.values()) {
+-        peerState.pc.close();
++      for (const reqId of Array.from(guestPeersRef.current.keys())) {
++        closeGuestPeer(reqId, 'live-ended');
+       }
+-      guestPeersRef.current.clear();
+       setGuestRequests([]);
+     }
+     return () => {
+@@ -1528,7 +1553,7 @@ export default function GarageSaleLivePanel({ saleId, initialIsLive, initialLive
+         guestPollRef.current = null;
+       }
+     };
+-  }, [isLive, pollGuestRequests]);
++  }, [closeGuestPeer, isLive, pollGuestRequests]);
+ 
+   // Start/stop chat + reaction polling when live state changes
+   useEffect(() => {
+diff --git a/lib/garage-sale-live-stream.ts b/lib/garage-sale-live-stream.ts
+index f895236e..7e481606 100644
+--- a/lib/garage-sale-live-stream.ts
++++ b/lib/garage-sale-live-stream.ts
+@@ -33,6 +33,39 @@ export function getSignalViewerId(payload: unknown) {
+   return typeof viewerId === 'string' && viewerId.trim() ? viewerId : null;
+ }
+ 
++type GuestOfferRecreateInput = {
++  hasRemoteDesc: boolean;
++  connectionState: string | null | undefined;
++  remoteDescriptionSdp: string | null | undefined;
++  incomingOfferSdp: string;
++};
++
++/**
++ * Determines whether a seller should rebuild an existing guest peer connection
++ * when a new GUEST_OFFER arrives for the same request.
++ */
++export function shouldRecreateGuestPeerOnOffer({
++  hasRemoteDesc,
++  connectionState,
++  remoteDescriptionSdp,
++  incomingOfferSdp,
++}: GuestOfferRecreateInput) {
++  if (!hasRemoteDesc) return false;
++
++  if (connectionState === 'failed' || connectionState === 'disconnected' || connectionState === 'closed') {
++    return true;
++  }
++
++  const nextSdp = incomingOfferSdp.trim();
++  if (!nextSdp) return false;
++
++  const currentSdp = remoteDescriptionSdp?.trim() ?? '';
++  // A negotiated peer without stored remote SDP is in an inconsistent/stale state,
++  // so force recreation to recover media delivery on the next valid offer.
++  if (!currentSdp) return true;
++  return nextSdp !== currentSdp;
++}
++
+ /**
+  * Returns whether a signaling payload targets the current viewer.
+  * Payloads without a viewerId are treated as broadcast and match all viewers.
+diff --git a/tests/garage-sale-live-stream.test.ts b/tests/garage-sale-live-stream.test.ts
+index 2967ffa8..754d0b96 100644
+--- a/tests/garage-sale-live-stream.test.ts
++++ b/tests/garage-sale-live-stream.test.ts
+@@ -7,6 +7,7 @@ import {
+   isSellerLiveReady,
+   payloadTargetsViewer,
+   payloadHasLiveSession,
++  shouldRecreateGuestPeerOnOffer,
+ } from '@/lib/garage-sale-live-stream';
+ 
+ test('seller and buyer derive the same canonical live session id for the same garage sale stream', () => {
+@@ -84,3 +85,39 @@ test('buyer stays in waiting state until remote tracks arrive, then transitions
+   assert.equal(liveState.showLiveBadge, true);
+   assert.equal(liveState.statusLabel, 'Live');
+ });
++
++test('guest peer is recreated when an already-negotiated request gets a new offer sdp', () => {
++  assert.equal(shouldRecreateGuestPeerOnOffer({
++    hasRemoteDesc: true,
++    connectionState: 'connected',
++    remoteDescriptionSdp: 'v=0 old-offer',
++    incomingOfferSdp: 'v=0 new-offer',
++  }), true);
++});
++
++test('guest peer is not recreated for duplicate offer retries with same sdp while healthy', () => {
++  assert.equal(shouldRecreateGuestPeerOnOffer({
++    hasRemoteDesc: true,
++    connectionState: 'connected',
++    remoteDescriptionSdp: 'v=0 same-offer',
++    incomingOfferSdp: 'v=0 same-offer',
++  }), false);
++});
++
++test('guest peer is recreated when connection is disconnected even if sdp matches', () => {
++  assert.equal(shouldRecreateGuestPeerOnOffer({
++    hasRemoteDesc: true,
++    connectionState: 'disconnected',
++    remoteDescriptionSdp: 'v=0 same-offer',
++    incomingOfferSdp: 'v=0 same-offer',
++  }), true);
++});
++
++test('guest peer is not recreated for invalid/empty incoming offer sdp', () => {
++  assert.equal(shouldRecreateGuestPeerOnOffer({
++    hasRemoteDesc: true,
++    connectionState: 'connected',
++    remoteDescriptionSdp: 'v=0 same-offer',
++    incomingOfferSdp: '   ',
++  }), false);
++});

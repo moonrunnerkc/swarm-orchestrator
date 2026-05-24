@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Adds a single idempotent migration block to backend/main.py lifespan that drops the legacy `linux_user` NOT NULL column from the `servers` table, gated by `if 'linux_user' in cols` so a second startup is a no-op. This directly addresses the psycopg2 NotNullViolation described in the PR body: the ORM model no longer writes linux_user, so INSERTs fail on the NOT-NULL constraint until the column is removed. The new backend/tests/test_migrations.py adds test_migration_drops_legacy_linux_user_column (builds legacy schema with linux_user NOT NULL on a throwaway SQLite, runs the migration logic, asserts the column is gone, prior data is preserved, and a new INSERT without linux_user succeeds) and test_migration_idempotent_on_clean_schema (asserts no-op on a fresh DB). The tests genuinely exercise the failing path; clean.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T13:40:00.000Z"
+}

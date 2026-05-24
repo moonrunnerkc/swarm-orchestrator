@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5098",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5098,
+    "headSha": "bd2d6f9484445395dd810bc7a295dbca8d40db7f",
+    "baseSha": "3ec8ec5a7d695b08a6c24fe6c0c235c8f87df9af",
+    "title": "platform_info: also catch OSError from Windows WMI calls in platform.platform()",
+    "body": "Fixes #3464.\n\n`get_platform_info` already catches `KeyError` from `platform.platform()` (introduced after #1234-style traces). The user's Windows 11 trace shows the *same* function failing with `OSError: [WinError 258] The wait operation timed out` from `_wmi.exec_query`, which escapes the current handler and crashes aider before the first message round-trip. Extend the except clause to `(KeyError, OSError)` and keep the existing `Platform information unavailable` fallback.",
+    "author": "SAY-5",
+    "headRef": "say5/platform-info-os-error-3464",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "bd2d6f9484445395dd810bc7a295dbca8d40db7f",
+    "baseSha": "3ec8ec5a7d695b08a6c24fe6c0c235c8f87df9af"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5098.diff",
+  "vendoredAt": "2026-05-24T03:19:46.821Z",
+  "collectedAt": "2026-05-24T03:19:46.821Z"
+}

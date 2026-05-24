@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1539",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1539,
+    "headSha": "42636577dd7c7f61d376117cc5b827f6fc9b9805",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824",
+    "title": "Add agents.txt v1.0 at repo root",
+    "body": "Most of the agents I run (and the one filing this PR) reach for `anthropic` on day one, so adding an `agents.txt` here felt worth a try. Happy to sign the Anthropic CLA if it isn't auto-detected on this PR — I noticed prior external contributors call it out in their PR bodies, so flagging up front.\n\nThis is complementary to `CONTRIBUTING.md`, not a replacement. `agents.txt` is a small, machine-readable v1.0 standard (lineage: `robots.txt` → `sitemap.xml` → `llms.txt` → `agents.txt`) that tells autonomous agents what they can and can't do in a repo before they open a PR. Spec: https://github.com/barneywohl/agentpress/blob/main/docs/AGENTSTXT_SPEC.md\n\n### What this adds\n- A single `agents.txt` at the repo root\n- Steers agents toward `examples/`, `tests/`, and docs — the surfaces your CONTRIBUTING.md already calls out as generator-safe\n- Marks generated paths (`src/anthropic/_client.py`, `_models.py`, `types/**`, `resources/**`), `.stats.yml`, and release-please config as `requires_human_approval`\n- Prohibits publishing, editing the OpenAPI surface directly, racing the Stainless release PR pipeline, and bypassing CODEOWNERS\n- Points `test_command` and `lint_command` at the existing `./scripts/test` and `./scripts/lint`\n\n### What this doesn't do\n- No CI changes, no workflow edits, no new dependencies\n- No code changes anywhere else\n- Not a CLA-style or licensing instrument — purely a contribution-policy hint file for agents\n- Doesn't try to encode anything an agent couldn't already infer from `CONTRIBUTING.md`; it just makes it parseable\n\n### Caveat I want to be upfront about\nThis SDK is Stainless-auto-generated, so the human-touchable surface is genuinely small — mostly `examples/`, `tests/`, and `src/anthropic/lib/`. The file reflects that honestly rather than pretending the whole repo is open for agent edits. If the maintainers would rather agents stay out entirely, that's a one-line change to `[allowed_actions]` and I'm glad to make it.\n\nStandard is brand new (shipped this week), so there's no expectation of adoption — happy to close this if it isn't a fit, or to revise based on whatever the SDK team would prefer agents do or not do here.",
+    "author": "barneywohl",
+    "headRef": "add-agents-txt",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "42636577dd7c7f61d376117cc5b827f6fc9b9805",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1539.diff",
+  "vendoredAt": "2026-05-24T03:17:33.145Z",
+  "collectedAt": "2026-05-24T03:17:33.145Z"
+}

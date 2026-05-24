@@ -1,0 +1,26 @@
+{
+  "id": "aider-Aider-AI-aider-pr5124",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=Aider-AI"
+  },
+  "pr": {
+    "number": 5124,
+    "headSha": "a57c268f121cac0b254495be1b85350c9c87f629",
+    "baseSha": "3ec8ec5a7d695b08a6c24fe6c0c235c8f87df9af",
+    "title": "fix: set SSL_VERIFY=False for --no-verify-ssl",
+    "body": "Fixes #3702. `--no-verify-ssl` did not disable SSL verification for LiteLLM-backed providers such as Gemini, OpenRouter, and Anthropic, leading to `CERTIFICATE_VERIFY_FAILED` errors.\n\n## Root cause\n\nAider set `SSL_VERIFY` to an empty string when `--no-verify-ssl` was used. LiteLLM's `get_ssl_verify()` does not treat an empty string as boolean false, so SSL verification was not disabled as intended. Setting `SSL_VERIFY=False` uses the value LiteLLM expects and allows it to pass `verify=False` through to its HTTP client.\n\n## Changes\n\n- Set `os.environ[\"SSL_VERIFY\"] = \"False\"` in `aider/main.py` when `--no-verify-ssl` is enabled\n- Update `tests/basic/test_ssl_verification.py` to assert the new env var value\n\n## Test plan\n\n- [x] Updated `test_no_verify_ssl_flag_sets_model_info_manager`\n- [x] Manually verified the failing LiteLLM provider path with `--no-verify-ssl`",
+    "author": "kimjune01",
+    "headRef": "fix-ssl-verify-env-var",
+    "repository": "Aider-AI/aider"
+  },
+  "diffRef": {
+    "repository": "Aider-AI/aider",
+    "headSha": "a57c268f121cac0b254495be1b85350c9c87f629",
+    "baseSha": "3ec8ec5a7d695b08a6c24fe6c0c235c8f87df9af"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-Aider-AI-aider-pr5124.diff",
+  "vendoredAt": "2026-05-24T03:20:15.800Z",
+  "collectedAt": "2026-05-24T03:20:15.800Z"
+}

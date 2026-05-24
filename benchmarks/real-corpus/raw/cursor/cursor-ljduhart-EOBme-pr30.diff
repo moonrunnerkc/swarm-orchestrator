@@ -1,0 +1,931 @@
+diff --git a/app/src/main/java/app/eob/me/navigation/EobNavHost.kt b/app/src/main/java/app/eob/me/navigation/EobNavHost.kt
+index 419a6bf..99e3439 100644
+--- a/app/src/main/java/app/eob/me/navigation/EobNavHost.kt
++++ b/app/src/main/java/app/eob/me/navigation/EobNavHost.kt
+@@ -351,10 +351,15 @@ private fun MainHubNavHost(
+                     )
+                 }
+                 composable(EobRoute.CptCount.route) {
+-                    CptCountScreen(language, sortedEobRecords, eobViewModel.selectedCptCategory) {
+-                        eobViewModel.selectedCptCategory = it
+-                        onActivity()
+-                    }
++                    CptCountScreen(
++                        language = language,
++                        records = sortedEobRecords,
++                        selectedCategory = eobViewModel.selectedCptCategory,
++                        onCategorySelected = {
++                            eobViewModel.selectedCptCategory = it
++                            onActivity()
++                        }
++                    )
+                 }
+                 composable(EobRoute.News.route) {
+                     NewsScreen(
+diff --git a/app/src/main/java/app/eob/me/ui/screens/CptCountScreen.kt b/app/src/main/java/app/eob/me/ui/screens/CptCountScreen.kt
+new file mode 100644
+index 0000000..b80568c
+--- /dev/null
++++ b/app/src/main/java/app/eob/me/ui/screens/CptCountScreen.kt
+@@ -0,0 +1,222 @@
++package app.eob.me.ui.screens
++
++import androidx.compose.foundation.horizontalScroll
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.PaddingValues
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.width
++import androidx.compose.foundation.lazy.LazyColumn
++import androidx.compose.foundation.lazy.items
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material3.Card
++import androidx.compose.material3.CardDefaults
++import androidx.compose.material3.FilterChip
++import androidx.compose.material3.FilterChipDefaults
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.remember
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.text.style.TextAlign
++import androidx.compose.ui.text.style.TextOverflow
++import androidx.compose.ui.unit.dp
++import app.eob.me.data.AppLanguage
++import app.eob.me.data.CptCategory
++import app.eob.me.data.EobRecord
++import java.util.Locale
++
++private val BrandBlue = Color(0xFF2498EA)
++
++@Composable
++fun CptCountScreen(
++    language: AppLanguage,
++    records: List<EobRecord>,
++    selectedCategory: CptCategory,
++    onCategorySelected: (CptCategory) -> Unit,
++    modifier: Modifier = Modifier
++) {
++    val chipScrollState = rememberScrollState()
++
++    val itemizedCptList = remember(records, selectedCategory) {
++        records.flatMap { it.charges }
++            .filter { it.category == selectedCategory }
++            .groupBy { it.cptCode }
++            .map { (code, chargesGroup) ->
++                CptSummaryRow(
++                    cptCode = code,
++                    description = chargesGroup.firstOrNull()?.cptDescription ?: "Unspecified Procedure",
++                    count = chargesGroup.size,
++                    totalBilledValue = chargesGroup.sumOf { it.billedAmount }
++                )
++            }
++            .sortedByDescending { it.count }
++    }
++
++    LazyColumn(
++        modifier = modifier
++            .fillMaxSize()
++            .padding(horizontal = 16.dp),
++        verticalArrangement = Arrangement.spacedBy(16.dp),
++        contentPadding = PaddingValues(bottom = 80.dp, top = 8.dp)
++    ) {
++        item {
++            Column(modifier = Modifier.padding(top = 8.dp)) {
++                Text(
++                    text = "Medical Code Tracking",
++                    style = MaterialTheme.typography.headlineSmall,
++                    fontWeight = FontWeight.Bold
++                )
++                Text(
++                    text = "Analyze procedural frequency and billing distributions",
++                    style = MaterialTheme.typography.bodyMedium,
++                    color = Color.Gray
++                )
++            }
++        }
++
++        item {
++            Row(
++                modifier = Modifier
++                    .fillMaxWidth()
++                    .horizontalScroll(chipScrollState),
++                horizontalArrangement = Arrangement.spacedBy(8.dp)
++            ) {
++                CptCategory.entries.forEach { category ->
++                    val isSelected = category == selectedCategory
++                    FilterChip(
++                        selected = isSelected,
++                        onClick = { onCategorySelected(category) },
++                        label = { Text(category.displayName) },
++                        colors = FilterChipDefaults.filterChipColors(
++                            selectedContainerColor = BrandBlue,
++                            selectedLabelColor = Color.White
++                        )
++                    )
++                }
++            }
++        }
++
++        if (itemizedCptList.isNotEmpty()) {
++            item {
++                Row(
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .padding(horizontal = 4.dp),
++                    horizontalArrangement = Arrangement.SpaceBetween,
++                    verticalAlignment = Alignment.CenterVertically
++                ) {
++                    Text(
++                        text = "Code / Description",
++                        style = MaterialTheme.typography.labelMedium,
++                        color = Color.Gray,
++                        modifier = Modifier.weight(1f)
++                    )
++                    Text(
++                        text = "Frequency",
++                        style = MaterialTheme.typography.labelMedium,
++                        color = Color.Gray,
++                        modifier = Modifier.width(80.dp),
++                        textAlign = TextAlign.Center
++                    )
++                    Text(
++                        text = "Billed Total",
++                        style = MaterialTheme.typography.labelMedium,
++                        color = Color.Gray,
++                        modifier = Modifier.width(90.dp),
++                        textAlign = TextAlign.End
++                    )
++                }
++            }
++        }
++
++        if (itemizedCptList.isEmpty()) {
++            item {
++                Box(
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .padding(vertical = 40.dp),
++                    contentAlignment = Alignment.Center
++                ) {
++                    Text(
++                        text = "No recorded procedures match this category footprint.",
++                        style = MaterialTheme.typography.bodyMedium,
++                        color = Color.Gray
++                    )
++                }
++            }
++        } else {
++            items(itemizedCptList, key = { it.cptCode }) { record ->
++                Card(
++                    modifier = Modifier.fillMaxWidth(),
++                    shape = RoundedCornerShape(12.dp),
++                    colors = CardDefaults.cardColors(
++                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
++                    )
++                ) {
++                    Row(
++                        modifier = Modifier
++                            .fillMaxWidth()
++                            .padding(12.dp),
++                        verticalAlignment = Alignment.CenterVertically
++                    ) {
++                        Column(modifier = Modifier.weight(1f)) {
++                            Text(
++                                text = "CPT ${record.cptCode}",
++                                style = MaterialTheme.typography.bodyLarge,
++                                fontWeight = FontWeight.Bold
++                            )
++                            Text(
++                                text = record.description,
++                                style = MaterialTheme.typography.bodySmall,
++                                maxLines = 1,
++                                overflow = TextOverflow.Ellipsis,
++                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
++                            )
++                        }
++
++                        Box(
++                            modifier = Modifier
++                                .width(60.dp)
++                                .padding(horizontal = 4.dp),
++                            contentAlignment = Alignment.Center
++                        ) {
++                            Text(
++                                text = "${record.count}x",
++                                style = MaterialTheme.typography.bodyMedium,
++                                fontWeight = FontWeight.SemiBold,
++                                color = BrandBlue
++                            )
++                        }
++
++                        Box(
++                            modifier = Modifier.width(90.dp),
++                            contentAlignment = Alignment.CenterEnd
++                        ) {
++                            Text(
++                                text = String.format(Locale.US, "$%.2f", record.totalBilledValue),
++                                style = MaterialTheme.typography.bodyLarge,
++                                fontWeight = FontWeight.Bold
++                            )
++                        }
++                    }
++                }
++            }
++        }
++    }
++}
++
++private data class CptSummaryRow(
++    val cptCode: String,
++    val description: String,
++    val count: Int,
++    val totalBilledValue: Double
++)
+diff --git a/app/src/main/java/app/eob/me/ui/screens/DashboardScreen.kt b/app/src/main/java/app/eob/me/ui/screens/DashboardScreen.kt
+new file mode 100644
+index 0000000..50597db
+--- /dev/null
++++ b/app/src/main/java/app/eob/me/ui/screens/DashboardScreen.kt
+@@ -0,0 +1,278 @@
++package app.eob.me.ui.screens
++
++import androidx.compose.foundation.background
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.PaddingValues
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.fillMaxHeight
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.size
++import androidx.compose.foundation.layout.width
++import androidx.compose.foundation.lazy.LazyColumn
++import androidx.compose.foundation.lazy.items
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material3.Card
++import androidx.compose.material3.CardDefaults
++import androidx.compose.material3.LinearProgressIndicator
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.remember
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.draw.clip
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.unit.dp
++import app.eob.me.data.AppLanguage
++import app.eob.me.data.EobRecord
++import java.util.Locale
++
++private val BilledBlue = Color(0xFF2498EA)
++private val AdjustmentGreen = Color(0xFF10B981)
++private val PatientRed = Color(0xFFEF4444)
++
++@Composable
++fun DashboardScreen(
++    language: AppLanguage,
++    records: List<EobRecord>,
++    modifier: Modifier = Modifier
++) {
++    val metrics = remember(records) {
++        val grossBilled = records.sumOf { it.totalBilledAmount }
++        val adjustments = records.sumOf { it.totalContractualAdjustmentAmount }
++        val patientDue = records.sumOf { it.totalPatientResponsibility }
++        val insurancePaid = (grossBilled - adjustments - patientDue).coerceAtLeast(0.0)
++
++        FinancialMetrics(
++            grossBilled = grossBilled,
++            adjustments = adjustments,
++            insurancePaid = insurancePaid,
++            patientDue = patientDue
++        )
++    }
++
++    val providerBreakdown = remember(records) {
++        records.groupBy { it.providerName }
++            .map { (provider, recordList) ->
++                ProviderCostRow(
++                    name = provider.ifBlank { "Unknown Provider" },
++                    totalAmount = recordList.sumOf { it.totalBilledAmount },
++                    patientAmount = recordList.sumOf { it.totalPatientResponsibility }
++                )
++            }
++            .sortedByDescending { it.totalAmount }
++    }
++
++    LazyColumn(
++        modifier = modifier
++            .fillMaxSize()
++            .padding(horizontal = 16.dp),
++        verticalArrangement = Arrangement.spacedBy(20.dp),
++        contentPadding = PaddingValues(bottom = 80.dp, top = 8.dp)
++    ) {
++        item {
++            Text(
++                text = "Expense Analytics",
++                style = MaterialTheme.typography.headlineSmall,
++                fontWeight = FontWeight.Bold,
++                modifier = Modifier.padding(top = 8.dp)
++            )
++        }
++
++        if (records.isEmpty()) {
++            item {
++                Box(
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .padding(vertical = 40.dp),
++                    contentAlignment = Alignment.Center
++                ) {
++                    Text(
++                        text = "Upload an EOB invoice to view analytics charting summaries.",
++                        style = MaterialTheme.typography.bodyMedium,
++                        color = Color.Gray
++                    )
++                }
++            }
++        } else {
++            item {
++                Card(
++                    modifier = Modifier.fillMaxWidth(),
++                    shape = RoundedCornerShape(16.dp)
++                ) {
++                    Column(modifier = Modifier.padding(16.dp)) {
++                        Text(
++                            text = "Claim Allocation Profile",
++                            style = MaterialTheme.typography.titleMedium,
++                            fontWeight = FontWeight.Bold
++                        )
++                        Spacer(modifier = Modifier.height(6.dp))
++                        Text(
++                            text = String.format(Locale.US, "Total Aggregated Claims: $%.2f", metrics.grossBilled),
++                            style = MaterialTheme.typography.bodyMedium,
++                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
++                        )
++
++                        Spacer(modifier = Modifier.height(16.dp))
++
++                        Row(
++                            modifier = Modifier
++                                .fillMaxWidth()
++                                .height(24.dp)
++                                .clip(RoundedCornerShape(6.dp))
++                        ) {
++                            val total = metrics.grossBilled
++                            if (total > 0) {
++                                val adjustmentWeight = (metrics.adjustments / total).toFloat().coerceAtLeast(0.05f)
++                                val insuranceWeight = (metrics.insurancePaid / total).toFloat().coerceAtLeast(0.05f)
++                                val patientWeight = (metrics.patientDue / total).toFloat().coerceAtLeast(0.05f)
++
++                                Box(
++                                    modifier = Modifier
++                                        .weight(adjustmentWeight)
++                                        .fillMaxHeight()
++                                        .background(AdjustmentGreen)
++                                )
++                                Box(
++                                    modifier = Modifier
++                                        .weight(insuranceWeight)
++                                        .fillMaxHeight()
++                                        .background(BilledBlue)
++                                )
++                                Box(
++                                    modifier = Modifier
++                                        .weight(patientWeight)
++                                        .fillMaxHeight()
++                                        .background(PatientRed)
++                                )
++                            }
++                        }
++
++                        Spacer(modifier = Modifier.height(16.dp))
++
++                        LegendItem(
++                            label = "Network Savings Adjustments",
++                            amount = metrics.adjustments,
++                            color = AdjustmentGreen
++                        )
++                        LegendItem(
++                            label = "Covered By Carrier Plan",
++                            amount = metrics.insurancePaid,
++                            color = BilledBlue
++                        )
++                        LegendItem(
++                            label = "Your Patient Responsibility",
++                            amount = metrics.patientDue,
++                            color = PatientRed
++                        )
++                    }
++                }
++            }
++
++            item {
++                Text(
++                    text = "Spending by Medical Facility",
++                    style = MaterialTheme.typography.titleMedium,
++                    fontWeight = FontWeight.Bold
++                )
++            }
++
++            items(providerBreakdown, key = { it.name }) { summary ->
++                val maxValue = providerBreakdown.firstOrNull()?.totalAmount ?: 1.0
++                val proportionalFill = (summary.totalAmount / maxValue).toFloat().coerceIn(0f, 1f)
++
++                Card(
++                    modifier = Modifier.fillMaxWidth(),
++                    shape = RoundedCornerShape(12.dp),
++                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
++                ) {
++                    Column(modifier = Modifier.padding(12.dp)) {
++                        Row(
++                            modifier = Modifier.fillMaxWidth(),
++                            horizontalArrangement = Arrangement.SpaceBetween
++                        ) {
++                            Text(
++                                text = summary.name,
++                                style = MaterialTheme.typography.bodyLarge,
++                                fontWeight = FontWeight.SemiBold,
++                                maxLines = 1
++                            )
++                            Text(
++                                text = String.format(Locale.US, "$%.2f", summary.totalAmount),
++                                style = MaterialTheme.typography.bodyLarge,
++                                fontWeight = FontWeight.Bold
++                            )
++                        }
++
++                        Spacer(modifier = Modifier.height(8.dp))
++
++                        LinearProgressIndicator(
++                            progress = { proportionalFill },
++                            modifier = Modifier
++                                .fillMaxWidth()
++                                .height(8.dp)
++                                .clip(RoundedCornerShape(4.dp)),
++                            color = BilledBlue,
++                            trackColor = MaterialTheme.colorScheme.surfaceVariant
++                        )
++
++                        Spacer(modifier = Modifier.height(6.dp))
++
++                        Text(
++                            text = String.format(Locale.US, "Patient Out-of-Pocket Share: $%.2f", summary.patientAmount),
++                            style = MaterialTheme.typography.bodySmall,
++                            color = if (summary.patientAmount > 0) PatientRed else Color.Gray
++                        )
++                    }
++                }
++            }
++        }
++    }
++}
++
++@Composable
++private fun LegendItem(label: String, amount: Double, color: Color) {
++    Row(
++        modifier = Modifier
++            .fillMaxWidth()
++            .padding(vertical = 4.dp),
++        horizontalArrangement = Arrangement.SpaceBetween,
++        verticalAlignment = Alignment.CenterVertically
++    ) {
++        Row(verticalAlignment = Alignment.CenterVertically) {
++            Box(
++                modifier = Modifier
++                    .size(12.dp)
++                    .clip(RoundedCornerShape(3.dp))
++                    .background(color)
++            )
++            Spacer(modifier = Modifier.width(8.dp))
++            Text(text = label, style = MaterialTheme.typography.bodyMedium)
++        }
++        Text(
++            text = String.format(Locale.US, "$%.2f", amount),
++            style = MaterialTheme.typography.bodyMedium,
++            fontWeight = FontWeight.Bold
++        )
++    }
++}
++
++private data class FinancialMetrics(
++    val grossBilled: Double,
++    val adjustments: Double,
++    val insurancePaid: Double,
++    val patientDue: Double
++)
++
++private data class ProviderCostRow(
++    val name: String,
++    val totalAmount: Double,
++    val patientAmount: Double
++)
+diff --git a/app/src/main/java/app/eob/me/ui/screens/HomeScreen.kt b/app/src/main/java/app/eob/me/ui/screens/HomeScreen.kt
+index 90622fb..b6f711a 100644
+--- a/app/src/main/java/app/eob/me/ui/screens/HomeScreen.kt
++++ b/app/src/main/java/app/eob/me/ui/screens/HomeScreen.kt
+@@ -1,53 +1,297 @@
+ package app.eob.me.ui.screens
+ 
+ import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.Column
+ import androidx.compose.foundation.layout.PaddingValues
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.Spacer
+ import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.padding
+ import androidx.compose.foundation.lazy.LazyColumn
++import androidx.compose.foundation.lazy.items
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material3.AlertDialog
++import androidx.compose.material3.Button
++import androidx.compose.material3.Card
++import androidx.compose.material3.CardDefaults
++import androidx.compose.material3.IconButton
+ import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.OutlinedTextField
+ import androidx.compose.material3.Text
++import androidx.compose.material3.TextButton
+ import androidx.compose.runtime.Composable
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
++import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.text.font.FontWeight
+ import androidx.compose.ui.unit.dp
+ import app.eob.me.data.AppLanguage
++import app.eob.me.data.BillingIssueSeverity
+ import app.eob.me.data.DoctorAppointment
+ import app.eob.me.data.EobAnalyzer
+ import app.eob.me.data.EobRecord
+-import app.eob.me.data.EobStrings
++import app.eob.me.data.UserProfile
++import java.util.Locale
+ 
+ @Composable
+ fun HomeScreen(
+     language: AppLanguage,
+-    profile: app.eob.me.data.UserProfile,
++    profile: UserProfile,
+     records: List<EobRecord>,
+     appointments: List<DoctorAppointment>,
+     uploadNotice: String,
+     onAddAppointment: (String, String, String, String) -> Unit,
+-    onRemoveAppointment: (DoctorAppointment) -> Unit
++    onRemoveAppointment: (DoctorAppointment) -> Unit,
++    modifier: Modifier = Modifier
+ ) {
++    val totalBilled = remember(records) { records.sumOf { it.totalBilledAmount } }
++    val totalResponsibility = remember(records) { records.sumOf { it.totalPatientResponsibility } }
++    val billingDiscrepancies = remember(records) {
++        records.sumOf { record ->
++            EobAnalyzer.detectBillingIssues(record).count { it.severity != BillingIssueSeverity.Info }
++        }
++    }
++
++    var showAddAppointmentDialog by remember { mutableStateOf(false) }
++    var provider by remember { mutableStateOf("") }
++    var date by remember { mutableStateOf("") }
++    var time by remember { mutableStateOf("") }
++    var notes by remember { mutableStateOf("") }
++
+     LazyColumn(
+-        modifier = Modifier.fillMaxSize(),
+-        contentPadding = PaddingValues(16.dp),
+-        verticalArrangement = Arrangement.spacedBy(12.dp)
++        modifier = modifier
++            .fillMaxSize()
++            .padding(horizontal = 16.dp),
++        verticalArrangement = Arrangement.spacedBy(16.dp),
++        contentPadding = PaddingValues(bottom = 80.dp, top = 8.dp)
+     ) {
+-        item { InsuranceCard(language, profile) }
+-        item { ProviderDirectoryCard(EobAnalyzer.providerDirectory(records)) }
+         item {
+-            QuickActionsCard(
+-                language = language,
+-                appointments = appointments,
+-                onAddAppointment = onAddAppointment,
+-                onRemoveAppointment = onRemoveAppointment
+-            )
++            Card(
++                modifier = Modifier.fillMaxWidth(),
++                shape = RoundedCornerShape(16.dp),
++                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
++            ) {
++                Column(modifier = Modifier.padding(16.dp)) {
++                    Text(
++                        text = "Hello, ${profile.firstName.ifBlank { "User" }} 👋",
++                        style = MaterialTheme.typography.headlineSmall,
++                        fontWeight = FontWeight.Bold
++                    )
++                    Text(
++                        text = "Your healthcare expense profile overview",
++                        style = MaterialTheme.typography.bodyMedium,
++                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
++                    )
++                    Spacer(modifier = Modifier.height(16.dp))
++                    Row(
++                        modifier = Modifier.fillMaxWidth(),
++                        horizontalArrangement = Arrangement.SpaceBetween
++                    ) {
++                        Column {
++                            Text(text = "Total Billed", style = MaterialTheme.typography.labelMedium)
++                            Text(
++                                text = String.format(Locale.US, "$%.2f", totalBilled),
++                                style = MaterialTheme.typography.titleLarge,
++                                fontWeight = FontWeight.Bold
++                            )
++                        }
++                        Column {
++                            Text(text = "Out of Pocket", style = MaterialTheme.typography.labelMedium)
++                            Text(
++                                text = String.format(Locale.US, "$%.2f", totalResponsibility),
++                                style = MaterialTheme.typography.titleLarge,
++                                fontWeight = FontWeight.Bold,
++                                color = MaterialTheme.colorScheme.error
++                            )
++                        }
++                    }
++                }
++            }
++        }
++
++        item {
++            Row(
++                modifier = Modifier.fillMaxWidth(),
++                horizontalArrangement = Arrangement.spacedBy(12.dp)
++            ) {
++                Card(
++                    modifier = Modifier.weight(1f),
++                    shape = RoundedCornerShape(12.dp)
++                ) {
++                    Column(modifier = Modifier.padding(12.dp)) {
++                        Text(text = "Claims Analyzed", style = MaterialTheme.typography.labelMedium)
++                        Text(
++                            text = "${records.size}",
++                            style = MaterialTheme.typography.headlineMedium,
++                            fontWeight = FontWeight.Bold
++                        )
++                    }
++                }
++                Card(
++                    modifier = Modifier.weight(1f),
++                    shape = RoundedCornerShape(12.dp)
++                ) {
++                    Column(modifier = Modifier.padding(12.dp)) {
++                        Text(text = "Billing Flags", style = MaterialTheme.typography.labelMedium)
++                        Text(
++                            text = "$billingDiscrepancies",
++                            style = MaterialTheme.typography.headlineMedium,
++                            fontWeight = FontWeight.Bold,
++                            color = if (billingDiscrepancies > 0) {
++                                MaterialTheme.colorScheme.error
++                            } else {
++                                MaterialTheme.colorScheme.primary
++                            }
++                        )
++                    }
++                }
++            }
+         }
++
+         if (uploadNotice.isNotBlank()) {
+-            item { Text(uploadNotice, style = MaterialTheme.typography.titleSmall) }
++            item {
++                Text(
++                    text = uploadNotice,
++                    style = MaterialTheme.typography.titleSmall,
++                    color = MaterialTheme.colorScheme.primary
++                )
++            }
+         }
++
+         item {
+-            Text(
+-                "${EobStrings.t(language, "analysis")}: ${records.size} ${EobStrings.t(language, "eobs")}",
+-                style = MaterialTheme.typography.titleMedium
+-            )
++            Row(
++                modifier = Modifier.fillMaxWidth(),
++                horizontalArrangement = Arrangement.SpaceBetween,
++                verticalAlignment = Alignment.CenterVertically
++            ) {
++                Text(
++                    text = "Upcoming Care Timeline",
++                    style = MaterialTheme.typography.titleMedium,
++                    fontWeight = FontWeight.Bold
++                )
++                TextButton(onClick = { showAddAppointmentDialog = true }) {
++                    Text("+ Log Visit")
++                }
++            }
++        }
++
++        if (appointments.isEmpty()) {
++            item {
++                Box(
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .padding(vertical = 16.dp),
++                    contentAlignment = Alignment.Center
++                ) {
++                    Text(
++                        text = "No care visits mapped yet.",
++                        style = MaterialTheme.typography.bodyMedium,
++                        color = Color.Gray
++                    )
++                }
++            }
++        } else {
++            items(appointments, key = { it.id }) { appointment ->
++                Card(
++                    modifier = Modifier.fillMaxWidth(),
++                    shape = RoundedCornerShape(12.dp),
++                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
++                ) {
++                    Row(
++                        modifier = Modifier
++                            .fillMaxWidth()
++                            .padding(12.dp),
++                        horizontalArrangement = Arrangement.SpaceBetween,
++                        verticalAlignment = Alignment.CenterVertically
++                    ) {
++                        Column {
++                            Text(
++                                text = appointment.providerName,
++                                style = MaterialTheme.typography.bodyLarge,
++                                fontWeight = FontWeight.Bold
++                            )
++                            Text(
++                                text = "${appointment.date} @ ${appointment.time}",
++                                style = MaterialTheme.typography.bodySmall,
++                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
++                            )
++                            if (appointment.notes.isNotBlank()) {
++                                Text(
++                                    text = appointment.notes,
++                                    style = MaterialTheme.typography.bodyMedium,
++                                    modifier = Modifier.padding(top = 4.dp)
++                                )
++                            }
++                        }
++                        IconButton(onClick = { onRemoveAppointment(appointment) }) {
++                            Text("🗑️", style = MaterialTheme.typography.titleMedium)
++                        }
++                    }
++                }
++            }
+         }
+     }
++
++    if (showAddAppointmentDialog) {
++        AlertDialog(
++            onDismissRequest = { showAddAppointmentDialog = false },
++            title = { Text(text = "Log Doctor Appointment") },
++            text = {
++                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
++                    OutlinedTextField(
++                        value = provider,
++                        onValueChange = { provider = it },
++                        label = { Text("Provider/Facility Name") },
++                        singleLine = true
++                    )
++                    OutlinedTextField(
++                        value = date,
++                        onValueChange = { date = it },
++                        label = { Text("Date (MM/DD/YYYY)") },
++                        singleLine = true
++                    )
++                    OutlinedTextField(
++                        value = time,
++                        onValueChange = { time = it },
++                        label = { Text("Time (e.g. 10:30 AM)") },
++                        singleLine = true
++                    )
++                    OutlinedTextField(
++                        value = notes,
++                        onValueChange = { notes = it },
++                        label = { Text("Notes/Purpose") },
++                        maxLines = 3
++                    )
++                }
++            },
++            confirmButton = {
++                Button(
++                    onClick = {
++                        if (provider.isNotBlank() && date.isNotBlank()) {
++                            onAddAppointment(date, provider, time, notes)
++                            showAddAppointmentDialog = false
++                            provider = ""
++                            date = ""
++                            time = ""
++                            notes = ""
++                        }
++                    }
++                ) {
++                    Text("Save")
++                }
++            },
++            dismissButton = {
++                TextButton(onClick = { showAddAppointmentDialog = false }) {
++                    Text("Cancel")
++                }
++            }
++        )
++    }
+ }
+diff --git a/app/src/main/java/app/eob/me/ui/screens/MainScreens.kt b/app/src/main/java/app/eob/me/ui/screens/MainScreens.kt
+index 8599a42..03cdda9 100644
+--- a/app/src/main/java/app/eob/me/ui/screens/MainScreens.kt
++++ b/app/src/main/java/app/eob/me/ui/screens/MainScreens.kt
+@@ -108,51 +108,6 @@ fun AnalysisScreen(
+     }
+ }
+ 
+-@Composable
+-fun CptCountScreen(
+-    language: AppLanguage,
+-    records: List<EobRecord>,
+-    selectedCategory: CptCategory,
+-    onCategoryChanged: (CptCategory) -> Unit
+-) {
+-    val year = records.map { EobAnalyzer.serviceYear(it.serviceDate) }.filter { it > 0 }.maxOrNull()
+-        ?: Calendar.getInstance().get(Calendar.YEAR)
+-    val usage = EobAnalyzer.cptUsage(records, year).filter { it.info.category == selectedCategory }
+-    LazyColumn(
+-        modifier = Modifier.fillMaxSize(),
+-        contentPadding = PaddingValues(16.dp),
+-        verticalArrangement = Arrangement.spacedBy(10.dp)
+-    ) {
+-        item {
+-            Text("${EobStrings.t(language, "cptsBilledIn")} $year", style = MaterialTheme.typography.titleLarge)
+-            Text(EobStrings.t(language, "cptRule"))
+-        }
+-        item {
+-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+-                CptCategory.entries.filter { it != CptCategory.Other }.forEach { category ->
+-                    AssistChip(
+-                        onClick = { onCategoryChanged(category) },
+-                        label = { Text(EobStrings.cptCategoryLabel(language, category)) },
+-                        enabled = category != selectedCategory
+-                    )
+-                }
+-            }
+-        }
+-        items(usage) { item ->
+-            ElevatedCard(Modifier.fillMaxWidth()) {
+-                Column(Modifier.padding(16.dp)) {
+-                    Text("${item.info.code} (${item.count}x)", style = MaterialTheme.typography.titleMedium)
+-                    Text(item.info.description)
+-                    Text("${EobStrings.t(language, "category")}: ${EobStrings.cptCategoryLabel(language, item.info.category)}")
+-                }
+-            }
+-        }
+-        item {
+-            if (usage.isEmpty()) Text("${EobStrings.t(language, "noCptsFound")} ${EobStrings.cptCategoryLabel(language, selectedCategory)} $year")
+-        }
+-    }
+-}
+-
+ @Composable
+ fun NewsScreen(language: AppLanguage, newsItems: List<NewsRelease>, onDeleteNews: (NewsRelease) -> Unit) {
+     LazyColumn(
+@@ -177,17 +132,6 @@ fun NewsScreen(language: AppLanguage, newsItems: List<NewsRelease>, onDeleteNews
+     }
+ }
+ 
+-@Composable
+-fun DashboardScreen(language: AppLanguage, records: List<EobRecord>) {
+-    LazyColumn(
+-        modifier = Modifier.fillMaxSize(),
+-        contentPadding = PaddingValues(16.dp),
+-        verticalArrangement = Arrangement.spacedBy(10.dp)
+-    ) {
+-        item { YearlyHealthCostDashboard(EobAnalyzer.yearlyHealthCostSummary(records)) }
+-    }
+-}
+-
+ @Composable
+ fun AppealScreen(
+     language: AppLanguage,

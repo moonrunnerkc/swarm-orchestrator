@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-claude-code-pr61691",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 61691,
+    "headSha": "d9b8a65b3b9e33e578eef4a36d6d7f534897c8f1",
+    "baseSha": "39e853e4074d90f27afdfb7ea601e0fc378bd0c5",
+    "title": "[scripts] Add diagnostic script for GitHub connector showing 'Connected' but no tools (#61682)",
+    "body": "## Summary\n\nAdds a PowerShell diagnostic/repair script for Windows users affected by the recurring bug where the GitHub MCP connector in Cowork shows **'Connected'** status but exposes **zero tools**.\n\nCloses #61682\n\n## Root Cause Analysis\n\nBased on the chain of related issues (#28695, #41658, #57589), the root cause is the OAuth token missing the \\user:mcp_servers\\ scope. The connector's SSE transport connects successfully (showing 'Connected'), but the \\\tools/list\\ MCP RPC fails because the token doesn't have the required scope. The error is swallowed silently, resulting in 0 tools registered.\n\nThis has regressed multiple times after being 'fixed' in #23775.\n\n## What This Script Does\n\nThe \\Diagnose-GitHubConnector.ps1\\ script checks the Claude Desktop installation, enumerates Windows Credential Manager for OAuth tokens, inspects MCP connector cache, can clear stale cache (\\-Force\\), and links to all relevant issues.\n\n## Usage\n\n\\\\\\powershell\n.\\scripts\\Diagnose-GitHubConnector.ps1 -CheckOnly\n.\\scripts\\Diagnose-GitHubConnector.ps1 -Force\n\\\\\\\n\n## Note\n\nThis is a diagnostic/workaround tool. The permanent fix needs to be in the desktop app OAuth flow to request \\user:mcp_servers\\ scope reliably.\n\ncc #23775, #28695, #41658, #57589",
+    "author": "giruuuuj",
+    "headRef": "fix/github-connector-diagnostic-61682",
+    "repository": "anthropics/claude-code"
+  },
+  "diffRef": {
+    "repository": "anthropics/claude-code",
+    "headSha": "d9b8a65b3b9e33e578eef4a36d6d7f534897c8f1",
+    "baseSha": "39e853e4074d90f27afdfb7ea601e0fc378bd0c5"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-claude-code-pr61691.diff",
+  "vendoredAt": "2026-05-24T03:15:50.183Z",
+  "collectedAt": "2026-05-24T03:15:50.183Z"
+}

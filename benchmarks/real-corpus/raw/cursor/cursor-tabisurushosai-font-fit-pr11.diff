@@ -1,0 +1,237 @@
+diff --git a/docs/PORTING.md b/docs/PORTING.md
+index 986ba37..b5a8d07 100644
+--- a/docs/PORTING.md
++++ b/docs/PORTING.md
+@@ -20,6 +20,13 @@ font-fit を iOS / Android アプリへ移植するときの境界をまとめ
+ 
+ 移植先のストレージでも、上記の意味を保ったまま `FontFitStorage` を実装してください。Chrome 拡張固有の `chrome.storage.local` へ直接依存するコードは `src/storage/chromeStorage.ts` に閉じ込めます。
+ 
++## ストレージアダプタ
++
++- `FontFitStorage` はアプリ全体が使う高レベル IF です。UI からはこの IF 経由で読み書きし、保存キーを直接扱いません。
++- `FontFitStorageArea` は `get` / `set` だけを持つ低レベル IF です。Chrome 拡張では `chrome.storage.local` を渡し、iOS / Android では Keychain、SharedPreferences、SQLite などの保存先をこの形に合わせます。
++- 保存キーは `STORAGE_KEYS` に集約しています。移植先でもキー名と値の形を変えず、既存データをそのまま読めるようにしてください。
++- `src/core` は保存先を知りません。既定値の補完や Premium 判定などの純ロジックだけを置き、永続化は `src/storage` のアダプタで吸収します。
++
+ ## 移植時の確認事項
+ 
+ - `src/core` に `chrome.*` が入っていないこと。
+diff --git a/eslint.config.js b/eslint.config.js
+index 4633ab8..6404687 100644
+--- a/eslint.config.js
++++ b/eslint.config.js
+@@ -10,5 +10,17 @@ export default tseslint.config(
+     rules: {
+       '@typescript-eslint/consistent-type-imports': 'error'
+     }
++  },
++  {
++    files: ['src/core/**/*.ts'],
++    rules: {
++      'no-restricted-globals': [
++        'error',
++        {
++          name: 'chrome',
++          message: 'Keep src/core portable; access chrome APIs through UI or storage adapters.'
++        }
++      ]
++    }
+   }
+ );
+diff --git a/src/storage/chromeStorage.test.ts b/src/storage/chromeStorage.test.ts
+new file mode 100644
+index 0000000..e7eaa31
+--- /dev/null
++++ b/src/storage/chromeStorage.test.ts
+@@ -0,0 +1,78 @@
++import { describe, expect, it } from 'vitest';
++
++import { defaultSettings } from '../core/settings';
++import { createChromeStorageAdapter } from './chromeStorage';
++import { STORAGE_KEYS, type FontFitStorageArea, type StorageItems, type StorageKey } from './types';
++
++function createMemoryStorageArea(initialItems: StorageItems = {}): FontFitStorageArea & { snapshot(): StorageItems } {
++  let items: StorageItems = { ...initialItems };
++
++  return {
++    async get(keys: StorageKey | StorageKey[]): Promise<StorageItems> {
++      if (Array.isArray(keys)) {
++        return Object.fromEntries(keys.map((key) => [key, items[key]])) as StorageItems;
++      }
++
++      return { [keys]: items[keys] };
++    },
++
++    async set(nextItems: StorageItems): Promise<void> {
++      items = { ...items, ...nextItems };
++    },
++
++    snapshot(): StorageItems {
++      return { ...items };
++    }
++  };
++}
++
++describe('createChromeStorageAdapter', () => {
++  it('reads and writes settings through the portable storage area interface', async () => {
++    const area = createMemoryStorageArea({
++      [STORAGE_KEYS.settings]: { fontSize: 2 }
++    });
++    const storage = createChromeStorageAdapter(area);
++
++    expect(await storage.loadSettings()).toEqual({
++      ...defaultSettings,
++      fontSize: 2
++    });
++
++    await storage.saveSettings(defaultSettings);
++    expect(area.snapshot()[STORAGE_KEYS.settings]).toEqual(defaultSettings);
++  });
++
++  it('keeps existing premium storage keys unchanged', async () => {
++    const area = createMemoryStorageArea({
++      [STORAGE_KEYS.isPremium]: true,
++      [STORAGE_KEYS.trialStartTs]: 123
++    });
++    const storage = createChromeStorageAdapter(area);
++
++    expect(await storage.loadPremiumState()).toEqual({
++      isPremium: true,
++      trialStartTs: 123
++    });
++
++    await storage.saveTrialStartTs(456);
++    expect(area.snapshot()[STORAGE_KEYS.trialStartTs]).toBe(456);
++  });
++
++  it('keeps existing preset and auto-apply storage keys unchanged', async () => {
++    const presets = [{ name: 'Readable', settings: defaultSettings }];
++    const area = createMemoryStorageArea({
++      [STORAGE_KEYS.presets]: presets,
++      [STORAGE_KEYS.autoApplySites]: ['example.com']
++    });
++    const storage = createChromeStorageAdapter(area);
++
++    expect(await storage.loadPresets()).toEqual(presets);
++    expect(await storage.loadAutoApplySites()).toEqual(['example.com']);
++
++    await storage.savePresets([]);
++    await storage.saveAutoApplySites(['docs.example']);
++
++    expect(area.snapshot()[STORAGE_KEYS.presets]).toEqual([]);
++    expect(area.snapshot()[STORAGE_KEYS.autoApplySites]).toEqual(['docs.example']);
++  });
++});
+diff --git a/src/storage/chromeStorage.ts b/src/storage/chromeStorage.ts
+index 007e34e..f8c2b80 100644
+--- a/src/storage/chromeStorage.ts
++++ b/src/storage/chromeStorage.ts
+@@ -1,47 +1,48 @@
+ import { mergeSettings, type PremiumState, type Preset, type Settings } from '../core/settings';
+-import type { FontFitStorage } from './types';
++import { STORAGE_KEYS, type FontFitStorage, type FontFitStorageArea } from './types';
+ 
+-type ChromeStorageArea = typeof chrome.storage.local;
+-
+-export function createChromeStorageAdapter(area: ChromeStorageArea = chrome.storage.local): FontFitStorage {
++export function createChromeStorageAdapter(area: FontFitStorageArea = chrome.storage.local): FontFitStorage {
+   return {
+     async loadSettings(): Promise<Settings> {
+-      const data = await area.get('settings');
+-      return mergeSettings(data['settings']);
++      const data = await area.get(STORAGE_KEYS.settings);
++      return mergeSettings(data[STORAGE_KEYS.settings]);
+     },
+ 
+     async saveSettings(settings: Settings): Promise<void> {
+-      await area.set({ settings });
++      await area.set({ [STORAGE_KEYS.settings]: settings });
+     },
+ 
+     async loadPremiumState(): Promise<PremiumState> {
+-      const data = await area.get(['is_premium', 'trial_start_ts']);
+-      return {
+-        isPremium: !!data['is_premium'],
+-        trialStartTs: data['trial_start_ts']
+-      };
++      const data = await area.get([STORAGE_KEYS.isPremium, STORAGE_KEYS.trialStartTs]);
++      const trialStartTs = data[STORAGE_KEYS.trialStartTs];
++
++      if (trialStartTs === undefined) {
++        return { isPremium: !!data[STORAGE_KEYS.isPremium] };
++      }
++
++      return { isPremium: !!data[STORAGE_KEYS.isPremium], trialStartTs };
+     },
+ 
+     async saveTrialStartTs(trialStartTs: number): Promise<void> {
+-      await area.set({ trial_start_ts: trialStartTs });
++      await area.set({ [STORAGE_KEYS.trialStartTs]: trialStartTs });
+     },
+ 
+     async loadPresets(): Promise<Preset[]> {
+-      const data = await area.get('presets');
+-      return data['presets'] || [];
++      const data = await area.get(STORAGE_KEYS.presets);
++      return data[STORAGE_KEYS.presets] || [];
+     },
+ 
+     async savePresets(presets: Preset[]): Promise<void> {
+-      await area.set({ presets });
++      await area.set({ [STORAGE_KEYS.presets]: presets });
+     },
+ 
+     async loadAutoApplySites(): Promise<string[]> {
+-      const data = await area.get('autoApplySites');
+-      return data['autoApplySites'] || [];
++      const data = await area.get(STORAGE_KEYS.autoApplySites);
++      return data[STORAGE_KEYS.autoApplySites] || [];
+     },
+ 
+     async saveAutoApplySites(sites: string[]): Promise<void> {
+-      await area.set({ autoApplySites: sites });
++      await area.set({ [STORAGE_KEYS.autoApplySites]: sites });
+     }
+   };
+ }
+diff --git a/src/storage/index.ts b/src/storage/index.ts
+index 3cf6839..c9302eb 100644
+--- a/src/storage/index.ts
++++ b/src/storage/index.ts
+@@ -1 +1,2 @@
+-export type { FontFitStorage } from './types';
++export { STORAGE_KEYS } from './types';
++export type { FontFitStorage, FontFitStorageArea, StorageItems, StorageKey } from './types';
+diff --git a/src/storage/types.ts b/src/storage/types.ts
+index 5a5b687..21016c1 100644
+--- a/src/storage/types.ts
++++ b/src/storage/types.ts
+@@ -1,5 +1,28 @@
+ import type { PremiumState, Preset, Settings } from '../core/settings';
+ 
++export const STORAGE_KEYS = {
++  settings: 'settings',
++  isPremium: 'is_premium',
++  trialStartTs: 'trial_start_ts',
++  presets: 'presets',
++  autoApplySites: 'autoApplySites'
++} as const;
++
++export type StorageKey = typeof STORAGE_KEYS[keyof typeof STORAGE_KEYS];
++
++export type StorageItems = Partial<{
++  [STORAGE_KEYS.settings]: Partial<Settings>;
++  [STORAGE_KEYS.isPremium]: boolean;
++  [STORAGE_KEYS.trialStartTs]: number;
++  [STORAGE_KEYS.presets]: Preset[];
++  [STORAGE_KEYS.autoApplySites]: string[];
++}>;
++
++export interface FontFitStorageArea {
++  get(keys: StorageKey | StorageKey[]): Promise<StorageItems>;
++  set(items: StorageItems): Promise<void>;
++}
++
+ export interface FontFitStorage {
+   loadSettings(): Promise<Settings>;
+   saveSettings(settings: Settings): Promise<void>;

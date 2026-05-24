@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-Raftersecurity-rafter-cli-pr85",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer"
+  },
+  "pr": {
+    "number": 85,
+    "headSha": "c2319d028852d4e49ceb21f0a3a5a9795c735caa",
+    "baseSha": "cee7894b0c572eeb03ba99e58cc5fa37f3cfb517",
+    "title": "feat(rf-du2o): Aider read-only context — RAFTER.md + .aider.conf.yml read:",
+    "body": "## Summary\n\nBrings Aider integration to the only intercept Aider actually consumes (rf-cia phase c). Closes bead **rf-du2o**.\n\n### Pruned\n\n- **`mcp-server-command: rafter mcp serve`** append in `.aider.conf.yml` (Node + Python). Aider has no native MCP support; the unknown YAML key was silently ignored at runtime. Independently flagged by the rf-cia gap reports (rf-p1ri, rf-vayl) and the research bead (rf-s1n3). Same prune pattern as the Continue.dev hooks prune (rf-cia phase b) and the Windsurf hooks prune (rf-0vr3).\n- `aider.mcp` ComponentSpec dropped from both Node and Python registries; replaced by `aider.read`.\n\n### Added\n\n- **`RAFTER.md`** write at workspace root with the rafter security context block (uses the existing `injectInstructionFile` marker pattern, idempotent).\n- **`read:` list entry** for `RAFTER.md` in `.aider.conf.yml`. Preserves any existing `read:` entries; preserves other YAML keys; handles `read:` as missing / scalar / list.\n- `aider.read` ComponentSpec — manageable via `rafter agent enable/disable`.\n- **`--local` (project-scope) install**: writes `RAFTER.md` + edits `.aider.conf.yml` in cwd, no Aider install required on the machine.\n- **Migration**: reinstalling on top of an older `.aider.conf.yml` strips the legacy `mcp-server-command` line (with or without the preceding comment marker).\n- Brief and recipe rewritten to document the new shape (no MCP, `RAFTER.md` + `read:` list).\n\n### Test plan\n\n- [x] 6 new Node tests in \\`describe(\"Aider read-only context (--with-aider)\")\\` — green\n- [x] 6 new Python tests in \\`TestInstallAiderRead\\` — green\n- [x] \\`agent-components\\` tests in both impls updated and green\n- [x] Combined \\\"All 8 platforms\\\" integration test updated and green\n- [x] Brief tests remain green\n- [x] Live smoke (Node): \\`rafter agent init --local --with-aider\\` against a config with the legacy line strips the legacy line, preserves \\`model:\\` and a pre-existing \\`read:\\` entry, and adds \\`RAFTER.md\\`\n\n### Out of scope\n\n- Continue.dev / Codex / Gemini parity — separate beads (rf-acz0, rf-ovql, rf-044o).\n- \\`rafter agent verify --probe\\` runtime check — rf-65zg.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "Rome-1",
+    "headRef": "rf-du2o-aider-deep",
+    "repository": "Raftersecurity/rafter-cli"
+  },
+  "diffRef": {
+    "repository": "Raftersecurity/rafter-cli",
+    "headSha": "c2319d028852d4e49ceb21f0a3a5a9795c735caa",
+    "baseSha": "cee7894b0c572eeb03ba99e58cc5fa37f3cfb517"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-Raftersecurity-rafter-cli-pr85.diff",
+  "vendoredAt": "2026-05-24T03:10:59.979Z",
+  "collectedAt": "2026-05-24T03:10:59.979Z"
+}

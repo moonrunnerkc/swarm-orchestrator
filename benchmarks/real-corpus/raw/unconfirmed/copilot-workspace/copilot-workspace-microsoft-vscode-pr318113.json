@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-microsoft-vscode-pr318113",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 318113,
+    "headSha": "4cbfa106f58d34ec688e3a50da55b74c8e242a2f",
+    "baseSha": "15bd7994c436c45036df0a849ac03fa8c63fe9a6",
+    "title": "Claude agent — Phase 11: customizations / plugins",
+    "body": "Phase 11 of the Claude agent provider in the agent host.\n\n## Behaviour\n\n- **Workbench-pushed customizations.** `setClientCustomizations` / `setCustomizationEnabled` flow through `IAgentPluginManager` into `Options.plugins` on the Claude SDK `Query`.\n- **Server-side (SDK-discovered) customizations.** Commands / agents / MCP servers from the live `Query` are projected as a single \\\"Discovered in Claude\\\" Open Plugins-conformant on-disk bundle so the workbench's plugin expander surfaces them next to client-pushed entries.\n\n## Design notes\n\n- \\`Query.reloadPlugins()\\` is parameterless — the SDK's plugin URI set is captured into \\`Options.plugins\\` at startup and is otherwise immutable. Any client-pushed change therefore triggers a yield-restart through the same rematerializer path used for client-tool changes. \\`send()\\`'s pre-flight runs a single rebind when **either** \\`toolDiff\\` or \\`clientCustomizationsDiff\\` is dirty; the rematerializer reads \\`clientCustomizationsDiff.consume()\\` so the new URI set lands in \\`Options.plugins\\` of the rebuilt \\`Query\\`.\n- \\`SessionClientCustomizationsDiff\\` drives dirty from the model state observable (widened equality covers \\`nonce\\`, \\`displayName\\`, \\`description\\`, \\`statusMessage\\`, \\`agents\\`, \\`pluginDir\\`, status, enablement). Same-URI content refreshes (nonce bumps) now correctly flip dirty.\n- \\`setClientCustomizations\\` runs inside the per-session sequencer so a fire-and-forget call from \\`AgentSideEffects\\` cannot race a first \\`sendMessage\\`.\n- \\`ClaudeSdkCustomizationBundler\\` writes a hashed, content-addressed on-disk tree under \\`IAgentPluginManager.basePath\\`. Repeated calls with the same SDK snapshot are nonce-stable and skip the rewrite. The on-disk tree is intentionally a cross-session warm cache.\n\n## Tests\n\nNew \\`customizations/\\` test folder mirrors the source structure:\n- \\`SessionClientCustomizationsDiff\\` — URI list, nonce, metadata, enablement, dirty + consume semantics.\n- Projector — client + server tier merge with per-URI enablement overlay.\n- Bundler — write layout, nonce stability, name sanitisation, working-directory namespacing, delete-on-change.\n\n\\`claudeAgent.test.ts\\`:\n- Sync-and-toggle dispatch through the sequencer.\n- Rebind on customizations dirty (proves \\`reloadPlugins()\\` would not have sufficed).\n- Mid-turn race coverage.\n- Swallowed-SDK-snapshot fallback in \\`getSessionCustomizations\\`.\n\nDraft for review. No telemetry impact, no proposed-API changes.",
+    "author": "TylerLeonhardt",
+    "headRef": "tyleonha/claude-phase11-customizations",
+    "repository": "microsoft/vscode"
+  },
+  "diffRef": {
+    "repository": "microsoft/vscode",
+    "headSha": "4cbfa106f58d34ec688e3a50da55b74c8e242a2f",
+    "baseSha": "15bd7994c436c45036df0a849ac03fa8c63fe9a6"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-microsoft-vscode-pr318113.diff",
+  "vendoredAt": "2026-05-24T03:22:18.349Z",
+  "collectedAt": "2026-05-24T03:22:18.349Z"
+}

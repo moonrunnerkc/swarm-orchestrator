@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24129",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24129,
+    "headSha": "1136405c386f4fec1796395210f46c51893fc839",
+    "baseSha": "6963145cb617cd77dc4c24e4dbbfb8b29f6cfbe0",
+    "title": "package: factor DotSlash executable fetching",
+    "body": "## Why\n\nThe package builder already fetches `rg` from a checked-in DotSlash manifest. The zsh packaging work needs the same fetch/cache/size-check/SHA-256/extract path for another manifest, but keeping that refactor inside the zsh PR makes the review harder to follow.\n\nThis PR factors the existing `rg`-specific implementation into a reusable helper with no intended behavior change for `rg` packaging.\n\n## What Changed\n\n- Added `scripts/codex_package/dotslash.py` for checked-in DotSlash manifest parsing, archive download, cache reuse, size validation, SHA-256 validation, and member extraction.\n- Updated `scripts/codex_package/ripgrep.py` to delegate to the shared helper.\n- Preserved the existing `rg` manifest path, cache key, destination filename, and executable-bit behavior.\n\n## Testing\n\n- `python3 -m py_compile scripts/codex_package/dotslash.py scripts/codex_package/ripgrep.py scripts/codex_package/cli.py scripts/codex_package/layout.py scripts/codex_package/zsh.py`\n- `python3 -m unittest discover scripts/codex_package`\n\n\n---\n[//]: # (BEGIN SAPLING FOOTER)\nStack created with [Sapling](https://sapling-scm.com). Best reviewed with [ReviewStack](https://reviewstack.dev/openai/codex/pull/24129).\n* #23768\n* #23756\n* __->__ #24129",
+    "author": "bolinfest",
+    "headRef": "pr24129",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "1136405c386f4fec1796395210f46c51893fc839",
+    "baseSha": "6963145cb617cd77dc4c24e4dbbfb8b29f6cfbe0"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24129.diff",
+  "vendoredAt": "2026-05-24T03:21:02.668Z",
+  "collectedAt": "2026-05-24T03:21:02.668Z"
+}

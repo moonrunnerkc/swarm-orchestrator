@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1566",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1566,
+    "headSha": "d047bf5c5131fb98099b3e5cdc4f760a61ea9711",
+    "baseSha": "a28508b8c22d806688e4d4faa97ca60ce04ce745",
+    "title": "fix(bedrock): strip \"caller: null\" from tool_use blocks to prevent Bedrock HTTP 400",
+    "body": "## Summary\n\nWhen a Bedrock streaming or non-streaming response includes a `tool_use` block where the `caller` field is `None` (the common case for model-invoked tools with no explicit caller), calling `.to_dict()` on the resulting `ToolUseBlock` object produces `{\"caller\": null, ...}`. When this dict is then passed back as part of a follow-up `messages.create` request, Bedrock returns HTTP 400 with `\"messages.<n>.content.<m>.tool_use.caller: Input should be a valid dictionary or object to extract fields from\"` and the conversation loop breaks.\n\nThe root cause is a type asymmetry between the response model (`ToolUseBlock.caller: Optional[Caller] = None`) and the request param type (`ToolUseBlockParam.caller: Caller` with `total=False`): the response type allows `None`, but the request type requires the key to be *absent* (not `null`) when there is no caller. The standard Anthropic and Vertex APIs are lenient about `caller: null`, but Bedrock validates the field strictly.\n\nThe fix adds `_strip_null_caller_from_tool_use()` — called inside `_prepare_options()` in the Bedrock client — to remove the `caller` key from any `tool_use` / `server_tool_use` content block where it is `None` before the payload is serialised and sent. The logic is intentionally scoped to the Bedrock code path because only Bedrock enforces this constraint.\n\n## Issue\n\nFixes #1454\n\n## Local verification\n\n```\n$ python -m pytest tests/lib/test_bedrock.py -v --override-ini=\"addopts=\"\n============================= test session starts ==============================\nplatform linux -- Python 3.11.15, pytest-9.0.2, pluggy-1.6.0 -- /usr/local/bin/python\ncachedir: .pytest_cache\nrootdir: /tmp/anthropic-sdk-python\nconfigfile: pyproject.toml\nplugins: respx-0.22.0, anyio-4.12.1, time-machine-3.2.0, xdist-3.8.0, asyncio-1.3.0, inline-snapshot-0.32.5, http-snapshot-0.1.8\nasyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=function\ncollecting ... collected 14 items\n\ntests/lib/test_bedrock.py::test_messages_retries PASSED                  [  7%]\ntests/lib/test_bedrock.py::test_messages_retries_async PASSED            [ 14%]\ntests/lib/test_bedrock.py::test_application_inference_profile PASSED     [ 21%]\ntests/lib/test_bedrock.py::test_api_key_auth PASSED                      [ 28%]\ntests/lib/test_bedrock.py::test_api_key_auth_async PASSED                [ 35%]\ntests/lib/test_bedrock.py::test_api_key_from_env PASSED                  [ 42%]\ntests/lib/test_bedrock.py::test_api_key_mutual_exclusion PASSED          [ 50%]\ntests/lib/test_bedrock.py::test_api_key_mutual_exclusion_async PASSED    [ 57%]\ntests/lib/test_bedrock.py::test_api_key_env_mutual_exclusion PASSED      [ 64%]\ntests/lib/test_bedrock.py::test_region_infer_from_profile PASSED         [ 71%]\ntests/lib/test_bedrock.py::test_region_infer_from_specified_profile[default profile] PASSED [ 78%]\ntests/lib/test_bedrock.py::test_region_infer_from_specified_profile[custom profile] PASSED [ 85%]\ntests/lib/test_bedrock.py::test_tool_use_null_caller_stripped PASSED     [ 92%]\ntests/lib/test_bedrock.py::test_tool_use_null_caller_stripped_async PASSED [100%]\n\n============================== 14 passed in 0.48s ==============================\n\n$ python -m ruff check src/anthropic/lib/bedrock/_client.py tests/lib/test_bedrock.py\nAll checks passed!\n\n$ python -m mypy src/anthropic/lib/bedrock/_client.py\nSuccess: no issues found in 1 source file\n=== LOCAL_TEST_PASSED ===\n```\n\n## Risk\n\nThe change only affects the Bedrock code path (`_prepare_options` in `src/anthropic/lib/bedrock/_client.py`). It removes `caller: null` from `tool_use` and `server_tool_use` content blocks — a value that Bedrock already rejects with a 400, so no previously-working request can break. Users who explicitly set `caller` to a non-None `Caller` object are unaffected; only `None` values are dropped.\n",
+    "author": "xodn348",
+    "headRef": "fix/bedrock-strip-null-caller-in-tool-use",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "d047bf5c5131fb98099b3e5cdc4f760a61ea9711",
+    "baseSha": "a28508b8c22d806688e4d4faa97ca60ce04ce745"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1566.diff",
+  "vendoredAt": "2026-05-24T03:17:09.580Z",
+  "collectedAt": "2026-05-24T03:17:09.580Z"
+}

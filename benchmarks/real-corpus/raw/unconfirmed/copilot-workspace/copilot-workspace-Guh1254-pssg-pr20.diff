@@ -1,0 +1,43 @@
+diff --git a/README.md b/README.md
+index 096f003..a9fa674 100644
+--- a/README.md
++++ b/README.md
+@@ -59,6 +59,28 @@ A autenticação administrativa usa hash de senha via Edge Function `auth-passwo
+ 
+ Compatibilidade legada: se existir senha antiga em texto puro no banco, a validação ocorre no servidor e a resposta indica `shouldUpgrade` + `upgradedHash` para migração automática.
+ 
++### Deploy da Edge Function `auth-password` (CORS/preflight)
++
++Para evitar falhas de CORS no login admin, garanta:
++
++- deploy da função no mesmo projeto (`selloqpcezuaiwpubgbz`)
++- `verify_jwt = false` para `auth-password` (já versionado em `supabase/config.toml`)
++
++Com Supabase CLI:
++
++```bash
++supabase link --project-ref selloqpcezuaiwpubgbz
++supabase functions deploy auth-password --no-verify-jwt
++```
++
++Validação recomendada após deploy:
++
++1. Conferir logs da função e validar `OPTIONS` retornando HTTP 200
++2. Confirmar que frontend e Supabase usam o mesmo ambiente (`VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`)
++3. Limpar cache/service worker do navegador e retestar em aba anônima
++
++Observação: a mensagem `"A listener indicated an asynchronous response..."` costuma vir de extensão do navegador e não é a causa principal quando o preflight falha.
++
+ ## DANFE Edge Function
+ 
+ A função `danfe-parse` foi reescrita com:
+diff --git a/supabase/config.toml b/supabase/config.toml
+new file mode 100644
+index 0000000..3a07c3e
+--- /dev/null
++++ b/supabase/config.toml
+@@ -0,0 +1,4 @@
++project_id = "selloqpcezuaiwpubgbz"
++
++[functions.auth-password]
++verify_jwt = false

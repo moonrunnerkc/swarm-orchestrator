@@ -1,0 +1,29 @@
+diff --git a/web/src/app/app/clubs/club-detail/club-detail.html b/web/src/app/app/clubs/club-detail/club-detail.html
+index 547c91b..5a57322 100644
+--- a/web/src/app/app/clubs/club-detail/club-detail.html
++++ b/web/src/app/app/clubs/club-detail/club-detail.html
+@@ -82,6 +82,8 @@ <h2>Resources / Stations</h2>
+                     <span class="approval-badge approved">Approved</span>
+                   } @else if (getApprovalStatus(resource.id) === 'pending') {
+                     <span class="approval-badge pending">Pending approval</span>
++                  } @else if (getApprovalStatus(resource.id) === 'denied') {
++                    <span class="approval-badge denied">Denied</span>
+                   } @else if (userMembership()?.status === 'approved') {
+                     <button
+                       matButton
+diff --git a/web/src/app/app/clubs/club-detail/club-detail.scss b/web/src/app/app/clubs/club-detail/club-detail.scss
+index 25a4224..502a511 100644
+--- a/web/src/app/app/clubs/club-detail/club-detail.scss
++++ b/web/src/app/app/clubs/club-detail/club-detail.scss
+@@ -66,6 +66,11 @@
+     background-color: var(--mat-sys-surface-variant);
+     color: var(--mat-sys-on-surface-variant);
+   }
++
++  &.denied {
++    background-color: var(--mat-sys-error-container);
++    color: var(--mat-sys-on-error-container);
++  }
+ }
+ 
+ .request-status-badge {

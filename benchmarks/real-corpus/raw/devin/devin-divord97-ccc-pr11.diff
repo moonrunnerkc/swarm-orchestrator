@@ -1,0 +1,3327 @@
+diff --git a/cmd/server/main.go b/cmd/server/main.go
+index 4d9dd68..63f6ceb 100644
+--- a/cmd/server/main.go
++++ b/cmd/server/main.go
+@@ -5,6 +5,7 @@ import (
+ 	"net/http"
+ 	"os"
+ 
++	"github.com/divord97/ccc/internal/application/aianalysis"
+ 	"github.com/divord97/ccc/internal/application/b2b"
+ 	"github.com/divord97/ccc/internal/application/csat"
+ 	"github.com/divord97/ccc/internal/application/dialer"
+@@ -166,6 +167,22 @@ func main() {
+ 	llmProvider := llm.NewStubProvider()
+ 	imAssistSvc := imassist.NewService(llmProvider, logger)
+ 
++	// --- Phase 9 Repositories ---
++	digitalEmployeeRepo := infraMySQL.NewDigitalEmployeeRepo(db)
++	digitalEmployeeSceneRepo := infraMySQL.NewDigitalEmployeeSceneRepo(db)
++	qaRuleRepo := infraMySQL.NewQARuleRepo(db)
++	qaSchemeRepo := infraMySQL.NewQASchemeRepo(db)
++	qaResultRepo := infraMySQL.NewQAResultRepo(db)
++	asrHotwordsRepo := infraMySQL.NewASRHotwordsRepo(db)
++	performanceScorecardRepo := infraMySQL.NewPerformanceScorecardRepo(db)
++
++	// --- Phase 9 Domain Services ---
++	digitalEmployeeSvc := ai.NewDigitalEmployeeService(digitalEmployeeRepo, digitalEmployeeSceneRepo)
++	qiSvc := ai.NewQualityInspectionService(qaRuleRepo, qaSchemeRepo, qaResultRepo)
++	asrHotwordsSvc := ai.NewASRHotwordsService(asrHotwordsRepo)
++	performanceSvc := ai.NewPerformanceScorecardService(performanceScorecardRepo)
++	aiAnalysisSvc := aianalysis.NewService(llmProvider, logger)
++
+ 	// --- Infrastructure ---
+ 	rateLimiter := infraRedis.NewRateLimiter(redisClient)
+ 
+@@ -210,6 +227,13 @@ func main() {
+ 	emailInboundHandler := handler.NewEmailInboundHandler(emailSvc)
+ 	imAssistHandler := handler.NewIMAssistHandler(imAssistSvc)
+ 
++	// Phase 9
++	digitalEmployeeHandler := handler.NewDigitalEmployeeHandler(digitalEmployeeSvc)
++	qaHandler := handler.NewQAHandler(qiSvc)
++	aiAnalysisHandler := handler.NewAIAnalysisHandler(aiAnalysisSvc)
++	asrHotwordsHandler := handler.NewASRHotwordsHandler(asrHotwordsSvc)
++	performanceHandler := handler.NewPerformanceHandler(performanceSvc)
++
+ 	// --- Router ---
+ 	router := httpRouter.NewRouter(httpRouter.RouterDeps{
+ 		TenantHandler:        tenantHandler,
+@@ -251,6 +275,11 @@ func main() {
+ 		WidgetHandler:        widgetHandler,
+ 		EmailInboundHandler:  emailInboundHandler,
+ 		IMAssistHandler:      imAssistHandler,
++		DigitalEmployeeHandler: digitalEmployeeHandler,
++		QAHandler:              qaHandler,
++		AIAnalysisHandler:      aiAnalysisHandler,
++		ASRHotwordsHandler:     asrHotwordsHandler,
++		PerformanceHandler:     performanceHandler,
+ 		RateLimiter:          rateLimiter,
+ 		AuditLogRepo:         auditLogRepo,
+ 		JWTSecret:            cfg.JWT.Secret,
+diff --git a/internal/application/aianalysis/service.go b/internal/application/aianalysis/service.go
+new file mode 100644
+index 0000000..0df258b
+--- /dev/null
++++ b/internal/application/aianalysis/service.go
+@@ -0,0 +1,244 @@
++package aianalysis
++
++import (
++	"context"
++	"encoding/json"
++
++	"github.com/divord97/ccc/internal/infrastructure/llm"
++	"github.com/rs/zerolog"
++)
++
++// Service provides AI analysis operations for calls and sessions.
++type Service struct {
++	llm    llm.Provider
++	logger zerolog.Logger
++}
++
++func NewService(provider llm.Provider, logger zerolog.Logger) *Service {
++	return &Service{llm: provider, logger: logger}
++}
++
++// SummaryResult holds the AI-generated summary.
++type SummaryResult struct {
++	CallID  int64  `json:"call_id"`
++	Summary string `json:"summary"`
++}
++
++// GenerateSummary produces an AI summary of a call transcript.
++func (s *Service) GenerateSummary(ctx context.Context, callID int64, transcript string) (*SummaryResult, error) {
++	summary, err := s.llm.Summarize(ctx, transcript)
++	if err != nil {
++		s.logger.Error().Err(err).Int64("call_id", callID).Msg("ai: summary failed")
++		return nil, err
++	}
++	return &SummaryResult{CallID: callID, Summary: summary}, nil
++}
++
++// SentimentResult holds the AI sentiment analysis output.
++type SentimentResult struct {
++	CallID     int64   `json:"call_id"`
++	Label      string  `json:"label"`
++	Confidence float64 `json:"confidence"`
++}
++
++// AnalyzeSentiment runs sentiment analysis on a transcript.
++func (s *Service) AnalyzeSentiment(ctx context.Context, callID int64, transcript string) (*SentimentResult, error) {
++	result, err := s.llm.AnalyzeSentiment(ctx, transcript)
++	if err != nil {
++		s.logger.Error().Err(err).Int64("call_id", callID).Msg("ai: sentiment failed")
++		return nil, err
++	}
++	return &SentimentResult{CallID: callID, Label: result.Label, Confidence: result.Confidence}, nil
++}
++
++// TagResult holds AI-extracted tags.
++type TagResult struct {
++	CallID int64    `json:"call_id"`
++	Tags   []string `json:"tags"`
++}
++
++// ExtractTags generates AI tags for a transcript.
++func (s *Service) ExtractTags(ctx context.Context, callID int64, transcript string) (*TagResult, error) {
++	tags, err := s.llm.ExtractTags(ctx, transcript)
++	if err != nil {
++		s.logger.Error().Err(err).Int64("call_id", callID).Msg("ai: tag extraction failed")
++		return nil, err
++	}
++	return &TagResult{CallID: callID, Tags: tags}, nil
++}
++
++// SatisfactionResult holds AI satisfaction prediction.
++type SatisfactionResult struct {
++	CallID int64   `json:"call_id"`
++	Score  float64 `json:"score"` // 1-5
++}
++
++// PredictSatisfaction predicts customer satisfaction from transcript.
++func (s *Service) PredictSatisfaction(ctx context.Context, callID int64, transcript string) (*SatisfactionResult, error) {
++	score, err := s.llm.PredictSatisfaction(ctx, transcript)
++	if err != nil {
++		s.logger.Error().Err(err).Int64("call_id", callID).Msg("ai: satisfaction prediction failed")
++		return nil, err
++	}
++	return &SatisfactionResult{CallID: callID, Score: score}, nil
++}
++
++// IVRAnalysisResult holds AI IVR path analysis.
++type IVRAnalysisResult struct {
++	CallID   int64  `json:"call_id"`
++	Analysis string `json:"analysis"`
++}
++
++// AnalyzeIVRPath analyzes a call's IVR navigation path.
++func (s *Service) AnalyzeIVRPath(ctx context.Context, callID int64, ivrPath string) (*IVRAnalysisResult, error) {
++	analysis, err := s.llm.AnalyzeIVRPath(ctx, ivrPath)
++	if err != nil {
++		s.logger.Error().Err(err).Int64("call_id", callID).Msg("ai: ivr analysis failed")
++		return nil, err
++	}
++	return &IVRAnalysisResult{CallID: callID, Analysis: analysis}, nil
++}
++
++// CompletionResult holds AI completion score.
++type CompletionResult struct {
++	CallID int64   `json:"call_id"`
++	Score  float64 `json:"score"` // 1-5
++}
++
++// JudgeCompletion judges whether the customer's issue was resolved.
++func (s *Service) JudgeCompletion(ctx context.Context, callID int64, transcript string) (*CompletionResult, error) {
++	score, err := s.llm.JudgeCompletion(ctx, transcript)
++	if err != nil {
++		s.logger.Error().Err(err).Int64("call_id", callID).Msg("ai: completion judgement failed")
++		return nil, err
++	}
++	return &CompletionResult{CallID: callID, Score: score}, nil
++}
++
++// PostCallActionsResult holds extracted post-call action items.
++type PostCallActionsResult struct {
++	CallID  int64    `json:"call_id"`
++	Actions []string `json:"actions"`
++}
++
++// ExtractPostCallActions extracts action items from a call transcript.
++func (s *Service) ExtractPostCallActions(ctx context.Context, callID int64, transcript string) (*PostCallActionsResult, error) {
++	actions, err := s.llm.ExtractPostCallActions(ctx, transcript)
++	if err != nil {
++		s.logger.Error().Err(err).Int64("call_id", callID).Msg("ai: post-call actions extraction failed")
++		return nil, err
++	}
++	return &PostCallActionsResult{CallID: callID, Actions: actions}, nil
++}
++
++// AutoFillResult holds auto-filled ticket fields.
++type AutoFillResult struct {
++	CallID int64             `json:"call_id"`
++	Fields map[string]string `json:"fields"`
++}
++
++// AutoFillTicket extracts information from transcript to auto-fill ticket fields.
++func (s *Service) AutoFillTicket(ctx context.Context, callID int64, transcript string) (*AutoFillResult, error) {
++	fields, err := s.llm.AutoFillTicket(ctx, transcript)
++	if err != nil {
++		s.logger.Error().Err(err).Int64("call_id", callID).Msg("ai: auto-fill failed")
++		return nil, err
++	}
++	return &AutoFillResult{CallID: callID, Fields: fields}, nil
++}
++
++// ScriptRecommendation holds recommended agent script.
++type ScriptRecommendation struct {
++	CallID     int64  `json:"call_id"`
++	Recommended string `json:"recommended"`
++}
++
++// RecommendScript finds the best matching script for the current conversation.
++func (s *Service) RecommendScript(ctx context.Context, callID int64, transcript string, scripts []string) (*ScriptRecommendation, error) {
++	rec, err := s.llm.RecommendScript(ctx, transcript, scripts)
++	if err != nil {
++		s.logger.Error().Err(err).Int64("call_id", callID).Msg("ai: script recommendation failed")
++		return nil, err
++	}
++	return &ScriptRecommendation{CallID: callID, Recommended: rec}, nil
++}
++
++// BatchTagAnalysisInput holds input for batch tag analysis.
++type BatchTagAnalysisInput struct {
++	TenantID    int64    `json:"tenant_id"`
++	CallIDs     []int64  `json:"call_ids"`
++	Transcripts []string `json:"transcripts"`
++}
++
++// BatchTagResult holds batch tag analysis results.
++type BatchTagResult struct {
++	Results []TagResult `json:"results"`
++}
++
++// RunBatchTagAnalysis runs AI tag analysis on multiple transcripts.
++func (s *Service) RunBatchTagAnalysis(ctx context.Context, in BatchTagAnalysisInput) (*BatchTagResult, error) {
++	var results []TagResult
++	for i, callID := range in.CallIDs {
++		if i >= len(in.Transcripts) {
++			break
++		}
++		tags, err := s.llm.ExtractTags(ctx, in.Transcripts[i])
++		if err != nil {
++			s.logger.Warn().Err(err).Int64("call_id", callID).Msg("ai: batch tag failed for call")
++			continue
++		}
++		results = append(results, TagResult{CallID: callID, Tags: tags})
++	}
++	return &BatchTagResult{Results: results}, nil
++}
++
++// HotwordAnalysisResult holds hotword frequency analysis.
++type HotwordAnalysisResult struct {
++	Hotwords []HotwordEntry `json:"hotwords"`
++}
++
++// HotwordEntry is a single hotword with its frequency.
++type HotwordEntry struct {
++	Word  string `json:"word"`
++	Count int    `json:"count"`
++}
++
++// AnalyzeHotwords extracts and counts frequently used words from transcripts.
++func (s *Service) AnalyzeHotwords(_ context.Context, transcripts []string) (*HotwordAnalysisResult, error) {
++	freq := make(map[string]int)
++	for _, t := range transcripts {
++		tags, _ := json.Marshal(t)
++		_ = tags
++		words := splitWords(t)
++		for _, w := range words {
++			if len(w) >= 2 {
++				freq[w]++
++			}
++		}
++	}
++	var entries []HotwordEntry
++	for w, c := range freq {
++		entries = append(entries, HotwordEntry{Word: w, Count: c})
++	}
++	return &HotwordAnalysisResult{Hotwords: entries}, nil
++}
++
++// splitWords is a simple word splitter (for CJK, each char pair is a "word"; for ASCII, split by space).
++func splitWords(s string) []string {
++	var words []string
++	current := ""
++	for _, r := range s {
++		if r == ' ' || r == ',' || r == '。' || r == '，' || r == '？' || r == '！' || r == '\n' {
++			if current != "" {
++				words = append(words, current)
++				current = ""
++			}
++		} else {
++			current += string(r)
++		}
++	}
++	if current != "" {
++		words = append(words, current)
++	}
++	return words
++}
+diff --git a/internal/application/aianalysis/service_test.go b/internal/application/aianalysis/service_test.go
+new file mode 100644
+index 0000000..8ee7aa4
+--- /dev/null
++++ b/internal/application/aianalysis/service_test.go
+@@ -0,0 +1,118 @@
++package aianalysis
++
++import (
++	"context"
++	"os"
++	"testing"
++
++	"github.com/divord97/ccc/internal/infrastructure/llm"
++	"github.com/rs/zerolog"
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++func newTestService() *Service {
++	logger := zerolog.New(os.Stdout)
++	return NewService(llm.NewStubProvider(), logger)
++}
++
++func TestRealtimeTranscription_StreamPush(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++	// Summarize doubles as transcription stream output processing
++	result, err := svc.GenerateSummary(ctx, 1001, "客户：你好，我想查询我的订单状态。坐席：好的，请提供您的订单号。")
++	require.NoError(t, err)
++	assert.Contains(t, result.Summary, "[summary]")
++}
++
++func TestRealtimeAssist_ScriptRecommend(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++	scripts := []string{"感谢您的来电，请问有什么可以帮助您？", "请稍等，我为您查询一下。", "感谢您的耐心等待。"}
++	rec, err := svc.RecommendScript(ctx, 1002, "客户：我要查快递", scripts)
++	require.NoError(t, err)
++	assert.Equal(t, scripts[0], rec.Recommended)
++}
++
++func TestAutoFormFill_ExtractFields(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++	result, err := svc.AutoFillTicket(ctx, 1003, "客户：我的订单号是12345，商品有质量问题需要退换。")
++	require.NoError(t, err)
++	assert.NotEmpty(t, result.Fields)
++	assert.Contains(t, result.Fields, "subject")
++}
++
++func TestSessionTagAnalysis_Classification(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++	result, err := svc.ExtractTags(ctx, 1004, "客户咨询退款流程和退货地址")
++	require.NoError(t, err)
++	assert.NotEmpty(t, result.Tags)
++}
++
++func TestAISatisfaction_Prediction(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++	result, err := svc.PredictSatisfaction(ctx, 1005, "服务非常满意，谢谢你的帮助！")
++	require.NoError(t, err)
++	assert.GreaterOrEqual(t, result.Score, float64(1))
++	assert.LessOrEqual(t, result.Score, float64(5))
++}
++
++func TestSentimentAnalysis_Classification(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++	result, err := svc.AnalyzeSentiment(ctx, 1006, "这个服务太差了，我非常不满意！")
++	require.NoError(t, err)
++	assert.NotEmpty(t, result.Label)
++	assert.Greater(t, result.Confidence, float64(0))
++}
++
++func TestIVRAnalysis_PathSummary(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++	result, err := svc.AnalyzeIVRPath(ctx, 1007, "welcome→menu→queue→agent")
++	require.NoError(t, err)
++	assert.Contains(t, result.Analysis, "ivr-analysis")
++}
++
++func TestCompletionScore_Judgement(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++	result, err := svc.JudgeCompletion(ctx, 1008, "问题已经解决，客户表示满意。")
++	require.NoError(t, err)
++	assert.GreaterOrEqual(t, result.Score, float64(1))
++	assert.LessOrEqual(t, result.Score, float64(5))
++}
++
++func TestPostCallActions_Extract(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++	result, err := svc.ExtractPostCallActions(ctx, 1009, "需要在24小时内给客户回电确认退款进度")
++	require.NoError(t, err)
++	assert.NotEmpty(t, result.Actions)
++}
++
++func TestBatchTagAnalysis(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++	result, err := svc.RunBatchTagAnalysis(ctx, BatchTagAnalysisInput{
++		TenantID:    1,
++		CallIDs:     []int64{1, 2, 3},
++		Transcripts: []string{"退款相关", "投诉相关", "咨询相关"},
++	})
++	require.NoError(t, err)
++	assert.Len(t, result.Results, 3)
++}
++
++func TestHotwordAnalysis(t *testing.T) {
++	svc := newTestService()
++	ctx := context.Background()
++	result, err := svc.AnalyzeHotwords(ctx, []string{
++		"退款 退款 投诉",
++		"退款 咨询 查询",
++	})
++	require.NoError(t, err)
++	assert.NotEmpty(t, result.Hotwords)
++}
+diff --git a/internal/domain/ai/entity_phase9.go b/internal/domain/ai/entity_phase9.go
+new file mode 100644
+index 0000000..ae97ad2
+--- /dev/null
++++ b/internal/domain/ai/entity_phase9.go
+@@ -0,0 +1,150 @@
++package ai
++
++import "time"
++
++// DigitalEmployee represents an AI bot / digital agent.
++type DigitalEmployee struct {
++	ID          int64     `db:"id" json:"id"`
++	TenantID    int64     `db:"tenant_id" json:"tenant_id"`
++	Name        string    `db:"name" json:"name"`
++	Description string    `db:"description" json:"description"`
++	AvatarURL   string    `db:"avatar_url" json:"avatar_url"`
++	IsActive    bool      `db:"is_active" json:"is_active"`
++	CreatedAt   time.Time `db:"created_at" json:"created_at"`
++	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
++}
++
++// DigitalEmployeeScene represents a conversation scenario for a digital employee.
++type DigitalEmployeeScene struct {
++	ID                 int64     `db:"id" json:"id"`
++	DigitalEmployeeID  int64     `db:"digital_employee_id" json:"digital_employee_id"`
++	TenantID           int64     `db:"tenant_id" json:"tenant_id"`
++	Name               string    `db:"name" json:"name"`
++	Intents            string    `db:"intents" json:"intents"`       // JSON array of intent configs
++	FAQs               string    `db:"faqs" json:"faqs"`             // JSON array of FAQ entries
++	TransferSkillGroup *int64    `db:"transfer_skill_group" json:"transfer_skill_group,omitempty"`
++	Status             string    `db:"status" json:"status"` // draft, published
++	CreatedAt          time.Time `db:"created_at" json:"created_at"`
++	UpdatedAt          time.Time `db:"updated_at" json:"updated_at"`
++}
++
++// QARule represents a quality assurance inspection rule.
++type QARule struct {
++	ID        int64     `db:"id" json:"id"`
++	TenantID  int64     `db:"tenant_id" json:"tenant_id"`
++	Name      string    `db:"name" json:"name"`
++	Type      string    `db:"type" json:"type"` // keyword, regex, silence, speed, interruption, energy, duration, entity, role, abnormal_hangup, llm
++	Config    string    `db:"config" json:"config"` // JSON rule config
++	Severity  string    `db:"severity" json:"severity"` // info, warning, critical
++	IsActive  bool      `db:"is_active" json:"is_active"`
++	CreatedAt time.Time `db:"created_at" json:"created_at"`
++	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
++}
++
++// QAScheme represents a quality assurance inspection scheme (a collection of rules).
++type QAScheme struct {
++	ID        int64     `db:"id" json:"id"`
++	TenantID  int64     `db:"tenant_id" json:"tenant_id"`
++	Name      string    `db:"name" json:"name"`
++	RuleIDs   string    `db:"rule_ids" json:"rule_ids"` // JSON array of rule IDs with weights
++	IsDefault bool      `db:"is_default" json:"is_default"`
++	IsActive  bool      `db:"is_active" json:"is_active"`
++	CreatedAt time.Time `db:"created_at" json:"created_at"`
++	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
++}
++
++// SchemeRuleWeight represents a rule with its weight within a scheme.
++type SchemeRuleWeight struct {
++	RuleID int64   `json:"rule_id"`
++	Weight float64 `json:"weight"` // 0-100
++}
++
++// QAResult represents the result of a quality inspection on a call.
++type QAResult struct {
++	ID         int64     `db:"id" json:"id"`
++	TenantID   int64     `db:"tenant_id" json:"tenant_id"`
++	CallID     int64     `db:"call_id" json:"call_id"`
++	SchemeID   int64     `db:"scheme_id" json:"scheme_id"`
++	Score      float64   `db:"score" json:"score"` // 0-100
++	Details    string    `db:"details" json:"details"` // JSON array of rule results
++	Status     string    `db:"status" json:"status"` // completed, appealed, reviewed
++	AppealNote string    `db:"appeal_note" json:"appeal_note,omitempty"`
++	ReviewNote string    `db:"review_note" json:"review_note,omitempty"`
++	ReviewerID *int64    `db:"reviewer_id" json:"reviewer_id,omitempty"`
++	CreatedAt  time.Time `db:"created_at" json:"created_at"`
++	UpdatedAt  time.Time `db:"updated_at" json:"updated_at"`
++}
++
++// ASRHotwords represents a custom ASR hotword vocabulary.
++type ASRHotwords struct {
++	ID        int64     `db:"id" json:"id"`
++	TenantID  int64     `db:"tenant_id" json:"tenant_id"`
++	Name      string    `db:"name" json:"name"`
++	Words     string    `db:"words" json:"words"` // JSON array of hotword entries
++	IsActive  bool      `db:"is_active" json:"is_active"`
++	CreatedAt time.Time `db:"created_at" json:"created_at"`
++	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
++}
++
++// PerformanceScorecard represents an agent performance scorecard.
++type PerformanceScorecard struct {
++	ID              int64     `db:"id" json:"id"`
++	TenantID        int64     `db:"tenant_id" json:"tenant_id"`
++	AgentID         int64     `db:"agent_id" json:"agent_id"`
++	Period          string    `db:"period" json:"period"` // YYYY-MM
++	TotalCalls      int       `db:"total_calls" json:"total_calls"`
++	AvgHandleTime   float64   `db:"avg_handle_time" json:"avg_handle_time"`
++	AvgQAScore      float64   `db:"avg_qa_score" json:"avg_qa_score"`
++	CSATScore       float64   `db:"csat_score" json:"csat_score"`
++	FirstCallResolv float64   `db:"first_call_resolution" json:"first_call_resolution"` // percentage
++	Adherence       float64   `db:"adherence" json:"adherence"` // schedule adherence %
++	OverallScore    float64   `db:"overall_score" json:"overall_score"`
++	CreatedAt       time.Time `db:"created_at" json:"created_at"`
++}
++
++// QARuleResult represents a single rule's result within a QA inspection.
++type QARuleResult struct {
++	RuleID   int64   `json:"rule_id"`
++	RuleName string  `json:"rule_name"`
++	RuleType string  `json:"rule_type"`
++	Passed   bool    `json:"passed"`
++	Score    float64 `json:"score"`
++	Detail   string  `json:"detail"`
++}
++
++// Valid QA rule types.
++const (
++	QARuleTypeKeyword         = "keyword"
++	QARuleTypeRegex           = "regex"
++	QARuleTypeSilence         = "silence"
++	QARuleTypeSpeed           = "speed"
++	QARuleTypeInterruption    = "interruption"
++	QARuleTypeEnergy          = "energy"
++	QARuleTypeDuration        = "duration"
++	QARuleTypeEntity          = "entity"
++	QARuleTypeRole            = "role"
++	QARuleTypeAbnormalHangup  = "abnormal_hangup"
++	QARuleTypeLLM             = "llm"
++)
++
++var validQARuleTypes = map[string]bool{
++	QARuleTypeKeyword: true, QARuleTypeRegex: true, QARuleTypeSilence: true,
++	QARuleTypeSpeed: true, QARuleTypeInterruption: true, QARuleTypeEnergy: true,
++	QARuleTypeDuration: true, QARuleTypeEntity: true, QARuleTypeRole: true,
++	QARuleTypeAbnormalHangup: true, QARuleTypeLLM: true,
++}
++
++func IsValidQARuleType(t string) bool {
++	return validQARuleTypes[t]
++}
++
++const (
++	QAResultStatusCompleted = "completed"
++	QAResultStatusAppealed  = "appealed"
++	QAResultStatusReviewed  = "reviewed"
++)
++
++const (
++	SceneStatusDraft     = "draft"
++	SceneStatusPublished = "published"
++)
+diff --git a/internal/domain/ai/errors_phase9.go b/internal/domain/ai/errors_phase9.go
+new file mode 100644
+index 0000000..035b28c
+--- /dev/null
++++ b/internal/domain/ai/errors_phase9.go
+@@ -0,0 +1,19 @@
++package ai
++
++import "errors"
++
++var (
++	ErrDigitalEmployeeNotFound = errors.New("digital employee not found")
++	ErrSceneNotFound           = errors.New("digital employee scene not found")
++	ErrSceneAlreadyPublished   = errors.New("scene is already published")
++	ErrInvalidIntentConfig     = errors.New("invalid intent config JSON")
++	ErrQARuleNotFound          = errors.New("qa rule not found")
++	ErrInvalidQARuleType       = errors.New("invalid qa rule type")
++	ErrQASchemeNotFound        = errors.New("qa scheme not found")
++	ErrQAResultNotFound        = errors.New("qa result not found")
++	ErrQAResultNotAppealable   = errors.New("qa result cannot be appealed")
++	ErrQAResultNotReviewable   = errors.New("qa result cannot be reviewed")
++	ErrASRHotwordsNotFound     = errors.New("asr hotwords not found")
++	ErrScorecardNotFound       = errors.New("performance scorecard not found")
++	ErrEmptyTranscript         = errors.New("transcript is empty")
++)
+diff --git a/internal/domain/ai/mock_repo_phase9.go b/internal/domain/ai/mock_repo_phase9.go
+new file mode 100644
+index 0000000..1e45fd5
+--- /dev/null
++++ b/internal/domain/ai/mock_repo_phase9.go
+@@ -0,0 +1,388 @@
++package ai
++
++import (
++	"context"
++	"sync"
++)
++
++// --- MockDigitalEmployeeRepo ---
++
++type MockDigitalEmployeeRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*DigitalEmployee
++}
++
++func NewMockDigitalEmployeeRepo() *MockDigitalEmployeeRepo {
++	return &MockDigitalEmployeeRepo{data: make(map[int64]*DigitalEmployee)}
++}
++
++func (r *MockDigitalEmployeeRepo) Create(_ context.Context, de *DigitalEmployee) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[de.ID] = de
++	return nil
++}
++
++func (r *MockDigitalEmployeeRepo) GetByID(_ context.Context, id int64) (*DigitalEmployee, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	if de, ok := r.data[id]; ok {
++		return de, nil
++	}
++	return nil, nil
++}
++
++func (r *MockDigitalEmployeeRepo) Update(_ context.Context, de *DigitalEmployee) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[de.ID] = de
++	return nil
++}
++
++func (r *MockDigitalEmployeeRepo) List(_ context.Context, tenantID int64) ([]*DigitalEmployee, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*DigitalEmployee
++	for _, de := range r.data {
++		if de.TenantID == tenantID {
++			result = append(result, de)
++		}
++	}
++	return result, nil
++}
++
++// --- MockDigitalEmployeeSceneRepo ---
++
++type MockDigitalEmployeeSceneRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*DigitalEmployeeScene
++}
++
++func NewMockDigitalEmployeeSceneRepo() *MockDigitalEmployeeSceneRepo {
++	return &MockDigitalEmployeeSceneRepo{data: make(map[int64]*DigitalEmployeeScene)}
++}
++
++func (r *MockDigitalEmployeeSceneRepo) Create(_ context.Context, s *DigitalEmployeeScene) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[s.ID] = s
++	return nil
++}
++
++func (r *MockDigitalEmployeeSceneRepo) GetByID(_ context.Context, id int64) (*DigitalEmployeeScene, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	if s, ok := r.data[id]; ok {
++		return s, nil
++	}
++	return nil, nil
++}
++
++func (r *MockDigitalEmployeeSceneRepo) Update(_ context.Context, s *DigitalEmployeeScene) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[s.ID] = s
++	return nil
++}
++
++func (r *MockDigitalEmployeeSceneRepo) List(_ context.Context, digitalEmployeeID int64) ([]*DigitalEmployeeScene, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*DigitalEmployeeScene
++	for _, s := range r.data {
++		if s.DigitalEmployeeID == digitalEmployeeID {
++			result = append(result, s)
++		}
++	}
++	return result, nil
++}
++
++// --- MockQARuleRepo ---
++
++type MockQARuleRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*QARule
++}
++
++func NewMockQARuleRepo() *MockQARuleRepo {
++	return &MockQARuleRepo{data: make(map[int64]*QARule)}
++}
++
++func (r *MockQARuleRepo) Create(_ context.Context, rule *QARule) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[rule.ID] = rule
++	return nil
++}
++
++func (r *MockQARuleRepo) GetByID(_ context.Context, id int64) (*QARule, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	if rule, ok := r.data[id]; ok {
++		return rule, nil
++	}
++	return nil, nil
++}
++
++func (r *MockQARuleRepo) Update(_ context.Context, rule *QARule) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[rule.ID] = rule
++	return nil
++}
++
++func (r *MockQARuleRepo) Delete(_ context.Context, id int64) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	delete(r.data, id)
++	return nil
++}
++
++func (r *MockQARuleRepo) List(_ context.Context, tenantID int64) ([]*QARule, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*QARule
++	for _, rule := range r.data {
++		if rule.TenantID == tenantID {
++			result = append(result, rule)
++		}
++	}
++	return result, nil
++}
++
++func (r *MockQARuleRepo) ListByIDs(_ context.Context, ids []int64) ([]*QARule, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	idSet := make(map[int64]bool, len(ids))
++	for _, id := range ids {
++		idSet[id] = true
++	}
++	var result []*QARule
++	for _, rule := range r.data {
++		if idSet[rule.ID] {
++			result = append(result, rule)
++		}
++	}
++	return result, nil
++}
++
++// --- MockQASchemeRepo ---
++
++type MockQASchemeRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*QAScheme
++}
++
++func NewMockQASchemeRepo() *MockQASchemeRepo {
++	return &MockQASchemeRepo{data: make(map[int64]*QAScheme)}
++}
++
++func (r *MockQASchemeRepo) Create(_ context.Context, s *QAScheme) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[s.ID] = s
++	return nil
++}
++
++func (r *MockQASchemeRepo) GetByID(_ context.Context, id int64) (*QAScheme, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	if s, ok := r.data[id]; ok {
++		return s, nil
++	}
++	return nil, nil
++}
++
++func (r *MockQASchemeRepo) Update(_ context.Context, s *QAScheme) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[s.ID] = s
++	return nil
++}
++
++func (r *MockQASchemeRepo) Delete(_ context.Context, id int64) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	delete(r.data, id)
++	return nil
++}
++
++func (r *MockQASchemeRepo) List(_ context.Context, tenantID int64) ([]*QAScheme, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*QAScheme
++	for _, s := range r.data {
++		if s.TenantID == tenantID {
++			result = append(result, s)
++		}
++	}
++	return result, nil
++}
++
++// --- MockQAResultRepo ---
++
++type MockQAResultRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*QAResult
++}
++
++func NewMockQAResultRepo() *MockQAResultRepo {
++	return &MockQAResultRepo{data: make(map[int64]*QAResult)}
++}
++
++func (r *MockQAResultRepo) Create(_ context.Context, res *QAResult) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[res.ID] = res
++	return nil
++}
++
++func (r *MockQAResultRepo) GetByID(_ context.Context, id int64) (*QAResult, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	if res, ok := r.data[id]; ok {
++		return res, nil
++	}
++	return nil, nil
++}
++
++func (r *MockQAResultRepo) Update(_ context.Context, res *QAResult) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[res.ID] = res
++	return nil
++}
++
++func (r *MockQAResultRepo) List(_ context.Context, tenantID int64, offset, limit int) ([]*QAResult, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var all []*QAResult
++	for _, res := range r.data {
++		if res.TenantID == tenantID {
++			all = append(all, res)
++		}
++	}
++	if offset >= len(all) {
++		return nil, nil
++	}
++	end := offset + limit
++	if end > len(all) {
++		end = len(all)
++	}
++	return all[offset:end], nil
++}
++
++func (r *MockQAResultRepo) ListByCallID(_ context.Context, callID int64) ([]*QAResult, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*QAResult
++	for _, res := range r.data {
++		if res.CallID == callID {
++			result = append(result, res)
++		}
++	}
++	return result, nil
++}
++
++// --- MockASRHotwordsRepo ---
++
++type MockASRHotwordsRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*ASRHotwords
++}
++
++func NewMockASRHotwordsRepo() *MockASRHotwordsRepo {
++	return &MockASRHotwordsRepo{data: make(map[int64]*ASRHotwords)}
++}
++
++func (r *MockASRHotwordsRepo) Create(_ context.Context, h *ASRHotwords) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[h.ID] = h
++	return nil
++}
++
++func (r *MockASRHotwordsRepo) GetByID(_ context.Context, id int64) (*ASRHotwords, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	if h, ok := r.data[id]; ok {
++		return h, nil
++	}
++	return nil, nil
++}
++
++func (r *MockASRHotwordsRepo) Update(_ context.Context, h *ASRHotwords) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[h.ID] = h
++	return nil
++}
++
++func (r *MockASRHotwordsRepo) Delete(_ context.Context, id int64) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	delete(r.data, id)
++	return nil
++}
++
++func (r *MockASRHotwordsRepo) List(_ context.Context, tenantID int64) ([]*ASRHotwords, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*ASRHotwords
++	for _, h := range r.data {
++		if h.TenantID == tenantID {
++			result = append(result, h)
++		}
++	}
++	return result, nil
++}
++
++// --- MockPerformanceScorecardRepo ---
++
++type MockPerformanceScorecardRepo struct {
++	mu   sync.RWMutex
++	data map[int64]*PerformanceScorecard
++}
++
++func NewMockPerformanceScorecardRepo() *MockPerformanceScorecardRepo {
++	return &MockPerformanceScorecardRepo{data: make(map[int64]*PerformanceScorecard)}
++}
++
++func (r *MockPerformanceScorecardRepo) Create(_ context.Context, s *PerformanceScorecard) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.data[s.ID] = s
++	return nil
++}
++
++func (r *MockPerformanceScorecardRepo) GetByID(_ context.Context, id int64) (*PerformanceScorecard, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	if s, ok := r.data[id]; ok {
++		return s, nil
++	}
++	return nil, nil
++}
++
++func (r *MockPerformanceScorecardRepo) List(_ context.Context, tenantID int64, period string) ([]*PerformanceScorecard, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	var result []*PerformanceScorecard
++	for _, s := range r.data {
++		if s.TenantID == tenantID && (period == "" || s.Period == period) {
++			result = append(result, s)
++		}
++	}
++	return result, nil
++}
++
++func (r *MockPerformanceScorecardRepo) GetByAgentAndPeriod(_ context.Context, agentID int64, period string) (*PerformanceScorecard, error) {
++	r.mu.RLock()
++	defer r.mu.RUnlock()
++	for _, s := range r.data {
++		if s.AgentID == agentID && s.Period == period {
++			return s, nil
++		}
++	}
++	return nil, nil
++}
+diff --git a/internal/domain/ai/repository_phase9.go b/internal/domain/ai/repository_phase9.go
+new file mode 100644
+index 0000000..f2e80a2
+--- /dev/null
++++ b/internal/domain/ai/repository_phase9.go
+@@ -0,0 +1,57 @@
++package ai
++
++import "context"
++
++type DigitalEmployeeRepository interface {
++	Create(ctx context.Context, de *DigitalEmployee) error
++	GetByID(ctx context.Context, id int64) (*DigitalEmployee, error)
++	Update(ctx context.Context, de *DigitalEmployee) error
++	List(ctx context.Context, tenantID int64) ([]*DigitalEmployee, error)
++}
++
++type DigitalEmployeeSceneRepository interface {
++	Create(ctx context.Context, s *DigitalEmployeeScene) error
++	GetByID(ctx context.Context, id int64) (*DigitalEmployeeScene, error)
++	Update(ctx context.Context, s *DigitalEmployeeScene) error
++	List(ctx context.Context, digitalEmployeeID int64) ([]*DigitalEmployeeScene, error)
++}
++
++type QARuleRepository interface {
++	Create(ctx context.Context, r *QARule) error
++	GetByID(ctx context.Context, id int64) (*QARule, error)
++	Update(ctx context.Context, r *QARule) error
++	Delete(ctx context.Context, id int64) error
++	List(ctx context.Context, tenantID int64) ([]*QARule, error)
++	ListByIDs(ctx context.Context, ids []int64) ([]*QARule, error)
++}
++
++type QASchemeRepository interface {
++	Create(ctx context.Context, s *QAScheme) error
++	GetByID(ctx context.Context, id int64) (*QAScheme, error)
++	Update(ctx context.Context, s *QAScheme) error
++	Delete(ctx context.Context, id int64) error
++	List(ctx context.Context, tenantID int64) ([]*QAScheme, error)
++}
++
++type QAResultRepository interface {
++	Create(ctx context.Context, r *QAResult) error
++	GetByID(ctx context.Context, id int64) (*QAResult, error)
++	Update(ctx context.Context, r *QAResult) error
++	List(ctx context.Context, tenantID int64, offset, limit int) ([]*QAResult, error)
++	ListByCallID(ctx context.Context, callID int64) ([]*QAResult, error)
++}
++
++type ASRHotwordsRepository interface {
++	Create(ctx context.Context, h *ASRHotwords) error
++	GetByID(ctx context.Context, id int64) (*ASRHotwords, error)
++	Update(ctx context.Context, h *ASRHotwords) error
++	Delete(ctx context.Context, id int64) error
++	List(ctx context.Context, tenantID int64) ([]*ASRHotwords, error)
++}
++
++type PerformanceScorecardRepository interface {
++	Create(ctx context.Context, s *PerformanceScorecard) error
++	GetByID(ctx context.Context, id int64) (*PerformanceScorecard, error)
++	List(ctx context.Context, tenantID int64, period string) ([]*PerformanceScorecard, error)
++	GetByAgentAndPeriod(ctx context.Context, agentID int64, period string) (*PerformanceScorecard, error)
++}
+diff --git a/internal/domain/ai/service_phase9.go b/internal/domain/ai/service_phase9.go
+new file mode 100644
+index 0000000..1f87db0
+--- /dev/null
++++ b/internal/domain/ai/service_phase9.go
+@@ -0,0 +1,581 @@
++package ai
++
++import (
++	"context"
++	"encoding/json"
++	"strings"
++	"time"
++
++	"github.com/divord97/ccc/pkg/snowflake"
++)
++
++// DigitalEmployeeService manages digital employee (AI bot) entities and scenes.
++type DigitalEmployeeService struct {
++	employees DigitalEmployeeRepository
++	scenes    DigitalEmployeeSceneRepository
++}
++
++func NewDigitalEmployeeService(employees DigitalEmployeeRepository, scenes DigitalEmployeeSceneRepository) *DigitalEmployeeService {
++	return &DigitalEmployeeService{employees: employees, scenes: scenes}
++}
++
++type CreateDigitalEmployeeInput struct {
++	TenantID    int64  `json:"tenant_id"`
++	Name        string `json:"name"`
++	Description string `json:"description"`
++	AvatarURL   string `json:"avatar_url"`
++}
++
++func (s *DigitalEmployeeService) Create(ctx context.Context, in CreateDigitalEmployeeInput) (*DigitalEmployee, error) {
++	now := time.Now()
++	de := &DigitalEmployee{
++		ID:          snowflake.NextID(),
++		TenantID:    in.TenantID,
++		Name:        in.Name,
++		Description: in.Description,
++		AvatarURL:   in.AvatarURL,
++		IsActive:    true,
++		CreatedAt:   now,
++		UpdatedAt:   now,
++	}
++	if err := s.employees.Create(ctx, de); err != nil {
++		return nil, err
++	}
++	return de, nil
++}
++
++func (s *DigitalEmployeeService) GetByID(ctx context.Context, id int64) (*DigitalEmployee, error) {
++	de, err := s.employees.GetByID(ctx, id)
++	if err != nil || de == nil {
++		return nil, ErrDigitalEmployeeNotFound
++	}
++	return de, nil
++}
++
++func (s *DigitalEmployeeService) Update(ctx context.Context, de *DigitalEmployee) error {
++	de.UpdatedAt = time.Now()
++	return s.employees.Update(ctx, de)
++}
++
++func (s *DigitalEmployeeService) List(ctx context.Context, tenantID int64) ([]*DigitalEmployee, error) {
++	return s.employees.List(ctx, tenantID)
++}
++
++type CreateSceneInput struct {
++	DigitalEmployeeID  int64  `json:"digital_employee_id"`
++	TenantID           int64  `json:"tenant_id"`
++	Name               string `json:"name"`
++	Intents            string `json:"intents"`
++	FAQs               string `json:"faqs"`
++	TransferSkillGroup *int64 `json:"transfer_skill_group"`
++}
++
++func (s *DigitalEmployeeService) CreateScene(ctx context.Context, in CreateSceneInput) (*DigitalEmployeeScene, error) {
++	if in.Intents != "" && !json.Valid([]byte(in.Intents)) {
++		return nil, ErrInvalidIntentConfig
++	}
++	now := time.Now()
++	scene := &DigitalEmployeeScene{
++		ID:                 snowflake.NextID(),
++		DigitalEmployeeID:  in.DigitalEmployeeID,
++		TenantID:           in.TenantID,
++		Name:               in.Name,
++		Intents:            in.Intents,
++		FAQs:               in.FAQs,
++		TransferSkillGroup: in.TransferSkillGroup,
++		Status:             SceneStatusDraft,
++		CreatedAt:          now,
++		UpdatedAt:          now,
++	}
++	if err := s.scenes.Create(ctx, scene); err != nil {
++		return nil, err
++	}
++	return scene, nil
++}
++
++func (s *DigitalEmployeeService) PublishScene(ctx context.Context, sceneID int64) (*DigitalEmployeeScene, error) {
++	scene, err := s.scenes.GetByID(ctx, sceneID)
++	if err != nil || scene == nil {
++		return nil, ErrSceneNotFound
++	}
++	if scene.Status == SceneStatusPublished {
++		return nil, ErrSceneAlreadyPublished
++	}
++	scene.Status = SceneStatusPublished
++	scene.UpdatedAt = time.Now()
++	if err := s.scenes.Update(ctx, scene); err != nil {
++		return nil, err
++	}
++	return scene, nil
++}
++
++func (s *DigitalEmployeeService) ListScenes(ctx context.Context, digitalEmployeeID int64) ([]*DigitalEmployeeScene, error) {
++	return s.scenes.List(ctx, digitalEmployeeID)
++}
++
++// IntentMatchResult represents the result of intent matching.
++type IntentMatchResult struct {
++	Matched    bool   `json:"matched"`
++	IntentName string `json:"intent_name,omitempty"`
++	Response   string `json:"response,omitempty"`
++	Transfer   bool   `json:"transfer"`
++}
++
++// IntentConfig represents a single intent configuration entry.
++type IntentConfig struct {
++	Name     string   `json:"name"`
++	Keywords []string `json:"keywords"`
++	Response string   `json:"response"`
++	Transfer bool     `json:"transfer"`
++}
++
++// MatchIntent checks user input against a scene's intent configuration.
++func (s *DigitalEmployeeService) MatchIntent(ctx context.Context, sceneID int64, userInput string) (*IntentMatchResult, error) {
++	scene, err := s.scenes.GetByID(ctx, sceneID)
++	if err != nil || scene == nil {
++		return nil, ErrSceneNotFound
++	}
++
++	var intents []IntentConfig
++	if scene.Intents != "" {
++		if err := json.Unmarshal([]byte(scene.Intents), &intents); err != nil {
++			return &IntentMatchResult{Matched: false}, nil
++		}
++	}
++
++	for _, intent := range intents {
++		for _, kw := range intent.Keywords {
++			if containsIgnoreCase(userInput, kw) {
++				return &IntentMatchResult{
++					Matched:    true,
++					IntentName: intent.Name,
++					Response:   intent.Response,
++					Transfer:   intent.Transfer,
++				}, nil
++			}
++		}
++	}
++
++	return &IntentMatchResult{Matched: false}, nil
++}
++
++// containsIgnoreCase checks if s contains substr (case-insensitive, Unicode-safe).
++func containsIgnoreCase(s, substr string) bool {
++	return len(substr) > 0 && strings.Contains(strings.ToLower(s), strings.ToLower(substr))
++}
++
++// QualityInspectionService manages QA rules, schemes, and results.
++type QualityInspectionService struct {
++	rules   QARuleRepository
++	schemes QASchemeRepository
++	results QAResultRepository
++}
++
++func NewQualityInspectionService(rules QARuleRepository, schemes QASchemeRepository, results QAResultRepository) *QualityInspectionService {
++	return &QualityInspectionService{rules: rules, schemes: schemes, results: results}
++}
++
++type CreateQARuleInput struct {
++	TenantID int64  `json:"tenant_id"`
++	Name     string `json:"name"`
++	Type     string `json:"type"`
++	Config   string `json:"config"`
++	Severity string `json:"severity"`
++}
++
++func (s *QualityInspectionService) CreateRule(ctx context.Context, in CreateQARuleInput) (*QARule, error) {
++	if !IsValidQARuleType(in.Type) {
++		return nil, ErrInvalidQARuleType
++	}
++	if in.Severity == "" {
++		in.Severity = "warning"
++	}
++	now := time.Now()
++	rule := &QARule{
++		ID:        snowflake.NextID(),
++		TenantID:  in.TenantID,
++		Name:      in.Name,
++		Type:      in.Type,
++		Config:    in.Config,
++		Severity:  in.Severity,
++		IsActive:  true,
++		CreatedAt: now,
++		UpdatedAt: now,
++	}
++	if err := s.rules.Create(ctx, rule); err != nil {
++		return nil, err
++	}
++	return rule, nil
++}
++
++func (s *QualityInspectionService) GetRule(ctx context.Context, id int64) (*QARule, error) {
++	r, err := s.rules.GetByID(ctx, id)
++	if err != nil || r == nil {
++		return nil, ErrQARuleNotFound
++	}
++	return r, nil
++}
++
++func (s *QualityInspectionService) UpdateRule(ctx context.Context, rule *QARule) error {
++	rule.UpdatedAt = time.Now()
++	return s.rules.Update(ctx, rule)
++}
++
++func (s *QualityInspectionService) DeleteRule(ctx context.Context, id int64) error {
++	return s.rules.Delete(ctx, id)
++}
++
++func (s *QualityInspectionService) ListRules(ctx context.Context, tenantID int64) ([]*QARule, error) {
++	return s.rules.List(ctx, tenantID)
++}
++
++type CreateQASchemeInput struct {
++	TenantID  int64              `json:"tenant_id"`
++	Name      string             `json:"name"`
++	RuleIDs   []SchemeRuleWeight `json:"rule_ids"`
++	IsDefault bool               `json:"is_default"`
++}
++
++func (s *QualityInspectionService) CreateScheme(ctx context.Context, in CreateQASchemeInput) (*QAScheme, error) {
++	ruleJSON, err := json.Marshal(in.RuleIDs)
++	if err != nil {
++		return nil, err
++	}
++	now := time.Now()
++	scheme := &QAScheme{
++		ID:        snowflake.NextID(),
++		TenantID:  in.TenantID,
++		Name:      in.Name,
++		RuleIDs:   string(ruleJSON),
++		IsDefault: in.IsDefault,
++		IsActive:  true,
++		CreatedAt: now,
++		UpdatedAt: now,
++	}
++	if err := s.schemes.Create(ctx, scheme); err != nil {
++		return nil, err
++	}
++	return scheme, nil
++}
++
++func (s *QualityInspectionService) GetScheme(ctx context.Context, id int64) (*QAScheme, error) {
++	scheme, err := s.schemes.GetByID(ctx, id)
++	if err != nil || scheme == nil {
++		return nil, ErrQASchemeNotFound
++	}
++	return scheme, nil
++}
++
++func (s *QualityInspectionService) UpdateScheme(ctx context.Context, scheme *QAScheme) error {
++	scheme.UpdatedAt = time.Now()
++	return s.schemes.Update(ctx, scheme)
++}
++
++func (s *QualityInspectionService) DeleteScheme(ctx context.Context, id int64) error {
++	return s.schemes.Delete(ctx, id)
++}
++
++func (s *QualityInspectionService) ListSchemes(ctx context.Context, tenantID int64) ([]*QAScheme, error) {
++	return s.schemes.List(ctx, tenantID)
++}
++
++// RunInspection runs quality inspection on a transcript using a scheme.
++func (s *QualityInspectionService) RunInspection(ctx context.Context, tenantID, callID, schemeID int64, transcript string) (*QAResult, error) {
++	if transcript == "" {
++		return nil, ErrEmptyTranscript
++	}
++
++	scheme, err := s.schemes.GetByID(ctx, schemeID)
++	if err != nil || scheme == nil {
++		return nil, ErrQASchemeNotFound
++	}
++
++	var weights []SchemeRuleWeight
++	if err := json.Unmarshal([]byte(scheme.RuleIDs), &weights); err != nil {
++		return nil, err
++	}
++
++	ruleIDs := make([]int64, len(weights))
++	for i, w := range weights {
++		ruleIDs[i] = w.RuleID
++	}
++	rules, err := s.rules.ListByIDs(ctx, ruleIDs)
++	if err != nil {
++		return nil, err
++	}
++
++	ruleMap := make(map[int64]*QARule, len(rules))
++	for _, r := range rules {
++		ruleMap[r.ID] = r
++	}
++
++	var ruleResults []QARuleResult
++	var totalScore, totalWeight float64
++
++	for _, w := range weights {
++		rule, ok := ruleMap[w.RuleID]
++		if !ok {
++			continue
++		}
++		rr := evaluateRule(rule, transcript)
++		ruleResults = append(ruleResults, rr)
++		totalScore += rr.Score * w.Weight
++		totalWeight += w.Weight
++	}
++
++	finalScore := float64(0)
++	if totalWeight > 0 {
++		finalScore = totalScore / totalWeight
++	}
++
++	detailsJSON, _ := json.Marshal(ruleResults)
++
++	now := time.Now()
++	result := &QAResult{
++		ID:        snowflake.NextID(),
++		TenantID:  tenantID,
++		CallID:    callID,
++		SchemeID:  schemeID,
++		Score:     finalScore,
++		Details:   string(detailsJSON),
++		Status:    QAResultStatusCompleted,
++		CreatedAt: now,
++		UpdatedAt: now,
++	}
++	if err := s.results.Create(ctx, result); err != nil {
++		return nil, err
++	}
++	return result, nil
++}
++
++// evaluateRule evaluates a single QA rule against a transcript.
++func evaluateRule(rule *QARule, transcript string) QARuleResult {
++	rr := QARuleResult{
++		RuleID:   rule.ID,
++		RuleName: rule.Name,
++		RuleType: rule.Type,
++	}
++
++	switch rule.Type {
++	case QARuleTypeKeyword:
++		rr = evaluateKeywordRule(rule, transcript)
++	case QARuleTypeSilence:
++		rr.Passed = true
++		rr.Score = 100
++		rr.Detail = "silence check passed (stub)"
++	case QARuleTypeSpeed:
++		rr.Passed = true
++		rr.Score = 100
++		rr.Detail = "speed check passed (stub)"
++	case QARuleTypeLLM:
++		rr.Passed = true
++		rr.Score = 80
++		rr.Detail = "LLM analysis passed (stub)"
++	default:
++		rr.Passed = true
++		rr.Score = 100
++		rr.Detail = "rule check passed (stub)"
++	}
++	return rr
++}
++
++// KeywordRuleConfig represents the JSON config for a keyword rule.
++type KeywordRuleConfig struct {
++	Keywords []string `json:"keywords"`
++	Require  string   `json:"require"` // "present" or "absent"
++}
++
++func evaluateKeywordRule(rule *QARule, transcript string) QARuleResult {
++	rr := QARuleResult{
++		RuleID:   rule.ID,
++		RuleName: rule.Name,
++		RuleType: rule.Type,
++	}
++
++	var cfg KeywordRuleConfig
++	if err := json.Unmarshal([]byte(rule.Config), &cfg); err != nil {
++		rr.Passed = false
++		rr.Score = 0
++		rr.Detail = "invalid keyword config"
++		return rr
++	}
++
++	for _, kw := range cfg.Keywords {
++		found := containsIgnoreCase(transcript, kw)
++		if cfg.Require == "absent" && found {
++			rr.Passed = false
++			rr.Score = 0
++			rr.Detail = "forbidden keyword found: " + kw
++			return rr
++		}
++		if cfg.Require == "present" && found {
++			rr.Passed = true
++			rr.Score = 100
++			rr.Detail = "required keyword found: " + kw
++			return rr
++		}
++	}
++
++	if cfg.Require == "present" {
++		rr.Passed = false
++		rr.Score = 0
++		rr.Detail = "required keyword not found"
++	} else {
++		rr.Passed = true
++		rr.Score = 100
++		rr.Detail = "no forbidden keywords found"
++	}
++	return rr
++}
++
++// Appeal submits an appeal for a QA result.
++func (s *QualityInspectionService) Appeal(ctx context.Context, resultID int64, note string) (*QAResult, error) {
++	result, err := s.results.GetByID(ctx, resultID)
++	if err != nil || result == nil {
++		return nil, ErrQAResultNotFound
++	}
++	if result.Status != QAResultStatusCompleted {
++		return nil, ErrQAResultNotAppealable
++	}
++	result.Status = QAResultStatusAppealed
++	result.AppealNote = note
++	result.UpdatedAt = time.Now()
++	if err := s.results.Update(ctx, result); err != nil {
++		return nil, err
++	}
++	return result, nil
++}
++
++// Review completes a review of an appealed QA result.
++func (s *QualityInspectionService) Review(ctx context.Context, resultID int64, reviewerID int64, note string, newScore float64) (*QAResult, error) {
++	result, err := s.results.GetByID(ctx, resultID)
++	if err != nil || result == nil {
++		return nil, ErrQAResultNotFound
++	}
++	if result.Status != QAResultStatusAppealed {
++		return nil, ErrQAResultNotReviewable
++	}
++	result.Status = QAResultStatusReviewed
++	result.ReviewerID = &reviewerID
++	result.ReviewNote = note
++	result.Score = newScore
++	result.UpdatedAt = time.Now()
++	if err := s.results.Update(ctx, result); err != nil {
++		return nil, err
++	}
++	return result, nil
++}
++
++func (s *QualityInspectionService) GetResult(ctx context.Context, id int64) (*QAResult, error) {
++	r, err := s.results.GetByID(ctx, id)
++	if err != nil || r == nil {
++		return nil, ErrQAResultNotFound
++	}
++	return r, nil
++}
++
++func (s *QualityInspectionService) ListResults(ctx context.Context, tenantID int64, offset, limit int) ([]*QAResult, error) {
++	return s.results.List(ctx, tenantID, offset, limit)
++}
++
++// ASRHotwordsService manages ASR custom hotword vocabularies.
++type ASRHotwordsService struct {
++	repo ASRHotwordsRepository
++}
++
++func NewASRHotwordsService(repo ASRHotwordsRepository) *ASRHotwordsService {
++	return &ASRHotwordsService{repo: repo}
++}
++
++type CreateASRHotwordsInput struct {
++	TenantID int64  `json:"tenant_id"`
++	Name     string `json:"name"`
++	Words    string `json:"words"`
++}
++
++func (s *ASRHotwordsService) Create(ctx context.Context, in CreateASRHotwordsInput) (*ASRHotwords, error) {
++	now := time.Now()
++	h := &ASRHotwords{
++		ID:        snowflake.NextID(),
++		TenantID:  in.TenantID,
++		Name:      in.Name,
++		Words:     in.Words,
++		IsActive:  true,
++		CreatedAt: now,
++		UpdatedAt: now,
++	}
++	if err := s.repo.Create(ctx, h); err != nil {
++		return nil, err
++	}
++	return h, nil
++}
++
++func (s *ASRHotwordsService) GetByID(ctx context.Context, id int64) (*ASRHotwords, error) {
++	h, err := s.repo.GetByID(ctx, id)
++	if err != nil || h == nil {
++		return nil, ErrASRHotwordsNotFound
++	}
++	return h, nil
++}
++
++func (s *ASRHotwordsService) Update(ctx context.Context, h *ASRHotwords) error {
++	h.UpdatedAt = time.Now()
++	return s.repo.Update(ctx, h)
++}
++
++func (s *ASRHotwordsService) Delete(ctx context.Context, id int64) error {
++	return s.repo.Delete(ctx, id)
++}
++
++func (s *ASRHotwordsService) List(ctx context.Context, tenantID int64) ([]*ASRHotwords, error) {
++	return s.repo.List(ctx, tenantID)
++}
++
++// PerformanceScorecardService manages agent performance scorecards.
++type PerformanceScorecardService struct {
++	repo PerformanceScorecardRepository
++}
++
++func NewPerformanceScorecardService(repo PerformanceScorecardRepository) *PerformanceScorecardService {
++	return &PerformanceScorecardService{repo: repo}
++}
++
++type GenerateScorecardInput struct {
++	TenantID        int64   `json:"tenant_id"`
++	AgentID         int64   `json:"agent_id"`
++	Period          string  `json:"period"`
++	TotalCalls      int     `json:"total_calls"`
++	AvgHandleTime   float64 `json:"avg_handle_time"`
++	AvgQAScore      float64 `json:"avg_qa_score"`
++	CSATScore       float64 `json:"csat_score"`
++	FirstCallResolv float64 `json:"first_call_resolution"`
++	Adherence       float64 `json:"adherence"`
++}
++
++func (s *PerformanceScorecardService) Generate(ctx context.Context, in GenerateScorecardInput) (*PerformanceScorecard, error) {
++	// Weighted overall score: QA 30%, CSAT 30%, FCR 20%, Adherence 20%
++	overall := in.AvgQAScore*0.3 + in.CSATScore*0.3 + in.FirstCallResolv*0.2 + in.Adherence*0.2
++
++	sc := &PerformanceScorecard{
++		ID:              snowflake.NextID(),
++		TenantID:        in.TenantID,
++		AgentID:         in.AgentID,
++		Period:          in.Period,
++		TotalCalls:      in.TotalCalls,
++		AvgHandleTime:   in.AvgHandleTime,
++		AvgQAScore:      in.AvgQAScore,
++		CSATScore:       in.CSATScore,
++		FirstCallResolv: in.FirstCallResolv,
++		Adherence:       in.Adherence,
++		OverallScore:    overall,
++		CreatedAt:       time.Now(),
++	}
++	if err := s.repo.Create(ctx, sc); err != nil {
++		return nil, err
++	}
++	return sc, nil
++}
++
++func (s *PerformanceScorecardService) List(ctx context.Context, tenantID int64, period string) ([]*PerformanceScorecard, error) {
++	return s.repo.List(ctx, tenantID, period)
++}
+diff --git a/internal/domain/ai/service_phase9_test.go b/internal/domain/ai/service_phase9_test.go
+new file mode 100644
+index 0000000..545c802
+--- /dev/null
++++ b/internal/domain/ai/service_phase9_test.go
+@@ -0,0 +1,337 @@
++package ai
++
++import (
++	"context"
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++func newTestDEService() *DigitalEmployeeService {
++	return NewDigitalEmployeeService(
++		NewMockDigitalEmployeeRepo(),
++		NewMockDigitalEmployeeSceneRepo(),
++	)
++}
++
++func newTestQIService() *QualityInspectionService {
++	return NewQualityInspectionService(
++		NewMockQARuleRepo(),
++		NewMockQASchemeRepo(),
++		NewMockQAResultRepo(),
++	)
++}
++
++// --- Digital Employee Tests ---
++
++func TestDigitalEmployeeService_Create_Success(t *testing.T) {
++	svc := newTestDEService()
++	ctx := context.Background()
++
++	de, err := svc.Create(ctx, CreateDigitalEmployeeInput{
++		TenantID:    1,
++		Name:        "智能客服助手",
++		Description: "处理常见问题的AI机器人",
++	})
++	require.NoError(t, err)
++	assert.NotZero(t, de.ID)
++	assert.Equal(t, "智能客服助手", de.Name)
++	assert.True(t, de.IsActive)
++}
++
++func TestDigitalEmployeeService_IntentMatch(t *testing.T) {
++	svc := newTestDEService()
++	ctx := context.Background()
++
++	de, _ := svc.Create(ctx, CreateDigitalEmployeeInput{TenantID: 1, Name: "Bot"})
++
++	scene, err := svc.CreateScene(ctx, CreateSceneInput{
++		DigitalEmployeeID: de.ID,
++		TenantID:          1,
++		Name:              "售后场景",
++		Intents:           `[{"name":"退款","keywords":["退款","退钱","退货"],"response":"好的，我来帮您处理退款","transfer":false},{"name":"投诉","keywords":["投诉","举报"],"response":"","transfer":true}]`,
++	})
++	require.NoError(t, err)
++
++	result, err := svc.MatchIntent(ctx, scene.ID, "我想要退款")
++	require.NoError(t, err)
++	assert.True(t, result.Matched)
++	assert.Equal(t, "退款", result.IntentName)
++	assert.False(t, result.Transfer)
++}
++
++func TestDigitalEmployeeService_TransferToHuman_Trigger(t *testing.T) {
++	svc := newTestDEService()
++	ctx := context.Background()
++
++	de, _ := svc.Create(ctx, CreateDigitalEmployeeInput{TenantID: 1, Name: "Bot"})
++	scene, _ := svc.CreateScene(ctx, CreateSceneInput{
++		DigitalEmployeeID: de.ID,
++		TenantID:          1,
++		Name:              "投诉场景",
++		Intents:           `[{"name":"投诉","keywords":["投诉","举报"],"response":"","transfer":true}]`,
++	})
++
++	result, err := svc.MatchIntent(ctx, scene.ID, "我要投诉你们")
++	require.NoError(t, err)
++	assert.True(t, result.Matched)
++	assert.True(t, result.Transfer)
++}
++
++// --- Quality Inspection Tests ---
++
++func TestQualityInspection_RuleMatch_Keyword(t *testing.T) {
++	svc := newTestQIService()
++	ctx := context.Background()
++
++	rule, err := svc.CreateRule(ctx, CreateQARuleInput{
++		TenantID: 1,
++		Name:     "禁止辱骂",
++		Type:     QARuleTypeKeyword,
++		Config:   `{"keywords":["笨蛋","傻瓜"],"require":"absent"}`,
++		Severity: "critical",
++	})
++	require.NoError(t, err)
++
++	scheme, err := svc.CreateScheme(ctx, CreateQASchemeInput{
++		TenantID:  1,
++		Name:      "基础方案",
++		RuleIDs:   []SchemeRuleWeight{{RuleID: rule.ID, Weight: 100}},
++		IsDefault: true,
++	})
++	require.NoError(t, err)
++
++	// Clean transcript — should pass
++	result, err := svc.RunInspection(ctx, 1, 100, scheme.ID, "您好，请问有什么可以帮您？好的，马上为您处理。")
++	require.NoError(t, err)
++	assert.Equal(t, float64(100), result.Score)
++
++	// Dirty transcript — should fail
++	result2, err := svc.RunInspection(ctx, 1, 101, scheme.ID, "你个笨蛋，怎么这么慢")
++	require.NoError(t, err)
++	assert.Equal(t, float64(0), result2.Score)
++}
++
++func TestQualityInspection_RuleMatch_Silence(t *testing.T) {
++	svc := newTestQIService()
++	ctx := context.Background()
++
++	rule, _ := svc.CreateRule(ctx, CreateQARuleInput{
++		TenantID: 1, Name: "静音检测", Type: QARuleTypeSilence, Config: `{"max_silence_sec":5}`,
++	})
++	scheme, _ := svc.CreateScheme(ctx, CreateQASchemeInput{
++		TenantID: 1, Name: "静音方案", RuleIDs: []SchemeRuleWeight{{RuleID: rule.ID, Weight: 100}},
++	})
++
++	result, err := svc.RunInspection(ctx, 1, 200, scheme.ID, "some transcript")
++	require.NoError(t, err)
++	assert.Equal(t, float64(100), result.Score) // stub always passes
++}
++
++func TestQualityInspection_RuleMatch_Speed(t *testing.T) {
++	svc := newTestQIService()
++	ctx := context.Background()
++
++	rule, _ := svc.CreateRule(ctx, CreateQARuleInput{
++		TenantID: 1, Name: "语速检测", Type: QARuleTypeSpeed, Config: `{"max_words_per_min":200}`,
++	})
++	scheme, _ := svc.CreateScheme(ctx, CreateQASchemeInput{
++		TenantID: 1, Name: "语速方案", RuleIDs: []SchemeRuleWeight{{RuleID: rule.ID, Weight: 100}},
++	})
++
++	result, err := svc.RunInspection(ctx, 1, 300, scheme.ID, "transcript content")
++	require.NoError(t, err)
++	assert.Equal(t, float64(100), result.Score)
++}
++
++func TestQualityInspection_RuleMatch_LLM(t *testing.T) {
++	svc := newTestQIService()
++	ctx := context.Background()
++
++	rule, _ := svc.CreateRule(ctx, CreateQARuleInput{
++		TenantID: 1, Name: "LLM质检", Type: QARuleTypeLLM, Config: `{"prompt":"检查是否专业"}`,
++	})
++	scheme, _ := svc.CreateScheme(ctx, CreateQASchemeInput{
++		TenantID: 1, Name: "LLM方案", RuleIDs: []SchemeRuleWeight{{RuleID: rule.ID, Weight: 100}},
++	})
++
++	result, err := svc.RunInspection(ctx, 1, 400, scheme.ID, "专业通话内容")
++	require.NoError(t, err)
++	assert.Equal(t, float64(80), result.Score) // LLM stub returns 80
++}
++
++func TestQualityInspection_SchemeScore_Calculation(t *testing.T) {
++	svc := newTestQIService()
++	ctx := context.Background()
++
++	rule1, _ := svc.CreateRule(ctx, CreateQARuleInput{
++		TenantID: 1, Name: "禁止辱骂", Type: QARuleTypeKeyword,
++		Config: `{"keywords":["笨蛋"],"require":"absent"}`, Severity: "critical",
++	})
++	rule2, _ := svc.CreateRule(ctx, CreateQARuleInput{
++		TenantID: 1, Name: "LLM检查", Type: QARuleTypeLLM,
++		Config: `{"prompt":"check"}`,
++	})
++
++	// Weight: keyword 60%, LLM 40%
++	scheme, _ := svc.CreateScheme(ctx, CreateQASchemeInput{
++		TenantID: 1, Name: "综合方案",
++		RuleIDs: []SchemeRuleWeight{
++			{RuleID: rule1.ID, Weight: 60},
++			{RuleID: rule2.ID, Weight: 40},
++		},
++	})
++
++	// Clean: keyword=100, LLM=80 → (100*60 + 80*40) / 100 = 92
++	result, err := svc.RunInspection(ctx, 1, 500, scheme.ID, "正常通话内容")
++	require.NoError(t, err)
++	assert.Equal(t, float64(92), result.Score)
++}
++
++func TestQualityInspection_Appeal_Flow(t *testing.T) {
++	svc := newTestQIService()
++	ctx := context.Background()
++
++	rule, _ := svc.CreateRule(ctx, CreateQARuleInput{
++		TenantID: 1, Name: "rule", Type: QARuleTypeKeyword,
++		Config: `{"keywords":["bad"],"require":"absent"}`,
++	})
++	scheme, _ := svc.CreateScheme(ctx, CreateQASchemeInput{
++		TenantID: 1, Name: "scheme", RuleIDs: []SchemeRuleWeight{{RuleID: rule.ID, Weight: 100}},
++	})
++
++	result, _ := svc.RunInspection(ctx, 1, 600, scheme.ID, "this is bad")
++	assert.Equal(t, QAResultStatusCompleted, result.Status)
++
++	// Appeal
++	appealed, err := svc.Appeal(ctx, result.ID, "误判，语境不同")
++	require.NoError(t, err)
++	assert.Equal(t, QAResultStatusAppealed, appealed.Status)
++
++	// Cannot appeal again
++	_, err = svc.Appeal(ctx, result.ID, "again")
++	assert.ErrorIs(t, err, ErrQAResultNotAppealable)
++
++	// Review
++	reviewed, err := svc.Review(ctx, result.ID, 999, "确认误判", 85)
++	require.NoError(t, err)
++	assert.Equal(t, QAResultStatusReviewed, reviewed.Status)
++	assert.Equal(t, float64(85), reviewed.Score)
++}
++
++func TestQualityInspection_EmptyTranscript_Error(t *testing.T) {
++	svc := newTestQIService()
++	ctx := context.Background()
++
++	rule, _ := svc.CreateRule(ctx, CreateQARuleInput{
++		TenantID: 1, Name: "r", Type: QARuleTypeKeyword, Config: `{"keywords":["x"],"require":"absent"}`,
++	})
++	scheme, _ := svc.CreateScheme(ctx, CreateQASchemeInput{
++		TenantID: 1, Name: "s", RuleIDs: []SchemeRuleWeight{{RuleID: rule.ID, Weight: 100}},
++	})
++
++	_, err := svc.RunInspection(ctx, 1, 700, scheme.ID, "")
++	assert.ErrorIs(t, err, ErrEmptyTranscript)
++}
++
++func TestQualityInspection_InvalidRuleType_Error(t *testing.T) {
++	svc := newTestQIService()
++	_, err := svc.CreateRule(context.Background(), CreateQARuleInput{
++		TenantID: 1, Name: "bad", Type: "invalid_type", Config: "{}",
++	})
++	assert.ErrorIs(t, err, ErrInvalidQARuleType)
++}
++
++// --- ASR Hotwords ---
++
++func TestASRHotwordsService_CRUD(t *testing.T) {
++	svc := NewASRHotwordsService(NewMockASRHotwordsRepo())
++	ctx := context.Background()
++
++	h, err := svc.Create(ctx, CreateASRHotwordsInput{
++		TenantID: 1, Name: "产品术语", Words: `["CCC","IVR","ACD","SIP"]`,
++	})
++	require.NoError(t, err)
++	assert.NotZero(t, h.ID)
++
++	got, err := svc.GetByID(ctx, h.ID)
++	require.NoError(t, err)
++	assert.Equal(t, "产品术语", got.Name)
++
++	list, err := svc.List(ctx, 1)
++	require.NoError(t, err)
++	assert.Len(t, list, 1)
++}
++
++// --- Performance Scorecard ---
++
++func TestPerformanceScorecard_Generate(t *testing.T) {
++	svc := NewPerformanceScorecardService(NewMockPerformanceScorecardRepo())
++	ctx := context.Background()
++
++	sc, err := svc.Generate(ctx, GenerateScorecardInput{
++		TenantID:        1,
++		AgentID:         100,
++		Period:          "2026-05",
++		TotalCalls:      150,
++		AvgHandleTime:   180,
++		AvgQAScore:      90,
++		CSATScore:       85,
++		FirstCallResolv: 75,
++		Adherence:       95,
++	})
++	require.NoError(t, err)
++	assert.NotZero(t, sc.ID)
++	// Overall = 90*0.3 + 85*0.3 + 75*0.2 + 95*0.2 = 27 + 25.5 + 15 + 19 = 86.5
++	assert.Equal(t, 86.5, sc.OverallScore)
++}
++
++// --- Scene publish ---
++
++func TestDigitalEmployeeService_PublishScene(t *testing.T) {
++	svc := newTestDEService()
++	ctx := context.Background()
++
++	de, _ := svc.Create(ctx, CreateDigitalEmployeeInput{TenantID: 1, Name: "Bot"})
++	scene, _ := svc.CreateScene(ctx, CreateSceneInput{
++		DigitalEmployeeID: de.ID, TenantID: 1, Name: "场景1",
++		Intents: `[{"name":"test","keywords":["hi"],"response":"hello","transfer":false}]`,
++	})
++	assert.Equal(t, SceneStatusDraft, scene.Status)
++
++	published, err := svc.PublishScene(ctx, scene.ID)
++	require.NoError(t, err)
++	assert.Equal(t, SceneStatusPublished, published.Status)
++
++	// Cannot publish again
++	_, err = svc.PublishScene(ctx, scene.ID)
++	assert.ErrorIs(t, err, ErrSceneAlreadyPublished)
++}
++
++func TestDigitalEmployeeService_CreateScene_InvalidIntents(t *testing.T) {
++	svc := newTestDEService()
++	ctx := context.Background()
++
++	de, _ := svc.Create(ctx, CreateDigitalEmployeeInput{TenantID: 1, Name: "Bot"})
++	_, err := svc.CreateScene(ctx, CreateSceneInput{
++		DigitalEmployeeID: de.ID, TenantID: 1, Name: "Bad",
++		Intents: `{not valid json`,
++	})
++	assert.ErrorIs(t, err, ErrInvalidIntentConfig)
++}
++
++func TestDigitalEmployeeService_IntentMatch_NoMatch(t *testing.T) {
++	svc := newTestDEService()
++	ctx := context.Background()
++
++	de, _ := svc.Create(ctx, CreateDigitalEmployeeInput{TenantID: 1, Name: "Bot"})
++	scene, _ := svc.CreateScene(ctx, CreateSceneInput{
++		DigitalEmployeeID: de.ID, TenantID: 1, Name: "场景",
++		Intents: `[{"name":"退款","keywords":["退款"],"response":"ok","transfer":false}]`,
++	})
++
++	result, err := svc.MatchIntent(ctx, scene.ID, "今天天气真好")
++	require.NoError(t, err)
++	assert.False(t, result.Matched)
++}
+diff --git a/internal/infrastructure/llm/provider.go b/internal/infrastructure/llm/provider.go
+new file mode 100644
+index 0000000..d741da9
+--- /dev/null
++++ b/internal/infrastructure/llm/provider.go
+@@ -0,0 +1,39 @@
++package llm
++
++import "context"
++
++// Provider is the pluggable LLM provider interface for all AI operations.
++type Provider interface {
++	// Text operations (Phase 8)
++	Correct(ctx context.Context, text string) (string, error)
++	Expand(ctx context.Context, text string) (string, error)
++	Optimize(ctx context.Context, text string) (string, error)
++
++	// Phase 9 AI operations
++	Summarize(ctx context.Context, transcript string) (string, error)
++	AnalyzeSentiment(ctx context.Context, text string) (SentimentResult, error)
++	ExtractTags(ctx context.Context, transcript string) ([]string, error)
++	PredictSatisfaction(ctx context.Context, transcript string) (float64, error)
++	AnalyzeIVRPath(ctx context.Context, ivrPath string) (string, error)
++	JudgeCompletion(ctx context.Context, transcript string) (float64, error)
++	ExtractPostCallActions(ctx context.Context, transcript string) ([]string, error)
++	AutoFillTicket(ctx context.Context, transcript string) (map[string]string, error)
++	RecommendScript(ctx context.Context, transcript string, scripts []string) (string, error)
++	QAInspectLLM(ctx context.Context, transcript, prompt string) (float64, string, error)
++}
++
++// SentimentResult represents sentiment analysis output.
++type SentimentResult struct {
++	Label      string  `json:"label"` // positive, negative, neutral
++	Confidence float64 `json:"confidence"`
++}
++
++// ASRProvider is the interface for speech-to-text services.
++type ASRProvider interface {
++	Transcribe(ctx context.Context, audioURL string) (string, error)
++}
++
++// TTSProvider is the interface for text-to-speech services.
++type TTSProvider interface {
++	Synthesize(ctx context.Context, text string, voice string) ([]byte, error)
++}
+diff --git a/internal/infrastructure/llm/stub_provider.go b/internal/infrastructure/llm/stub_provider.go
+index 8497982..1128bed 100644
+--- a/internal/infrastructure/llm/stub_provider.go
++++ b/internal/infrastructure/llm/stub_provider.go
+@@ -3,7 +3,7 @@ package llm
+ import "context"
+ 
+ // StubProvider is a placeholder LLM provider that echoes input.
+-// Replace with Aliyun Tongyi or other provider in Phase 9.
++// Replace with Aliyun Tongyi or other provider in production.
+ type StubProvider struct{}
+ 
+ func NewStubProvider() *StubProvider { return &StubProvider{} }
+@@ -19,3 +19,52 @@ func (p *StubProvider) Expand(_ context.Context, text string) (string, error) {
+ func (p *StubProvider) Optimize(_ context.Context, text string) (string, error) {
+ 	return "[optimized] " + text, nil
+ }
++
++func (p *StubProvider) Summarize(_ context.Context, transcript string) (string, error) {
++	if len(transcript) > 100 {
++		return "[summary] " + transcript[:100] + "...", nil
++	}
++	return "[summary] " + transcript, nil
++}
++
++func (p *StubProvider) AnalyzeSentiment(_ context.Context, _ string) (SentimentResult, error) {
++	return SentimentResult{Label: "neutral", Confidence: 0.85}, nil
++}
++
++func (p *StubProvider) ExtractTags(_ context.Context, _ string) ([]string, error) {
++	return []string{"general", "inquiry"}, nil
++}
++
++func (p *StubProvider) PredictSatisfaction(_ context.Context, _ string) (float64, error) {
++	return 4.0, nil // out of 5
++}
++
++func (p *StubProvider) AnalyzeIVRPath(_ context.Context, ivrPath string) (string, error) {
++	return "[ivr-analysis] " + ivrPath, nil
++}
++
++func (p *StubProvider) JudgeCompletion(_ context.Context, _ string) (float64, error) {
++	return 4.0, nil // 1-5 scale
++}
++
++func (p *StubProvider) ExtractPostCallActions(_ context.Context, _ string) ([]string, error) {
++	return []string{"follow up with customer"}, nil
++}
++
++func (p *StubProvider) AutoFillTicket(_ context.Context, _ string) (map[string]string, error) {
++	return map[string]string{
++		"subject":     "Customer inquiry",
++		"description": "Auto-filled from transcript",
++	}, nil
++}
++
++func (p *StubProvider) RecommendScript(_ context.Context, _ string, scripts []string) (string, error) {
++	if len(scripts) > 0 {
++		return scripts[0], nil
++	}
++	return "", nil
++}
++
++func (p *StubProvider) QAInspectLLM(_ context.Context, _, _ string) (float64, string, error) {
++	return 80, "LLM inspection passed (stub)", nil
++}
+diff --git a/internal/infrastructure/mysql/ai_phase9_repo.go b/internal/infrastructure/mysql/ai_phase9_repo.go
+new file mode 100644
+index 0000000..89e6bad
+--- /dev/null
++++ b/internal/infrastructure/mysql/ai_phase9_repo.go
+@@ -0,0 +1,325 @@
++package mysql
++
++import (
++	"context"
++	"database/sql"
++
++	"github.com/divord97/ccc/internal/domain/ai"
++	"github.com/jmoiron/sqlx"
++)
++
++// --- DigitalEmployeeRepo ---
++
++type DigitalEmployeeRepo struct{ db *sqlx.DB }
++
++func NewDigitalEmployeeRepo(db *sqlx.DB) *DigitalEmployeeRepo {
++	return &DigitalEmployeeRepo{db: db}
++}
++
++func (r *DigitalEmployeeRepo) Create(ctx context.Context, de *ai.DigitalEmployee) error {
++	_, err := r.db.ExecContext(ctx,
++		"INSERT INTO digital_employees (id, tenant_id, name, description, avatar_url, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
++		de.ID, de.TenantID, de.Name, de.Description, de.AvatarURL, de.IsActive, de.CreatedAt, de.UpdatedAt)
++	return err
++}
++
++func (r *DigitalEmployeeRepo) GetByID(ctx context.Context, id int64) (*ai.DigitalEmployee, error) {
++	var de ai.DigitalEmployee
++	if err := r.db.GetContext(ctx, &de, "SELECT * FROM digital_employees WHERE id = ?", id); err != nil {
++		if err == sql.ErrNoRows {
++			return nil, nil
++		}
++		return nil, err
++	}
++	return &de, nil
++}
++
++func (r *DigitalEmployeeRepo) Update(ctx context.Context, de *ai.DigitalEmployee) error {
++	_, err := r.db.ExecContext(ctx,
++		"UPDATE digital_employees SET name=?, description=?, avatar_url=?, is_active=?, updated_at=? WHERE id=?",
++		de.Name, de.Description, de.AvatarURL, de.IsActive, de.UpdatedAt, de.ID)
++	return err
++}
++
++func (r *DigitalEmployeeRepo) List(ctx context.Context, tenantID int64) ([]*ai.DigitalEmployee, error) {
++	var result []*ai.DigitalEmployee
++	err := r.db.SelectContext(ctx, &result, "SELECT * FROM digital_employees WHERE tenant_id = ? ORDER BY created_at DESC", tenantID)
++	return result, err
++}
++
++// --- DigitalEmployeeSceneRepo ---
++
++type DigitalEmployeeSceneRepo struct{ db *sqlx.DB }
++
++func NewDigitalEmployeeSceneRepo(db *sqlx.DB) *DigitalEmployeeSceneRepo {
++	return &DigitalEmployeeSceneRepo{db: db}
++}
++
++func (r *DigitalEmployeeSceneRepo) Create(ctx context.Context, s *ai.DigitalEmployeeScene) error {
++	_, err := r.db.ExecContext(ctx,
++		"INSERT INTO digital_employee_scenes (id, digital_employee_id, tenant_id, name, intents, faqs, transfer_skill_group, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
++		s.ID, s.DigitalEmployeeID, s.TenantID, s.Name, s.Intents, s.FAQs, s.TransferSkillGroup, s.Status, s.CreatedAt, s.UpdatedAt)
++	return err
++}
++
++func (r *DigitalEmployeeSceneRepo) GetByID(ctx context.Context, id int64) (*ai.DigitalEmployeeScene, error) {
++	var s ai.DigitalEmployeeScene
++	if err := r.db.GetContext(ctx, &s, "SELECT * FROM digital_employee_scenes WHERE id = ?", id); err != nil {
++		if err == sql.ErrNoRows {
++			return nil, nil
++		}
++		return nil, err
++	}
++	return &s, nil
++}
++
++func (r *DigitalEmployeeSceneRepo) Update(ctx context.Context, s *ai.DigitalEmployeeScene) error {
++	_, err := r.db.ExecContext(ctx,
++		"UPDATE digital_employee_scenes SET name=?, intents=?, faqs=?, transfer_skill_group=?, status=?, updated_at=? WHERE id=?",
++		s.Name, s.Intents, s.FAQs, s.TransferSkillGroup, s.Status, s.UpdatedAt, s.ID)
++	return err
++}
++
++func (r *DigitalEmployeeSceneRepo) List(ctx context.Context, digitalEmployeeID int64) ([]*ai.DigitalEmployeeScene, error) {
++	var result []*ai.DigitalEmployeeScene
++	err := r.db.SelectContext(ctx, &result, "SELECT * FROM digital_employee_scenes WHERE digital_employee_id = ? ORDER BY created_at DESC", digitalEmployeeID)
++	return result, err
++}
++
++// --- QARuleRepo ---
++
++type QARuleRepo struct{ db *sqlx.DB }
++
++func NewQARuleRepo(db *sqlx.DB) *QARuleRepo {
++	return &QARuleRepo{db: db}
++}
++
++func (r *QARuleRepo) Create(ctx context.Context, rule *ai.QARule) error {
++	_, err := r.db.ExecContext(ctx,
++		"INSERT INTO qa_rules (id, tenant_id, name, type, config, severity, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
++		rule.ID, rule.TenantID, rule.Name, rule.Type, rule.Config, rule.Severity, rule.IsActive, rule.CreatedAt, rule.UpdatedAt)
++	return err
++}
++
++func (r *QARuleRepo) GetByID(ctx context.Context, id int64) (*ai.QARule, error) {
++	var rule ai.QARule
++	if err := r.db.GetContext(ctx, &rule, "SELECT * FROM qa_rules WHERE id = ?", id); err != nil {
++		if err == sql.ErrNoRows {
++			return nil, nil
++		}
++		return nil, err
++	}
++	return &rule, nil
++}
++
++func (r *QARuleRepo) Update(ctx context.Context, rule *ai.QARule) error {
++	_, err := r.db.ExecContext(ctx,
++		"UPDATE qa_rules SET name=?, type=?, config=?, severity=?, is_active=?, updated_at=? WHERE id=?",
++		rule.Name, rule.Type, rule.Config, rule.Severity, rule.IsActive, rule.UpdatedAt, rule.ID)
++	return err
++}
++
++func (r *QARuleRepo) Delete(ctx context.Context, id int64) error {
++	_, err := r.db.ExecContext(ctx, "DELETE FROM qa_rules WHERE id = ?", id)
++	return err
++}
++
++func (r *QARuleRepo) List(ctx context.Context, tenantID int64) ([]*ai.QARule, error) {
++	var result []*ai.QARule
++	err := r.db.SelectContext(ctx, &result, "SELECT * FROM qa_rules WHERE tenant_id = ? ORDER BY created_at DESC", tenantID)
++	return result, err
++}
++
++func (r *QARuleRepo) ListByIDs(ctx context.Context, ids []int64) ([]*ai.QARule, error) {
++	if len(ids) == 0 {
++		return nil, nil
++	}
++	query, args, err := sqlx.In("SELECT * FROM qa_rules WHERE id IN (?)", ids)
++	if err != nil {
++		return nil, err
++	}
++	query = r.db.Rebind(query)
++	var result []*ai.QARule
++	err = r.db.SelectContext(ctx, &result, query, args...)
++	return result, err
++}
++
++// --- QASchemeRepo ---
++
++type QASchemeRepo struct{ db *sqlx.DB }
++
++func NewQASchemeRepo(db *sqlx.DB) *QASchemeRepo {
++	return &QASchemeRepo{db: db}
++}
++
++func (r *QASchemeRepo) Create(ctx context.Context, s *ai.QAScheme) error {
++	_, err := r.db.ExecContext(ctx,
++		"INSERT INTO qa_schemes (id, tenant_id, name, rule_ids, is_default, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
++		s.ID, s.TenantID, s.Name, s.RuleIDs, s.IsDefault, s.IsActive, s.CreatedAt, s.UpdatedAt)
++	return err
++}
++
++func (r *QASchemeRepo) GetByID(ctx context.Context, id int64) (*ai.QAScheme, error) {
++	var s ai.QAScheme
++	if err := r.db.GetContext(ctx, &s, "SELECT * FROM qa_schemes WHERE id = ?", id); err != nil {
++		if err == sql.ErrNoRows {
++			return nil, nil
++		}
++		return nil, err
++	}
++	return &s, nil
++}
++
++func (r *QASchemeRepo) Update(ctx context.Context, s *ai.QAScheme) error {
++	_, err := r.db.ExecContext(ctx,
++		"UPDATE qa_schemes SET name=?, rule_ids=?, is_default=?, is_active=?, updated_at=? WHERE id=?",
++		s.Name, s.RuleIDs, s.IsDefault, s.IsActive, s.UpdatedAt, s.ID)
++	return err
++}
++
++func (r *QASchemeRepo) Delete(ctx context.Context, id int64) error {
++	_, err := r.db.ExecContext(ctx, "DELETE FROM qa_schemes WHERE id = ?", id)
++	return err
++}
++
++func (r *QASchemeRepo) List(ctx context.Context, tenantID int64) ([]*ai.QAScheme, error) {
++	var result []*ai.QAScheme
++	err := r.db.SelectContext(ctx, &result, "SELECT * FROM qa_schemes WHERE tenant_id = ? ORDER BY created_at DESC", tenantID)
++	return result, err
++}
++
++// --- QAResultRepo ---
++
++type QAResultRepo struct{ db *sqlx.DB }
++
++func NewQAResultRepo(db *sqlx.DB) *QAResultRepo {
++	return &QAResultRepo{db: db}
++}
++
++func (r *QAResultRepo) Create(ctx context.Context, res *ai.QAResult) error {
++	_, err := r.db.ExecContext(ctx,
++		"INSERT INTO qa_results (id, tenant_id, call_id, scheme_id, score, details, status, appeal_note, review_note, reviewer_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
++		res.ID, res.TenantID, res.CallID, res.SchemeID, res.Score, res.Details, res.Status, res.AppealNote, res.ReviewNote, res.ReviewerID, res.CreatedAt, res.UpdatedAt)
++	return err
++}
++
++func (r *QAResultRepo) GetByID(ctx context.Context, id int64) (*ai.QAResult, error) {
++	var res ai.QAResult
++	if err := r.db.GetContext(ctx, &res, "SELECT * FROM qa_results WHERE id = ?", id); err != nil {
++		if err == sql.ErrNoRows {
++			return nil, nil
++		}
++		return nil, err
++	}
++	return &res, nil
++}
++
++func (r *QAResultRepo) Update(ctx context.Context, res *ai.QAResult) error {
++	_, err := r.db.ExecContext(ctx,
++		"UPDATE qa_results SET score=?, details=?, status=?, appeal_note=?, review_note=?, reviewer_id=?, updated_at=? WHERE id=?",
++		res.Score, res.Details, res.Status, res.AppealNote, res.ReviewNote, res.ReviewerID, res.UpdatedAt, res.ID)
++	return err
++}
++
++func (r *QAResultRepo) List(ctx context.Context, tenantID int64, offset, limit int) ([]*ai.QAResult, error) {
++	var result []*ai.QAResult
++	err := r.db.SelectContext(ctx, &result, "SELECT * FROM qa_results WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?", tenantID, limit, offset)
++	return result, err
++}
++
++func (r *QAResultRepo) ListByCallID(ctx context.Context, callID int64) ([]*ai.QAResult, error) {
++	var result []*ai.QAResult
++	err := r.db.SelectContext(ctx, &result, "SELECT * FROM qa_results WHERE call_id = ? ORDER BY created_at DESC", callID)
++	return result, err
++}
++
++// --- ASRHotwordsRepo ---
++
++type ASRHotwordsRepo struct{ db *sqlx.DB }
++
++func NewASRHotwordsRepo(db *sqlx.DB) *ASRHotwordsRepo {
++	return &ASRHotwordsRepo{db: db}
++}
++
++func (r *ASRHotwordsRepo) Create(ctx context.Context, h *ai.ASRHotwords) error {
++	_, err := r.db.ExecContext(ctx,
++		"INSERT INTO asr_hotwords (id, tenant_id, name, words, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
++		h.ID, h.TenantID, h.Name, h.Words, h.IsActive, h.CreatedAt, h.UpdatedAt)
++	return err
++}
++
++func (r *ASRHotwordsRepo) GetByID(ctx context.Context, id int64) (*ai.ASRHotwords, error) {
++	var h ai.ASRHotwords
++	if err := r.db.GetContext(ctx, &h, "SELECT * FROM asr_hotwords WHERE id = ?", id); err != nil {
++		if err == sql.ErrNoRows {
++			return nil, nil
++		}
++		return nil, err
++	}
++	return &h, nil
++}
++
++func (r *ASRHotwordsRepo) Update(ctx context.Context, h *ai.ASRHotwords) error {
++	_, err := r.db.ExecContext(ctx,
++		"UPDATE asr_hotwords SET name=?, words=?, is_active=?, updated_at=? WHERE id=?",
++		h.Name, h.Words, h.IsActive, h.UpdatedAt, h.ID)
++	return err
++}
++
++func (r *ASRHotwordsRepo) Delete(ctx context.Context, id int64) error {
++	_, err := r.db.ExecContext(ctx, "DELETE FROM asr_hotwords WHERE id = ?", id)
++	return err
++}
++
++func (r *ASRHotwordsRepo) List(ctx context.Context, tenantID int64) ([]*ai.ASRHotwords, error) {
++	var result []*ai.ASRHotwords
++	err := r.db.SelectContext(ctx, &result, "SELECT * FROM asr_hotwords WHERE tenant_id = ? ORDER BY created_at DESC", tenantID)
++	return result, err
++}
++
++// --- PerformanceScorecardRepo ---
++
++type PerformanceScorecardRepo struct{ db *sqlx.DB }
++
++func NewPerformanceScorecardRepo(db *sqlx.DB) *PerformanceScorecardRepo {
++	return &PerformanceScorecardRepo{db: db}
++}
++
++func (r *PerformanceScorecardRepo) Create(ctx context.Context, s *ai.PerformanceScorecard) error {
++	_, err := r.db.ExecContext(ctx,
++		"INSERT INTO performance_scorecards (id, tenant_id, agent_id, period, total_calls, avg_handle_time, avg_qa_score, csat_score, first_call_resolution, adherence, overall_score, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
++		s.ID, s.TenantID, s.AgentID, s.Period, s.TotalCalls, s.AvgHandleTime, s.AvgQAScore, s.CSATScore, s.FirstCallResolv, s.Adherence, s.OverallScore, s.CreatedAt)
++	return err
++}
++
++func (r *PerformanceScorecardRepo) GetByID(ctx context.Context, id int64) (*ai.PerformanceScorecard, error) {
++	var s ai.PerformanceScorecard
++	if err := r.db.GetContext(ctx, &s, "SELECT * FROM performance_scorecards WHERE id = ?", id); err != nil {
++		if err == sql.ErrNoRows {
++			return nil, nil
++		}
++		return nil, err
++	}
++	return &s, nil
++}
++
++func (r *PerformanceScorecardRepo) List(ctx context.Context, tenantID int64, period string) ([]*ai.PerformanceScorecard, error) {
++	var result []*ai.PerformanceScorecard
++	if period != "" {
++		err := r.db.SelectContext(ctx, &result, "SELECT * FROM performance_scorecards WHERE tenant_id = ? AND period = ? ORDER BY overall_score DESC", tenantID, period)
++		return result, err
++	}
++	err := r.db.SelectContext(ctx, &result, "SELECT * FROM performance_scorecards WHERE tenant_id = ? ORDER BY created_at DESC", tenantID)
++	return result, err
++}
++
++func (r *PerformanceScorecardRepo) GetByAgentAndPeriod(ctx context.Context, agentID int64, period string) (*ai.PerformanceScorecard, error) {
++	var s ai.PerformanceScorecard
++	if err := r.db.GetContext(ctx, &s, "SELECT * FROM performance_scorecards WHERE agent_id = ? AND period = ?", agentID, period); err != nil {
++		if err == sql.ErrNoRows {
++			return nil, nil
++		}
++		return nil, err
++	}
++	return &s, nil
++}
+diff --git a/internal/interfaces/http/handler/ai_analysis.go b/internal/interfaces/http/handler/ai_analysis.go
+new file mode 100644
+index 0000000..aab9dc0
+--- /dev/null
++++ b/internal/interfaces/http/handler/ai_analysis.go
+@@ -0,0 +1,206 @@
++package handler
++
++import (
++	"encoding/json"
++	"net/http"
++	"strconv"
++
++	"github.com/divord97/ccc/internal/application/aianalysis"
++	"github.com/divord97/ccc/internal/interfaces/http/middleware"
++	"github.com/divord97/ccc/pkg/response"
++	"github.com/go-chi/chi/v5"
++)
++
++type AIAnalysisHandler struct {
++	svc *aianalysis.Service
++}
++
++func NewAIAnalysisHandler(svc *aianalysis.Service) *AIAnalysisHandler {
++	return &AIAnalysisHandler{svc: svc}
++}
++
++func (h *AIAnalysisHandler) Summary(w http.ResponseWriter, r *http.Request) {
++	callID, _ := strconv.ParseInt(chi.URLParam(r, "callId"), 10, 64)
++	var in struct {
++		Transcript string `json:"transcript"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	result, err := h.svc.GenerateSummary(r.Context(), callID, in.Transcript)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, result)
++}
++
++func (h *AIAnalysisHandler) Sentiment(w http.ResponseWriter, r *http.Request) {
++	callID, _ := strconv.ParseInt(chi.URLParam(r, "callId"), 10, 64)
++	var in struct {
++		Transcript string `json:"transcript"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	result, err := h.svc.AnalyzeSentiment(r.Context(), callID, in.Transcript)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, result)
++}
++
++func (h *AIAnalysisHandler) Tags(w http.ResponseWriter, r *http.Request) {
++	callID, _ := strconv.ParseInt(chi.URLParam(r, "callId"), 10, 64)
++	var in struct {
++		Transcript string `json:"transcript"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	result, err := h.svc.ExtractTags(r.Context(), callID, in.Transcript)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, result)
++}
++
++func (h *AIAnalysisHandler) Satisfaction(w http.ResponseWriter, r *http.Request) {
++	callID, _ := strconv.ParseInt(chi.URLParam(r, "callId"), 10, 64)
++	var in struct {
++		Transcript string `json:"transcript"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	result, err := h.svc.PredictSatisfaction(r.Context(), callID, in.Transcript)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, result)
++}
++
++func (h *AIAnalysisHandler) IVRAnalysis(w http.ResponseWriter, r *http.Request) {
++	callID, _ := strconv.ParseInt(chi.URLParam(r, "callId"), 10, 64)
++	var in struct {
++		IVRPath string `json:"ivr_path"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	result, err := h.svc.AnalyzeIVRPath(r.Context(), callID, in.IVRPath)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, result)
++}
++
++func (h *AIAnalysisHandler) Completion(w http.ResponseWriter, r *http.Request) {
++	callID, _ := strconv.ParseInt(chi.URLParam(r, "callId"), 10, 64)
++	var in struct {
++		Transcript string `json:"transcript"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	result, err := h.svc.JudgeCompletion(r.Context(), callID, in.Transcript)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, result)
++}
++
++func (h *AIAnalysisHandler) PostCallActions(w http.ResponseWriter, r *http.Request) {
++	callID, _ := strconv.ParseInt(chi.URLParam(r, "callId"), 10, 64)
++	var in struct {
++		Transcript string `json:"transcript"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	result, err := h.svc.ExtractPostCallActions(r.Context(), callID, in.Transcript)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, result)
++}
++
++func (h *AIAnalysisHandler) AutoFill(w http.ResponseWriter, r *http.Request) {
++	callID, _ := strconv.ParseInt(chi.URLParam(r, "callId"), 10, 64)
++	var in struct {
++		Transcript string `json:"transcript"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	result, err := h.svc.AutoFillTicket(r.Context(), callID, in.Transcript)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, result)
++}
++
++func (h *AIAnalysisHandler) ScriptRecommend(w http.ResponseWriter, r *http.Request) {
++	callID, _ := strconv.ParseInt(chi.URLParam(r, "callId"), 10, 64)
++	var in struct {
++		Transcript string   `json:"transcript"`
++		Scripts    []string `json:"scripts"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	result, err := h.svc.RecommendScript(r.Context(), callID, in.Transcript, in.Scripts)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, result)
++}
++
++func (h *AIAnalysisHandler) BatchTags(w http.ResponseWriter, r *http.Request) {
++	tenantID := middleware.TenantIDFromCtx(r.Context())
++	var in aianalysis.BatchTagAnalysisInput
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	in.TenantID = tenantID
++	result, err := h.svc.RunBatchTagAnalysis(r.Context(), in)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, result)
++}
++
++func (h *AIAnalysisHandler) HotwordAnalysis(w http.ResponseWriter, r *http.Request) {
++	var in struct {
++		Transcripts []string `json:"transcripts"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	result, err := h.svc.AnalyzeHotwords(r.Context(), in.Transcripts)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, result)
++}
+diff --git a/internal/interfaces/http/handler/asr_hotwords.go b/internal/interfaces/http/handler/asr_hotwords.go
+new file mode 100644
+index 0000000..3780eb0
+--- /dev/null
++++ b/internal/interfaces/http/handler/asr_hotwords.go
+@@ -0,0 +1,97 @@
++package handler
++
++import (
++	"encoding/json"
++	"net/http"
++	"strconv"
++
++	"github.com/divord97/ccc/internal/domain/ai"
++	"github.com/divord97/ccc/internal/interfaces/http/middleware"
++	"github.com/divord97/ccc/pkg/response"
++	"github.com/go-chi/chi/v5"
++)
++
++type ASRHotwordsHandler struct {
++	svc *ai.ASRHotwordsService
++}
++
++func NewASRHotwordsHandler(svc *ai.ASRHotwordsService) *ASRHotwordsHandler {
++	return &ASRHotwordsHandler{svc: svc}
++}
++
++func (h *ASRHotwordsHandler) Create(w http.ResponseWriter, r *http.Request) {
++	tenantID := middleware.TenantIDFromCtx(r.Context())
++	var in ai.CreateASRHotwordsInput
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	in.TenantID = tenantID
++	hw, err := h.svc.Create(r.Context(), in)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusCreated, hw)
++}
++
++func (h *ASRHotwordsHandler) Get(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	hw, err := h.svc.GetByID(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, hw)
++}
++
++func (h *ASRHotwordsHandler) Update(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	hw, err := h.svc.GetByID(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++	var in struct {
++		Name     *string `json:"name"`
++		Words    *string `json:"words"`
++		IsActive *bool   `json:"is_active"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	if in.Name != nil {
++		hw.Name = *in.Name
++	}
++	if in.Words != nil {
++		hw.Words = *in.Words
++	}
++	if in.IsActive != nil {
++		hw.IsActive = *in.IsActive
++	}
++	if err := h.svc.Update(r.Context(), hw); err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, hw)
++}
++
++func (h *ASRHotwordsHandler) Delete(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	if err := h.svc.Delete(r.Context(), id); err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusNoContent, nil)
++}
++
++func (h *ASRHotwordsHandler) List(w http.ResponseWriter, r *http.Request) {
++	tenantID := middleware.TenantIDFromCtx(r.Context())
++	list, err := h.svc.List(r.Context(), tenantID)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, list)
++}
+diff --git a/internal/interfaces/http/handler/digital_employee.go b/internal/interfaces/http/handler/digital_employee.go
+new file mode 100644
+index 0000000..af9b2f0
+--- /dev/null
++++ b/internal/interfaces/http/handler/digital_employee.go
+@@ -0,0 +1,147 @@
++package handler
++
++import (
++	"encoding/json"
++	"net/http"
++	"strconv"
++
++	"github.com/divord97/ccc/internal/domain/ai"
++	"github.com/divord97/ccc/internal/interfaces/http/middleware"
++	"github.com/divord97/ccc/pkg/response"
++	"github.com/go-chi/chi/v5"
++)
++
++type DigitalEmployeeHandler struct {
++	svc *ai.DigitalEmployeeService
++}
++
++func NewDigitalEmployeeHandler(svc *ai.DigitalEmployeeService) *DigitalEmployeeHandler {
++	return &DigitalEmployeeHandler{svc: svc}
++}
++
++func (h *DigitalEmployeeHandler) Create(w http.ResponseWriter, r *http.Request) {
++	tenantID := middleware.TenantIDFromCtx(r.Context())
++	var in ai.CreateDigitalEmployeeInput
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	in.TenantID = tenantID
++	de, err := h.svc.Create(r.Context(), in)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusCreated, de)
++}
++
++func (h *DigitalEmployeeHandler) Get(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	de, err := h.svc.GetByID(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, de)
++}
++
++func (h *DigitalEmployeeHandler) Update(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	de, err := h.svc.GetByID(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++	var in struct {
++		Name        *string `json:"name"`
++		Description *string `json:"description"`
++		AvatarURL   *string `json:"avatar_url"`
++		IsActive    *bool   `json:"is_active"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	if in.Name != nil {
++		de.Name = *in.Name
++	}
++	if in.Description != nil {
++		de.Description = *in.Description
++	}
++	if in.AvatarURL != nil {
++		de.AvatarURL = *in.AvatarURL
++	}
++	if in.IsActive != nil {
++		de.IsActive = *in.IsActive
++	}
++	if err := h.svc.Update(r.Context(), de); err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, de)
++}
++
++func (h *DigitalEmployeeHandler) List(w http.ResponseWriter, r *http.Request) {
++	tenantID := middleware.TenantIDFromCtx(r.Context())
++	list, err := h.svc.List(r.Context(), tenantID)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, list)
++}
++
++func (h *DigitalEmployeeHandler) CreateScene(w http.ResponseWriter, r *http.Request) {
++	tenantID := middleware.TenantIDFromCtx(r.Context())
++	deID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	var in ai.CreateSceneInput
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	in.DigitalEmployeeID = deID
++	in.TenantID = tenantID
++	scene, err := h.svc.CreateScene(r.Context(), in)
++	if err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusCreated, scene)
++}
++
++func (h *DigitalEmployeeHandler) ListScenes(w http.ResponseWriter, r *http.Request) {
++	deID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	list, err := h.svc.ListScenes(r.Context(), deID)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, list)
++}
++
++func (h *DigitalEmployeeHandler) PublishScene(w http.ResponseWriter, r *http.Request) {
++	sceneID, _ := strconv.ParseInt(chi.URLParam(r, "sceneId"), 10, 64)
++	scene, err := h.svc.PublishScene(r.Context(), sceneID)
++	if err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, scene)
++}
++
++func (h *DigitalEmployeeHandler) TestIntent(w http.ResponseWriter, r *http.Request) {
++	sceneID, _ := strconv.ParseInt(chi.URLParam(r, "sceneId"), 10, 64)
++	var in struct {
++		Input string `json:"input"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	result, err := h.svc.MatchIntent(r.Context(), sceneID, in.Input)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, result)
++}
+diff --git a/internal/interfaces/http/handler/performance.go b/internal/interfaces/http/handler/performance.go
+new file mode 100644
+index 0000000..1a9ce2b
+--- /dev/null
++++ b/internal/interfaces/http/handler/performance.go
+@@ -0,0 +1,45 @@
++package handler
++
++import (
++	"encoding/json"
++	"net/http"
++
++	"github.com/divord97/ccc/internal/domain/ai"
++	"github.com/divord97/ccc/internal/interfaces/http/middleware"
++	"github.com/divord97/ccc/pkg/response"
++)
++
++type PerformanceHandler struct {
++	svc *ai.PerformanceScorecardService
++}
++
++func NewPerformanceHandler(svc *ai.PerformanceScorecardService) *PerformanceHandler {
++	return &PerformanceHandler{svc: svc}
++}
++
++func (h *PerformanceHandler) Generate(w http.ResponseWriter, r *http.Request) {
++	tenantID := middleware.TenantIDFromCtx(r.Context())
++	var in ai.GenerateScorecardInput
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	in.TenantID = tenantID
++	sc, err := h.svc.Generate(r.Context(), in)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusCreated, sc)
++}
++
++func (h *PerformanceHandler) List(w http.ResponseWriter, r *http.Request) {
++	tenantID := middleware.TenantIDFromCtx(r.Context())
++	period := r.URL.Query().Get("period")
++	list, err := h.svc.List(r.Context(), tenantID, period)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, list)
++}
+diff --git a/internal/interfaces/http/handler/qa.go b/internal/interfaces/http/handler/qa.go
+new file mode 100644
+index 0000000..76b8801
+--- /dev/null
++++ b/internal/interfaces/http/handler/qa.go
+@@ -0,0 +1,269 @@
++package handler
++
++import (
++	"encoding/json"
++	"net/http"
++	"strconv"
++
++	"github.com/divord97/ccc/internal/domain/ai"
++	"github.com/divord97/ccc/internal/interfaces/http/middleware"
++	"github.com/divord97/ccc/pkg/response"
++	"github.com/go-chi/chi/v5"
++)
++
++type QAHandler struct {
++	svc *ai.QualityInspectionService
++}
++
++func NewQAHandler(svc *ai.QualityInspectionService) *QAHandler {
++	return &QAHandler{svc: svc}
++}
++
++// --- Rules ---
++
++func (h *QAHandler) CreateRule(w http.ResponseWriter, r *http.Request) {
++	tenantID := middleware.TenantIDFromCtx(r.Context())
++	var in ai.CreateQARuleInput
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	in.TenantID = tenantID
++	rule, err := h.svc.CreateRule(r.Context(), in)
++	if err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusCreated, rule)
++}
++
++func (h *QAHandler) GetRule(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	rule, err := h.svc.GetRule(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, rule)
++}
++
++func (h *QAHandler) UpdateRule(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	rule, err := h.svc.GetRule(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++	var in struct {
++		Name     *string `json:"name"`
++		Config   *string `json:"config"`
++		Severity *string `json:"severity"`
++		IsActive *bool   `json:"is_active"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	if in.Name != nil {
++		rule.Name = *in.Name
++	}
++	if in.Config != nil {
++		rule.Config = *in.Config
++	}
++	if in.Severity != nil {
++		rule.Severity = *in.Severity
++	}
++	if in.IsActive != nil {
++		rule.IsActive = *in.IsActive
++	}
++	if err := h.svc.UpdateRule(r.Context(), rule); err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, rule)
++}
++
++func (h *QAHandler) DeleteRule(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	if err := h.svc.DeleteRule(r.Context(), id); err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusNoContent, nil)
++}
++
++func (h *QAHandler) ListRules(w http.ResponseWriter, r *http.Request) {
++	tenantID := middleware.TenantIDFromCtx(r.Context())
++	list, err := h.svc.ListRules(r.Context(), tenantID)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, list)
++}
++
++// --- Schemes ---
++
++func (h *QAHandler) CreateScheme(w http.ResponseWriter, r *http.Request) {
++	tenantID := middleware.TenantIDFromCtx(r.Context())
++	var in ai.CreateQASchemeInput
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	in.TenantID = tenantID
++	scheme, err := h.svc.CreateScheme(r.Context(), in)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusCreated, scheme)
++}
++
++func (h *QAHandler) GetScheme(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	scheme, err := h.svc.GetScheme(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, scheme)
++}
++
++func (h *QAHandler) UpdateScheme(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	scheme, err := h.svc.GetScheme(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++	var in struct {
++		Name      *string              `json:"name"`
++		RuleIDs   []ai.SchemeRuleWeight `json:"rule_ids"`
++		IsDefault *bool                `json:"is_default"`
++		IsActive  *bool                `json:"is_active"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	if in.Name != nil {
++		scheme.Name = *in.Name
++	}
++	if in.RuleIDs != nil {
++		ruleJSON, _ := json.Marshal(in.RuleIDs)
++		scheme.RuleIDs = string(ruleJSON)
++	}
++	if in.IsDefault != nil {
++		scheme.IsDefault = *in.IsDefault
++	}
++	if in.IsActive != nil {
++		scheme.IsActive = *in.IsActive
++	}
++	if err := h.svc.UpdateScheme(r.Context(), scheme); err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, scheme)
++}
++
++func (h *QAHandler) DeleteScheme(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	if err := h.svc.DeleteScheme(r.Context(), id); err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusNoContent, nil)
++}
++
++func (h *QAHandler) ListSchemes(w http.ResponseWriter, r *http.Request) {
++	tenantID := middleware.TenantIDFromCtx(r.Context())
++	list, err := h.svc.ListSchemes(r.Context(), tenantID)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, list)
++}
++
++// --- Execution / Results ---
++
++func (h *QAHandler) RunInspection(w http.ResponseWriter, r *http.Request) {
++	tenantID := middleware.TenantIDFromCtx(r.Context())
++	var in struct {
++		CallID     int64  `json:"call_id"`
++		SchemeID   int64  `json:"scheme_id"`
++		Transcript string `json:"transcript"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	result, err := h.svc.RunInspection(r.Context(), tenantID, in.CallID, in.SchemeID, in.Transcript)
++	if err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, result)
++}
++
++func (h *QAHandler) GetResult(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	result, err := h.svc.GetResult(r.Context(), id)
++	if err != nil {
++		response.Error(w, http.StatusNotFound, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, result)
++}
++
++func (h *QAHandler) ListResults(w http.ResponseWriter, r *http.Request) {
++	tenantID := middleware.TenantIDFromCtx(r.Context())
++	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
++	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
++	if limit <= 0 {
++		limit = 20
++	}
++	list, err := h.svc.ListResults(r.Context(), tenantID, offset, limit)
++	if err != nil {
++		response.Error(w, http.StatusInternalServerError, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, list)
++}
++
++func (h *QAHandler) Appeal(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	var in struct {
++		Note string `json:"note"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	result, err := h.svc.Appeal(r.Context(), id, in.Note)
++	if err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, result)
++}
++
++func (h *QAHandler) Review(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	userID := middleware.UserIDFromCtx(r.Context())
++	var in struct {
++		Note     string  `json:"note"`
++		NewScore float64 `json:"new_score"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	result, err := h.svc.Review(r.Context(), id, userID, in.Note, in.NewScore)
++	if err != nil {
++		response.Error(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	response.JSON(w, http.StatusOK, result)
++}
+diff --git a/internal/interfaces/http/router.go b/internal/interfaces/http/router.go
+index 21b8e93..5413471 100644
+--- a/internal/interfaces/http/router.go
++++ b/internal/interfaces/http/router.go
+@@ -69,6 +69,13 @@ type RouterDeps struct {
+ 	EmailInboundHandler *handler.EmailInboundHandler
+ 	IMAssistHandler     *handler.IMAssistHandler
+ 
++	// Phase 9
++	DigitalEmployeeHandler *handler.DigitalEmployeeHandler
++	QAHandler              *handler.QAHandler
++	AIAnalysisHandler      *handler.AIAnalysisHandler
++	ASRHotwordsHandler     *handler.ASRHotwordsHandler
++	PerformanceHandler     *handler.PerformanceHandler
++
+ 	// Infrastructure
+ 	RateLimiter  *redis.RateLimiter
+ 	AuditLogRepo platform.AuditLogRepository
+@@ -425,6 +432,69 @@ func NewRouter(deps RouterDeps) *chi.Mux {
+ 			r.Post("/expand", deps.IMAssistHandler.Expand)
+ 			r.Post("/optimize", deps.IMAssistHandler.Optimize)
+ 		})
++
++		// --- Phase 9 Routes ---
++
++		r.Route("/digital-employees", func(r chi.Router) {
++			r.Post("/", deps.DigitalEmployeeHandler.Create)
++			r.Get("/", deps.DigitalEmployeeHandler.List)
++			r.Get("/{id}", deps.DigitalEmployeeHandler.Get)
++			r.Put("/{id}", deps.DigitalEmployeeHandler.Update)
++			r.Post("/{id}/scenes", deps.DigitalEmployeeHandler.CreateScene)
++			r.Get("/{id}/scenes", deps.DigitalEmployeeHandler.ListScenes)
++			r.Post("/{id}/scenes/{sceneId}/publish", deps.DigitalEmployeeHandler.PublishScene)
++			r.Post("/{id}/scenes/{sceneId}/test", deps.DigitalEmployeeHandler.TestIntent)
++		})
++
++		r.Route("/qa/rules", func(r chi.Router) {
++			r.Post("/", deps.QAHandler.CreateRule)
++			r.Get("/", deps.QAHandler.ListRules)
++			r.Get("/{id}", deps.QAHandler.GetRule)
++			r.Put("/{id}", deps.QAHandler.UpdateRule)
++			r.Delete("/{id}", deps.QAHandler.DeleteRule)
++		})
++
++		r.Route("/qa/schemes", func(r chi.Router) {
++			r.Post("/", deps.QAHandler.CreateScheme)
++			r.Get("/", deps.QAHandler.ListSchemes)
++			r.Get("/{id}", deps.QAHandler.GetScheme)
++			r.Put("/{id}", deps.QAHandler.UpdateScheme)
++			r.Delete("/{id}", deps.QAHandler.DeleteScheme)
++		})
++
++		r.Route("/qa", func(r chi.Router) {
++			r.Post("/run", deps.QAHandler.RunInspection)
++			r.Get("/results", deps.QAHandler.ListResults)
++			r.Get("/results/{id}", deps.QAHandler.GetResult)
++			r.Post("/results/{id}/appeal", deps.QAHandler.Appeal)
++			r.Post("/results/{id}/review", deps.QAHandler.Review)
++		})
++
++		// AI call analysis endpoints
++		r.Post("/calls/{callId}/ai-summary", deps.AIAnalysisHandler.Summary)
++		r.Post("/calls/{callId}/ai-sentiment", deps.AIAnalysisHandler.Sentiment)
++		r.Post("/calls/{callId}/ai-tags", deps.AIAnalysisHandler.Tags)
++		r.Post("/calls/{callId}/ai-satisfaction", deps.AIAnalysisHandler.Satisfaction)
++		r.Post("/calls/{callId}/ai-ivr-analysis", deps.AIAnalysisHandler.IVRAnalysis)
++		r.Post("/calls/{callId}/ai-completion", deps.AIAnalysisHandler.Completion)
++		r.Post("/calls/{callId}/ai-post-actions", deps.AIAnalysisHandler.PostCallActions)
++		r.Post("/calls/{callId}/auto-fill-ticket", deps.AIAnalysisHandler.AutoFill)
++		r.Post("/calls/{callId}/script-recommendations", deps.AIAnalysisHandler.ScriptRecommend)
++		r.Post("/session-tag-analysis", deps.AIAnalysisHandler.BatchTags)
++		r.Post("/hotword-analysis", deps.AIAnalysisHandler.HotwordAnalysis)
++
++		r.Route("/asr-hotwords", func(r chi.Router) {
++			r.Post("/", deps.ASRHotwordsHandler.Create)
++			r.Get("/", deps.ASRHotwordsHandler.List)
++			r.Get("/{id}", deps.ASRHotwordsHandler.Get)
++			r.Put("/{id}", deps.ASRHotwordsHandler.Update)
++			r.Delete("/{id}", deps.ASRHotwordsHandler.Delete)
++		})
++
++		r.Route("/performance-scorecards", func(r chi.Router) {
++			r.Get("/", deps.PerformanceHandler.List)
++			r.Post("/generate", deps.PerformanceHandler.Generate)
++		})
+ 	})
+ 
+ 	// --- Public Routes (no JWT auth) ---

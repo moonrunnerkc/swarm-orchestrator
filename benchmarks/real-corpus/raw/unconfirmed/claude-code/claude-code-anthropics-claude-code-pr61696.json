@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-claude-code-pr61696",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 61696,
+    "headSha": "9ba285079d7bb05775aa86de4545f4da50942f01",
+    "baseSha": "39e853e4074d90f27afdfb7ea601e0fc378bd0c5",
+    "title": "[docs] Add workaround for system-reminder blocks leaking into WebFetch results (#61690)",
+    "body": "## Summary\n\nDocuments the v2.1.150 regression where `<system-reminder>` blocks leak into `WebFetch` tool result content, and adds the downgrade workaround to the troubleshooting section.\n\nCloses #61690\n\n## Problem\n\nIn Claude Code v2.1.150, `<system-reminder>` blocks (TaskCreate/TaskUpdate nudges, tool-availability reminders) are appended to `WebFetch` tool_result content instead of being delivered as separate system messages. This is a routing regression from internal refactoring.\n\n## Workaround\n\n```bash\nnpm install -g @anthropic-ai/claude-code@2.1.149\n```\n\n## The Fix Needed (CLI internal)\n\n1. Flush reminder buffer to system-reminder slot **before** writing `tool_result.content` in deferred tool handlers\n2. Add a destination-route assertion verifying reminders never land in tool_result payloads\n",
+    "author": "giruuuuj",
+    "headRef": "fix/system-reminder-leak-61690-clean",
+    "repository": "anthropics/claude-code"
+  },
+  "diffRef": {
+    "repository": "anthropics/claude-code",
+    "headSha": "9ba285079d7bb05775aa86de4545f4da50942f01",
+    "baseSha": "39e853e4074d90f27afdfb7ea601e0fc378bd0c5"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-claude-code-pr61696.diff",
+  "vendoredAt": "2026-05-24T03:15:45.467Z",
+  "collectedAt": "2026-05-24T03:15:45.467Z"
+}

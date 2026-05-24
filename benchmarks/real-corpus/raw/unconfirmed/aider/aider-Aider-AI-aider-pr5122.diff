@@ -1,0 +1,90 @@
+diff --git a/aider/models.py b/aider/models.py
+index 5b0f2166aa4..d22216605ba 100644
+--- a/aider/models.py
++++ b/aider/models.py
+@@ -103,6 +103,8 @@
+     "3": "gpt-3.5-turbo",
+     # Other models
+     "deepseek": "deepseek/deepseek-chat",
++    "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
++    "deepseek-v4-pro": "deepseek/deepseek-v4-pro",
+     "flash": "gemini/gemini-flash-latest",
+     "flash-lite": "gemini/gemini-2.5-flash-lite",
+     "quasar": "openrouter/openrouter/quasar-alpha",
+@@ -483,7 +485,7 @@ def apply_generic_model_settings(self, model):
+                 self.accepts_settings.append("reasoning_effort")
+             return  # <--
+ 
+-        if "deepseek" in model and "v3" in model:
++        if "deepseek" in model and ("v3" in model or "v4" in model):
+             self.edit_format = "diff"
+             self.use_repo_map = True
+             self.reminder = "sys"
+diff --git a/aider/resources/model-metadata.json b/aider/resources/model-metadata.json
+index 64c480e55ed..45e8ef6bb08 100644
+--- a/aider/resources/model-metadata.json
++++ b/aider/resources/model-metadata.json
+@@ -31,6 +31,34 @@
+         //"supports_tool_choice": true,
+         "supports_prompt_caching": true
+     },
++    "deepseek/deepseek-v4-flash": {
++        "max_tokens": 8192,
++        "max_input_tokens": 128000,
++        "max_output_tokens": 8192,
++        "input_cost_per_token": 0.00000028,
++        "input_cost_per_token_cache_hit": 0.000000028,
++        "cache_read_input_token_cost": 0.000000028,
++        "cache_creation_input_token_cost": 0.0,
++        "output_cost_per_token": 0.00000042,
++        "litellm_provider": "deepseek",
++        "mode": "chat",
++        "supports_assistant_prefill": true,
++        "supports_prompt_caching": true
++    },
++    "deepseek/deepseek-v4-pro": {
++        "max_tokens": 8192,
++        "max_input_tokens": 128000,
++        "max_output_tokens": 8192,
++        "input_cost_per_token": 0.00000028,
++        "input_cost_per_token_cache_hit": 0.000000028,
++        "cache_read_input_token_cost": 0.000000028,
++        "cache_creation_input_token_cost": 0.0,
++        "output_cost_per_token": 0.00000042,
++        "litellm_provider": "deepseek",
++        "mode": "chat",
++        "supports_assistant_prefill": true,
++        "supports_prompt_caching": true
++    },
+     "openrouter/deepseek/deepseek-r1:free": {
+         "max_tokens": 8192,
+         "max_input_tokens": 64000,
+diff --git a/aider/resources/model-settings.yml b/aider/resources/model-settings.yml
+index c4d14cd0801..084bf3f8f7c 100644
+--- a/aider/resources/model-settings.yml
++++ b/aider/resources/model-settings.yml
+@@ -612,6 +612,24 @@
+   editor_model_name: openrouter/deepseek/deepseek-chat:free
+   editor_edit_format: editor-diff
+ 
++- name: deepseek/deepseek-v4-flash
++  edit_format: diff
++  use_repo_map: true
++  reminder: sys
++  examples_as_sys_msg: true
++  extra_params:
++    max_tokens: 8192
++  caches_by_default: true
++
++- name: deepseek/deepseek-v4-pro
++  edit_format: diff
++  use_repo_map: true
++  reminder: sys
++  examples_as_sys_msg: true
++  extra_params:
++    max_tokens: 8192
++  caches_by_default: true
++
+ - name: deepseek/deepseek-coder
+   edit_format: diff
+   use_repo_map: true

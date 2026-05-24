@@ -1,0 +1,394 @@
+diff --git a/signup/src/org/labkey/signup/SignUpController.java b/signup/src/org/labkey/signup/SignUpController.java
+index a81f690a..9f216c0a 100644
+--- a/signup/src/org/labkey/signup/SignUpController.java
++++ b/signup/src/org/labkey/signup/SignUpController.java
+@@ -16,6 +16,7 @@
+ 
+ package org.labkey.signup;
+ 
++import jakarta.mail.MessagingException;
+ import org.apache.commons.lang3.StringUtils;
+ import org.apache.commons.validator.routines.EmailValidator;
+ import org.apache.logging.log4j.LogManager;
+@@ -54,6 +55,7 @@
+ import org.labkey.api.security.permissions.ReadPermission;
+ import org.labkey.api.settings.LookAndFeelProperties;
+ import org.labkey.api.util.ButtonBuilder;
++import org.labkey.api.util.ConfigurationException;
+ import org.labkey.api.util.DOM;
+ import org.labkey.api.util.PageFlowUtil;
+ import org.labkey.api.util.URLHelper;
+@@ -62,10 +64,12 @@
+ import org.labkey.api.view.HtmlView;
+ import org.labkey.api.view.HttpView;
+ import org.labkey.api.view.JspView;
++import org.labkey.api.view.LabKeyKaptchaServlet;
+ import org.labkey.api.view.NavTree;
+ import org.labkey.api.view.WebPartView;
+ import org.springframework.validation.BindException;
+ import org.springframework.validation.Errors;
++import org.springframework.validation.ObjectError;
+ import org.springframework.web.servlet.ModelAndView;
+ 
+ import java.util.ArrayList;
+@@ -527,7 +531,8 @@ public class BeginAction extends FormViewAction<SignupForm>
+         @Override
+         public void validateCommand(SignupForm form, Errors errors)
+         {
+-            validateSignupForm(form, errors);
++            // All validation happens in handlePost so the order matches SignUpApiAction
++            // (captcha first, then blank-field checks, then email parsing, etc.).
+         }
+ 
+         @Override
+@@ -559,27 +564,26 @@ public ModelAndView getView(SignupForm form, boolean reshow, BindException error
+         @Override
+         public boolean handlePost(SignupForm signupForm, BindException errors) throws Exception
+         {
+-            // Validate with EmailValidator first. ValidEmail(email) will not throw an exception if the domain is
+-            // missing from the email. The default domain configured for the server is appended.
+-            EmailValidator validator = EmailValidator.getInstance();
+-            if(!validator.isValid(signupForm.getEmail()))
++            String kaptchaError = verifyCaptcha(signupForm.getKaptchaText(), signupForm.getEmail());
++            if (kaptchaError != null)
+             {
+-                errors.reject(ERROR_MSG,"'" + signupForm.getEmail() + "' is not a valid email address.");
++                errors.reject(ERROR_MSG, kaptchaError);
+                 return false;
+             }
+ 
+-            ValidEmail email;
+-            try
++            validateSignupForm(signupForm, errors);
++            if (errors.hasErrors())
+             {
+-                email = new ValidEmail(signupForm.getEmail());
++                return false;
+             }
+-            catch (ValidEmail.InvalidEmailException iee)
++
++            ValidEmail email = parseAndValidateEmail(signupForm, errors);
++            if (email == null)
+             {
+-                errors.reject(ERROR_MSG, iee.getMessage());
+                 return false;
+             }
+ 
+-            if(UserManager.userExists(email))
++            if (UserManager.userExists(email))
+             {
+                 // If the user already exists forward them to a page where they can click on a link to recover their password, if required
+                 signupForm.setAccountExists(true);
+@@ -587,26 +591,12 @@ public boolean handlePost(SignupForm signupForm, BindException errors) throws Ex
+                 return false;
+             }
+ 
+-            // If the user does not exit in LabKey's core database, check in our temporaryusers table
+-            TempUser tempUser = getTempUser(signupForm, email);
+-
+-            // Send email to the user.
+-            ActionURL confirmationUrl = getConfirmationURL(getContainer(), email, tempUser.getKey());
+-            try
+-            {
+-                User mockUser = new User();
+-                mockUser.setEmail(email.getEmailAddress());
+-                SecurityManager.sendEmail(getContainer(), mockUser, SecurityManager.getRegistrationMessage(null, false), email.getEmailAddress(), confirmationUrl);
+-            }
+-            catch(Exception e)
++            if (!createUserAndSendEmail(signupForm, email, errors))
+             {
+-                String systemEmail = LookAndFeelProperties.getInstance(getContainer()).getSystemEmailAddress();
+-                errors.reject(ERROR_MSG, "Could not send new user registration email.  Please contact your server administrator at " + systemEmail);
+-                errors.reject(ERROR_MSG, e.getMessage());
+                 return false;
+             }
+ 
+-
++            // Re-render the JSP with the CONFIRMATION_SENT message.
+             signupForm.setNewSignUp(false);
+             return false;
+         }
+@@ -641,6 +631,96 @@ private void validateSignupForm(SignupForm form, Errors errors)
+         {
+             errors.reject(ERROR_MSG, "Email cannot be blank.");
+         }
++        if(StringUtils.isBlank(form.getEmailConfirm()))
++        {
++            errors.reject(ERROR_MSG, "Confirm email cannot be blank.");
++        }
++        else if(form.getEmail() != null && !form.getEmail().equals(form.getEmailConfirm()))
++        {
++            errors.reject(ERROR_MSG, "Email addresses do not match.");
++        }
++    }
++
++    // On success returns null and clears the session attribute so the captcha cannot be replayed.
++    // On failure return a user-facing error message.
++    // Logging matches LoginController's RegisterUserAction.
++    private String verifyCaptcha(String submittedText, String emailForLogging)
++    {
++        var session = getViewContext().getRequest().getSession(true);
++        String expected = (String) session.getAttribute(LabKeyKaptchaServlet.SESSION_KEY_VALUE);
++        if (expected == null)
++        {
++            _log.info("Captcha not initialized for signup attempt");
++            return "Captcha not initialized, please retry.";
++        }
++        if (!expected.equalsIgnoreCase(StringUtils.trimToNull(submittedText)))
++        {
++            _log.warn("Captcha text did not match for signup attempt for {}", emailForLogging);
++            return "Verification text does not match, please retry.";
++        }
++        session.removeAttribute(LabKeyKaptchaServlet.SESSION_KEY_VALUE);
++        return null;
++    }
++
++    // Returns a parsed ValidEmail, or null if the address is invalid (errors populated).
++    // Uses EmailValidator first because ValidEmail's constructor does not throw on bare
++    // strings like "foo" - it silently appends the server's default domain.
++    private ValidEmail parseAndValidateEmail(SignupForm form, Errors errors)
++    {
++        EmailValidator validator = EmailValidator.getInstance();
++        if (!validator.isValid(form.getEmail()))
++        {
++            errors.reject(ERROR_MSG, "'" + form.getEmail() + "' is not a valid email address.");
++            return null;
++        }
++        try
++        {
++            return new ValidEmail(form.getEmail());
++        }
++        catch (ValidEmail.InvalidEmailException iee)
++        {
++            errors.reject(ERROR_MSG, iee.getMessage());
++            return null;
++        }
++    }
++
++    // Creates (or reuses) a TempUser row and sends the confirmation email in a single
++    // transaction. On send failure the transaction is rolled back so a freshly inserted
++    // TempUser row does not persist when the user never received a confirmation link.
++    private boolean createUserAndSendEmail(SignupForm form, ValidEmail email, Errors errors) throws java.sql.SQLException
++    {
++        try (DbScope.Transaction transaction = SignUpManager.getSchema().getScope().ensureTransaction())
++        {
++            TempUser tempUser = getTempUser(form, email);
++            ActionURL confirmationUrl = getConfirmationURL(getContainer(), email, tempUser.getKey());
++            try
++            {
++                User mockUser = new User();
++                mockUser.setEmail(email.getEmailAddress());
++                SecurityManager.sendEmail(getContainer(), mockUser,
++                        SecurityManager.getRegistrationMessage(null, false),
++                        email.getEmailAddress(), confirmationUrl);
++            }
++            catch (MessagingException | ConfigurationException e)
++            {
++                String systemEmail = LookAndFeelProperties.getInstance(getContainer()).getSystemEmailAddress();
++                errors.reject(ERROR_MSG, "Could not send new user registration email. Please contact your server administrator at " + systemEmail);
++                if (e.getMessage() != null)
++                {
++                    errors.reject(ERROR_MSG, e.getMessage());
++                }
++                return false;
++            }
++            transaction.commit();
++            return true;
++        }
++    }
++
++    private static List<String> errorsToMessages(Errors errors)
++    {
++        return errors.getAllErrors().stream()
++                .map(ObjectError::getDefaultMessage)
++                .toList();
+     }
+ 
+     public static ActionURL getConfirmationURL(Container c, ValidEmail email, String key)
+@@ -657,6 +737,7 @@ public static class SignupForm extends ReturnUrlForm
+         private String _lastName;
+         private String _organization;
+         private String _email;
++        private String _emailConfirm;
+         private boolean _accountExists;
+         private boolean _newSignUp = true;
+ 
+@@ -700,6 +781,16 @@ public void setEmail(String email)
+             _email = email;
+         }
+ 
++        public String getEmailConfirm()
++        {
++            return _emailConfirm;
++        }
++
++        public void setEmailConfirm(String emailConfirm)
++        {
++            _emailConfirm = emailConfirm;
++        }
++
+         public boolean isAccountExists()
+         {
+             return _accountExists;
+@@ -719,6 +810,18 @@ public void setNewSignUp(boolean newSignUp)
+         {
+             _newSignUp = newSignUp;
+         }
++
++        private String _kaptchaText;
++
++        public String getKaptchaText()
++        {
++            return _kaptchaText;
++        }
++
++        public void setKaptchaText(String kaptchaText)
++        {
++            _kaptchaText = kaptchaText;
++        }
+     }
+ 
+     @RequiresLogin
+@@ -778,52 +881,44 @@ public ApiResponse execute(SignupForm signupForm, BindException errors) throws E
+         {
+             ApiSimpleResponse response = new ApiSimpleResponse();
+ 
+-            ValidEmail email;
+-            try
+-            {
+-                email = new ValidEmail(signupForm.getEmail());
+-            }
+-            catch (ValidEmail.InvalidEmailException iee)
++            String kaptchaError = verifyCaptcha(signupForm.getKaptchaText(), signupForm.getEmail());
++            if (kaptchaError != null)
+             {
+-                errors.reject(ERROR_MSG, iee.getMessage());
++                response.put("status", "ERROR");
++                response.put("error_message", List.of(kaptchaError));
+                 return response;
+             }
+ 
+-            if(UserManager.userExists(email))
++            validateSignupForm(signupForm, errors);
++            if (errors.hasErrors())
+             {
+-                response.put("status", "USER_EXISTS");
++                response.put("status", "ERROR");
++                response.put("error_message", errorsToMessages(errors));
+                 return response;
+             }
+ 
+-            validateSignupForm(signupForm, errors);
+-            if(errors.hasErrors())
++            ValidEmail email = parseAndValidateEmail(signupForm, errors);
++            if (email == null)
+             {
++                response.put("status", "ERROR");
++                response.put("error_message", errorsToMessages(errors));
+                 return response;
+             }
+ 
+-            TempUser tempUser = getTempUser(signupForm, email);
+-
+-
+-            // Send email to the user.
+-            ActionURL confirmationUrl = getConfirmationURL(getContainer(), email, tempUser.getKey());
+-            try
++            if (UserManager.userExists(email))
+             {
+-                User mockUser = new User();
+-                mockUser.setEmail(email.getEmailAddress());
+-                SecurityManager.sendEmail(getContainer(), mockUser, SecurityManager.getRegistrationMessage(null, false), email.getEmailAddress(), confirmationUrl);
++                response.put("status", "USER_EXISTS");
++                return response;
+             }
+-            catch(Exception e)
++
++            if (!createUserAndSendEmail(signupForm, email, errors))
+             {
+-                String systemEmail = LookAndFeelProperties.getInstance(getContainer()).getSystemEmailAddress();
+-                List<String> messages = new ArrayList<>();
+-                messages.add("Could not send new user registration email.  Please contact your server administrator at " + systemEmail);
+-                messages.add(e.getMessage());
+-                response.put("error_message", messages);
++                response.put("status", "ERROR");
++                response.put("error_message", errorsToMessages(errors));
++                return response;
+             }
+ 
+-            signupForm.setNewSignUp(false); // TODO: Most likely not needed here
+             response.put("status", "USER_ADDED");
+-
+             return response;
+         }
+     }
+diff --git a/signup/src/org/labkey/signup/signupPage.jsp b/signup/src/org/labkey/signup/signupPage.jsp
+index 621c912f..91a71561 100644
+--- a/signup/src/org/labkey/signup/signupPage.jsp
++++ b/signup/src/org/labkey/signup/signupPage.jsp
+@@ -1,38 +1,37 @@
+-<%@ page import="org.labkey.api.view.ActionURL" %>
+ <%@ page import="org.labkey.api.view.HttpView" %>
+-<%@ page import="org.labkey.signup.SignUpController.BeginAction" %>
+ <%@ page import="org.labkey.signup.SignUpController.SignupForm" %>
+ <%@ page extends="org.labkey.api.jsp.JspBase" %>
+ <%@ taglib prefix="labkey" uri="http://www.labkey.org/taglib" %>
+ <%
+     SignupForm form = (SignupForm)HttpView.currentModel();
+-    ActionURL url = urlFor(BeginAction.class);
++    String contextPath = request.getContextPath();
+ %>
+ 
+-<!-- Display errors here -->
+ <labkey:errors/>
+ 
+-<form action="<%=h(url)%>" method=post>
+-    <labkey:csrf/>
+-    <table>
+-        <tr>
+-            <td class="labkey-form-label"><label for="firstName">First Name</label> *</td>
+-            <td nowrap><input size="20" type="text" id="firstName" name="firstName" value="<%=h(form.getFirstName())%>"/></td>
+-        </tr>
+-        <tr>
+-            <td class="labkey-form-label"><label for="lastName">Last Name</label> *</td>
+-            <td nowrap><input size="20" type="text" id="lastName" name="lastName" value="<%=h(form.getLastName())%>"/></td>
+-        </tr>
+-        <tr>
+-            <td class="labkey-form-label"><label for="organization">Organization</label> *</td>
+-            <td nowrap><input size="20" type="text" id="organization" name="organization" value="<%=h(form.getOrganization())%>"/></td>
+-        </tr>
+-        <tr>
+-            <td class="labkey-form-label"><label for="email">Email</label> *</td>
+-            <td nowrap><input size="20" type="text" id="email" name="email" value="<%=h(form.getEmail())%>"/></td>
+-        </tr>
+-        <tr>
+-            <td colspan="2"><labkey:button text="Submit" /></td>
+-        </tr>
+-    </table>
+-</form>
++<labkey:form method="post" layout="horizontal" autoComplete="off" style="max-width:600px;">
++    <labkey:input name="firstName" id="firstName" label="First Name" isRequired="true" size="50" value="<%=form.getFirstName()%>"/>
++    <labkey:input name="lastName" id="lastName" label="Last Name" isRequired="true" size="50" value="<%=form.getLastName()%>"/>
++    <labkey:input name="organization" id="organization" label="Organization" isRequired="true" size="50" value="<%=form.getOrganization()%>"/>
++    <labkey:input name="email" id="email" label="Email" isRequired="true" size="50" value="<%=form.getEmail()%>"/>
++    <labkey:input name="emailConfirm" id="emailConfirm" label="Confirm Email" isRequired="true" size="50" value="<%=form.getEmailConfirm()%>"/>
++
++    <%-- Verification: standalone full-width block --%>
++    <div style="margin-top:20px;"><strong>Verification</strong></div>
++    <p style="margin:8px 0 4px 0;">Please enter the characters shown below (case-insensitive).</p>
++    <p style="margin:0 0 8px 0;"><a id="kaptchaReload" href="#">Get a new image.</a></p>
++    <img id="kaptchaImg" src="<%=h(contextPath)%>/kaptcha.jpg" alt="Captcha" width="200" height="50" style="border: 1px solid #ccc; display:block; margin-bottom:6px;"/>
++    <input type="text" id="kaptchaText" name="kaptchaText" aria-label="Verification code" style="width:200px;"/>
++
++    <div style="margin-top:20px; clear:both;">
++        <button type="submit" class="btn btn-default labkey-button">Register</button>
++    </div>
++</labkey:form>
++
++<script type="text/javascript" nonce="<%=getScriptNonce()%>">
++    document.getElementById("kaptchaReload").addEventListener("click", function(e) {
++        e.preventDefault();
++        var img = document.getElementById("kaptchaImg");
++        img.src = img.src.split("?")[0] + "?ts=" + new Date().getTime();
++    });
++</script>

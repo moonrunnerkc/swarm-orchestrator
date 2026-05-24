@@ -1,0 +1,28 @@
+diff --git a/TODO.md b/TODO.md
+new file mode 100644
+index 00000000..366e61ee
+--- /dev/null
++++ b/TODO.md
+@@ -0,0 +1,22 @@
++# TODO
++
++## Add user SSH keys as agenix recipients on dev machines
++
++Add Étienne's personal SSH public keys (one per dev machine: aaron, tower, leod)
++as agenix recipients so secrets can be decrypted without sudo.
++
++**Context:** Currently only machine host keys are recipients in
++`secrets/secrets.nix`. Adding user keys is a standard agenix pattern — machine
++keys handle deployment, user keys handle dev/editing workflows. This also allows
++Claude Code agents to decrypt secrets without needing sudo.
++
++**Steps:**
++
++1. Collect `~/.ssh/id_ed25519.pub` from each dev machine (aaron, tower, leod)
++2. Add to `secrets/secrets.nix` as `softAaron` / `softTower` / `softLeod`,
++   grouped into `allSoftKeys`
++3. Add `allSoftKeys` to recipients of dev-facing secrets: `github-bot-token`,
++   `openai-api-key`, `gemini-api-key` — skip system secrets (wifi passwords,
++   `soft-password`, `tailscale-authkey`)
++4. Re-encrypt affected secrets with `agenix -r`
++5. Open a PR

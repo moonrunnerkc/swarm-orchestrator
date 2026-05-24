@@ -1,0 +1,443 @@
+diff --git a/codex-rs/Cargo.lock b/codex-rs/Cargo.lock
+index c13f25c84bac..b83d2e09bb54 100644
+--- a/codex-rs/Cargo.lock
++++ b/codex-rs/Cargo.lock
+@@ -4142,6 +4142,7 @@ dependencies = [
+  "serde_json",
+  "tempfile",
+  "tokio",
++ "tracing-appender",
+  "windows 0.58.0",
+  "windows-sys 0.52.0",
+ ]
+diff --git a/codex-rs/windows-sandbox-rs/Cargo.toml b/codex-rs/windows-sandbox-rs/Cargo.toml
+index 3b00b40ae845..53c81f0b03f7 100644
+--- a/codex-rs/windows-sandbox-rs/Cargo.toml
++++ b/codex-rs/windows-sandbox-rs/Cargo.toml
+@@ -37,6 +37,7 @@ serde = { version = "1.0", features = ["derive"] }
+ serde_json = "1.0"
+ tempfile = "3"
+ tokio = { workspace = true, features = ["sync", "rt"] }
++tracing-appender = { workspace = true }
+ windows = { version = "0.58", features = [
+     "Win32_Foundation",
+     "Win32_NetworkManagement_WindowsFirewall",
+diff --git a/codex-rs/windows-sandbox-rs/src/bin/setup_main/win.rs b/codex-rs/windows-sandbox-rs/src/bin/setup_main/win.rs
+index f0475bc39fdb..9b178fdca9d3 100644
+--- a/codex-rs/windows-sandbox-rs/src/bin/setup_main/win.rs
++++ b/codex-rs/windows-sandbox-rs/src/bin/setup_main/win.rs
+@@ -6,7 +6,6 @@ use anyhow::Result;
+ use base64::Engine;
+ use base64::engine::general_purpose::STANDARD as BASE64;
+ use codex_otel::StatsigMetricsSettings;
+-use codex_windows_sandbox::LOG_FILE_NAME;
+ use codex_windows_sandbox::SETUP_VERSION;
+ use codex_windows_sandbox::SetupErrorCode;
+ use codex_windows_sandbox::SetupErrorReport;
+@@ -21,6 +20,7 @@ use codex_windows_sandbox::hide_newly_created_users;
+ use codex_windows_sandbox::install_wfp_filters;
+ use codex_windows_sandbox::is_command_cwd_root;
+ use codex_windows_sandbox::log_note;
++use codex_windows_sandbox::log_writer;
+ use codex_windows_sandbox::path_mask_allows;
+ use codex_windows_sandbox::sandbox_bin_dir;
+ use codex_windows_sandbox::sandbox_dir;
+@@ -36,7 +36,6 @@ use serde::Serialize;
+ use std::collections::HashSet;
+ use std::ffi::OsStr;
+ use std::ffi::c_void;
+-use std::fs::File;
+ use std::io::Write;
+ use std::os::windows::process::CommandExt;
+ use std::path::Path;
+@@ -109,7 +108,7 @@ enum SetupMode {
+     ReadAclsOnly,
+ }
+ 
+-fn log_line(log: &mut File, msg: &str) -> Result<()> {
++fn log_line(log: &mut dyn Write, msg: &str) -> Result<()> {
+     let ts = chrono::Utc::now().to_rfc3339();
+     writeln!(log, "[{ts}] {msg}").map_err(|err| {
+         anyhow::Error::new(SetupFailure::new(
+@@ -156,7 +155,7 @@ fn workspace_write_cap_sids_for_path(
+     Ok(sid_strs)
+ }
+ 
+-fn spawn_read_acl_helper(payload: &Payload, _log: &mut File) -> Result<()> {
++fn spawn_read_acl_helper(payload: &Payload, _log: &mut dyn Write) -> Result<()> {
+     let mut read_payload = payload.clone();
+     read_payload.mode = SetupMode::ReadAclsOnly;
+     read_payload.refresh_only = true;
+@@ -182,7 +181,7 @@ struct ReadAclSubjects<'a> {
+ fn apply_read_acls(
+     read_roots: &[PathBuf],
+     subjects: &ReadAclSubjects<'_>,
+-    log: &mut File,
++    log: &mut dyn Write,
+     refresh_errors: &mut Vec<String>,
+     access_mask: u32,
+     access_label: &str,
+@@ -259,7 +258,7 @@ fn read_mask_allows_or_log(
+     read_mask: u32,
+     access_label: &str,
+     refresh_errors: &mut Vec<String>,
+-    log: &mut File,
++    log: &mut dyn Write,
+ ) -> Result<bool> {
+     match path_mask_allows(root, psids, read_mask, /*require_all_bits*/ true) {
+         Ok(has) => Ok(has),
+@@ -294,7 +293,7 @@ fn lock_sandbox_dir(
+     sandbox_group_access_mode: i32,
+     sandbox_group_mask: u32,
+     real_user_mask: u32,
+-    _log: &mut File,
++    _log: &mut dyn Write,
+ ) -> Result<()> {
+     std::fs::create_dir_all(dir)?;
+     let system_sid = resolve_sid("SYSTEM")?;
+@@ -391,8 +390,7 @@ pub fn main() -> Result<()> {
+         if let Ok(codex_home) = std::env::var("CODEX_HOME") {
+             let sbx_dir = sandbox_dir(Path::new(&codex_home));
+             let _ = std::fs::create_dir_all(&sbx_dir);
+-            let log_path = sbx_dir.join(LOG_FILE_NAME);
+-            if let Ok(mut f) = File::options().create(true).append(true).open(&log_path) {
++            if let Some(mut f) = log_writer(&sbx_dir) {
+                 let _ = writeln!(
+                     f,
+                     "[{}] top-level error: {}",
+@@ -442,17 +440,12 @@ fn real_main() -> Result<()> {
+             format!("failed to create sandbox dir {}: {err}", sbx_dir.display()),
+         ))
+     })?;
+-    let log_path = sbx_dir.join(LOG_FILE_NAME);
+-    let mut log = File::options()
+-        .create(true)
+-        .append(true)
+-        .open(&log_path)
+-        .map_err(|err| {
+-            anyhow::Error::new(SetupFailure::new(
+-                SetupErrorCode::HelperLogFailed,
+-                format!("open log {} failed: {err}", log_path.display()),
+-            ))
+-        })?;
++    let mut log = log_writer(&sbx_dir).ok_or_else(|| {
++        anyhow::Error::new(SetupFailure::new(
++            SetupErrorCode::HelperLogFailed,
++            format!("open log in {} failed", sbx_dir.display()),
++        ))
++    })?;
+     let result = run_setup(&payload, &mut log, &sbx_dir);
+     if let Err(err) = &result {
+         let _ = log_line(&mut log, &format!("setup error: {err:?}"));
+@@ -480,14 +473,14 @@ fn real_main() -> Result<()> {
+     result
+ }
+ 
+-fn run_setup(payload: &Payload, log: &mut File, sbx_dir: &Path) -> Result<()> {
++fn run_setup(payload: &Payload, log: &mut dyn Write, sbx_dir: &Path) -> Result<()> {
+     match payload.mode {
+         SetupMode::ReadAclsOnly => run_read_acl_only(payload, log),
+         SetupMode::Full => run_setup_full(payload, log, sbx_dir),
+     }
+ }
+ 
+-fn run_read_acl_only(payload: &Payload, log: &mut File) -> Result<()> {
++fn run_read_acl_only(payload: &Payload, log: &mut dyn Write) -> Result<()> {
+     let _read_acl_guard = match acquire_read_acl_mutex()? {
+         Some(guard) => guard,
+         None => {
+@@ -550,7 +543,7 @@ fn run_read_acl_only(payload: &Payload, log: &mut File) -> Result<()> {
+     Ok(())
+ }
+ 
+-fn run_setup_full(payload: &Payload, log: &mut File, sbx_dir: &Path) -> Result<()> {
++fn run_setup_full(payload: &Payload, log: &mut dyn Write, sbx_dir: &Path) -> Result<()> {
+     let refresh_only = payload.refresh_only;
+     if !refresh_only {
+         let provision_result = provision_sandbox_users(
+diff --git a/codex-rs/windows-sandbox-rs/src/bin/setup_main/win/firewall.rs b/codex-rs/windows-sandbox-rs/src/bin/setup_main/win/firewall.rs
+index 0a839508536d..bf2476dd123c 100644
+--- a/codex-rs/windows-sandbox-rs/src/bin/setup_main/win/firewall.rs
++++ b/codex-rs/windows-sandbox-rs/src/bin/setup_main/win/firewall.rs
+@@ -1,5 +1,4 @@
+ use anyhow::Result;
+-use std::fs::File;
+ use std::io::Write;
+ 
+ use windows::Win32::Foundation::S_OK;
+@@ -57,7 +56,7 @@ pub fn ensure_offline_proxy_allowlist(
+     offline_sid: &str,
+     proxy_ports: &[u16],
+     allow_local_binding: bool,
+-    log: &mut File,
++    log: &mut dyn Write,
+ ) -> Result<()> {
+     let local_user_spec = format!("O:LSD:(A;;CC;;;{offline_sid})");
+ 
+@@ -154,7 +153,7 @@ pub fn ensure_offline_proxy_allowlist(
+     result
+ }
+ 
+-pub fn ensure_offline_outbound_block(offline_sid: &str, log: &mut File) -> Result<()> {
++pub fn ensure_offline_outbound_block(offline_sid: &str, log: &mut dyn Write) -> Result<()> {
+     let local_user_spec = format!("O:LSD:(A;;CC;;;{offline_sid})");
+ 
+     let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+@@ -206,7 +205,11 @@ pub fn ensure_offline_outbound_block(offline_sid: &str, log: &mut File) -> Resul
+     result
+ }
+ 
+-fn remove_rule_if_present(rules: &INetFwRules, internal_name: &str, log: &mut File) -> Result<()> {
++fn remove_rule_if_present(
++    rules: &INetFwRules,
++    internal_name: &str,
++    log: &mut dyn Write,
++) -> Result<()> {
+     let name = BSTR::from(internal_name);
+     if unsafe { rules.Item(&name) }.is_ok() {
+         unsafe { rules.Remove(&name) }.map_err(|err| {
+@@ -266,7 +269,11 @@ fn validate_local_policy_modify_result(
+     )))
+ }
+ 
+-fn ensure_block_rule(rules: &INetFwRules, spec: &BlockRuleSpec<'_>, log: &mut File) -> Result<()> {
++fn ensure_block_rule(
++    rules: &INetFwRules,
++    spec: &BlockRuleSpec<'_>,
++    log: &mut dyn Write,
++) -> Result<()> {
+     let name = BSTR::from(spec.internal_name);
+     let rule: INetFwRule3 = match unsafe { rules.Item(&name) } {
+         Ok(existing) => existing.cast().map_err(|err| {
+@@ -453,7 +460,7 @@ fn port_range_string(start: u32, end: u32) -> String {
+     }
+ }
+ 
+-fn log_line(log: &mut File, msg: &str) -> Result<()> {
++fn log_line(log: &mut dyn Write, msg: &str) -> Result<()> {
+     let ts = chrono::Utc::now().to_rfc3339();
+     writeln!(log, "[{ts}] {msg}")?;
+     Ok(())
+diff --git a/codex-rs/windows-sandbox-rs/src/bin/setup_main/win/sandbox_users.rs b/codex-rs/windows-sandbox-rs/src/bin/setup_main/win/sandbox_users.rs
+index de76b2413b36..7f21f185ee14 100644
+--- a/codex-rs/windows-sandbox-rs/src/bin/setup_main/win/sandbox_users.rs
++++ b/codex-rs/windows-sandbox-rs/src/bin/setup_main/win/sandbox_users.rs
+@@ -7,7 +7,7 @@ use rand::rngs::SmallRng;
+ use serde::Serialize;
+ use std::ffi::OsStr;
+ use std::ffi::c_void;
+-use std::fs::File;
++use std::io::Write;
+ use std::path::Path;
+ use std::path::PathBuf;
+ use windows_sys::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER;
+@@ -49,7 +49,7 @@ const SID_AUTHENTICATED_USERS: &str = "S-1-5-11";
+ const SID_EVERYONE: &str = "S-1-1-0";
+ const SID_SYSTEM: &str = "S-1-5-18";
+ 
+-pub fn ensure_sandbox_users_group(log: &mut File) -> Result<()> {
++pub fn ensure_sandbox_users_group(log: &mut dyn Write) -> Result<()> {
+     ensure_local_group(SANDBOX_USERS_GROUP, SANDBOX_USERS_GROUP_COMMENT, log)
+ }
+ 
+@@ -63,7 +63,7 @@ pub fn provision_sandbox_users(
+     online_username: &str,
+     proxy_ports: &[u16],
+     allow_local_binding: bool,
+-    log: &mut File,
++    log: &mut dyn Write,
+ ) -> Result<()> {
+     ensure_sandbox_users_group(log)?;
+     super::log_line(
+@@ -86,13 +86,13 @@ pub fn provision_sandbox_users(
+     Ok(())
+ }
+ 
+-pub fn ensure_sandbox_user(username: &str, password: &str, log: &mut File) -> Result<()> {
++pub fn ensure_sandbox_user(username: &str, password: &str, log: &mut dyn Write) -> Result<()> {
+     ensure_local_user(username, password, log)?;
+     ensure_local_group_member(SANDBOX_USERS_GROUP, username)?;
+     Ok(())
+ }
+ 
+-pub fn ensure_local_user(name: &str, password: &str, log: &mut File) -> Result<()> {
++pub fn ensure_local_user(name: &str, password: &str, log: &mut dyn Write) -> Result<()> {
+     let name_w = to_wide(OsStr::new(name));
+     let pwd_w = to_wide(OsStr::new(password));
+     unsafe {
+@@ -156,7 +156,7 @@ pub fn ensure_local_user(name: &str, password: &str, log: &mut File) -> Result<(
+     Ok(())
+ }
+ 
+-pub fn ensure_local_group(name: &str, comment: &str, log: &mut File) -> Result<()> {
++pub fn ensure_local_group(name: &str, comment: &str, log: &mut dyn Write) -> Result<()> {
+     const ERROR_ALIAS_EXISTS: u32 = 1379;
+     const NERR_GROUP_EXISTS: u32 = 2223;
+ 
+diff --git a/codex-rs/windows-sandbox-rs/src/bin/setup_main/win/setup_runtime_bin.rs b/codex-rs/windows-sandbox-rs/src/bin/setup_main/win/setup_runtime_bin.rs
+index be8b0c67e784..47cacf72e0cf 100644
+--- a/codex-rs/windows-sandbox-rs/src/bin/setup_main/win/setup_runtime_bin.rs
++++ b/codex-rs/windows-sandbox-rs/src/bin/setup_main/win/setup_runtime_bin.rs
+@@ -1,5 +1,5 @@
+ use std::ffi::c_void;
+-use std::fs::File;
++use std::io::Write;
+ use std::path::PathBuf;
+ 
+ use anyhow::Result;
+@@ -13,7 +13,7 @@ use windows_sys::Win32::Storage::FileSystem::FILE_GENERIC_READ;
+ pub(super) fn ensure_codex_app_runtime_bin_readable(
+     sandbox_group_psid: *mut c_void,
+     refresh_errors: &mut Vec<String>,
+-    log: &mut File,
++    log: &mut dyn Write,
+ ) -> Result<()> {
+     let local_app_data = std::env::var_os("LOCALAPPDATA")
+         .map(PathBuf::from)
+diff --git a/codex-rs/windows-sandbox-rs/src/lib.rs b/codex-rs/windows-sandbox-rs/src/lib.rs
+index 43b3f7195528..ca9d6c16f301 100644
+--- a/codex-rs/windows-sandbox-rs/src/lib.rs
++++ b/codex-rs/windows-sandbox-rs/src/lib.rs
+@@ -183,10 +183,14 @@ pub use ipc_framed::read_frame;
+ #[cfg(target_os = "windows")]
+ pub use ipc_framed::write_frame;
+ #[cfg(target_os = "windows")]
+-pub use logging::LOG_FILE_NAME;
++pub use logging::current_log_file_path;
++#[cfg(target_os = "windows")]
++pub use logging::log_file_path_for_utc_date;
+ #[cfg(target_os = "windows")]
+ pub use logging::log_note;
+ #[cfg(target_os = "windows")]
++pub use logging::log_writer;
++#[cfg(target_os = "windows")]
+ pub use path_normalization::canonicalize_path;
+ #[cfg(target_os = "windows")]
+ pub use policy::SandboxPolicy;
+diff --git a/codex-rs/windows-sandbox-rs/src/logging.rs b/codex-rs/windows-sandbox-rs/src/logging.rs
+index 1c0d695f3244..f5e839970995 100644
+--- a/codex-rs/windows-sandbox-rs/src/logging.rs
++++ b/codex-rs/windows-sandbox-rs/src/logging.rs
+@@ -1,13 +1,16 @@
+-use std::fs::OpenOptions;
+ use std::io::Write;
+ use std::path::Path;
+ use std::path::PathBuf;
+ use std::sync::OnceLock;
+ 
+ use codex_utils_string::take_bytes_at_char_boundary;
++use tracing_appender::rolling::RollingFileAppender;
++use tracing_appender::rolling::Rotation;
+ 
+ const LOG_COMMAND_PREVIEW_LIMIT: usize = 200;
+-pub const LOG_FILE_NAME: &str = "sandbox.log";
++pub const LOG_FILE_PREFIX: &str = "sandbox";
++pub const LOG_FILE_SUFFIX: &str = "log";
++pub const MAX_LOG_FILES: usize = 90;
+ 
+ fn exe_label() -> &'static str {
+     static LABEL: OnceLock<String> = OnceLock::new();
+@@ -28,18 +31,35 @@ fn preview(command: &[String]) -> String {
+     }
+ }
+ 
+-fn log_file_path(base_dir: &Path) -> Option<PathBuf> {
+-    if base_dir.is_dir() {
+-        Some(base_dir.join(LOG_FILE_NAME))
+-    } else {
+-        None
++pub fn log_file_path_for_utc_date(base_dir: &Path, date: chrono::NaiveDate) -> PathBuf {
++    base_dir.join(format!(
++        "{LOG_FILE_PREFIX}.{}.{}",
++        date.format("%Y-%m-%d"),
++        LOG_FILE_SUFFIX
++    ))
++}
++
++pub fn current_log_file_path(base_dir: &Path) -> PathBuf {
++    log_file_path_for_utc_date(base_dir, chrono::Utc::now().date_naive())
++}
++
++pub fn log_writer(base_dir: &Path) -> Option<RollingFileAppender> {
++    if !base_dir.is_dir() {
++        return None;
+     }
++
++    RollingFileAppender::builder()
++        .rotation(Rotation::DAILY)
++        .filename_prefix(LOG_FILE_PREFIX)
++        .filename_suffix(LOG_FILE_SUFFIX)
++        .max_log_files(MAX_LOG_FILES)
++        .build(base_dir)
++        .ok()
+ }
+ 
+ fn append_line(line: &str, base_dir: Option<&Path>) {
+     if let Some(dir) = base_dir
+-        && let Some(path) = log_file_path(dir)
+-        && let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path)
++        && let Some(mut f) = log_writer(dir)
+     {
+         let _ = writeln!(f, "{line}");
+     }
+@@ -68,7 +88,7 @@ pub fn debug_log(msg: &str, base_dir: Option<&Path>) {
+     }
+ }
+ 
+-// Unconditional note logging to sandbox.log
++// Unconditional note logging to the daily sandbox log.
+ pub fn log_note(msg: &str, base_dir: Option<&Path>) {
+     let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+     append_line(&format!("[{ts} {}] {}", exe_label(), msg), base_dir);
+@@ -88,4 +108,38 @@ mod tests {
+         let previewed = result.unwrap();
+         assert!(previewed.len() <= LOG_COMMAND_PREVIEW_LIMIT);
+     }
++
++    #[test]
++    fn log_note_writes_to_daily_rolling_log() {
++        let tempdir = tempfile::tempdir().expect("tempdir");
++
++        log_note("hello daily log", Some(tempdir.path()));
++
++        let entries = std::fs::read_dir(tempdir.path())
++            .expect("read log dir")
++            .collect::<Result<Vec<_>, _>>()
++            .expect("read entries");
++        assert_eq!(entries.len(), 1);
++
++        let log_path = entries[0].path();
++        let filename = log_path
++            .file_name()
++            .and_then(|name| name.to_str())
++            .expect("utf-8 filename");
++        assert!(filename.starts_with("sandbox."));
++        assert!(filename.ends_with(".log"));
++
++        let log = std::fs::read_to_string(log_path).expect("read log");
++        assert!(log.contains("hello daily log"));
++    }
++
++    #[test]
++    fn log_file_path_for_utc_date_matches_rolling_appender_name() {
++        let date = chrono::NaiveDate::from_ymd_opt(2026, 5, 21).expect("valid date");
++
++        assert_eq!(
++            log_file_path_for_utc_date(Path::new("logs"), date),
++            PathBuf::from("logs").join("sandbox.2026-05-21.log")
++        );
++    }
+ }
+diff --git a/codex-rs/windows-sandbox-rs/src/unified_exec/tests.rs b/codex-rs/windows-sandbox-rs/src/unified_exec/tests.rs
+index 9cd3d6d96d2f..e2830ad8a1c7 100644
+--- a/codex-rs/windows-sandbox-rs/src/unified_exec/tests.rs
++++ b/codex-rs/windows-sandbox-rs/src/unified_exec/tests.rs
+@@ -70,7 +70,7 @@ fn sandbox_home(name: &str) -> TempDir {
+ }
+ 
+ fn sandbox_log(codex_home: &Path) -> String {
+-    let log_path = codex_home.join(".sandbox").join("sandbox.log");
++    let log_path = crate::current_log_file_path(&codex_home.join(".sandbox"));
+     fs::read_to_string(&log_path)
+         .unwrap_or_else(|err| format!("failed to read {}: {err}", log_path.display()))
+ }

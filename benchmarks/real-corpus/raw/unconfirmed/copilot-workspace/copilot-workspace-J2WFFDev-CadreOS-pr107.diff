@@ -1,0 +1,229 @@
+diff --git a/planning/PHASE_14A_MOBILE_RAPID_CAPTURE_ARCHITECTURE_BOUNDARIES.md b/planning/PHASE_14A_MOBILE_RAPID_CAPTURE_ARCHITECTURE_BOUNDARIES.md
+new file mode 100644
+index 0000000..67cb82b
+--- /dev/null
++++ b/planning/PHASE_14A_MOBILE_RAPID_CAPTURE_ARCHITECTURE_BOUNDARIES.md
+@@ -0,0 +1,202 @@
++# Phase 14A — Mobile & Rapid Capture Architecture Boundaries
++
++## Goal
++
++Define Mobile & Rapid Capture architecture boundaries before implementing aggressive mobile UX optimization, offline behavior, or rapid operational capture runtime systems.
++
++This phase is architecture/review focused only: no offline sync/runtime behavior, no push notifications, no mobile-native packaging/runtime behavior, no aggressive Feed/Inbox mobile experiences, and no guardian-facing mobile workflows are introduced.
++
++## Scope Guardrails (enforced)
++
++- Do not implement offline sync/runtime behavior.
++- Do not implement push notifications.
++- Do not implement mobile-native packaging/runtime behavior.
++- Do not implement aggressive Feed/Inbox mobile experiences.
++- Do not implement guardian-facing mobile workflows.
++- Keep this phase architecture/review focused.
++- Preserve organization scoping and authorization behavior.
++- Do not introduce new major dependencies.
++
++## Reviewed Runtime Baseline (Arcs 8–13)
++
++### Operational and intelligence-awareness work reviewed
++
++- Arc 8 workflow continuity/review usability (`PHASE_8F`, `PHASE_8H`, `PHASE_8N`) established human-driven operational review flows and continuity links across events, attendance, notes, and tasks.
++- Arc 9/10 authorization and Entry wrapper work kept `ObservationNote`/`FollowUpTask` authoritative, with additive read-only `EntryRuntimeRef` traceability.
++- Arc 11 friction/stability work (`PHASE_11B`, `PHASE_11C`) tightened attendance validation and pilot-safe workflow continuity.
++- Arc 12 communication-awareness work (`PHASE_12A`–`PHASE_12E`) separated awareness metadata from messaging/delivery and deferred Inbox/Feed runtime behavior.
++- Arc 13 intelligence-awareness work (`PHASE_13A`–`PHASE_13E`) added deterministic read-only staff awareness layers while keeping AI/recommendation/automation/Feed/Inbox deferred.
++
++### Current operational capture and review patterns
++
++| Workflow area | Current implemented pattern | Mobile/rapid-capture friction signals |
++|---|---|---|
++| Attendance capture | Event detail attendance workflow posts to `/events/[eventId]/attendance`; roster-season validation and explicit error redirects preserve correctness. | Capture is event-detail anchored and form-heavy; repeated person/status entry and validation round-trips can slow sideline use. |
++| Observation capture | `/notes/new` + `/notes/create` supports optional person/team/event linkage with staff-only gating and org validation. | Multi-field context selection and redirect-based error handling increase taps and context switching on small screens. |
++| Follow-up creation | `/tasks/new` + `/tasks/create` links assignee, source note/event, due date, visibility-safe linkage checks. | Task creation requires multiple selections and optional context reconciliation, increasing mobile completion friction. |
++| Operational review workflows | `/dashboard` aggregates scoped readiness/review cues, history, and links into existing event/note/task/team workflows. | Fast scan/act loops depend on navigation across several pages; mobile flow compression is not yet optimized. |
++| Event workflows | `/events/new`, `/events/[eventId]`, RSVP/attendance links, note/task continuity links preserve event-centered operations. | Event detail is information-dense; action controls are present but not tuned yet for rapid one-handed operational capture. |
++| FieldOps workflows | `/field-ops/bookings/new`, create precheck route, and approval decision route preserve scoped validation and explicit approval policy checks. | Booking request capture has many optional context fields and validation dependencies that can be slow on mobile. |
++
++## Mobile & Rapid Capture Concepts (Architecture)
++
++### Rapid operational capture
++
++Rapid capture means reducing interaction cost for existing authoritative workflows (attendance, note, task, booking decision/capture) without changing authority models, authorization boundaries, or introducing asynchronous/offline write engines.
++
++### Mobile workflow priorities
++
++1. Preserve in-context capture from current operational surfaces (event, dashboard, tasks, notes, FieldOps).
++2. Reduce tap count and context re-entry for high-frequency actions.
++3. Keep operator intent explicit before any state-changing write.
++4. Keep all capture paths staff-scoped and organization-scoped.
++
++### Reduced-click workflow design goals
++
++- Promote context-prefilled flows from existing links/query params.
++- Minimize field duplication when event/team/person context is already known.
++- Keep validation feedback immediate and explicit without weakening existing guardrails.
++
++### Operational context preservation
++
++- Event-linked, team-linked, and note/task relationship context must remain visible at capture time.
++- Capture acceleration must not hide source context or relationship constraints that prevent ambiguous writes.
++
++### Low-friction data entry
++
++- Favor compact, deterministic capture surfaces for current staff workflows.
++- Prioritize ergonomics for short, high-frequency entries (attendance status, note summaries, task follow-ups, booking request metadata).
++
++### Operational speed considerations
++
++- Prioritize speed for current read→decide→capture loops on dashboard/event/task/note/FieldOps surfaces.
++- Keep speed optimizations strictly within existing runtime authority and authorization checks.
++
++### Offline/runtime considerations (deferred architecture boundary)
++
++- Mobile optimization work may define offline risk handling expectations but must not implement offline write queues, sync engines, conflict resolvers, or stale-cache authority behavior in this phase.
++
++## Boundary Definitions (Must Remain Separate)
++
++### 1) Mobile optimization vs offline runtime
++
++- **Mobile optimization:** responsive UX/layout and interaction-cost reduction for online, server-authoritative workflows.
++- **Offline runtime:** local persistence, deferred writes, sync/conflict resolution, stale-state reconciliation.
++- Phase 14A allows only architecture definition for offline concerns, not implementation.
++
++### 2) Rapid capture vs Feed/Inbox
++
++- **Rapid capture:** direct completion of existing workflow actions (attendance/note/task/booking) with lower interaction cost.
++- **Feed/Inbox:** stream/triage runtime models with separate routing and ownership semantics.
++- Phase 14A rapid capture must not evolve into Feed/Inbox runtime behavior.
++
++### 3) Operational awareness vs messaging
++
++- **Operational awareness:** read-only staff visibility derived from authorized operational data.
++- **Messaging/notifications:** delivery systems, recipient targeting, dispatch, acknowledgment, and channel runtime.
++- Mobile awareness improvements must not introduce messaging/notification runtime behavior.
++
++### 4) Mobile workflow acceleration vs automation
++
++- **Acceleration:** faster staff-driven actions with explicit user intent.
++- **Automation:** system-triggered writes, escalations, or autonomous workflow execution.
++- Phase 14A allows acceleration only; automation remains deferred.
++
++## Mobile/Capture Risk Areas
++
++1. **Accidental operational actions**  
++   Faster mobile controls can increase mistaken submissions if confirmation/context cues are weak.
++
++2. **Incomplete capture**  
++   Reduced-friction forms may encourage partial submissions that miss required operational context.
++
++3. **Authorization leakage on mobile surfaces**  
++   Mobile-specific summaries or shortcuts can leak out-of-scope data if staff/org checks are bypassed.
++
++4. **Operational ambiguity**  
++   Compressed interfaces can hide event/team/source-link context and cause incorrect note/task/attendance linkage.
++
++5. **Stale/offline data concerns**  
++   Mobile users in unstable connectivity contexts may act on stale state unless runtime boundaries stay server-authoritative.
++
++## Do Not Implement Yet
++
++- Full offline sync.
++- Push notifications.
++- Native mobile apps.
++- Guardian-facing mobile runtime.
++- Mobile Feed/Inbox systems.
++
++## Safe First Mobile Slice (Recommendation)
++
++Start with a **staff-only mobile web capture acceleration slice** on existing pages:
++
++- attendance quick-capture ergonomics within event workflows,
++- note/task rapid-capture entry improvements with context prefill from existing links,
++- dashboard-to-capture navigation compression for unresolved operational items,
++- FieldOps request/decision form ergonomics for active staff workflows.
++
++Safety boundaries for this slice:
++
++- no new authority models,
++- no offline write behavior,
++- no messaging/push,
++- no Feed/Inbox runtime semantics,
++- no guardian-facing mobile runtime surfaces.
++
++## Blocking Before Offline/Mobile Runtime Checklist
++
++- [ ] Define explicit stale-state UX contract (what users see when mobile data age is unknown).
++- [ ] Define authoritative-write policy for intermittent connectivity (what is blocked vs deferred).
++- [ ] Define conflict-resolution policy for concurrent edits and delayed submissions.
++- [ ] Define mobile-specific authorization verification points for every capture surface.
++- [ ] Define audit requirements for mobile-originated operational actions.
++- [ ] Define failure/retry semantics for mobile submission errors without silent data loss.
++- [ ] Complete cross-role/cross-scope validation matrix for mobile surfaces.
++- [ ] Confirm guardian-facing mobile runtime policy and consent boundaries before any exposure.
++- [ ] Confirm Feed/Inbox runtime dependencies remain blocked.
++- [ ] Confirm push/notification delivery architecture is separately gated and approved.
++
++## Validation and Compliance Confirmation
++
++- Architecture review reflects current implemented runtime/auth behavior across:
++  - `getOrganizationScope()` organization boundary enforcement,
++  - staff-only/scoped operational surface gating,
++  - existing event/attendance/note/task/FieldOps create/update route validations.
++- No runtime offline/mobile-native behavior was added.
++- No Feed/Inbox runtime behavior was added.
++- No messaging/notification behavior was added.
++- Runtime code was not changed in this phase; additional typecheck/build reruns after documentation edits were not required.
++
++## Source References
++
++- `planning/PHASE_8F_OPERATIONAL_WORKFLOW_CONTINUITY.md`
++- `planning/PHASE_8H_OPERATIONAL_REVIEW_CADENCE_WORKFLOWS.md`
++- `planning/PHASE_8N_OPERATIONAL_SUMMARY_REVIEW_USABILITY.md`
++- `planning/PHASE_11B_OPERATIONAL_WORKFLOW_FRICTION_STABILITY_REMEDIATION.md`
++- `planning/PHASE_11C_PILOT_STABILITY_CLOSEOUT_OPERATIONAL_READINESS_REVIEW.md`
++- `planning/PHASE_12A_COMMUNICATION_COORDINATION_ARCHITECTURE_BOUNDARIES.md`
++- `planning/PHASE_12E_COMMUNICATION_AWARENESS_STABILIZATION_CLOSEOUT.md`
++- `planning/PHASE_13A_OPERATIONAL_INTELLIGENCE_ARCHITECTURE_REVIEW.md`
++- `planning/PHASE_13E_OPERATIONAL_INTELLIGENCE_STABILIZATION_CLOSEOUT.md`
++- `app/(dashboard)/dashboard/page.tsx`
++- `app/(dashboard)/events/[eventId]/page.tsx`
++- `app/(dashboard)/events/[eventId]/attendance/route.ts`
++- `app/(dashboard)/events/create/route.ts`
++- `app/(dashboard)/notes/new/page.tsx`
++- `app/(dashboard)/notes/create/route.ts`
++- `app/(dashboard)/tasks/new/page.tsx`
++- `app/(dashboard)/tasks/create/route.ts`
++- `app/(dashboard)/field-ops/bookings/new/page.tsx`
++- `app/(dashboard)/field-ops/bookings/create/route.ts`
++- `app/(dashboard)/field-ops/bookings/[bookingId]/decision/route.ts`
++- `lib/organization-context.ts`
++- `lib/authorization/index.ts`
++
++## Phase 14A output summary
++
++Phase 14A defines Mobile & Rapid Capture architecture boundaries before runtime mobile/offline expansion. The review confirms current staff-scoped, organization-scoped operational workflows and intelligence-awareness layers remain authoritative and read-only where expected, identifies rapid-capture friction points across attendance/notes/tasks/events/FieldOps/review workflows, separates mobile optimization from offline runtime and messaging/feed/automation concerns, documents core mobile/capture risks, establishes a strict “Do Not Implement Yet” scope, recommends a safe first mobile web capture slice, and provides a blocking checklist that must be completed before offline/mobile runtime work.
++
++## PR Summary
++
++This phase delivers documentation-only Mobile & Rapid Capture architecture boundaries for CadreOS. It reviews Arc 8–13 operational and awareness outputs, maps current capture friction across attendance, notes, tasks, events, operational review, and FieldOps workflows, and defines strict boundary separations (mobile vs offline, rapid capture vs Feed/Inbox, awareness vs messaging, acceleration vs automation). It records mobile/capture risk areas, adds a “Do Not Implement Yet” section, recommends a safe first staff-only mobile web capture slice, and adds a blocking checklist before any offline/mobile runtime implementation. No runtime behavior was introduced.
+diff --git a/planning/README.md b/planning/README.md
+index b62fc92..48af96c 100644
+--- a/planning/README.md
++++ b/planning/README.md
+@@ -120,6 +120,7 @@ CadreOS is an **Athlete Program Operating System**.
+ - [Phase 13D Validation Checklist](./PHASE_13D_VALIDATION_CHECKLIST.md)
+ - [Phase 13E Operational Intelligence Stabilization and Arc Closeout](./PHASE_13E_OPERATIONAL_INTELLIGENCE_STABILIZATION_CLOSEOUT.md)
+ - [Phase 13E Validation Checklist](./PHASE_13E_VALIDATION_CHECKLIST.md)
++- [Phase 14A Mobile & Rapid Capture Architecture Boundaries](./PHASE_14A_MOBILE_RAPID_CAPTURE_ARCHITECTURE_BOUNDARIES.md)
+ - [**MVP Stability Checklist**](./MVP_STABILITY_CHECKLIST.md)
+ - [Module Roadmap: FieldOps and GearOps](./MODULE_ROADMAP_FIELDOPS_GEAROPS.md)
+ - [Build Readiness Review](./BUILD_READINESS_REVIEW.md)
+@@ -283,6 +284,8 @@ CadreOS is an **Athlete Program Operating System**.
+   - Summary: closes Arc 13 with a consolidated Operational Intelligence scope verification across summary classification, readiness metadata, and awareness visibility; documents what remains intentionally non-AI/non-recommendation/non-automation; adds a "Do Not Build Yet" list, Arc 14 Mobile/Capture boundary recommendations, and production risk tracking.
+ - [Phase 13E Validation Checklist](./PHASE_13E_VALIDATION_CHECKLIST.md)
+   - Summary: validates awareness visibility, readiness metadata behavior, summary classification behavior, authorization boundaries, organization scoping, and explicit no-AI/no-recommendation/no-automation/no-guardian-intelligence/no-Feed/Inbox runtime confirmations for Arc 13 closeout.
++- [Phase 14A Mobile & Rapid Capture Architecture Boundaries](./PHASE_14A_MOBILE_RAPID_CAPTURE_ARCHITECTURE_BOUNDARIES.md)
++  - Summary: defines Mobile & Rapid Capture architecture boundaries before runtime offline/mobile-native expansion; reviews Arc 8–13 workflows and current capture friction (attendance, notes, follow-ups, operational review, events, FieldOps), separates mobile optimization from offline runtime and Feed/Inbox/messaging/automation concerns, documents mobile/capture risk areas, adds a “Do Not Implement Yet” list, recommends a safe-first staff mobile web capture slice, and provides a blocking checklist before offline/mobile runtime behavior.
+ 
+ ---
+ 

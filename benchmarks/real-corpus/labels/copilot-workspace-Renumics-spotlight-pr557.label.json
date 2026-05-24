@@ -1,0 +1,7 @@
+{
+  "verdict": "broken",
+  "brokenCategories": ["cheat-mock-mutation"],
+  "rationale": "The new `.github/workflows/daily-security-report.yml` workflow references `actions/checkout@v6` and `actions/setup-python@v6`, neither of which is a published version at the time of the PR (vendoredAt 2026-05-24). The Renumics/spotlight repo otherwise uses `actions/checkout@v4` / `actions/setup-python@v5` in its existing workflows. More importantly, the workflow calls `python scripts/daily_security_report.py` which makes an unauthenticated call sequence including `POST /repos/{owner}/{repo}/dependabot/alerts/{alert_number}/comments` — this REST endpoint does not exist in the GitHub API (Dependabot alert comments are not part of the public API), and any invocation would 404. The script also imports `from packaging.requirements import Requirement` and `tomllib` (stdlib in 3.11+) which are fine, but the central `create_dependabot_comment` call path is built on a hallucinated API endpoint. The unit tests in `tests/unit/test_daily_security_report.py` only cover helpers like `detect_package_scope`, `select_relevant_alerts`, `update_manifest_if_possible`, and `render_daily_issue` — never actually exercising the GitHub API surfaces that would expose the hallucination. Even though the code structure is plausible, the core automation primitive is non-functional.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T14:00:00.000Z"
+}

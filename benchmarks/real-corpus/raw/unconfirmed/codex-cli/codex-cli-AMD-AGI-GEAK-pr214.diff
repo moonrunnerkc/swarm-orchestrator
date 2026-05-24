@@ -1,0 +1,396 @@
+diff --git a/src/minisweagent/config/geak.yaml b/src/minisweagent/config/geak.yaml
+index cd0811005..4f6cbe254 100644
+--- a/src/minisweagent/config/geak.yaml
++++ b/src/minisweagent/config/geak.yaml
+@@ -13,6 +13,13 @@ env:
+   timeout: 3600
+ model:
+   model_class: amd_llm
++  # For local Codex CLI instead of AMD gateway, use:
++  # model_class: codex_cli
++  # model_name: codex-cli  # use the local Codex CLI default model/profile
++  # model_kwargs:
++  #   codex_bin: codex
++  #   sandbox: read-only
++  #   cwd: /path/to/worktree
+   # claude-opus-4.6, claude-sonnet-4.5, gpt-5.1, gpt-5, gpt-5-codex
+   model_name: claude-opus-4.6
+   api_key: ""
+diff --git a/src/minisweagent/models/__init__.py b/src/minisweagent/models/__init__.py
+index 752b74f56..ec42ea1bb 100644
+--- a/src/minisweagent/models/__init__.py
++++ b/src/minisweagent/models/__init__.py
+@@ -84,6 +84,7 @@ def get_model_name(input_model_name: str | None = None, config: dict | None = No
+     "litellm": "minisweagent.models.litellm_model.LitellmModel",
+     "deterministic": "minisweagent.models.test_models.DeterministicModel",
+     "amd_llm": "minisweagent.models.amd_llm.AmdLlmModel",
++    "codex_cli": "minisweagent.models.codex_cli.CodexCliModel",
+ }
+ 
+ 
+diff --git a/src/minisweagent/models/codex_cli.py b/src/minisweagent/models/codex_cli.py
+new file mode 100644
+index 000000000..f8a152ea0
+--- /dev/null
++++ b/src/minisweagent/models/codex_cli.py
+@@ -0,0 +1,227 @@
++"""Local Codex CLI-backed model.
++
++This backend treats the local ``codex`` executable as a text-only model
++provider for GEAK. GEAK remains responsible for executing tools/actions.
++"""
++
++from __future__ import annotations
++
++import json
++import os
++import re
++import shlex
++import subprocess
++import tempfile
++from dataclasses import asdict, dataclass, field
++from pathlib import Path
++from typing import Any
++
++from minisweagent.models import GLOBAL_MODEL_STATS
++
++
++def _default_codex_bin() -> str:
++    return os.getenv("CODEX_BIN", "codex")
++
++
++def _default_timeout() -> float:
++    return float(os.getenv("CODEX_CLI_TIMEOUT", "600"))
++
++
++@dataclass
++class CodexCliModelConfig:
++    model_name: str = "codex-cli"
++    model_kwargs: dict[str, Any] = field(default_factory=dict)
++    codex_bin: str = field(default_factory=_default_codex_bin)
++    cwd: str | None = field(default_factory=lambda: os.getenv("CODEX_CLI_CWD"))
++    profile: str | None = None
++    sandbox: str = "read-only"
++    timeout: float = field(default_factory=_default_timeout)
++    cost_per_call: float = 0.0
++    ephemeral: bool = True
++    skip_git_repo_check: bool = True
++    ignore_rules: bool = False
++    ignore_user_config: bool = False
++    oss: bool = False
++    local_provider: str | None = None
++    config_overrides: list[str] = field(default_factory=list)
++    extra_args: list[str] = field(default_factory=list)
++    prompt_preamble: str = (
++        "You are the next-message language model backend for GEAK. "
++        "Return only the assistant message that should be added to the conversation. "
++        "GEAK, not Codex CLI, is responsible for executing commands and tools. "
++        "If the conversation asks for an action, follow the requested GEAK text format exactly."
++    )
++
++
++_CODEX_DEFAULT_MODEL_SENTINELS = frozenset({"", "codex", "codex-cli", "codex_cli", "local-codex", "default"})
++
++
++def _coerce_str_list(value: Any) -> list[str]:
++    if value is None:
++        return []
++    if isinstance(value, str):
++        return [value]
++    if isinstance(value, (list, tuple)):
++        return [str(v) for v in value]
++    raise TypeError(f"Expected string or list of strings, got {type(value).__name__}")
++
++
++def _merge_model_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
++    model_kwargs = dict(kwargs.pop("model_kwargs", {}) or {})
++    retained_model_kwargs: dict[str, Any] = {}
++    config_fields = set(CodexCliModelConfig.__dataclass_fields__) - {"model_kwargs"}
++    for key, value in model_kwargs.items():
++        if key in config_fields:
++            kwargs.setdefault(key, value)
++        else:
++            # Keep provider-specific leftovers (for example AMD/OpenAI
++            # temperature/max_tokens/reasoning settings) for template/debug
++            # visibility, but do not pass them as CodexCliModelConfig fields.
++            retained_model_kwargs[key] = value
++    kwargs["model_kwargs"] = retained_model_kwargs
++    if "config_overrides" in kwargs:
++        kwargs["config_overrides"] = _coerce_str_list(kwargs["config_overrides"])
++    if "extra_args" in kwargs:
++        kwargs["extra_args"] = _coerce_str_list(kwargs["extra_args"])
++    return kwargs
++
++
++def _format_tool_call(tool_call: Any) -> str:
++    try:
++        return json.dumps(tool_call, ensure_ascii=False)
++    except TypeError:
++        return str(tool_call)
++
++
++def format_messages_for_codex(messages: list[dict[str, Any]]) -> str:
++    """Render GEAK chat messages into a single Codex exec prompt."""
++    blocks: list[str] = []
++    for idx, msg in enumerate(messages, start=1):
++        role = str(msg.get("role", "user")).upper()
++        content = msg.get("content", "")
++        parts = [f"### Message {idx}: {role}", str(content)]
++        if msg.get("tool_calls"):
++            parts.append("<tool_call>")
++            parts.append(_format_tool_call(msg["tool_calls"]))
++            parts.append("</tool_call>")
++        if role == "TOOL":
++            name = msg.get("name", "")
++            call_id = msg.get("tool_call_id", "")
++            parts.insert(1, f"Tool name: {name}\nTool call id: {call_id}")
++        blocks.append("\n".join(parts).strip())
++    return "\n\n".join(blocks)
++
++
++def normalize_plain_finish_sentinel(content: str) -> str:
++    """Wrap Codex CLI's plain finish sentinel in GEAK's bash action format."""
++    stripped = content.strip()
++    if stripped == "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT":
++        command = "echo 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT'"
++    elif re.fullmatch(r"echo\s+(['\"])COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\1", stripped):
++        command = stripped
++    else:
++        return content
++    return f"```bash\n{command}\n```"
++
++
++class CodexCliModel:
++    """Use ``codex exec`` as a local GEAK model backend."""
++
++    def __init__(self, **kwargs: Any) -> None:
++        self.config = CodexCliModelConfig(**_merge_model_kwargs(kwargs))
++        self.cost = 0.0
++        self.n_calls = 0
++        self.tools: list[dict[str, Any]] = []
++
++    def set_tools(self, tools: list[dict[str, Any]]) -> None:
++        self.tools = list(tools)
++
++    def _build_prompt(self, messages: list[dict[str, Any]]) -> str:
++        prompt_parts = [self.config.prompt_preamble]
++        if self.tools:
++            tool_names = []
++            for raw in self.tools:
++                func = raw.get("function", raw)
++                name = func.get("name")
++                if name:
++                    tool_names.append(str(name))
++            if tool_names:
++                prompt_parts.append(
++                    "GEAK tools available to the outer agent: "
++                    + ", ".join(sorted(tool_names))
++                    + ". Request them only in the conversation's expected format."
++                )
++        prompt_parts.append("Conversation:")
++        prompt_parts.append(format_messages_for_codex(messages))
++        return "\n\n".join(part for part in prompt_parts if part)
++
++    def _build_command(self, output_path: Path) -> list[str]:
++        cmd = [self.config.codex_bin, "exec"]
++        if self.config.model_name not in _CODEX_DEFAULT_MODEL_SENTINELS:
++            cmd.extend(["--model", self.config.model_name])
++        if self.config.profile:
++            cmd.extend(["--profile", self.config.profile])
++        if self.config.sandbox:
++            cmd.extend(["--sandbox", self.config.sandbox])
++        if self.config.cwd:
++            cmd.extend(["--cd", self.config.cwd])
++        if self.config.oss:
++            cmd.append("--oss")
++        if self.config.local_provider:
++            cmd.extend(["--local-provider", self.config.local_provider])
++        if self.config.ephemeral:
++            cmd.append("--ephemeral")
++        if self.config.skip_git_repo_check:
++            cmd.append("--skip-git-repo-check")
++        if self.config.ignore_rules:
++            cmd.append("--ignore-rules")
++        if self.config.ignore_user_config:
++            cmd.append("--ignore-user-config")
++        for override in self.config.config_overrides:
++            cmd.extend(["--config", override])
++        cmd.extend(["--color", "never", "--output-last-message", str(output_path)])
++        cmd.extend(self.config.extra_args)
++        cmd.append("-")
++        return cmd
++
++    def _run_codex(self, prompt: str) -> tuple[str, dict[str, Any]]:
++        with tempfile.TemporaryDirectory(prefix="geak-codex-") as tmpdir:
++            output_path = Path(tmpdir) / "last_message.txt"
++            cmd = self._build_command(output_path)
++            env = os.environ.copy()
++            env.setdefault("NO_COLOR", "1")
++            proc = subprocess.run(
++                cmd,
++                input=prompt,
++                text=True,
++                capture_output=True,
++                timeout=self.config.timeout,
++                check=False,
++                env=env,
++            )
++            output = output_path.read_text(encoding="utf-8").strip() if output_path.exists() else proc.stdout.strip()
++            extra = {
++                "command": shlex.join(cmd[:-1] + ["<stdin>"]),
++                "returncode": proc.returncode,
++                "stdout": proc.stdout[-4000:],
++                "stderr": proc.stderr[-4000:],
++            }
++            if proc.returncode != 0:
++                raise RuntimeError(
++                    "codex exec failed "
++                    f"(returncode={proc.returncode}). stderr:\n{proc.stderr[-4000:]}"
++                )
++            return output, extra
++
++    def query(self, messages: list[dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
++        if kwargs:
++            raise TypeError(f"CodexCliModel.query does not support per-call kwargs yet: {sorted(kwargs)}")
++        content, extra = self._run_codex(self._build_prompt(messages))
++        content = normalize_plain_finish_sentinel(content)
++        self.n_calls += 1
++        self.cost += self.config.cost_per_call
++        GLOBAL_MODEL_STATS.add(self.config.cost_per_call)
++        return {"content": content, "tools": "", "extra": {"response": extra}}
++
++    def get_template_vars(self) -> dict[str, Any]:
++        return asdict(self.config) | {"n_model_calls": self.n_calls, "model_cost": self.cost}
+diff --git a/tests/models/test_codex_cli_model.py b/tests/models/test_codex_cli_model.py
+new file mode 100644
+index 000000000..436deab3a
+--- /dev/null
++++ b/tests/models/test_codex_cli_model.py
+@@ -0,0 +1,127 @@
++from pathlib import Path
++from types import SimpleNamespace
++from unittest.mock import patch
++
++import pytest
++
++from minisweagent.models import get_model
++from minisweagent.models.codex_cli import CodexCliModel, format_messages_for_codex, normalize_plain_finish_sentinel
++
++
++def test_format_messages_for_codex_includes_roles_tool_calls_and_tool_results():
++    prompt = format_messages_for_codex([
++        {"role": "system", "content": "sys"},
++        {
++            "role": "assistant",
++            "content": "I will call a tool",
++            "tool_calls": {"id": "c1", "function": {"name": "bash", "arguments": {"command": "ls"}}},
++        },
++        {"role": "tool", "name": "bash", "tool_call_id": "c1", "content": "ok"},
++    ])
++
++    assert "### Message 1: SYSTEM" in prompt
++    assert "sys" in prompt
++    assert "<tool_call>" in prompt
++    assert '"name": "bash"' in prompt
++    assert "Tool name: bash" in prompt
++    assert "Tool call id: c1" in prompt
++
++
++def test_build_command_defaults_are_text_backend_safe(tmp_path):
++    model = CodexCliModel(model_name="gpt-5", codex_bin="codex", cwd="/repo")
++
++    cmd = model._build_command(tmp_path / "out.txt")
++
++    assert cmd[:2] == ["codex", "exec"]
++    assert ["--model", "gpt-5"] == cmd[2:4]
++    assert "--ephemeral" in cmd
++    assert "--skip-git-repo-check" in cmd
++    assert ["--sandbox", "read-only"] == cmd[cmd.index("--sandbox") : cmd.index("--sandbox") + 2]
++    assert ["--cd", "/repo"] == cmd[cmd.index("--cd") : cmd.index("--cd") + 2]
++    assert cmd[-1] == "-"
++
++
++def test_build_command_can_use_codex_cli_default_model(tmp_path):
++    model = CodexCliModel(model_name="codex-cli", codex_bin="codex")
++
++    cmd = model._build_command(tmp_path / "out.txt")
++
++    assert "--model" not in cmd
++
++
++def test_query_reads_output_last_message_and_updates_stats(tmp_path):
++    def fake_run(cmd, input, text, capture_output, timeout, check, env):  # noqa: A002
++        out_path = Path(cmd[cmd.index("--output-last-message") + 1])
++        out_path.write_text("```bash\necho hi\n```", encoding="utf-8")
++        return SimpleNamespace(returncode=0, stdout="ignored stdout", stderr="")
++
++    model = CodexCliModel(codex_bin="codex", model_name="gpt-5-codex", cost_per_call=0.25)
++
++    with patch("minisweagent.models.codex_cli.subprocess.run", side_effect=fake_run) as run:
++        result = model.query([{"role": "user", "content": "say hi"}])
++
++    assert result["content"] == "```bash\necho hi\n```"
++    assert result["tools"] == ""
++    assert model.n_calls == 1
++    assert model.cost == 0.25
++    assert run.call_args.kwargs["input"].startswith(model.config.prompt_preamble)
++
++
++def test_normalize_plain_finish_sentinel_wraps_bare_echo():
++    assert normalize_plain_finish_sentinel("echo 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT'") == (
++        "```bash\n"
++        "echo 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT'\n"
++        "```"
++    )
++
++
++def test_query_normalizes_plain_finish_sentinel(tmp_path):
++    def fake_run(cmd, input, text, capture_output, timeout, check, env):  # noqa: A002
++        out_path = Path(cmd[cmd.index("--output-last-message") + 1])
++        out_path.write_text("echo 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT'", encoding="utf-8")
++        return SimpleNamespace(returncode=0, stdout="", stderr="")
++
++    model = CodexCliModel(codex_bin="codex")
++
++    with patch("minisweagent.models.codex_cli.subprocess.run", side_effect=fake_run):
++        result = model.query([{"role": "user", "content": "finish"}])
++
++    assert result["content"] == "```bash\necho 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT'\n```"
++    assert result["tools"] == ""
++
++
++def test_query_raises_on_codex_failure():
++    def fake_run(cmd, input, text, capture_output, timeout, check, env):  # noqa: A002
++        return SimpleNamespace(returncode=2, stdout="", stderr="bad auth")
++
++    model = CodexCliModel(codex_bin="codex")
++
++    with patch("minisweagent.models.codex_cli.subprocess.run", side_effect=fake_run):
++        with pytest.raises(RuntimeError, match="bad auth"):
++            model.query([{"role": "user", "content": "hello"}])
++
++
++def test_get_model_supports_codex_cli_shortcut():
++    model = get_model("codex-cli", {"model_class": "codex_cli", "codex_bin": "codex"})
++
++    assert isinstance(model, CodexCliModel)
++    assert model.config.model_name == "codex-cli"
++
++
++def test_codex_cli_ignores_leftover_gateway_model_kwargs():
++    model = get_model(
++        "codex-cli",
++        {
++            "model_class": "codex_cli",
++            "model_kwargs": {
++                "temperature": 0.0,
++                "max_tokens": 16000,
++                "reasoning": {"effort": "high"},
++                "cwd": "/repo",
++            },
++        },
++    )
++
++    assert isinstance(model, CodexCliModel)
++    assert model.config.cwd == "/repo"
++    assert model.config.model_kwargs["temperature"] == 0.0

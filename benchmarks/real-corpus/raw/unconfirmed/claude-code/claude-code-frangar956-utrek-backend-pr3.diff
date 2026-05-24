@@ -1,0 +1,485 @@
+diff --git a/.env.example b/.env.example
+index e1ecab6..fb2e786 100644
+--- a/.env.example
++++ b/.env.example
+@@ -4,7 +4,8 @@ NODE_ENV=production
+ 
+ # ─── CORS ──────────────────────────────────────────────────────────────────────
+ # Comma-separated list of allowed frontend origins
+-FRONTEND_URL=https://your-frontend-domain.vercel.app
++# Include both the custom domain and any Vercel preview/deployment URLs
++FRONTEND_URL=https://www.ushuaiatrek.com,https://ushuaiatrek.com
+ 
+ # ─── Database ──────────────────────────────────────────────────────────────────
+ # Path to the SQLite database file. Defaults to ./data/utrek.db
+diff --git a/SUNDAYS.md b/SUNDAYS.md
+new file mode 100644
+index 0000000..9c8367f
+--- /dev/null
++++ b/SUNDAYS.md
+@@ -0,0 +1,465 @@
++# SUNDAYS.md
++
++This file provides guidance to Claude Code when working with this repository.
++
++## Project Overview
++
++- **Package name:** `adventure-backend`
++- **Version:** 1.0.0
++- **Description:** Mini backend para adventure-website (Ushuaia trekking) -- a REST API serving activity listings, calendar events, bookings, and contact messages for an adventure tourism company based in Ushuaia, Tierra del Fuego, Argentina.
++- **Runtime:** Node.js with TypeScript (ES2022 target, NodeNext module resolution)
++- **Main technologies:** Express 4.21, Zod 3.25 (validation), cors, dotenv
++- **Language:** TypeScript 5.6, strict mode enabled
++- **Production domain:** `www.ushuaiatrek.com` (DNS hosted on Namecheap)
++
++## Commands
++
++```bash
++# Install dependencies
++npm install
++
++# Start dev server with hot-reload (uses tsx watch)
++npm run dev
++
++# Compile TypeScript to dist/
++npm run build
++
++# Start production server from compiled output
++npm start
++# equivalent to: node dist/index.js
++```
++
++There are no test scripts, linting scripts, or formatting scripts defined in this project.
++
++The `.sundaysrc` file configures the deployment platform:
++
++```json
++{
++  "runtime": "node",
++  "install": "npm install",
++  "build": "npm run build",
++  "start": "npm start"
++}
++```
++
++## Architecture
++
++### Directory Structure
++
++```
++adventure-backend/
++  package.json
++  package-lock.json
++  tsconfig.json
++  .gitignore
++  .sundaysrc
++  src/
++    index.ts            # Express app entry point, middleware, route mounting
++    types.ts            # All shared TypeScript interfaces and types
++    data/
++      activities.ts     # Hardcoded activity catalog (8 activities)
++      calendar.ts       # Hardcoded calendar events (Nov 2026 - Feb 2027)
++      store.ts          # In-memory stores for bookings and contact messages
++      trekkings.ts      # Detailed trekking descriptions (8 treks)
++    routes/
++      activities.ts     # GET /api/activities, GET /api/activities/:id
++      bookings.ts       # POST /api/bookings, GET /api/bookings, GET /api/bookings/:id
++      calendar.ts       # GET /api/calendar
++      contact.ts        # POST /api/contact, GET /api/contact
++```
++
++The compiled output goes to `dist/` (excluded from git).
++
++### Key Files
++
++- **`src/index.ts`** -- Express application setup. Configures CORS with multi-origin support (origins parsed from the comma-separated `FRONTEND_URL` env var, defaults to `http://localhost:3000`). Uses a dynamic origin callback that validates each request's `Origin` header against the allowed list. Also configures JSON body parsing, mounts all four route modules under `/api/*`, includes a health check endpoint, request logging in production mode, a global error handler, and graceful shutdown with database cleanup.
++
++- **`src/types.ts`** -- Central type definitions. Contains `Activity`, `TrekkingDetail`, `CalendarEvent`, `Booking`, and `ContactMessage` interfaces plus the `Difficulty` union type.
++
++- **`src/data/store.ts`** -- In-memory runtime storage for bookings and contact messages. Provides sequential ID generators (`BK-0001`, `CT-0001` format). Data is lost on server restart.
++
++- **`src/data/activities.ts`** -- Static catalog of 8 outdoor activities in Ushuaia with pricing in USD, ratings, availability dates, and gallery images.
++
++- **`src/data/trekkings.ts`** -- Extended details for activities including itineraries, included/not-included lists, requirements, and available dates. Keyed by activity slug.
++
++- **`src/data/calendar.ts`** -- Pre-scheduled calendar events spanning November 2026 through February 2027 with spot availability tracking.
++
++### Design Patterns
++
++**Multi-origin CORS configuration.** The `FRONTEND_URL` environment variable accepts a comma-separated list of allowed origins. This is essential for the custom domain setup where both `www.ushuaiatrek.com` and `ushuaiatrek.com` (plus any Vercel preview URLs) need to be allowed:
++
++```typescript
++// src/index.ts
++const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:3000")
++  .split(",")
++  .map((o) => o.trim())
++
++app.use(
++  cors({
++    origin: (origin, callback) => {
++      // Allow requests with no origin (server-to-server, curl, etc.)
++      if (!origin || allowedOrigins.includes(origin)) {
++        callback(null, true)
++      } else {
++        callback(new Error(`Origen no permitido por CORS: ${origin}`))
++      }
++    },
++    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
++    allowedHeaders: ["Content-Type", "Authorization"],
++  }),
++)
++```
++
++**Static data + in-memory store pattern.** The application uses no database. Read-only reference data (activities, trekkings, calendar events) is hardcoded as TypeScript constant arrays/objects, while mutable data (bookings, contact messages) lives in in-memory arrays that reset on restart:
++
++```typescript
++// src/data/store.ts
++import type { Booking, ContactMessage } from "../types.js"
++
++export const bookings: Booking[] = []
++export const contactMessages: ContactMessage[] = []
++
++let bookingCounter = 0
++let contactCounter = 0
++
++export function nextBookingId(): string {
++  return `BK-${String(++bookingCounter).padStart(4, "0")}`
++}
++
++export function nextContactId(): string {
++  return `CT-${String(++contactCounter).padStart(4, "0")}`
++}
++```
++
++**Zod schema validation for POST endpoints.** All incoming data is validated with Zod schemas before processing. Validation errors return structured field-level error details:
++
++```typescript
++// src/routes/bookings.ts
++const BookingSchema = z.object({
++  activityId: z.string().min(1, "activityId es obligatorio"),
++  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de fecha inválido (YYYY-MM-DD)"),
++  firstName: z.string().min(1, "Nombre es obligatorio"),
++  lastName: z.string().min(1, "Apellido es obligatorio"),
++  email: z.string().email("Email inválido"),
++  phone: z.string().min(7, "Teléfono inválido (min. 7 digitos)"),
++  pickupAddress: z.string().min(1, "Direccion es obligatoria"),
++  city: z.string().min(1, "Ciudad es obligatoria"),
++  references: z.string().optional().default(""),
++  isHotel: z.boolean().default(false),
++  hotelName: z.string().optional().default(""),
++  guests: z.number().int().min(1, "Minimo 1 persona"),
++})
++```
++
++**Express Router modularization.** Each domain has its own Router instance exported from `src/routes/`, mounted in `src/index.ts`:
++
++```typescript
++// src/index.ts
++app.use("/api/activities", activitiesRouter)
++app.use("/api/calendar", calendarRouter)
++app.use("/api/bookings", bookingsRouter)
++app.use("/api/contact", contactRouter)
++```
++
++**Query-parameter filtering.** List endpoints support flexible filtering via query strings rather than requiring separate endpoints per filter combination:
++
++```typescript
++// src/routes/activities.ts -- filter chain
++const { category, difficulty, dateFrom, dateTo, guests, popular } = req.query
++
++if (category && category !== "all" && category !== "Todas") {
++  results = results.filter((a) => a.category === category)
++}
++if (difficulty) {
++  results = results.filter((a) => a.difficulty === difficulty)
++}
++if (popular === "true") {
++  results = results.filter((a) => a.popular)
++}
++```
++
++**Booking business logic.** The POST /api/bookings endpoint validates activity existence, date availability, capacity constraints, and hotel name requirements before confirming the booking and decrementing capacity:
++
++```typescript
++// src/routes/bookings.ts
++if (!activity.availability_dates.includes(data.date)) {
++  res.status(400).json({ error: "La fecha seleccionada no esta disponible para esta actividad" })
++  return
++}
++if (data.guests > activity.capacity_remaining) {
++  res.status(400).json({
++    error: `No hay suficientes lugares. Disponibles: ${activity.capacity_remaining}`,
++  })
++  return
++}
++```
++
++## Data Model
++
++### Activity
++
++Represents a bookable outdoor activity shown on the frontend listing page:
++
++```typescript
++export interface Activity {
++  id: string                    // slug, e.g. "laguna-esmeralda-express"
++  title: string                 // display name
++  cover_image: string           // path to cover photo
++  price_from: number            // price in currency units (USD)
++  currency: string              // "USD"
++  difficulty: Difficulty         // "Facil" | "Moderado" | "Avanzado"
++  duration: string              // e.g. "4 hs", "2 dias"
++  category: string              // e.g. "Trekking", "Laguna Esmeralda", "City tour"
++  availability_dates: string[]  // ISO date strings
++  capacity_remaining: number    // mutable, decremented on booking
++  rating?: number               // e.g. 4.97
++  reviews_count?: number
++  popular?: boolean
++  location: string              // always "Ushuaia" currently
++  calendarioSlug?: string
++  galleryImages?: { src: string; alt: string }[]
++}
++```
++
++### TrekkingDetail
++
++Extended information for activity detail pages, keyed by activity slug:
++
++```typescript
++export interface TrekkingDetail {
++  title: string
++  location: string
++  difficulty: string
++  image: string
++  duration: string
++  groupSize: string              // e.g. "8-15", "6-10"
++  price: string                  // formatted with currency symbol, e.g. "$165.000"
++  type: "Trekking" | "Campamento" | "Montanismo"
++  description: string
++  longDescription: string
++  itinerary: { day: string; title: string; description: string }[]
++  included: string[]
++  notIncluded: string[]
++  requirements: string[]
++  dates: string[]
++}
++```
++
++### CalendarEvent
++
++Scheduled occurrence of an activity on a specific date:
++
++```typescript
++export interface CalendarEvent {
++  id: string
++  title: string
++  date: string           // ISO date, e.g. "2026-11-07"
++  month: string          // Spanish month name, e.g. "Noviembre"
++  year: number
++  difficulty: Difficulty
++  location: string
++  duration: string
++  groupSize: string
++  price: string
++  spotsLeft: number
++}
++```
++
++### Booking
++
++Created when a customer submits a reservation:
++
++```typescript
++export interface Booking {
++  id: string               // auto-generated "BK-0001" format
++  activityId: string
++  activityTitle: string
++  date: string
++  firstName: string
++  lastName: string
++  email: string
++  phone: string
++  pickupAddress: string
++  city: string
++  references: string
++  isHotel: boolean
++  hotelName: string
++  guests: number
++  total: number            // price_from * guests
++  currency: string
++  status: "confirmed" | "pending"
++  createdAt: string
++}
++```
++
++### ContactMessage
++
++Created when a visitor sends a message through the contact form:
++
++```typescript
++export interface ContactMessage {
++  id: string               // auto-generated "CT-0001" format
++  name: string
++  email: string
++  phone: string
++  subject: string
++  message: string
++  createdAt: string
++}
++```
++
++## API Endpoints
++
++### Health Check
++
++| Method | Path | Description |
++|--------|------|-------------|
++| `GET` | `/api/health` | Returns `{ status: "ok", timestamp: "<ISO>", environment: "<NODE_ENV>" }` |
++
++### Activities
++
++| Method | Path | Description |
++|--------|------|-------------|
++| `GET` | `/api/activities` | List all activities with optional filters |
++| `GET` | `/api/activities/:id` | Get activity card data + trekking detail by slug |
++
++**Query parameters for `GET /api/activities`:**
++- `category` -- filter by category string (ignored if `"all"` or `"Todas"`)
++- `difficulty` -- exact match on difficulty level
++- `dateFrom` / `dateTo` -- filter activities with availability in date range (ISO format)
++- `guests` -- minimum `capacity_remaining`
++- `popular` -- if `"true"`, only return popular activities
++
++**Response format:**
++```json
++{
++  "count": 8,
++  "data": [{ "id": "...", "title": "...", ... }]
++}
++```
++
++**GET /api/activities/:id response:**
++```json
++{
++  "activity": { ... } | null,
++  "detail": { ... } | null
++}
++```
++
++### Calendar
++
++| Method | Path | Description |
++|--------|------|-------------|
++| `GET` | `/api/calendar` | List calendar events, sorted by date |
++
++**Query parameters:**
++- `month` -- Spanish month name (ignored if `"Todos"`)
++- `year` -- numeric year
++- `activity` -- filter by event title (ignored if `"Todas"`)
++- `difficulty` -- comma-separated difficulty levels
++
++### Bookings
++
++| Method | Path | Description |
++|--------|------|-------------|
++| `POST` | `/api/bookings` | Create a new booking (validates activity, date, capacity) |
++| `GET` | `/api/bookings` | List all bookings |
++| `GET` | `/api/bookings/:id` | Get a specific booking by ID |
++
++**POST body (all fields validated with Zod):**
++```json
++{
++  "activityId": "laguna-esmeralda-express",
++  "date": "2026-11-08",
++  "firstName": "Juan",
++  "lastName": "Perez",
++  "email": "juan@example.com",
++  "phone": "+54911...",
++  "pickupAddress": "Av. San Martin 500",
++  "city": "Ushuaia",
++  "references": "",
++  "isHotel": true,
++  "hotelName": "Hotel Las Hayas",
++  "guests": 2
++}
++```
++
++**Business rules enforced:**
++1. Activity must exist in the catalog
++2. Selected date must be in the activity's `availability_dates`
++3. `guests` must not exceed `capacity_remaining`
++4. If `isHotel` is true, `hotelName` is required
++5. Total is calculated as `price_from * guests`
++6. `capacity_remaining` is decremented after successful booking
++
++### Contact
++
++| Method | Path | Description |
++|--------|------|-------------|
++| `POST` | `/api/contact` | Submit a contact message |
++| `GET` | `/api/contact` | List all contact messages (admin) |
++
++**POST body:**
++```json
++{
++  "name": "Maria Garcia",
++  "email": "maria@example.com",
++  "phone": "+5491155...",
++  "subject": "Consulta sobre Laguna Esmeralda",
++  "message": "Quisiera saber si es apto para ninos..."
++}
++```
++
++## Environment Variables
++
++| Variable | Default | Description |
++|----------|---------|-------------|
++| `PORT` | `3001` | Server listening port |
++| `NODE_ENV` | `development` | Environment mode (`development` or `production`). Production mode enables request logging. |
++| `FRONTEND_URL` | `http://localhost:3000` | Comma-separated list of allowed CORS origins. In production, set to the custom domain and any Vercel deployment URLs (e.g. `https://www.ushuaiatrek.com,https://ushuaiatrek.com`). Each origin is trimmed after splitting on commas. |
++
++The `.env` file is gitignored. A `.env.example` file is provided with production defaults. Environment is loaded via `dotenv/config` at the top of `src/index.ts`.
++
++**Production CORS example (`.env.example`):**
++```bash
++# Comma-separated list of allowed frontend origins
++# Include both the custom domain and any Vercel preview/deployment URLs
++FRONTEND_URL=https://www.ushuaiatrek.com,https://ushuaiatrek.com
++```
++
++## Important Notes
++
++### Custom domain and CORS
++- The production site is served at `www.ushuaiatrek.com` (domain hosted on Namecheap).
++- The `FRONTEND_URL` environment variable must include **all** origins that the frontend may be accessed from, separated by commas. This typically means both the `www` subdomain and the root domain, plus any Vercel preview deployment URLs during development.
++- Requests from origins not in the list are rejected with a `"Origen no permitido por CORS"` error.
++- Requests with no `Origin` header (e.g. server-to-server calls, `curl`) are always allowed.
++
++### Language and locale
++- All user-facing strings (error messages, field labels, response messages) are in **Spanish**. Error messages like `"Ruta no encontrada"`, `"Datos invalidos"`, `"Reserva confirmada"` should remain in Spanish.
++- Difficulty levels use Spanish values: `"Facil"`, `"Moderado"`, `"Avanzado"` (with accent marks in the actual code: `"Facil"` is `"Facil"`).
++- Month names in calendar data are in Spanish: `"Noviembre"`, `"Diciembre"`, `"Enero"`, `"Febrero"`.
++
++### No database -- in-memory only
++- All mutable state (bookings, contact messages) is stored in arrays in `src/data/store.ts` and resets when the server restarts. This is a prototype/MVP backend.
++- Activity `capacity_remaining` is also mutated at runtime (decremented on booking) but resets to the hardcoded initial values on restart.
++
++### No authentication
++- There is no auth layer. The `GET /api/bookings` and `GET /api/contact` endpoints that list all bookings/messages are effectively admin endpoints with no access control.
++
++### The activities and trekkings catalogs overlap but are separate
++- `src/data/activities.ts` holds card-level data for the listing page (8 entries).
++- `src/data/trekkings.ts` holds detail-page data keyed by slug (8 entries, but the slugs do not fully overlap with activity IDs).
++- The `GET /api/activities/:id` endpoint looks up both and returns whichever it finds (or both).
++
++### TypeScript configuration
++- Strict mode is on. The project targets ES2022 with NodeNext module resolution.
++- The dev server uses `tsx watch` for hot-reloading without a separate compile step.
++- Production builds compile to `dist/` via `npx tsc`.
++
++### Categories in the activity catalog
++- Activities span multiple categories: `"Laguna Esmeralda"`, `"Trekking"`, `"Parque Nacional"`, `"Navegacion / Canal Beagle"`, `"City tour"`.
++- The activities filter accepts `"all"` or `"Todas"` as wildcard values.
++
++### Calendar event filtering supports comma-separated difficulty
++- The calendar endpoint parses `difficulty` as a comma-separated string: `?difficulty=Facil,Moderado` matches events with either difficulty level.

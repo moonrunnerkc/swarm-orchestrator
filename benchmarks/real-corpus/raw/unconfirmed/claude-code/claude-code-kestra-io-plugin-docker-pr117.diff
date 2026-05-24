@@ -1,0 +1,23 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.docker.md b/src/main/resources/doc/io.kestra.plugin.docker.md
+new file mode 100644
+index 0000000..446e5bc
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.docker.md
+@@ -0,0 +1,17 @@
++# How to use the Docker plugin
++
++Manage Docker images and containers from Kestra flows — building, pushing, running, and composing — against a local or remote Docker daemon.
++
++## Authentication
++
++The Kestra worker must have access to a Docker daemon. By default the plugin connects via the local Unix socket (`/var/run/docker.sock`); set `host` to a TCP endpoint (e.g., `tcp://remote-host:2376`) to use a remote daemon.
++
++For private registries, set `credentials.registry`, `credentials.username`, and `credentials.password` on each task that pulls or pushes images. Store credentials in [secrets](https://kestra.io/docs/concepts/secret). When no credentials are set, Docker Hub public images are used without authentication.
++
++## Tasks
++
++`Run` is the primary task — it starts a container from an image, streams stdout as task output, and waits for exit. Use it when you need to execute a containerized tool or process as a step in a flow.
++
++For CI/CD automation, `Build` builds an image from a Dockerfile, `Tag` applies additional tags, and `Push` uploads an image to a registry. `Pull` pre-fetches an image explicitly. `Compose` runs a multi-container stack from a `docker-compose.yml` file and is useful for integration testing or spinning up dependent services. `Stop` and `Rm` manage container lifecycle; `Prune` cleans up unused resources.
++
++If your goal is running a script inside a container as part of a flow, use a [Docker task runner](https://kestra.io/docs/workflow-components/task-runners) on a script task rather than the Docker plugin — the plugin is intended for managing Docker artifacts and infrastructure, not for script execution isolation.

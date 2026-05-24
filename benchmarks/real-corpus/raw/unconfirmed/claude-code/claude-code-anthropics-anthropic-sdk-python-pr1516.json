@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1516",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1516,
+    "headSha": "6eb49da91020dace73109cdac009834162798610",
+    "baseSha": "04b468daf76e4b95a949cecb03e29f4a1374d3b5",
+    "title": "feat(client): support callable auth tokens",
+    "body": "Summary:\nFixes #1496 by allowing `auth_token` to be a string or a callable returning the current bearer token. Callable tokens are resolved when auth headers are built, so long-running clients can use refreshed tokens.\n\nChanges:\n- [ ] Add an `AuthToken` alias for static and callable bearer tokens.\n- [ ] Resolve callable auth tokens per request for sync and async clients.\n- [ ] Preserve callable token behavior through copied clients.\n- [ ] Document short-lived bearer token usage in the README.\n- [ ] Add tests for callable tokens and credential precedence.\n\nTesting instructions:\n- [ ] Run `uv run python -m pytest tests\\test_client.py -k \"auth_token_callable or validate_headers\" -n0`.\n- [ ] Run `uv run python -m pytest tests\\lib\\test_credentials.py -k \"auth_token_callable or explicit_auth_token_shadows or copy_with_explicit_api_key_shadows\" -n0`.\n- [ ] Run `uv run ruff check src\\anthropic\\_client.py src\\anthropic\\__init__.py tests\\test_client.py tests\\lib\\test_credentials.py README.md`.\n- [ ] Run `uv run pyright src\\anthropic\\_client.py src\\anthropic\\__init__.py`.",
+    "author": "wilyan09007",
+    "headRef": "issue-1496-auth-token-provider",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "6eb49da91020dace73109cdac009834162798610",
+    "baseSha": "04b468daf76e4b95a949cecb03e29f4a1374d3b5"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1516.diff",
+  "vendoredAt": "2026-05-24T03:17:42.206Z",
+  "collectedAt": "2026-05-24T03:17:42.206Z"
+}

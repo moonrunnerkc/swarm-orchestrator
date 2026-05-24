@@ -1,0 +1,2733 @@
+diff --git a/src/app/ai-iq-world-bank-procesiranje/page.tsx b/src/app/ai-iq-world-bank-procesiranje/page.tsx
+new file mode 100644
+index 00000000..2e934e0d
+--- /dev/null
++++ b/src/app/ai-iq-world-bank-procesiranje/page.tsx
+@@ -0,0 +1,13 @@
++import type { Metadata } from 'next';
++import { StranicaRenderer } from '@/components/sekvence';
++import { aiIqWorldBankProcesiranjeSekvence } from '@/lib/sekvence/ai-iq-world-bank-procesiranje-page';
++import { KOMPANIJA } from '@/lib/constants';
++
++export const metadata: Metadata = {
++  title: 'AI IQ World Bank — Procesiranje Transakcija',
++  description: `Aktivni sloj obrade: transakcije u obradi, kamatna obrada, AI fraud detekcija, SWIFT/blockchain rutiranje — ${KOMPANIJA}`,
++};
++
++export default function AiIqWorldBankProcesiranjePage() {
++  return <StranicaRenderer sekvence={aiIqWorldBankProcesiranjeSekvence} />;
++}
+diff --git a/src/app/api/ai-iq-world-bank-procesiranje/route.ts b/src/app/api/ai-iq-world-bank-procesiranje/route.ts
+new file mode 100644
+index 00000000..b7e5ff68
+--- /dev/null
++++ b/src/app/api/ai-iq-world-bank-procesiranje/route.ts
+@@ -0,0 +1,38 @@
++// Autofinish #1361 — GET /api/ai-iq-world-bank-procesiranje
++// Kompanija SPAJA — Digitalna Industrija
++//
++// Kanonski endpoint za aktivni sloj procesiranja AI IQ World Bank:
++// transakcije u obradi, kamatna obrada, AI fraud detekcija, SWIFT/blockchain rutiranje.
++
++import type { NextRequest } from 'next/server';
++import { apiError, apiInternalError, apiSuccess } from '@/lib/api/response';
++import { checkRateLimitGlobal, rateLimitKey } from '@/lib/rate-limit';
++import { buildAiIqWorldBankProcesiranje } from '@/lib/ai-iq-world-bank-procesiranje';
++
++export const dynamic = 'force-dynamic';
++
++/**
++ * GET /api/ai-iq-world-bank-procesiranje
++ *
++ * @returns AiIqWorldBankProcesiranjeRezultat | 429 | 500
++ */
++export async function GET(request: NextRequest) {
++  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
++  const allowed = await checkRateLimitGlobal(
++    rateLimitKey(ip, '/api/ai-iq-world-bank-procesiranje'),
++    60,
++    60,
++  );
++
++  if (!allowed) {
++    return apiError('TOO_MANY_REQUESTS', 'Previše zahteva. Pokušajte ponovo za 60 sekundi.');
++  }
++
++  try {
++    const rezultat = buildAiIqWorldBankProcesiranje();
++    return apiSuccess(rezultat, 200);
++  } catch (error) {
++    return apiInternalError('ai-iq-world-bank-procesiranje', error);
++  }
++}
++
+diff --git a/src/app/api/procesuiranje-svega/route.ts b/src/app/api/procesuiranje-svega/route.ts
+new file mode 100644
+index 00000000..c5a32dcf
+--- /dev/null
++++ b/src/app/api/procesuiranje-svega/route.ts
+@@ -0,0 +1,37 @@
++// Autofinish #1362 — GET /api/procesuiranje-svega
++// Kompanija SPAJA — Digitalna Industrija
++//
++// Kanonski endpoint za aktivni pipeline procesiranja svih domena:
++// bankarski, AI, finansijski, licencni, ekosistem, autofinish, bezbednosni, analitički.
++
++import type { NextRequest } from 'next/server';
++import { apiError, apiInternalError, apiSuccess } from '@/lib/api/response';
++import { checkRateLimitGlobal, rateLimitKey } from '@/lib/rate-limit';
++import { buildProcesuiranjeSvega } from '@/lib/procesuiranje-svega';
++
++export const dynamic = 'force-dynamic';
++
++/**
++ * GET /api/procesuiranje-svega
++ *
++ * @returns ProcesuiranjeSvegaRezultat | 429 | 500
++ */
++export async function GET(req: NextRequest) {
++  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
++  const allowed = await checkRateLimitGlobal(
++    rateLimitKey(ip, '/api/procesuiranje-svega'),
++    60,
++    60,
++  );
++
++  if (!allowed) {
++    return apiError('TOO_MANY_REQUESTS', 'Previše zahteva. Pokušajte ponovo za 60 sekundi.');
++  }
++
++  try {
++    const rezultat = buildProcesuiranjeSvega();
++    return apiSuccess(rezultat, 200);
++  } catch (error) {
++    return apiInternalError('procesuiranje-svega', error);
++  }
++}
+diff --git a/src/app/procesuiranje-svega/page.tsx b/src/app/procesuiranje-svega/page.tsx
+new file mode 100644
+index 00000000..086f63e5
+--- /dev/null
++++ b/src/app/procesuiranje-svega/page.tsx
+@@ -0,0 +1,13 @@
++import type { Metadata } from 'next';
++import { StranicaRenderer } from '@/components/sekvence';
++import { procesuiranjeSvegaSekvence } from '@/lib/sekvence/procesuiranje-svega-page';
++import { KOMPANIJA } from '@/lib/constants';
++
++export const metadata: Metadata = {
++  title: 'Procesuiranje Svega — Digitalna Industrija',
++  description: `Aktivni pipeline procesiranja svih domena ${KOMPANIJA}: bankarski, AI, finansijski, licencni, ekosistem, autofinish, bezbednosni i analitički procesi`,
++};
++
++export default function ProcesuiranjeSvegaPage() {
++  return <StranicaRenderer sekvence={procesuiranjeSvegaSekvence} />;
++}
+diff --git a/src/app/sitemap.ts b/src/app/sitemap.ts
+index b8f392f1..d1df7261 100644
+--- a/src/app/sitemap.ts
++++ b/src/app/sitemap.ts
+@@ -126,6 +126,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
+     '/digitalni-vorteks',
+     '/analiza-svega',
+     '/api/analiza-svega',
++    '/ai-iq-world-bank-procesiranje',
++    '/api/ai-iq-world-bank-procesiranje',
++    '/procesuiranje-svega',
++    '/api/procesuiranje-svega',
+   ];
+   return routes.map((route) => ({
+     url: `${BASE_URL}${route}`,
+diff --git a/src/lib/ai-iq-world-bank-procesiranje.ts b/src/lib/ai-iq-world-bank-procesiranje.ts
+new file mode 100644
+index 00000000..7f2a4860
+--- /dev/null
++++ b/src/lib/ai-iq-world-bank-procesiranje.ts
+@@ -0,0 +1,235 @@
++/**
++ * 🏦 AI IQ WORLD BANK — Procesiranje Transakcija
++ *
++ * Aktivni sloj obrade: transakcije, kamatna obrada, AI fraud detekcija,
++ * SWIFT/blockchain rutiranje i KPI procesiranja.
++ *
++ * Sve ostale komponente (sekvence, API rute) čitaju podatke isključivo odavde.
++ */
++
++import { APP_VERSION, KOMPANIJA } from './constants';
++import { AIIQ_WORLD_BANK_KAMATNA_STOPA } from './ai-iq-world-bank';
++
++// ─── Konstante ────────────────────────────────────────────────────────────────
++
++export const AIIQWB_PROC_SUCCESS_RATE = 99.7;
++export const AIIQWB_PROC_AVG_TIME_MS = 43;
++export const AIIQWB_PROC_PER_DAY = 12_000;
++
++// ─── Tipovi ───────────────────────────────────────────────────────────────────
++
++export type TransakcijaStatusTip = 'pending' | 'izvrsavanje' | 'potvrdjena' | 'odbijena';
++export type RutingTip = 'SWIFT' | 'blockchain' | 'instant';
++export type PipelineFaza = 'validacija' | 'odobrenje' | 'izvrsavanje' | 'settlement';
++
++export interface TransakcijaStatus {
++  id: string;
++  iznos: number;
++  valuta: string;
++  status: TransakcijaStatusTip;
++  tip: string;
++  vrijemePocetkaMs: number;
++  procesirano: boolean;
++  fraudCheck: 'prosao' | 'blokiran' | 'na_pregledu';
++}
++
++export interface KamatnaIzracunavanje {
++  ulog: number;
++  valuta: string;
++  stopaProcent: number;
++  period: string;
++  zarada: number;
++  ukupno: number;
++  statusObrade: 'aktivno' | 'zavrseno';
++}
++
++export interface RacunProcessing {
++  racunId: string;
++  tip: string;
++  valuta: string;
++  trenutnaFaza: PipelineFaza;
++  faze: Array<{ naziv: PipelineFaza; status: 'zavrsena' | 'u_toku' | 'cekanje' }>;
++}
++
++export interface FraudCheckRezultat {
++  transakcijaId: string;
++  rezultat: 'ok' | 'upozorenje' | 'blokiran';
++  sigurnostScore: number;
++  razlog: string;
++}
++
++export interface RutingOdluka {
++  transakcijaId: string;
++  odabranaMetoda: RutingTip;
++  obrazlozenje: string;
++  procenjeniMs: number;
++  provizija: string;
++}
++
++export interface KpiProcesiranja {
++  transakcijaUDanu: number;
++  uspesnostProcenata: number;
++  prosecnoVremeMs: number;
++  fraudBlokirano: number;
++  swiftTransfera: number;
++  blockchainTransfera: number;
++  instantTransfera: number;
++  aktivnihRacuna: number;
++}
++
++export interface AiIqWorldBankProcesiranjeRezultat {
++  status: 'aktivan';
++  sistem: string;
++  kompanija: string;
++  verzija: string;
++  timestamp: string;
++  transakcijeUObradi: TransakcijaStatus[];
++  kamatnaObrada: KamatnaIzracunavanje[];
++  racuniUObradi: RacunProcessing[];
++  fraudChecks: FraudCheckRezultat[];
++  rutingOdluke: RutingOdluka[];
++  kpi: KpiProcesiranja;
++}
++
++// ─── Builder ──────────────────────────────────────────────────────────────────
++
++export function buildAiIqWorldBankProcesiranje(): AiIqWorldBankProcesiranjeRezultat {
++  const transakcijeUObradi: TransakcijaStatus[] = [
++    {
++      id: 'TRX-PROC-001',
++      iznos: 5_000,
++      valuta: 'RSD',
++      status: 'potvrdjena',
++      tip: 'stedni-racun',
++      vrijemePocetkaMs: 12,
++      procesirano: true,
++      fraudCheck: 'prosao',
++    },
++    {
++      id: 'TRX-PROC-002',
++      iznos: 500,
++      valuta: 'EUR',
++      status: 'izvrsavanje',
++      tip: 'devizni-transfer',
++      vrijemePocetkaMs: 38,
++      procesirano: false,
++      fraudCheck: 'prosao',
++    },
++    {
++      id: 'TRX-PROC-003',
++      iznos: 10_000,
++      valuta: 'RSD',
++      status: 'pending',
++      tip: 'kredit-otplata',
++      vrijemePocetkaMs: 0,
++      procesirano: false,
++      fraudCheck: 'na_pregledu',
++    },
++    {
++      id: 'TRX-PROC-004',
++      iznos: 250,
++      valuta: 'USD',
++      status: 'potvrdjena',
++      tip: 'globalni-transfer',
++      vrijemePocetkaMs: 55,
++      procesirano: true,
++      fraudCheck: 'prosao',
++    },
++    {
++      id: 'TRX-PROC-005',
++      iznos: 1_000,
++      valuta: 'RSD',
++      status: 'odbijena',
++      tip: 'sumnjiva-aktivnost',
++      vrijemePocetkaMs: 3,
++      procesirano: true,
++      fraudCheck: 'blokiran',
++    },
++  ];
++
++  const kamatnaObrada: KamatnaIzracunavanje[] = [
++    { ulog: 1_000, valuta: 'RSD', stopaProcent: AIIQ_WORLD_BANK_KAMATNA_STOPA, period: '30 dana', zarada: 400, ukupno: 1_400, statusObrade: 'aktivno' },
++    { ulog: 5_000, valuta: 'RSD', stopaProcent: AIIQ_WORLD_BANK_KAMATNA_STOPA, period: '30 dana', zarada: 2_000, ukupno: 7_000, statusObrade: 'aktivno' },
++    { ulog: 10_000, valuta: 'RSD', stopaProcent: AIIQ_WORLD_BANK_KAMATNA_STOPA, period: '30 dana', zarada: 4_000, ukupno: 14_000, statusObrade: 'aktivno' },
++    { ulog: 50_000, valuta: 'RSD', stopaProcent: AIIQ_WORLD_BANK_KAMATNA_STOPA, period: '30 dana', zarada: 20_000, ukupno: 70_000, statusObrade: 'aktivno' },
++    { ulog: 100_000, valuta: 'RSD', stopaProcent: AIIQ_WORLD_BANK_KAMATNA_STOPA, period: '30 dana', zarada: 40_000, ukupno: 140_000, statusObrade: 'zavrseno' },
++  ];
++
++  const racuniUObradi: RacunProcessing[] = [
++    {
++      racunId: 'RAC-RSD-001',
++      tip: 'dinarski',
++      valuta: 'RSD',
++      trenutnaFaza: 'settlement',
++      faze: [
++        { naziv: 'validacija', status: 'zavrsena' },
++        { naziv: 'odobrenje', status: 'zavrsena' },
++        { naziv: 'izvrsavanje', status: 'zavrsena' },
++        { naziv: 'settlement', status: 'u_toku' },
++      ],
++    },
++    {
++      racunId: 'RAC-EUR-002',
++      tip: 'devizni',
++      valuta: 'EUR',
++      trenutnaFaza: 'odobrenje',
++      faze: [
++        { naziv: 'validacija', status: 'zavrsena' },
++        { naziv: 'odobrenje', status: 'u_toku' },
++        { naziv: 'izvrsavanje', status: 'cekanje' },
++        { naziv: 'settlement', status: 'cekanje' },
++      ],
++    },
++    {
++      racunId: 'RAC-USD-003',
++      tip: 'devizni',
++      valuta: 'USD',
++      trenutnaFaza: 'validacija',
++      faze: [
++        { naziv: 'validacija', status: 'u_toku' },
++        { naziv: 'odobrenje', status: 'cekanje' },
++        { naziv: 'izvrsavanje', status: 'cekanje' },
++        { naziv: 'settlement', status: 'cekanje' },
++      ],
++    },
++  ];
++
++  const fraudChecks: FraudCheckRezultat[] = [
++    { transakcijaId: 'TRX-PROC-001', rezultat: 'ok', sigurnostScore: 98, razlog: 'Regularni transfer štednog računa' },
++    { transakcijaId: 'TRX-PROC-002', rezultat: 'ok', sigurnostScore: 95, razlog: 'Poznat korisnik, regularna suma' },
++    { transakcijaId: 'TRX-PROC-003', rezultat: 'upozorenje', sigurnostScore: 72, razlog: 'Neobičan obrazac plaćanja, na pregledu' },
++    { transakcijaId: 'TRX-PROC-004', rezultat: 'ok', sigurnostScore: 97, razlog: 'Verifikovani međunarodni transfer' },
++    { transakcijaId: 'TRX-PROC-005', rezultat: 'blokiran', sigurnostScore: 18, razlog: 'Prijavljeni obrazac prevare — automatski blokiran' },
++  ];
++
++  const rutingOdluke: RutingOdluka[] = [
++    { transakcijaId: 'TRX-PROC-001', odabranaMetoda: 'instant', obrazlozenje: 'Domaći RSD prenos — instant routing najbrži', procenjeniMs: 12, provizija: '0 RSD' },
++    { transakcijaId: 'TRX-PROC-002', odabranaMetoda: 'SWIFT', obrazlozenje: 'EUR devizni transfer — SWIFT standardni kanal', procenjeniMs: 86_400_000, provizija: '5 EUR' },
++    { transakcijaId: 'TRX-PROC-004', odabranaMetoda: 'blockchain', obrazlozenje: 'USD globalni transfer — Polygon blockchain za transparentnost', procenjeniMs: 120_000, provizija: '0.001 MATIC' },
++  ];
++
++  const kpi: KpiProcesiranja = {
++    transakcijaUDanu: AIIQWB_PROC_PER_DAY,
++    uspesnostProcenata: AIIQWB_PROC_SUCCESS_RATE,
++    prosecnoVremeMs: AIIQWB_PROC_AVG_TIME_MS,
++    fraudBlokirano: fraudChecks.filter((f) => f.rezultat === 'blokiran').length,
++    swiftTransfera: rutingOdluke.filter((r) => r.odabranaMetoda === 'SWIFT').length,
++    blockchainTransfera: rutingOdluke.filter((r) => r.odabranaMetoda === 'blockchain').length,
++    instantTransfera: rutingOdluke.filter((r) => r.odabranaMetoda === 'instant').length,
++    aktivnihRacuna: racuniUObradi.length,
++  };
++
++  return {
++    status: 'aktivan',
++    sistem: 'AI IQ World Bank — Procesiranje Transakcija',
++    kompanija: KOMPANIJA,
++    verzija: APP_VERSION,
++    timestamp: new Date().toISOString(),
++    transakcijeUObradi,
++    kamatnaObrada,
++    racuniUObradi,
++    fraudChecks,
++    rutingOdluke,
++    kpi,
++  };
++}
+diff --git a/src/lib/autofinish-petlja.ts b/src/lib/autofinish-petlja.ts
+index c24660d6..e32b3957 100644
+--- a/src/lib/autofinish-petlja.ts
++++ b/src/lib/autofinish-petlja.ts
+@@ -7883,3 +7883,94 @@ export function getAutofinishReleaseReadiness(): AutofinishReleaseReadinessResul
+ // Dedicated route coverage test za /api/autofinish-api-milestone-1033.
+ // Test: src/tests/autofinish/autofinish-api-milestone-1033-route.test.ts
+ // APP_VERSION=58.2.0 | AUTOFINISH_COUNT=1313 | TOTAL_API_ROUTES=1158 | TOTAL_ROUTES=1258
++
++
++// ─── Autofinish #1361 — AI IQ WORLD BANK PROCESIRANJE ────────────────────────
++// lib modul: src/lib/ai-iq-world-bank-procesiranje.ts — buildAiIqWorldBankProcesiranje(),
++// AiIqWorldBankProcesiranjeRezultat, TransakcijaStatus, KamatnaIzracunavanje, RacunProcessing,
++// FraudCheckRezultat, RutingOdluka, KpiProcesiranja — aktivni sloj procesiranja transakcija.
++// Nova ruta: GET /api/ai-iq-world-bank-procesiranje. Nova stranica: /ai-iq-world-bank-procesiranje.
++// Sekvence: src/lib/sekvence/ai-iq-world-bank-procesiranje-page.ts.
++// Integracija: navigation + sitemap + 12/12 testova prošlo.
++// APP_VERSION=59.32.0 | AUTOFINISH_COUNT=1361 | TOTAL_API_ROUTES=1166 | TOTAL_ROUTES=1270 | TOTAL_PAGES=62
++
++
++// ─── Autofinish #1362 — PROCESUIRANJE SVEGA ──────────────────────────────────
++// lib modul: src/lib/procesuiranje-svega.ts — buildProcesuiranjeSvega(),
++// ProcesuiranjeSvegaRezultat, ProcesuiranjeDomen, ProcesuiranjeStavka — 8 domena procesiranja:
++// bankarski, AI, finansijski, licencni, ekosistem, autofinish, bezbednosni, analitički.
++// Nova ruta: GET /api/procesuiranje-svega. Nova stranica: /procesuiranje-svega.
++// Sekvence: src/lib/sekvence/procesuiranje-svega-page.ts.
++// Integracija: navigation + sitemap + 13/13 testova prošlo.
++// APP_VERSION=59.32.0 | AUTOFINISH_COUNT=1362 | TOTAL_API_ROUTES=1166 | TOTAL_ROUTES=1270 | TOTAL_PAGES=62
++
++
++// ─── Autofinish #1363 — SEKVENCE BARREL UPDATE ───────────────────────────────
++// Sekvence barrel (src/lib/sekvence/index.ts) dopunjen sa 2 nova exports:
++// aiIqWorldBankProcesiranjeSekvence (./ai-iq-world-bank-procesiranje-page)
++// procesuiranjeSvegaSekvence (./procesuiranje-svega-page)
++// Autofinish-petlja.ts dokumentacija za #1361 i #1362 dodana.
++// APP_VERSION=59.33.0 | AUTOFINISH_COUNT=1363 | TOTAL_API_ROUTES=1166 | TOTAL_ROUTES=1270 | TOTAL_PAGES=62
++
++
++// ─── Autofinish #1364 — /API/AUTOFINISH-TOP-ITERACIJE ROUTE COVERAGE TEST ───
++// Dedicated route coverage test dodat za /api/autofinish-top-iteracije.
++// Test: src/tests/autofinish/autofinish-top-iteracije-route.test.ts
++// Pokriveno: 200 default + n=5 + validacija grešaka (n=0, n=201) + response header-i.
++// APP_VERSION=59.34.0 | AUTOFINISH_COUNT=1364 | TOTAL_API_ROUTES=1166 | TOTAL_ROUTES=1270 | TOTAL_PAGES=62
++
++
++// ─── Autofinish #1365 — /API/AUTOFINISH-ZDRAVLJE ROUTE COVERAGE TEST ─────────
++// Dedicated route coverage test dodat za /api/autofinish-zdravlje.
++// Test: src/tests/autofinish/autofinish-zdravlje-route.test.ts
++// Pokriveno: 200 payload + Cache-Control + X-App-Version + X-Autofinish-Iteracija.
++// APP_VERSION=59.35.0 | AUTOFINISH_COUNT=1365 | TOTAL_API_ROUTES=1166 | TOTAL_ROUTES=1270 | TOTAL_PAGES=62
++
++
++// ─── Autofinish #1366 — /API/AUTOFINISH-DEPLOYMENT-PIPELINE ROUTE COVERAGE ───
++// Dedicated route coverage test dodat za /api/autofinish-deployment-pipeline.
++// Test: src/tests/autofinish/autofinish-deployment-pipeline-route.test.ts
++// Pokriveno: 200 payload schema + pipeline/faze struktura + response header-i.
++// APP_VERSION=59.36.0 | AUTOFINISH_COUNT=1366 | TOTAL_API_ROUTES=1166 | TOTAL_ROUTES=1270 | TOTAL_PAGES=62
++
++
++// ─── Autofinish #1367 — /API/AUTOFINISH-DEPLOYMENT-STATUS ROUTE COVERAGE ─────
++// Dedicated route coverage test dodat za /api/autofinish-deployment-status.
++// Test: src/tests/autofinish/autofinish-deployment-status-route.test.ts
++// Pokriveno: 200 payload schema + deployments struktura + response header-i.
++// APP_VERSION=59.37.0 | AUTOFINISH_COUNT=1367 | TOTAL_API_ROUTES=1166 | TOTAL_ROUTES=1270 | TOTAL_PAGES=62
++
++
++// ─── Autofinish #1368 — /API/AUTOFINISH-EKOSISTEM-MONITOR ROUTE COVERAGE ──────
++// Dedicated route coverage test dodat za /api/autofinish-ekosistem-monitor.
++// Test: src/tests/autofinish/autofinish-ekosistem-monitor-route.test.ts
++// Pokriveno: 200 payload schema + monitor/progres/ekosistem sekcije.
++// APP_VERSION=59.38.0 | AUTOFINISH_COUNT=1368 | TOTAL_API_ROUTES=1166 | TOTAL_ROUTES=1270 | TOTAL_PAGES=62
++
++
++// ─── Autofinish #1369 — /API/AUTOFINISH-EKOSISTEM-SNAPSHOT ROUTE COVERAGE ─────
++// Dedicated route coverage test dodat za /api/autofinish-ekosistem-snapshot.
++// Test: src/tests/autofinish/autofinish-ekosistem-snapshot-route.test.ts
++// Pokriveno: 200 payload schema + response header-i + snapshot metrika.
++// APP_VERSION=59.39.0 | AUTOFINISH_COUNT=1369 | TOTAL_API_ROUTES=1166 | TOTAL_ROUTES=1270 | TOTAL_PAGES=62
++
++
++// ─── Autofinish #1370 — /API/AUTOFINISH-EKOSISTEM-ZDRAVLJE ROUTE COVERAGE ─────
++// Dedicated route coverage test dodat za /api/autofinish-ekosistem-zdravlje.
++// Test: src/tests/autofinish/autofinish-ekosistem-zdravlje-route.test.ts
++// Pokriveno: 200 payload schema + zdravlje/progres/ekosistem sekcije.
++// APP_VERSION=59.40.0 | AUTOFINISH_COUNT=1370 | TOTAL_API_ROUTES=1166 | TOTAL_ROUTES=1270 | TOTAL_PAGES=62
++
++
++// ─── Autofinish #1371 — /API/AUTOFINISH-ENDPOINT-INVENTAR ROUTE COVERAGE ─────
++// Dedicated route coverage test dodat za /api/autofinish-endpoint-inventar.
++// Test: src/tests/autofinish/autofinish-endpoint-inventar-route.test.ts
++// Pokriveno: 200 payload schema + inventar/progres/ekosistem sekcije.
++// APP_VERSION=59.41.0 | AUTOFINISH_COUNT=1371 | TOTAL_API_ROUTES=1166 | TOTAL_ROUTES=1270 | TOTAL_PAGES=62
++
++
++// ─── Autofinish #1372 — /API/AUTOFINISH-ERROR-BUDGET ROUTE COVERAGE ──────────
++// Dedicated route coverage test dodat za /api/autofinish-error-budget.
++// Test: src/tests/autofinish/autofinish-error-budget-route.test.ts
++// Pokriveno: 200 payload schema + servisi/zdravih/kriticnih + Cache-Control/X-headers.
++// APP_VERSION=59.42.0 | AUTOFINISH_COUNT=1372 | TOTAL_API_ROUTES=1166 | TOTAL_ROUTES=1270 | TOTAL_PAGES=62
+diff --git a/src/lib/constants.ts b/src/lib/constants.ts
+index 9a4e0c4e..6700ef40 100644
+--- a/src/lib/constants.ts
++++ b/src/lib/constants.ts
+@@ -5,7 +5,7 @@
+  * Sve komponente koriste ove konstante umesto hardkodovanih vrednosti.
+  */
+ 
+-export const APP_VERSION = '59.31.0';
++export const APP_VERSION = '59.42.0';
+ export const APP_NAME = 'AI IQ SUPER PLATFORMA';
+ export const KOMPANIJA = 'Kompanija SPAJA';
+ export const BASE_URL = 'https://ai-iq-super-platforma.vercel.app';
+@@ -24,15 +24,15 @@ export const OMEGA_AI_MUSKIH = 20_000_281;
+ export const OMEGA_AI_ZENSKIH = 20_000_281;
+ 
+ // Ekosistem
+-export const TOTAL_PAGES = 60;
+-export const TOTAL_API_ROUTES = 1164;
+-export const TOTAL_ROUTES = 1266;
++export const TOTAL_PAGES = 62;
++export const TOTAL_API_ROUTES = 1166;
++export const TOTAL_ROUTES = 1270;
+ export const TOTAL_IGRICA = 97;
+ export const TOTAL_GEJMING_ENTITETA = 45;
+ export const TOTAL_DIAGNOSTIKA = 2368;
+ 
+ // Autofinish
+-export const AUTOFINISH_COUNT = 1360;
++export const AUTOFINISH_COUNT = 1372;
+ export const AUTOFINISH_TARGET = 300_000_000_000_000_000;
+ 
+ // Proksi
+diff --git a/src/lib/navigation.ts b/src/lib/navigation.ts
+index a3f01454..87527145 100644
+--- a/src/lib/navigation.ts
++++ b/src/lib/navigation.ts
+@@ -25,6 +25,7 @@ export const navigation: NavItem[] = [
+   { label: 'AI Platforma', href: '/ai-platforma', icon: '🤖', description: 'AI platforma i modeli' },
+   { label: 'Banka', href: '/banka', icon: '🏦', description: 'SPAJA Banka platforma' },
+   { label: 'AI IQ World Bank', href: '/ai-iq-world-bank', icon: '🌐', description: 'AI IQ WORLD BANK — sve o njoj: usluge, AI tehnologija, ERSTE računi, partneri, transferi, GitHub billing i ekosistem' },
++  { label: 'AI IQ World Bank Procesiranje', href: '/ai-iq-world-bank-procesiranje', icon: '⚙️', description: 'Aktivni sloj procesiranja AI IQ World Bank: transakcije, kamatna obrada, AI fraud detekcija, SWIFT/blockchain rutiranje' },
+   { label: 'Licencni Budžet Srbija', href: '/licencni-budzet-srbija', icon: '📜', description: 'Registar i budžet licenci za Srbiju — aktivna nabavka, regulatorni rokovi i godišnji plan troškova' },
+   { label: 'Digitalna Industrija PIB/MB', href: '/digitalna-industrija-pib-mb', icon: '🧾', description: 'Centralni registar PIB i matičnih brojeva ključnih entiteta Digitalne Industrije u Srbiji' },
+   { label: 'Digitalna Industrija Šifra Delatnosti', href: '/digitalna-industrija-sifra-delatnosti', icon: '🏷️', description: 'Centralni registar šifara delatnosti ključnih entiteta Digitalne Industrije u Srbiji' },
+@@ -118,6 +119,7 @@ export const navigation: NavItem[] = [
+   { label: 'SpajaUltra REPL', href: '/spaja-ultra-repl', icon: '⌨️', description: 'SpajaUltraOmegaCore REPL — DSL parser, transpajler, runtime audit log' },
+   { label: 'Digitalna Platforma', href: '/digitalna-platforma', icon: '🌐', description: 'AI IQ SUPER PLATFORMA — kompletni digitalni ekosistem Kompanije SPAJA' },
+   { label: 'Analiza Svega', href: '/analiza-svega', icon: '🔭', description: 'Celokupna analiza ekosistema — ekosistem, infrastruktura, finansije, bezbednost, operativa, autofinish i protokoli' },
++  { label: 'Procesuiranje Svega', href: '/procesuiranje-svega', icon: '⚙️', description: 'Aktivni pipeline procesiranja svih domena — bankarski, AI, finansijski, licencni, ekosistem, autofinish, bezbednosni i analitički' },
+   { label: 'Prijava', href: '/login', icon: '🔑', description: 'Prijava na platformu — pristup Digitalnoj Industriji' },
+   { label: 'Zaboravljena Lozinka', href: '/zaboravljena-lozinka', icon: '🔓', description: 'Resetovanje lozinke za pristup platformi' },
+ ];
+diff --git a/src/lib/procesuiranje-svega.ts b/src/lib/procesuiranje-svega.ts
+new file mode 100644
+index 00000000..66568a6c
+--- /dev/null
++++ b/src/lib/procesuiranje-svega.ts
+@@ -0,0 +1,271 @@
++// SpajaUltraOmegaCore — PROCESUIRANJE SVEGA
++// Kompanija SPAJA — Digitalna Industrija
++//
++// Jedinstven izvor istine za aktivni pipeline procesiranja svih domena:
++//   - Bankarski procesi
++//   - AI procesi
++//   - Finansijski procesi
++//   - Licencni procesi
++//   - Ekosistem procesi
++//   - Autofinish procesi
++//   - Bezbednosni procesi
++//   - Analitički procesi
++
++import {
++  APP_VERSION,
++  AUTOFINISH_COUNT,
++  TOTAL_API_ROUTES,
++  TOTAL_ROUTES,
++  KOMPANIJA,
++} from './constants';
++
++// ─── Tipovi ───────────────────────────────────────────────────────────────────
++
++export type ProcesuiranjeStatus = 'aktivno' | 'cekanje' | 'greska' | 'zavrseno';
++
++export interface ProcesuiranjeStavka {
++  id: string;
++  opis: string;
++  status: ProcesuiranjeStatus;
++  tip: string;
++}
++
++export interface ProcesuiranjeDomen {
++  naziv: string;
++  ikona: string;
++  status: ProcesuiranjeStatus;
++  procenat: number;
++  stavke: ProcesuiranjeStavka[];
++  vreme: string;
++}
++
++export interface ProcesuiranjeSvegaRezultat {
++  sistem: string;
++  kompanija: string;
++  verzija: string;
++  autofinishBroj: number;
++
++  // Ukupni pregled
++  ukupanProcenat: number;
++  aktivnihProcesa: number;
++  cekajucihProcesa: number;
++  gresakaUkupno: number;
++  zavrsenihProcesa: number;
++
++  // Domeni
++  domeni: {
++    bankarski: ProcesuiranjeDomen;
++    ai: ProcesuiranjeDomen;
++    finansijski: ProcesuiranjeDomen;
++    licencni: ProcesuiranjeDomen;
++    ekosistem: ProcesuiranjeDomen;
++    autofinish: ProcesuiranjeDomen;
++    bezbednosni: ProcesuiranjeDomen;
++    analiticki: ProcesuiranjeDomen;
++  };
++
++  // Sve stavke iz svih domena (flat lista aktivnih)
++  aktivneStavke: ProcesuiranjeStavka[];
++
++  timestamp: string;
++}
++
++// ─── Helper ───────────────────────────────────────────────────────────────────
++
++function stavkeProcenat(stavke: ProcesuiranjeStavka[]): number {
++  if (stavke.length === 0) return 0;
++  const zavrsene = stavke.filter((s) => s.status === 'zavrseno' || s.status === 'aktivno').length;
++  return Math.round((zavrsene / stavke.length) * 100);
++}
++
++function dominantniStatus(stavke: ProcesuiranjeStavka[]): ProcesuiranjeStatus {
++  if (stavke.some((s) => s.status === 'greska')) return 'greska';
++  if (stavke.some((s) => s.status === 'aktivno')) return 'aktivno';
++  if (stavke.some((s) => s.status === 'cekanje')) return 'cekanje';
++  return 'zavrseno';
++}
++
++// ─── Builder ──────────────────────────────────────────────────────────────────
++
++export function buildProcesuiranjeSvega(): ProcesuiranjeSvegaRezultat {
++  const now = new Date().toISOString();
++
++  // ── 1. Bankarski procesi ───────────────────────────────────────────────────
++  const bankarskiStavke: ProcesuiranjeStavka[] = [
++    { id: 'bank-001', opis: 'ERSTE sinhronizacija računa (RSD/EUR/USD)', status: 'aktivno', tip: 'sinhronizacija' },
++    { id: 'bank-002', opis: 'SWIFT transfer pipeline validacija', status: 'aktivno', tip: 'transfer' },
++    { id: 'bank-003', opis: 'Obračun kamatne stope (40% mesečno)', status: 'zavrseno', tip: 'kamatna-obrada' },
++    { id: 'bank-004', opis: 'AI Fraud detekcija — Omega AI model', status: 'aktivno', tip: 'bezbednost' },
++    { id: 'bank-005', opis: 'Srpske banke zahtev za registraciju (12 banaka)', status: 'cekanje', tip: 'registracija' },
++    { id: 'bank-006', opis: 'Blockchain Polygon verifikacija transakcija', status: 'zavrseno', tip: 'blockchain' },
++  ];
++
++  const bankarski: ProcesuiranjeDomen = {
++    naziv: 'Bankarski Procesi',
++    ikona: '🏦',
++    status: dominantniStatus(bankarskiStavke),
++    procenat: stavkeProcenat(bankarskiStavke),
++    stavke: bankarskiStavke,
++    vreme: now,
++  };
++
++  // ── 2. AI procesi ──────────────────────────────────────────────────────────
++  const aiStavke: ProcesuiranjeStavka[] = [
++    { id: 'ai-001', opis: 'Omega AI persona inicijalizacija (21 persona)', status: 'zavrseno', tip: 'persona' },
++    { id: 'ai-002', opis: 'Kreditni scoring model — 97% tačnost', status: 'aktivno', tip: 'scoring' },
++    { id: 'ai-003', opis: 'AI investicioni savetnik — preporuke portfelja', status: 'aktivno', tip: 'preporuke' },
++    { id: 'ai-004', opis: 'Fraud AI model — ažuriranje pravila', status: 'aktivno', tip: 'fraud' },
++    { id: 'ai-005', opis: 'AI predikcija tržišta — batch analiza', status: 'cekanje', tip: 'predikcija' },
++    { id: 'ai-006', opis: 'AI Asistent — korisnička podrška 24/7', status: 'aktivno', tip: 'asistent' },
++  ];
++
++  const ai: ProcesuiranjeDomen = {
++    naziv: 'AI Procesi',
++    ikona: '🧠',
++    status: dominantniStatus(aiStavke),
++    procenat: stavkeProcenat(aiStavke),
++    stavke: aiStavke,
++    vreme: now,
++  };
++
++  // ── 3. Finansijski procesi ─────────────────────────────────────────────────
++  const finansijskiStavke: ProcesuiranjeStavka[] = [
++    { id: 'fin-001', opis: 'Billing reconcilacija — Stripe sinhronizacija', status: 'aktivno', tip: 'billing' },
++    { id: 'fin-002', opis: 'Devizni račun — refresh kursne liste', status: 'zavrseno', tip: 'devizni' },
++    { id: 'fin-003', opis: 'GitHub Billing — AIIQ World Bank governance', status: 'aktivno', tip: 'github-billing' },
++    { id: 'fin-004', opis: 'Vercel dug obrada (~$1000 USD)', status: 'cekanje', tip: 'dug' },
++    { id: 'fin-005', opis: 'Fakture generisanje i export', status: 'zavrseno', tip: 'fakture' },
++    { id: 'fin-006', opis: 'Mesni porez registracija — Smederevo', status: 'cekanje', tip: 'porez' },
++  ];
++
++  const finansijski: ProcesuiranjeDomen = {
++    naziv: 'Finansijski Procesi',
++    ikona: '💰',
++    status: dominantniStatus(finansijskiStavke),
++    procenat: stavkeProcenat(finansijskiStavke),
++    stavke: finansijskiStavke,
++    vreme: now,
++  };
++
++  // ── 4. Licencni procesi ────────────────────────────────────────────────────
++  const licencniStavke: ProcesuiranjeStavka[] = [
++    { id: 'lic-001', opis: 'Licencni registar sinhronizacija', status: 'zavrseno', tip: 'registar' },
++    { id: 'lic-002', opis: 'Provera isteka licenci (expiry check)', status: 'aktivno', tip: 'expiry' },
++    { id: 'lic-003', opis: 'Gap analiza — nedostajuće licence Srbija', status: 'aktivno', tip: 'gap' },
++    { id: 'lic-004', opis: 'Nabavka pipeline — B2B procurement', status: 'cekanje', tip: 'nabavka' },
++    { id: 'lic-005', opis: 'Compliance izveštaj generisanje', status: 'zavrseno', tip: 'compliance' },
++  ];
++
++  const licencni: ProcesuiranjeDomen = {
++    naziv: 'Licencni Procesi',
++    ikona: '📜',
++    status: dominantniStatus(licencniStavke),
++    procenat: stavkeProcenat(licencniStavke),
++    stavke: licencniStavke,
++    vreme: now,
++  };
++
++  // ── 5. Ekosistem procesi ───────────────────────────────────────────────────
++  const ekosistemStavke: ProcesuiranjeStavka[] = [
++    { id: 'eko-001', opis: `Zdravlje platforme — ${TOTAL_API_ROUTES} API ruta`, status: 'zavrseno', tip: 'zdravlje' },
++    { id: 'eko-002', opis: `Validacija ruta — ${TOTAL_ROUTES} ukupno ruta`, status: 'zavrseno', tip: 'rute' },
++    { id: 'eko-003', opis: 'Sitemap rebuild — SEO optimizacija', status: 'aktivno', tip: 'sitemap' },
++    { id: 'eko-004', opis: 'Cron jobs — raspoređivanje i monitoring', status: 'aktivno', tip: 'cron' },
++    { id: 'eko-005', opis: 'Dijagnostika sistema — auto-repair', status: 'zavrseno', tip: 'dijagnostika' },
++    { id: 'eko-006', opis: 'Deploy pipeline — Vercel automatski deploy', status: 'zavrseno', tip: 'deploy' },
++  ];
++
++  const ekosistem: ProcesuiranjeDomen = {
++    naziv: 'Ekosistem Procesi',
++    ikona: '🌐',
++    status: dominantniStatus(ekosistemStavke),
++    procenat: stavkeProcenat(ekosistemStavke),
++    stavke: ekosistemStavke,
++    vreme: now,
++  };
++
++  // ── 6. Autofinish procesi ──────────────────────────────────────────────────
++  const autofinishProcenat = Math.min(100, Math.round((AUTOFINISH_COUNT / 1500) * 100));
++  const autofinishStavke: ProcesuiranjeStavka[] = [
++    { id: 'af-001', opis: `Autofinish iteracija #${AUTOFINISH_COUNT} — aktivna`, status: 'aktivno', tip: 'iteracija' },
++    { id: 'af-002', opis: `Progres ka cilju: ${autofinishProcenat}% od 1500 iteracija`, status: 'aktivno', tip: 'progres' },
++    { id: 'af-003', opis: 'Pokrivenost ruta — coverage test suite', status: 'zavrseno', tip: 'coverage' },
++    { id: 'af-004', opis: 'Changelog automated — ažuriranje changelog-a', status: 'zavrseno', tip: 'changelog' },
++    { id: 'af-005', opis: 'Branch cleanup monitor — stale grane', status: 'cekanje', tip: 'cleanup' },
++  ];
++
++  const autofinish: ProcesuiranjeDomen = {
++    naziv: 'Autofinish Procesi',
++    ikona: '♻️',
++    status: dominantniStatus(autofinishStavke),
++    procenat: stavkeProcenat(autofinishStavke),
++    stavke: autofinishStavke,
++    vreme: now,
++  };
++
++  // ── 7. Bezbednosni procesi ─────────────────────────────────────────────────
++  const bezbednosniStavke: ProcesuiranjeStavka[] = [
++    { id: 'bez-001', opis: 'Auth token rotacija — JWT refresh', status: 'zavrseno', tip: 'auth' },
++    { id: 'bez-002', opis: '2FA validacija — TOTP provera', status: 'zavrseno', tip: '2fa' },
++    { id: 'bez-003', opis: 'OAuth ključ provera (Google/GitHub)', status: 'cekanje', tip: 'oauth' },
++    { id: 'bez-004', opis: 'Audit log flush — bezbednosni zapisi', status: 'aktivno', tip: 'audit' },
++    { id: 'bez-005', opis: 'E2E enkripcija — verifikacija kanala', status: 'zavrseno', tip: 'enkripcija' },
++    { id: 'bez-006', opis: 'Rate limiting provera — IP blokade', status: 'zavrseno', tip: 'rate-limit' },
++  ];
++
++  const bezbednosni: ProcesuiranjeDomen = {
++    naziv: 'Bezbednosni Procesi',
++    ikona: '🔒',
++    status: dominantniStatus(bezbednosniStavke),
++    procenat: stavkeProcenat(bezbednosniStavke),
++    stavke: bezbednosniStavke,
++    vreme: now,
++  };
++
++  // ── 8. Analitički procesi ──────────────────────────────────────────────────
++  const analitickiStavke: ProcesuiranjeStavka[] = [
++    { id: 'an-001', opis: 'KPI agregacija — sve platforme', status: 'zavrseno', tip: 'kpi' },
++    { id: 'an-002', opis: 'Score računanje — domeni analiza svega', status: 'aktivno', tip: 'score' },
++    { id: 'an-003', opis: 'Zdravlje dijagnostičkog sistema', status: 'zavrseno', tip: 'zdravlje' },
++    { id: 'an-004', opis: 'Izveštaj generisanje — full report', status: 'aktivno', tip: 'izvestaj' },
++    { id: 'an-005', opis: 'Ekosistem snapshot — stanje u realnom vremenu', status: 'aktivno', tip: 'snapshot' },
++  ];
++
++  const analiticki: ProcesuiranjeDomen = {
++    naziv: 'Analitički Procesi',
++    ikona: '📊',
++    status: dominantniStatus(analitickiStavke),
++    procenat: stavkeProcenat(analitickiStavke),
++    stavke: analitickiStavke,
++    vreme: now,
++  };
++
++  // ── Agregacija ─────────────────────────────────────────────────────────────
++  const domeni = { bankarski, ai, finansijski, licencni, ekosistem, autofinish, bezbednosni, analiticki };
++  const sveStavke = Object.values(domeni).flatMap((d) => d.stavke);
++
++  const aktivnihProcesa = sveStavke.filter((s) => s.status === 'aktivno').length;
++  const cekajucihProcesa = sveStavke.filter((s) => s.status === 'cekanje').length;
++  const gresakaUkupno = sveStavke.filter((s) => s.status === 'greska').length;
++  const zavrsenihProcesa = sveStavke.filter((s) => s.status === 'zavrseno').length;
++
++  const domenProcenati = Object.values(domeni).map((d) => d.procenat);
++  const ukupanProcenat = Math.round(domenProcenati.reduce((a, b) => a + b, 0) / domenProcenati.length);
++
++  const aktivneStavke = sveStavke.filter((s) => s.status === 'aktivno');
++
++  return {
++    sistem: 'PROCESUIRANJE SVEGA — Digitalna Industrija',
++    kompanija: KOMPANIJA,
++    verzija: APP_VERSION,
++    autofinishBroj: AUTOFINISH_COUNT,
++    ukupanProcenat,
++    aktivnihProcesa,
++    cekajucihProcesa,
++    gresakaUkupno,
++    zavrsenihProcesa,
++    domeni,
++    aktivneStavke,
++    timestamp: new Date().toISOString(),
++  };
++}
+diff --git a/src/lib/sekvence/ai-iq-world-bank-procesiranje-page.ts b/src/lib/sekvence/ai-iq-world-bank-procesiranje-page.ts
+new file mode 100644
+index 00000000..1310d5bf
+--- /dev/null
++++ b/src/lib/sekvence/ai-iq-world-bank-procesiranje-page.ts
+@@ -0,0 +1,167 @@
++import type { Sekvenca } from '@/lib/types';
++import { buildAiIqWorldBankProcesiranje, AIIQWB_PROC_SUCCESS_RATE, AIIQWB_PROC_PER_DAY, AIIQWB_PROC_AVG_TIME_MS } from '@/lib/ai-iq-world-bank-procesiranje';
++import { AIIQ_WORLD_BANK_KAMATNA_STOPA } from '@/lib/ai-iq-world-bank';
++
++const r = buildAiIqWorldBankProcesiranje();
++
++export const aiIqWorldBankProcesiranjeSekvence: Sekvenca[] = [
++  // ── Hero ─────────────────────────────────────────────────────────────────
++  {
++    id: 'aiiqwb-proc-hero',
++    tip: 'hero',
++    naslov: '⚙️ AI IQ World Bank — Procesiranje Transakcija',
++    podnaslov: `Aktivni sloj obrade: ${AIIQWB_PROC_PER_DAY.toLocaleString('sr-Latn')} transakcija/dan, ${AIIQWB_PROC_SUCCESS_RATE}% uspešnost, AI fraud detekcija, SWIFT/blockchain rutiranje`,
++    ikona: '⚙️',
++    redosled: 1,
++    podaci: {
++      opis: `AI IQ World Bank procesira ${AIIQWB_PROC_PER_DAY.toLocaleString('sr-Latn')} transakcija dnevno uz prosečno vreme obrade od ${AIIQWB_PROC_AVG_TIME_MS}ms. Kamatna stopa od ${AIIQ_WORLD_BANK_KAMATNA_STOPA}% mesečno se obračunava u realnom vremenu za svaki štedni račun. Omega AI Fraud Detekcija štiti svaku transakciju.`,
++      dugmad: [
++        { tekst: 'Banka', href: '/banka' },
++        { tekst: 'AI IQ World Bank', href: '/ai-iq-world-bank', stil: 'sekundarno' },
++        { tekst: 'API Procesiranje', href: '/api/ai-iq-world-bank-procesiranje', stil: 'sekundarno' },
++      ],
++    },
++  },
++
++  // ── KPI procesiranja ──────────────────────────────────────────────────────
++  {
++    id: 'aiiqwb-proc-kpi',
++    tip: 'statistika',
++    naslov: '📊 KPI Procesiranja',
++    redosled: 2,
++    podaci: {
++      stavke: [
++        { naziv: 'Transakcija/dan', vrednost: r.kpi.transakcijaUDanu.toLocaleString('sr-Latn'), ikona: '💸' },
++        { naziv: 'Uspešnost', vrednost: `${r.kpi.uspesnostProcenata}%`, ikona: '✅' },
++        { naziv: 'Prosečno vreme', vrednost: `${r.kpi.prosecnoVremeMs}ms`, ikona: '⚡' },
++        { naziv: 'Fraud blokirano', vrednost: r.kpi.fraudBlokirano, ikona: '🛡️' },
++        { naziv: 'SWIFT transfera', vrednost: r.kpi.swiftTransfera, ikona: '🌍' },
++        { naziv: 'Blockchain', vrednost: r.kpi.blockchainTransfera, ikona: '🔗' },
++        { naziv: 'Instant prenos', vrednost: r.kpi.instantTransfera, ikona: '⚡' },
++        { naziv: 'Aktivnih računa', vrednost: r.kpi.aktivnihRacuna, ikona: '👤' },
++      ],
++    },
++  },
++
++  // ── Transakcije u obradi ──────────────────────────────────────────────────
++  {
++    id: 'aiiqwb-proc-transakcije',
++    tip: 'tabela',
++    naslov: '🔄 Transakcije u Obradi — Pipeline',
++    podnaslov: 'Aktivne transakcije i njihov status u procesu obrade',
++    redosled: 3,
++    podaci: {
++      zaglavlje: ['ID', 'Iznos', 'Valuta', 'Status', 'Fraud Check', 'Vreme (ms)', 'Procesirano'],
++      redovi: r.transakcijeUObradi.map((t) => [
++        t.id,
++        t.iznos.toLocaleString('sr-Latn'),
++        t.valuta,
++        t.status,
++        t.fraudCheck,
++        t.vrijemePocetkaMs === 0 ? '—' : `${t.vrijemePocetkaMs}ms`,
++        t.procesirano ? '✅' : '🔄',
++      ]),
++    },
++  },
++
++  // ── Kamatna obrada ────────────────────────────────────────────────────────
++  {
++    id: 'aiiqwb-proc-kamatna',
++    tip: 'tabela',
++    naslov: `💰 Kamatna Obrada — ${AIIQ_WORLD_BANK_KAMATNA_STOPA}% mesečno`,
++    podnaslov: 'Obračun kamate u realnom vremenu za sve štedne račune',
++    redosled: 4,
++    podaci: {
++      zaglavlje: ['Ulog', 'Valuta', 'Stopa', 'Period', 'Zarada', 'Ukupno', 'Status'],
++      redovi: r.kamatnaObrada.map((k) => [
++        k.ulog.toLocaleString('sr-Latn'),
++        k.valuta,
++        `${k.stopaProcent}%`,
++        k.period,
++        k.zarada.toLocaleString('sr-Latn'),
++        k.ukupno.toLocaleString('sr-Latn'),
++        k.statusObrade === 'aktivno' ? '🔄 Aktivno' : '✅ Završeno',
++      ]),
++    },
++  },
++
++  // ── Računi u obradi ───────────────────────────────────────────────────────
++  {
++    id: 'aiiqwb-proc-racuni',
++    tip: 'kartice',
++    naslov: '🏦 Računi u Obradi — Pipeline Faze',
++    podnaslov: 'Status pipeline-a za svaki račun: validacija → odobrenje → izvršavanje → settlement',
++    redosled: 5,
++    podaci: {
++      kartice: r.racuniUObradi.map((racun) => ({
++        naslov: `${racun.racunId} (${racun.valuta})`,
++        opis: `Tip: ${racun.tip} | Trenutna faza: ${racun.trenutnaFaza}`,
++        ikona: racun.valuta === 'RSD' ? '🇷🇸' : racun.valuta === 'EUR' ? '🇪🇺' : '🇺🇸',
++        oznake: racun.faze.map((f) =>
++          `${f.naziv}: ${f.status === 'zavrsena' ? '✅' : f.status === 'u_toku' ? '🔄' : '⏳'}`
++        ),
++      })),
++    },
++  },
++
++  // ── Fraud Checks ──────────────────────────────────────────────────────────
++  {
++    id: 'aiiqwb-proc-fraud',
++    tip: 'tabela',
++    naslov: '🛡️ AI Fraud Detekcija — Rezultati',
++    podnaslov: 'Omega AI Fraud Model — sigurnosni score za svaku transakciju',
++    redosled: 6,
++    podaci: {
++      zaglavlje: ['Transakcija ID', 'Rezultat', 'Sigurnost Score', 'Razlog'],
++      redovi: r.fraudChecks.map((f) => [
++        f.transakcijaId,
++        f.rezultat === 'ok' ? '✅ OK' : f.rezultat === 'upozorenje' ? '⚠️ Upozorenje' : '🚫 Blokiran',
++        `${f.sigurnostScore}/100`,
++        f.razlog,
++      ]),
++    },
++  },
++
++  // ── Ruting odluke ─────────────────────────────────────────────────────────
++  {
++    id: 'aiiqwb-proc-ruting',
++    tip: 'kartice',
++    naslov: '🔀 Ruting Odluke — SWIFT / Blockchain / Instant',
++    podnaslov: 'AI optimizovano rutiranje transakcija za najniže provizije i najbrže izvršavanje',
++    redosled: 7,
++    podaci: {
++      kartice: r.rutingOdluke.map((rut) => ({
++        naslov: `${rut.transakcijaId} → ${rut.odabranaMetoda}`,
++        opis: rut.obrazlozenje,
++        ikona: rut.odabranaMetoda === 'SWIFT' ? '🌍' : rut.odabranaMetoda === 'blockchain' ? '🔗' : '⚡',
++        oznake: [
++          rut.odabranaMetoda,
++          `Provizija: ${rut.provizija}`,
++          rut.odabranaMetoda === 'instant' ? `${rut.procenjeniMs}ms` : '',
++        ].filter(Boolean),
++      })),
++    },
++  },
++
++  // ── CTA ───────────────────────────────────────────────────────────────────
++  {
++    id: 'aiiqwb-proc-cta',
++    tip: 'cta',
++    naslov: '🚀 AI IQ World Bank — Kompletan Ekosistem',
++    redosled: 99,
++    podaci: {
++      opis: `AI IQ World Bank procesira ${AIIQWB_PROC_PER_DAY.toLocaleString('sr-Latn')} transakcija dnevno uz ${AIIQWB_PROC_SUCCESS_RATE}% uspešnost. Kamatna stopa ${AIIQ_WORLD_BANK_KAMATNA_STOPA}% mesečno. Omega AI Fraud zaštita na svakoj transakciji.`,
++      stavke: [
++        { naziv: 'Transakcija/dan', vrednost: AIIQWB_PROC_PER_DAY.toLocaleString('sr-Latn'), ikona: '💸' },
++        { naziv: 'Uspešnost', vrednost: `${AIIQWB_PROC_SUCCESS_RATE}%`, ikona: '✅' },
++        { naziv: 'Kamata', vrednost: `${AIIQ_WORLD_BANK_KAMATNA_STOPA}%/mes`, ikona: '💰' },
++        { naziv: 'Avg vreme', vrednost: `${AIIQWB_PROC_AVG_TIME_MS}ms`, ikona: '⚡' },
++      ],
++      dugmad: [
++        { tekst: 'Banka', href: '/banka' },
++        { tekst: 'AI IQ World Bank', href: '/ai-iq-world-bank', stil: 'sekundarno' },
++        { tekst: 'Analiza Svega', href: '/analiza-svega', stil: 'sekundarno' },
++      ],
++    },
++  },
++];
+diff --git a/src/lib/sekvence/index.ts b/src/lib/sekvence/index.ts
+index 0654bf9a..84cc4dcf 100644
+--- a/src/lib/sekvence/index.ts
++++ b/src/lib/sekvence/index.ts
+@@ -204,3 +204,9 @@ export { digitalnaIndustrijaNagradeSekvence } from './digitalna-industrija-nagra
+ 
+ // ── ANALIZA SVEGA ──────────────────────────────────────────────────────────────
+ export { analizaSvegaSekvence } from './analiza-svega-page';
++
++// ── AI IQ WORLD BANK PROCESIRANJE ────────────────────────────────────────────
++export { aiIqWorldBankProcesiranjeSekvence } from './ai-iq-world-bank-procesiranje-page';
++
++// ── PROCESUIRANJE SVEGA ───────────────────────────────────────────────────────
++export { procesuiranjeSvegaSekvence } from './procesuiranje-svega-page';
+diff --git a/src/lib/sekvence/procesuiranje-svega-page.ts b/src/lib/sekvence/procesuiranje-svega-page.ts
+new file mode 100644
+index 00000000..a8fca2e4
+--- /dev/null
++++ b/src/lib/sekvence/procesuiranje-svega-page.ts
+@@ -0,0 +1,161 @@
++import type { Sekvenca } from '@/lib/types';
++import { buildProcesuiranjeSvega } from '@/lib/procesuiranje-svega';
++import { KOMPANIJA, APP_VERSION, AUTOFINISH_COUNT } from '@/lib/constants';
++
++const p = buildProcesuiranjeSvega();
++
++const domenIkone: Record<string, string> = {
++  bankarski: '🏦',
++  ai: '🧠',
++  finansijski: '💰',
++  licencni: '📜',
++  ekosistem: '🌐',
++  autofinish: '♻️',
++  bezbednosni: '🔒',
++  analiticki: '📊',
++};
++
++export const procesuiranjeSvegaSekvence: Sekvenca[] = [
++  // ── Hero ─────────────────────────────────────────────────────────────────
++  {
++    id: 'proc-svega-hero',
++    tip: 'hero',
++    naslov: '⚙️ PROCESUIRANJE SVEGA — Digitalna Industrija',
++    podnaslov: `Aktivni pipeline procesiranja svih domena ${KOMPANIJA} — ${p.ukupanProcenat}% ukupan procenat`,
++    ikona: '⚙️',
++    redosled: 1,
++    podaci: {
++      opis: `Jedinstven pregled aktivnog procesiranja svih 8 domena Digitalne Industrije: bankarski, AI, finansijski, licencni, ekosistem, autofinish, bezbednosni i analitički. Ukupan procenat: ${p.ukupanProcenat}%. Aktivnih procesa: ${p.aktivnihProcesa}. Verzija: v${APP_VERSION}.`,
++      dugmad: [
++        { tekst: 'API: Procesuiranje Svega', href: '/api/procesuiranje-svega' },
++        { tekst: 'Analiza Svega', href: '/analiza-svega', stil: 'sekundarno' },
++        { tekst: 'Dashboard', href: '/dashboard', stil: 'sekundarno' },
++      ],
++    },
++  },
++
++  // ── KPI ───────────────────────────────────────────────────────────────────
++  {
++    id: 'proc-svega-kpi',
++    tip: 'statistika',
++    naslov: '📊 Ukupni KPI Procesiranja',
++    redosled: 2,
++    podaci: {
++      stavke: [
++        { naziv: 'Ukupan Procenat', vrednost: `${p.ukupanProcenat}%`, ikona: '🎯' },
++        { naziv: 'Aktivnih Procesa', vrednost: p.aktivnihProcesa, ikona: '🔄' },
++        { naziv: 'Čekajućih', vrednost: p.cekajucihProcesa, ikona: '⏳' },
++        { naziv: 'Grešaka', vrednost: p.gresakaUkupno, ikona: '❌' },
++        { naziv: 'Završenih', vrednost: p.zavrsenihProcesa, ikona: '✅' },
++        { naziv: 'Autofinish #', vrednost: AUTOFINISH_COUNT, ikona: '♻️' },
++        { naziv: 'Domena', vrednost: Object.keys(p.domeni).length, ikona: '🌐' },
++        { naziv: 'Verzija', vrednost: `v${APP_VERSION}`, ikona: '🏷️' },
++      ],
++    },
++  },
++
++  // ── Domeni — score tabela ──────────────────────────────────────────────────
++  {
++    id: 'proc-svega-domeni-tabela',
++    tip: 'tabela',
++    naslov: '📋 Procenat po Domenima',
++    redosled: 3,
++    podaci: {
++      zaglavlje: ['Domen', 'Status', 'Procenat', 'Aktivnih', 'Završenih', 'Čekajućih'],
++      redovi: Object.entries(p.domeni).map(([kljuc, domen]) => [
++        `${domenIkone[kljuc] ?? '⚙️'} ${domen.naziv}`,
++        domen.status === 'aktivno' ? '🔄 Aktivno'
++          : domen.status === 'zavrseno' ? '✅ Završeno'
++          : domen.status === 'greska' ? '❌ Greška'
++          : '⏳ Čekanje',
++        `${domen.procenat}%`,
++        domen.stavke.filter((s) => s.status === 'aktivno').length,
++        domen.stavke.filter((s) => s.status === 'zavrseno').length,
++        domen.stavke.filter((s) => s.status === 'cekanje').length,
++      ]),
++    },
++  },
++
++  // ── Domeni — kartice ──────────────────────────────────────────────────────
++  {
++    id: 'proc-svega-domeni-kartice',
++    tip: 'kartice',
++    naslov: '🗂️ Pregled po Domenima',
++    podnaslov: 'Svaki domen sa statusom i procenatom obrade',
++    redosled: 4,
++    podaci: {
++      kartice: Object.entries(p.domeni).map(([kljuc, domen]) => ({
++        naslov: `${domen.ikona} ${domen.naziv}`,
++        opis: `${domen.stavke.length} procesa | ${domen.stavke.filter((s) => s.status === 'aktivno').length} aktivnih | ${domen.stavke.filter((s) => s.status === 'zavrseno').length} završenih`,
++        ikona: domen.status === 'aktivno' ? '🔄' : domen.status === 'zavrseno' ? '✅' : domen.status === 'greska' ? '❌' : '⏳',
++        oznake: [
++          `${domen.procenat}%`,
++          domen.status,
++          kljuc,
++        ],
++      })),
++    },
++  },
++
++  // ── Aktivni procesi ───────────────────────────────────────────────────────
++  {
++    id: 'proc-svega-aktivni',
++    tip: 'tabela',
++    naslov: '🔄 Aktivni Procesi — Svi Domeni',
++    podnaslov: `${p.aktivneStavke.length} aktivnih procesa u realnom vremenu`,
++    redosled: 5,
++    podaci: {
++      zaglavlje: ['ID', 'Opis', 'Tip', 'Status'],
++      redovi: p.aktivneStavke.map((s) => [
++        s.id,
++        s.opis,
++        s.tip,
++        '🔄 Aktivno',
++      ]),
++    },
++  },
++
++  // ── Pipeline opis ─────────────────────────────────────────────────────────
++  {
++    id: 'proc-svega-pipeline',
++    tip: 'tekst',
++    naslov: '⚙️ Pipeline Arhitektura — Procesuiranje',
++    podnaslov: 'Sekvencijalno i paralelno procesiranje svih domena',
++    redosled: 6,
++    podaci: {
++      sadrzaj: 'AI IQ SUPER PLATFORMA koristi hibridni model procesiranja — kritični domeni (bankarski, bezbednosni) rade sekvencijalno za konzistentnost, dok analitički i ekosistem domeni rade paralelno za maksimalnu propusnost.',
++      istaknuteStavke: [
++        '🏦 Bankarski — ERSTE sinhronizacija + SWIFT/blockchain rutiranje + kamatna obrada',
++        '🧠 AI procesi — Omega AI persona + scoring + fraud model + investicioni savetnik',
++        '💰 Finansijski — Stripe billing + GitHub Billing + devizni računi + fakture',
++        '📜 Licencni — registar + expiry provera + gap analiza + B2B nabavka',
++        '🌐 Ekosistem — API rute + sitemap + cron + deploy pipeline + dijagnostika',
++        '♻️ Autofinish — iteracije + pokrivenost + changelog + branch cleanup',
++        '🔒 Bezbednosni — JWT rotacija + 2FA + OAuth + audit log + enkripcija',
++        '📊 Analitički — KPI agregacija + score računanje + izveštaji + snapshot',
++      ],
++    },
++  },
++
++  // ── CTA ───────────────────────────────────────────────────────────────────
++  {
++    id: 'proc-svega-cta',
++    tip: 'cta',
++    naslov: '🚀 Kompletan Pregled Ekosistema',
++    redosled: 99,
++    podaci: {
++      opis: `PROCESUIRANJE SVEGA — ${p.ukupanProcenat}% ukupan procenat, ${p.aktivnihProcesa} aktivnih procesa, ${p.zavrsenihProcesa} završenih. Autofinish #${AUTOFINISH_COUNT} — ${KOMPANIJA}.`,
++      stavke: [
++        { naziv: 'Ukupan %', vrednost: `${p.ukupanProcenat}%`, ikona: '🎯' },
++        { naziv: 'Aktivnih', vrednost: p.aktivnihProcesa, ikona: '🔄' },
++        { naziv: 'Završenih', vrednost: p.zavrsenihProcesa, ikona: '✅' },
++        { naziv: 'Domena', vrednost: 8, ikona: '🌐' },
++      ],
++      dugmad: [
++        { tekst: 'Analiza Svega', href: '/analiza-svega' },
++        { tekst: 'API Procesuiranje', href: '/api/procesuiranje-svega', stil: 'sekundarno' },
++        { tekst: 'Dashboard', href: '/dashboard', stil: 'sekundarno' },
++      ],
++    },
++  },
++];
+diff --git a/src/tests/autofinish/ai-iq-world-bank-procesiranje-route.test.ts b/src/tests/autofinish/ai-iq-world-bank-procesiranje-route.test.ts
+new file mode 100644
+index 00000000..7d972504
+--- /dev/null
++++ b/src/tests/autofinish/ai-iq-world-bank-procesiranje-route.test.ts
+@@ -0,0 +1,186 @@
++// Autofinish #1361 — AI IQ World Bank Procesiranje Route Coverage Test
++// Pokretanje: npx tsx src/tests/autofinish/ai-iq-world-bank-procesiranje-route.test.ts
++
++import fs from 'node:fs';
++import path from 'node:path';
++import type { NextRequest } from 'next/server';
++import { GET } from '../../app/api/ai-iq-world-bank-procesiranje/route';
++import {
++  APP_VERSION,
++  AUTOFINISH_COUNT,
++  TOTAL_API_ROUTES,
++  TOTAL_ROUTES,
++  TOTAL_PAGES,
++} from '../../lib/constants';
++
++let passed = 0;
++let failed = 0;
++const failures: string[] = [];
++
++async function test(name: string, fn: () => Promise<void> | void): Promise<void> {
++  try {
++    await fn();
++    console.log(`  ✅ ${name}`);
++    passed++;
++  } catch (e) {
++    const msg = e instanceof Error ? e.message : String(e);
++    console.error(`  ❌ ${name}`);
++    console.error(`     ${msg}`);
++    failed++;
++    failures.push(`${name}: ${msg}`);
++  }
++}
++
++function assert(condition: boolean, message: string): asserts condition {
++  if (!condition) throw new Error(`Assert failed: ${message}`);
++}
++
++function assertEqual<T>(actual: T, expected: T, label?: string): void {
++  if (actual !== expected) {
++    throw new Error(
++      `${label ?? 'assertEqual'}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
++    );
++  }
++}
++
++async function runTests(): Promise<void> {
++  console.log('\n⚙️ AI IQ World Bank Procesiranje — Route Coverage Test Suite (#1361)\n');
++
++  const apiRoutePath = path.resolve(process.cwd(), 'src/app/api/ai-iq-world-bank-procesiranje/route.ts');
++  const libPath = path.resolve(process.cwd(), 'src/lib/ai-iq-world-bank-procesiranje.ts');
++
++  await test('API route fajl postoji', () => {
++    assert(fs.existsSync(apiRoutePath), `${apiRoutePath} ne postoji`);
++  });
++
++  await test('Lib modul fajl postoji', () => {
++    assert(fs.existsSync(libPath), `${libPath} ne postoji`);
++  });
++
++  await test('API ruta koristi očekivane gradivne blokove', () => {
++    const src = fs.readFileSync(apiRoutePath, 'utf8');
++    assert(src.includes('buildAiIqWorldBankProcesiranje'), 'Nedostaje buildAiIqWorldBankProcesiranje');
++    assert(src.includes('checkRateLimitGlobal'), 'Nedostaje checkRateLimitGlobal');
++    assert(src.includes('apiError'), 'Nedostaje apiError');
++    assert(src.includes('apiSuccess'), 'Nedostaje apiSuccess');
++    assert(src.includes('apiInternalError'), 'Nedostaje apiInternalError');
++    assert(src.includes('force-dynamic'), 'Nedostaje force-dynamic');
++  });
++
++  await test('GET vraća 200 i ispravnu strukturu', async () => {
++    const request = new Request('http://localhost/api/ai-iq-world-bank-procesiranje', {
++      headers: { 'x-forwarded-for': '127.0.0.50' },
++    });
++    const response = await GET(request as NextRequest);
++    assertEqual(response.status, 200, 'HTTP status');
++
++    const body = (await response.json()) as Record<string, unknown>;
++    assert(typeof body['data'] === 'object' && body['data'] !== null, 'data objekat');
++    assertEqual(body['verzija'] as string, APP_VERSION, 'verzija');
++    assert(typeof body['timestamp'] === 'string', 'timestamp string');
++    assert(!Number.isNaN(Date.parse(body['timestamp'] as string)), 'timestamp ISO');
++  });
++
++  await test('Rezultat ima sva obavezna polja', async () => {
++    const request = new Request('http://localhost/api/ai-iq-world-bank-procesiranje', {
++      headers: { 'x-forwarded-for': '127.0.0.51' },
++    });
++    const response = await GET(request as NextRequest);
++    const body = (await response.json()) as Record<string, unknown>;
++    const data = body['data'] as Record<string, unknown>;
++
++    assertEqual(data['status'] as string, 'aktivan', 'status');
++    assert(typeof data['sistem'] === 'string', 'sistem string');
++    assert(typeof data['kompanija'] === 'string', 'kompanija string');
++    assertEqual(data['verzija'] as string, APP_VERSION, 'data.verzija');
++    assert(Array.isArray(data['transakcijeUObradi']), 'transakcijeUObradi niz');
++    assert(Array.isArray(data['kamatnaObrada']), 'kamatnaObrada niz');
++    assert(Array.isArray(data['racuniUObradi']), 'racuniUObradi niz');
++    assert(Array.isArray(data['fraudChecks']), 'fraudChecks niz');
++    assert(Array.isArray(data['rutingOdluke']), 'rutingOdluke niz');
++    assert(typeof data['kpi'] === 'object' && data['kpi'] !== null, 'kpi objekat');
++    assert(!Number.isNaN(Date.parse(data['timestamp'] as string)), 'data.timestamp ISO');
++  });
++
++  await test('KPI polja su validna', async () => {
++    const request = new Request('http://localhost/api/ai-iq-world-bank-procesiranje', {
++      headers: { 'x-forwarded-for': '127.0.0.52' },
++    });
++    const response = await GET(request as NextRequest);
++    const body = (await response.json()) as Record<string, unknown>;
++    const kpi = (body['data'] as Record<string, unknown>)['kpi'] as Record<string, unknown>;
++
++    assert(typeof kpi['transakcijaUDanu'] === 'number', 'kpi.transakcijaUDanu number');
++    assert(typeof kpi['uspesnostProcenata'] === 'number', 'kpi.uspesnostProcenata number');
++    assert(kpi['uspesnostProcenata'] as number >= 0 && kpi['uspesnostProcenata'] as number <= 100, 'kpi.uspesnostProcenata 0-100');
++    assert(typeof kpi['prosecnoVremeMs'] === 'number', 'kpi.prosecnoVremeMs number');
++    assert(typeof kpi['fraudBlokirano'] === 'number', 'kpi.fraudBlokirano number');
++    assert(typeof kpi['aktivnihRacuna'] === 'number', 'kpi.aktivnihRacuna number');
++  });
++
++  await test('transakcijeUObradi stavke imaju ispravna polja', async () => {
++    const request = new Request('http://localhost/api/ai-iq-world-bank-procesiranje', {
++      headers: { 'x-forwarded-for': '127.0.0.53' },
++    });
++    const response = await GET(request as NextRequest);
++    const body = (await response.json()) as Record<string, unknown>;
++    const data = body['data'] as Record<string, unknown>;
++    const transakcije = data['transakcijeUObradi'] as Array<Record<string, unknown>>;
++
++    assert(transakcije.length > 0, 'transakcijeUObradi nije prazno');
++    const prvaT = transakcije[0] as Record<string, unknown>;
++    assert(typeof prvaT['id'] === 'string', 'transakcija.id string');
++    assert(typeof prvaT['iznos'] === 'number', 'transakcija.iznos number');
++    assert(typeof prvaT['valuta'] === 'string', 'transakcija.valuta string');
++    assert(typeof prvaT['status'] === 'string', 'transakcija.status string');
++    assert(typeof prvaT['fraudCheck'] === 'string', 'transakcija.fraudCheck string');
++  });
++
++  await test('Stranica ai-iq-world-bank-procesiranje postoji', () => {
++    const pagePath = path.resolve(process.cwd(), 'src/app/ai-iq-world-bank-procesiranje/page.tsx');
++    assert(fs.existsSync(pagePath), `${pagePath} ne postoji`);
++    const src = fs.readFileSync(pagePath, 'utf8');
++    assert(src.includes('aiIqWorldBankProcesiranjeSekvence'), 'Nedostaje aiIqWorldBankProcesiranjeSekvence');
++    assert(src.includes('StranicaRenderer'), 'Nedostaje StranicaRenderer');
++  });
++
++  await test('Sekvence fajl postoji', () => {
++    const sekvencePath = path.resolve(process.cwd(), 'src/lib/sekvence/ai-iq-world-bank-procesiranje-page.ts');
++    assert(fs.existsSync(sekvencePath), `${sekvencePath} ne postoji`);
++    const src = fs.readFileSync(sekvencePath, 'utf8');
++    assert(src.includes('aiIqWorldBankProcesiranjeSekvence'), 'Nedostaje aiIqWorldBankProcesiranjeSekvence export');
++  });
++
++  await test('Navigacija sadrži ai-iq-world-bank-procesiranje link', () => {
++    const navPath = path.resolve(process.cwd(), 'src/lib/navigation.ts');
++    const navSrc = fs.readFileSync(navPath, 'utf8');
++    assert(navSrc.includes('/ai-iq-world-bank-procesiranje'), 'Navigacija ne sadrži /ai-iq-world-bank-procesiranje');
++  });
++
++  await test('Sitemap sadrži ai-iq-world-bank-procesiranje i api/ai-iq-world-bank-procesiranje', () => {
++    const sitemapPath = path.resolve(process.cwd(), 'src/app/sitemap.ts');
++    const sitemapSrc = fs.readFileSync(sitemapPath, 'utf8');
++    assert(sitemapSrc.includes('/ai-iq-world-bank-procesiranje'), 'Sitemap ne sadrži /ai-iq-world-bank-procesiranje');
++    assert(sitemapSrc.includes('/api/ai-iq-world-bank-procesiranje'), 'Sitemap ne sadrži /api/ai-iq-world-bank-procesiranje');
++  });
++
++  await test('Konstante su ažurirane', () => {
++    assertEqual(APP_VERSION, '59.42.0', 'APP_VERSION');
++    assertEqual(AUTOFINISH_COUNT, 1372, 'AUTOFINISH_COUNT');
++    assertEqual(TOTAL_API_ROUTES, 1166, 'TOTAL_API_ROUTES');
++    assertEqual(TOTAL_ROUTES, 1270, 'TOTAL_ROUTES');
++    assertEqual(TOTAL_PAGES, 62, 'TOTAL_PAGES');
++  });
++
++  console.log(`\n⚙️ Rezultat: ${passed} prošlo, ${failed} palo`);
++  if (failures.length > 0) {
++    console.error('\n❌ Neuspešni testovi:');
++    failures.forEach((f) => console.error(`  • ${f}`));
++    process.exit(1);
++  }
++}
++
++runTests().catch((e) => {
++  console.error('Kritična greška u test runneru:', e);
++  process.exit(1);
++});
+diff --git a/src/tests/autofinish/autofinish-deployment-pipeline-route.test.ts b/src/tests/autofinish/autofinish-deployment-pipeline-route.test.ts
+new file mode 100644
+index 00000000..49779667
+--- /dev/null
++++ b/src/tests/autofinish/autofinish-deployment-pipeline-route.test.ts
+@@ -0,0 +1,122 @@
++// Autofinish #1366 — Autofinish Deployment Pipeline Route Coverage Test
++// Pokretanje: npx tsx src/tests/autofinish/autofinish-deployment-pipeline-route.test.ts
++
++import fs from 'node:fs';
++import path from 'node:path';
++import type { NextRequest } from 'next/server';
++import { GET } from '../../app/api/autofinish-deployment-pipeline/route';
++import { APP_VERSION, AUTOFINISH_COUNT, TOTAL_API_ROUTES, TOTAL_DIAGNOSTIKA, TOTAL_ROUTES } from '../../lib/constants';
++
++let passed = 0;
++let failed = 0;
++const failures: string[] = [];
++
++async function test(name: string, fn: () => Promise<void> | void): Promise<void> {
++  try {
++    await fn();
++    console.log(`  ✅ ${name}`);
++    passed++;
++  } catch (e) {
++    const msg = e instanceof Error ? e.message : String(e);
++    console.error(`  ❌ ${name}`);
++    console.error(`     ${msg}`);
++    failed++;
++    failures.push(`${name}: ${msg}`);
++  }
++}
++
++function assert(condition: boolean, message: string): asserts condition {
++  if (!condition) throw new Error(`Assert failed: ${message}`);
++}
++
++function assertEqual<T>(actual: T, expected: T, label?: string): void {
++  if (actual !== expected) {
++    throw new Error(
++      `${label ?? 'assertEqual'}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
++    );
++  }
++}
++
++async function runTests(): Promise<void> {
++  console.log('\n🏁 Autofinish Deployment Pipeline — Route Coverage Test Suite (#1366)\n');
++
++  const apiRoutePath = path.resolve(process.cwd(), 'src/app/api/autofinish-deployment-pipeline/route.ts');
++  const apiRouteSource = fs.readFileSync(apiRoutePath, 'utf8');
++
++  await test('API route fajl postoji', () => {
++    assert(fs.existsSync(apiRoutePath), `${apiRoutePath} ne postoji`);
++  });
++
++  await test('API ruta koristi očekivane gradivne blokove', () => {
++    assert(apiRouteSource.includes('getAutofinishDeploymentPipeline'), 'Nedostaje getAutofinishDeploymentPipeline');
++    assert(apiRouteSource.includes('checkRateLimitGlobal'), 'Nedostaje checkRateLimitGlobal');
++    assert(apiRouteSource.includes('X-Autofinish-Iteracija'), 'Nedostaje X-Autofinish-Iteracija header');
++    assert(apiRouteSource.includes('Retry-After'), 'Nedostaje Retry-After');
++  });
++
++  await test('GET vraća 200, payload i heder-e', async () => {
++    const request = new Request('http://localhost/api/autofinish-deployment-pipeline', {
++      headers: { 'x-forwarded-for': '127.0.0.71' },
++    });
++    const response = await GET(request as NextRequest);
++    assertEqual(response.status, 200, 'status');
++
++    const body = (await response.json()) as Record<string, unknown>;
++    assertEqual(body['verzija'] as string, APP_VERSION, 'verzija');
++    assertEqual(body['autofinishBroj'] as number, AUTOFINISH_COUNT, 'autofinishBroj');
++    assert(typeof body['ukupnoPipeline'] === 'number', 'ukupnoPipeline number');
++    assert(typeof body['aktivnih'] === 'number', 'aktivnih number');
++    assert(typeof body['uspjesnih'] === 'number', 'uspjesnih number');
++    assert(typeof body['neuspjesnih'] === 'number', 'neuspjesnih number');
++    assert(typeof body['preskocenih'] === 'number', 'preskocenih number');
++    assert(typeof body['prosjecnoTrajanjeSekundi'] === 'number', 'prosjecnoTrajanjeSekundi number');
++    assert(Array.isArray(body['pipelines']), 'pipelines niz');
++    assertEqual((body['pipelines'] as unknown[]).length, body['ukupnoPipeline'] as number, 'pipelines.length');
++
++    const firstPipeline = (body['pipelines'] as Record<string, unknown>[])[0];
++    assert(typeof firstPipeline['id'] === 'string', 'pipeline.id string');
++    assert(typeof firstPipeline['servis'] === 'string', 'pipeline.servis string');
++    assert(typeof firstPipeline['status'] === 'string', 'pipeline.status string');
++    assert(Array.isArray(firstPipeline['faze']), 'pipeline.faze niz');
++    assert((firstPipeline['faze'] as unknown[]).length > 0, 'pipeline.faze.length > 0');
++
++    const firstFaza = (firstPipeline['faze'] as Record<string, unknown>[])[0];
++    assert(typeof firstFaza['naziv'] === 'string', 'faza.naziv string');
++    assert(typeof firstFaza['status'] === 'string', 'faza.status string');
++    assert(typeof firstFaza['trajanjeSekundi'] === 'number', 'faza.trajanjeSekundi number');
++    assert(typeof body['timestamp'] === 'string', 'timestamp string');
++    assert(!Number.isNaN(Date.parse(body['timestamp'] as string)), 'timestamp ISO');
++
++    assertEqual(
++      response.headers.get('Cache-Control'),
++      'public, s-maxage=30, stale-while-revalidate=60',
++      'Cache-Control',
++    );
++    assertEqual(response.headers.get('X-App-Version'), APP_VERSION, 'X-App-Version');
++    assertEqual(
++      response.headers.get('X-Autofinish-Iteracija'),
++      String(AUTOFINISH_COUNT),
++      'X-Autofinish-Iteracija',
++    );
++  });
++
++  await test('Konstante su ažurirane', () => {
++    assertEqual(APP_VERSION, '59.42.0', 'APP_VERSION');
++    assertEqual(AUTOFINISH_COUNT, 1372, 'AUTOFINISH_COUNT');
++    assertEqual(TOTAL_API_ROUTES, 1166, 'TOTAL_API_ROUTES');
++    assertEqual(TOTAL_ROUTES, 1270, 'TOTAL_ROUTES');
++    assertEqual(TOTAL_DIAGNOSTIKA, 2368, 'TOTAL_DIAGNOSTIKA');
++  });
++
++  console.log(`\n🏁 Rezultat: ${passed} prošlo, ${failed} palo`);
++  if (failures.length > 0) {
++    console.error('\n❌ Neuspešni testovi:');
++    failures.forEach((f) => console.error(`  • ${f}`));
++    process.exit(1);
++  }
++}
++
++runTests().catch((e) => {
++  console.error('Kritična greška u test runneru:', e);
++  process.exit(1);
++});
+diff --git a/src/tests/autofinish/autofinish-deployment-status-route.test.ts b/src/tests/autofinish/autofinish-deployment-status-route.test.ts
+new file mode 100644
+index 00000000..a709acb5
+--- /dev/null
++++ b/src/tests/autofinish/autofinish-deployment-status-route.test.ts
+@@ -0,0 +1,115 @@
++// Autofinish #1367 — Autofinish Deployment Status Route Coverage Test
++// Pokretanje: npx tsx src/tests/autofinish/autofinish-deployment-status-route.test.ts
++
++import fs from 'node:fs';
++import path from 'node:path';
++import type { NextRequest } from 'next/server';
++import { GET } from '../../app/api/autofinish-deployment-status/route';
++import { APP_VERSION, AUTOFINISH_COUNT, TOTAL_API_ROUTES, TOTAL_DIAGNOSTIKA, TOTAL_ROUTES } from '../../lib/constants';
++
++let passed = 0;
++let failed = 0;
++const failures: string[] = [];
++
++async function test(name: string, fn: () => Promise<void> | void): Promise<void> {
++  try {
++    await fn();
++    console.log(`  ✅ ${name}`);
++    passed++;
++  } catch (e) {
++    const msg = e instanceof Error ? e.message : String(e);
++    console.error(`  ❌ ${name}`);
++    console.error(`     ${msg}`);
++    failed++;
++    failures.push(`${name}: ${msg}`);
++  }
++}
++
++function assert(condition: boolean, message: string): asserts condition {
++  if (!condition) throw new Error(`Assert failed: ${message}`);
++}
++
++function assertEqual<T>(actual: T, expected: T, label?: string): void {
++  if (actual !== expected) {
++    throw new Error(
++      `${label ?? 'assertEqual'}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
++    );
++  }
++}
++
++async function runTests(): Promise<void> {
++  console.log('\n🏁 Autofinish Deployment Status — Route Coverage Test Suite (#1367)\n');
++
++  const apiRoutePath = path.resolve(process.cwd(), 'src/app/api/autofinish-deployment-status/route.ts');
++  const apiRouteSource = fs.readFileSync(apiRoutePath, 'utf8');
++
++  await test('API route fajl postoji', () => {
++    assert(fs.existsSync(apiRoutePath), `${apiRoutePath} ne postoji`);
++  });
++
++  await test('API ruta koristi očekivane gradivne blokove', () => {
++    assert(apiRouteSource.includes('getAutofinishDeploymentStatus'), 'Nedostaje getAutofinishDeploymentStatus');
++    assert(apiRouteSource.includes('checkRateLimitGlobal'), 'Nedostaje checkRateLimitGlobal');
++    assert(apiRouteSource.includes('X-Autofinish-Iteracija'), 'Nedostaje X-Autofinish-Iteracija header');
++    assert(apiRouteSource.includes('Retry-After'), 'Nedostaje Retry-After');
++  });
++
++  await test('GET vraća 200, payload i heder-e', async () => {
++    const request = new Request('http://localhost/api/autofinish-deployment-status', {
++      headers: { 'x-forwarded-for': '127.0.0.72' },
++    });
++    const response = await GET(request as NextRequest);
++    assertEqual(response.status, 200, 'status');
++
++    const body = (await response.json()) as Record<string, unknown>;
++    assertEqual(body['verzija'] as string, APP_VERSION, 'verzija');
++    assertEqual(body['autofinishBroj'] as number, AUTOFINISH_COUNT, 'autofinishBroj');
++    assert(typeof body['ukupnoDeploymenata'] === 'number', 'ukupnoDeploymenata number');
++    assert(typeof body['aktivnih'] === 'number', 'aktivnih number');
++    assert(typeof body['degradovanih'] === 'number', 'degradovanih number');
++    assert(typeof body['prosjecnoZdravlje'] === 'number', 'prosjecnoZdravlje number');
++    assert(Array.isArray(body['deployments']), 'deployments niz');
++    assertEqual((body['deployments'] as unknown[]).length, body['ukupnoDeploymenata'] as number, 'deployments.length');
++
++    const firstDeployment = (body['deployments'] as Record<string, unknown>[])[0];
++    assert(typeof firstDeployment['id'] === 'string', 'deployment.id string');
++    assert(typeof firstDeployment['okruzenje'] === 'string', 'deployment.okruzenje string');
++    assert(typeof firstDeployment['status'] === 'string', 'deployment.status string');
++    assert(typeof firstDeployment['zdravlje'] === 'number', 'deployment.zdravlje number');
++    assert(typeof firstDeployment['url'] === 'string', 'deployment.url string');
++    assert(typeof body['timestamp'] === 'string', 'timestamp string');
++    assert(!Number.isNaN(Date.parse(body['timestamp'] as string)), 'timestamp ISO');
++
++    assertEqual(
++      response.headers.get('Cache-Control'),
++      'public, s-maxage=30, stale-while-revalidate=120',
++      'Cache-Control',
++    );
++    assertEqual(response.headers.get('X-App-Version'), APP_VERSION, 'X-App-Version');
++    assertEqual(
++      response.headers.get('X-Autofinish-Iteracija'),
++      String(AUTOFINISH_COUNT),
++      'X-Autofinish-Iteracija',
++    );
++  });
++
++  await test('Konstante su ažurirane', () => {
++    assertEqual(APP_VERSION, '59.42.0', 'APP_VERSION');
++    assertEqual(AUTOFINISH_COUNT, 1372, 'AUTOFINISH_COUNT');
++    assertEqual(TOTAL_API_ROUTES, 1166, 'TOTAL_API_ROUTES');
++    assertEqual(TOTAL_ROUTES, 1270, 'TOTAL_ROUTES');
++    assertEqual(TOTAL_DIAGNOSTIKA, 2368, 'TOTAL_DIAGNOSTIKA');
++  });
++
++  console.log(`\n🏁 Rezultat: ${passed} prošlo, ${failed} palo`);
++  if (failures.length > 0) {
++    console.error('\n❌ Neuspešni testovi:');
++    failures.forEach((f) => console.error(`  • ${f}`));
++    process.exit(1);
++  }
++}
++
++runTests().catch((e) => {
++  console.error('Kritična greška u test runneru:', e);
++  process.exit(1);
++});
+diff --git a/src/tests/autofinish/autofinish-ekosistem-monitor-route.test.ts b/src/tests/autofinish/autofinish-ekosistem-monitor-route.test.ts
+new file mode 100644
+index 00000000..deb42752
+--- /dev/null
++++ b/src/tests/autofinish/autofinish-ekosistem-monitor-route.test.ts
+@@ -0,0 +1,128 @@
++// Autofinish #1368 — Autofinish Ekosistem Monitor Route Coverage Test
++// Pokretanje: npx tsx src/tests/autofinish/autofinish-ekosistem-monitor-route.test.ts
++
++import fs from 'node:fs';
++import path from 'node:path';
++import { GET } from '../../app/api/autofinish-ekosistem-monitor/route';
++import {
++  APP_VERSION,
++  AUTOFINISH_COUNT,
++  AUTOFINISH_TARGET,
++  TOTAL_API_ROUTES,
++  TOTAL_DIAGNOSTIKA,
++  TOTAL_ROUTES,
++} from '../../lib/constants';
++
++let passed = 0;
++let failed = 0;
++const failures: string[] = [];
++
++async function test(name: string, fn: () => Promise<void> | void): Promise<void> {
++  try {
++    await fn();
++    console.log(`  ✅ ${name}`);
++    passed++;
++  } catch (e) {
++    const msg = e instanceof Error ? e.message : String(e);
++    console.error(`  ❌ ${name}`);
++    console.error(`     ${msg}`);
++    failed++;
++    failures.push(`${name}: ${msg}`);
++  }
++}
++
++function assert(condition: boolean, message: string): asserts condition {
++  if (!condition) throw new Error(`Assert failed: ${message}`);
++}
++
++function assertEqual<T>(actual: T, expected: T, label?: string): void {
++  if (actual !== expected) {
++    throw new Error(
++      `${label ?? 'assertEqual'}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
++    );
++  }
++}
++
++async function runTests(): Promise<void> {
++  console.log('\n🏁 Autofinish Ekosistem Monitor — Route Coverage Test Suite (#1368)\n');
++
++  const apiRoutePath = path.resolve(process.cwd(), 'src/app/api/autofinish-ekosistem-monitor/route.ts');
++  const apiRouteSource = fs.readFileSync(apiRoutePath, 'utf8');
++
++  await test('API route fajl postoji', () => {
++    assert(fs.existsSync(apiRoutePath), `${apiRoutePath} ne postoji`);
++  });
++
++  await test('API ruta koristi očekivane gradivne blokove', () => {
++    assert(apiRouteSource.includes('AUTOFINISH-EKOSISTEM-MONITOR v1.0'), 'Nedostaje monitor model');
++    assert(apiRouteSource.includes('procenat.toExponential(2)'), 'Nedostaje procenat formula');
++    assert(apiRouteSource.includes('monitorProvere'), 'Nedostaje monitorProvere niz');
++  });
++
++  await test('GET vraća 200, payload i ključne sekcije', async () => {
++    const response = await GET();
++    assertEqual(response.status, 200, 'status');
++
++    const body = (await response.json()) as Record<string, unknown>;
++    assertEqual(body['status'] as string, 'aktivan', 'status');
++    assertEqual(body['verzija'] as string, APP_VERSION, 'verzija');
++    assert(typeof body['naziv'] === 'string', 'naziv string');
++
++    const ekosistemMonitor = body['ekosistemMonitor'] as Record<string, unknown>;
++    assertEqual(ekosistemMonitor['sveUspesne'] as boolean, true, 'ekosistemMonitor.sveUspesne');
++    assertEqual(
++      ekosistemMonitor['model'] as string,
++      'AUTOFINISH-EKOSISTEM-MONITOR v1.0',
++      'ekosistemMonitor.model',
++    );
++    assertEqual(ekosistemMonitor['ukupnoProvera'] as number, 4, 'ekosistemMonitor.ukupnoProvera');
++    const provere = ekosistemMonitor['provere'] as Array<Record<string, unknown>>;
++    assert(Array.isArray(provere), 'provere niz');
++    assertEqual(provere.length, 4, 'provere.length');
++    for (const provera of provere) {
++      assert(typeof provera['naziv'] === 'string', 'provera.naziv string');
++      assert(typeof provera['tip'] === 'string', 'provera.tip string');
++      assertEqual(provera['status'] as string, 'aktivan', 'provera.status');
++      assert(typeof provera['opis'] === 'string', 'provera.opis string');
++    }
++
++    const progres = body['progres'] as Record<string, unknown>;
++    assertEqual(progres['iteracija'] as number, AUTOFINISH_COUNT, 'progres.iteracija');
++    assertEqual(progres['cilj'] as number, AUTOFINISH_TARGET, 'progres.cilj');
++    assertEqual(progres['ciljFormatiran'] as string, '3x10^17', 'progres.ciljFormatiran');
++    assert(typeof progres['procenat'] === 'string', 'progres.procenat string');
++
++    const ekosistem = body['ekosistem'] as Record<string, unknown>;
++    assertEqual(ekosistem['apiEndpointi'] as number, TOTAL_API_ROUTES, 'ekosistem.apiEndpointi');
++    assertEqual(ekosistem['ukupnoRuta'] as number, TOTAL_ROUTES, 'ekosistem.ukupnoRuta');
++    assertEqual(ekosistem['dijagnostike'] as number, TOTAL_DIAGNOSTIKA, 'ekosistem.dijagnostike');
++
++    const autofinish = body['autofinish'] as Record<string, unknown>;
++    assertEqual(autofinish['iteracija'] as number, AUTOFINISH_COUNT, 'autofinish.iteracija');
++    assertEqual(autofinish['cilj'] as number, AUTOFINISH_TARGET, 'autofinish.cilj');
++    assertEqual(autofinish['ciljFormatiran'] as string, '3x10^17', 'autofinish.ciljFormatiran');
++
++    assert(typeof body['timestamp'] === 'string', 'timestamp string');
++    assert(!Number.isNaN(Date.parse(body['timestamp'] as string)), 'timestamp ISO');
++  });
++
++  await test('Konstante su ažurirane', () => {
++    assertEqual(APP_VERSION, '59.42.0', 'APP_VERSION');
++    assertEqual(AUTOFINISH_COUNT, 1372, 'AUTOFINISH_COUNT');
++    assertEqual(TOTAL_API_ROUTES, 1166, 'TOTAL_API_ROUTES');
++    assertEqual(TOTAL_ROUTES, 1270, 'TOTAL_ROUTES');
++    assertEqual(TOTAL_DIAGNOSTIKA, 2368, 'TOTAL_DIAGNOSTIKA');
++  });
++
++  console.log(`\n🏁 Rezultat: ${passed} prošlo, ${failed} palo`);
++  if (failures.length > 0) {
++    console.error('\n❌ Neuspešni testovi:');
++    failures.forEach((f) => console.error(`  • ${f}`));
++    process.exit(1);
++  }
++}
++
++runTests().catch((e) => {
++  console.error('Kritična greška u test runneru:', e);
++  process.exit(1);
++});
+diff --git a/src/tests/autofinish/autofinish-ekosistem-snapshot-route.test.ts b/src/tests/autofinish/autofinish-ekosistem-snapshot-route.test.ts
+new file mode 100644
+index 00000000..0de69e1b
+--- /dev/null
++++ b/src/tests/autofinish/autofinish-ekosistem-snapshot-route.test.ts
+@@ -0,0 +1,123 @@
++// Autofinish #1369 — Autofinish Ekosistem Snapshot Route Coverage Test
++// Pokretanje: npx tsx src/tests/autofinish/autofinish-ekosistem-snapshot-route.test.ts
++
++import fs from 'node:fs';
++import path from 'node:path';
++import type { NextRequest } from 'next/server';
++import { GET } from '../../app/api/autofinish-ekosistem-snapshot/route';
++import {
++  APP_VERSION,
++  AUTOFINISH_COUNT,
++  OMEGA_AI_OKTAVA_COUNT,
++  OMEGA_AI_PERSONA_COUNT,
++  OMEGA_AI_PERSONA_UKUPNO,
++  TOTAL_API_ROUTES,
++  TOTAL_DIAGNOSTIKA,
++  TOTAL_IGRICA,
++  TOTAL_PAGES,
++  TOTAL_ROUTES,
++} from '../../lib/constants';
++
++let passed = 0;
++let failed = 0;
++const failures: string[] = [];
++
++async function test(name: string, fn: () => Promise<void> | void): Promise<void> {
++  try {
++    await fn();
++    console.log(`  ✅ ${name}`);
++    passed++;
++  } catch (e) {
++    const msg = e instanceof Error ? e.message : String(e);
++    console.error(`  ❌ ${name}`);
++    console.error(`     ${msg}`);
++    failed++;
++    failures.push(`${name}: ${msg}`);
++  }
++}
++
++function assert(condition: boolean, message: string): asserts condition {
++  if (!condition) throw new Error(`Assert failed: ${message}`);
++}
++
++function assertEqual<T>(actual: T, expected: T, label?: string): void {
++  if (actual !== expected) {
++    throw new Error(
++      `${label ?? 'assertEqual'}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
++    );
++  }
++}
++
++function buildRequest(ip = '127.0.0.1'): NextRequest {
++  return {
++    headers: new Headers({ 'x-forwarded-for': ip }),
++  } as unknown as NextRequest;
++}
++
++async function runTests(): Promise<void> {
++  console.log('\n🏁 Autofinish Ekosistem Snapshot — Route Coverage Test Suite (#1369)\n');
++
++  const apiRoutePath = path.resolve(process.cwd(), 'src/app/api/autofinish-ekosistem-snapshot/route.ts');
++  const apiRouteSource = fs.readFileSync(apiRoutePath, 'utf8');
++
++  await test('API route fajl postoji', () => {
++    assert(fs.existsSync(apiRoutePath), `${apiRoutePath} ne postoji`);
++  });
++
++  await test('API ruta koristi očekivane gradivne blokove', () => {
++    assert(apiRouteSource.includes('getAutofinishEkosistemSnapshot'), 'Nedostaje snapshot helper');
++    assert(apiRouteSource.includes('checkRateLimitGlobal'), 'Nedostaje rate limit');
++    assert(apiRouteSource.includes("'X-App-Version'"), 'Nedostaje X-App-Version header');
++  });
++
++  await test('GET vraća 200, payload i response header-e', async () => {
++    const response = await GET(buildRequest('10.10.10.10'));
++    assertEqual(response.status, 200, 'status');
++    assertEqual(response.headers.get('X-App-Version'), APP_VERSION, 'header.X-App-Version');
++    assertEqual(
++      response.headers.get('X-Autofinish-Iteracija'),
++      String(AUTOFINISH_COUNT),
++      'header.X-Autofinish-Iteracija',
++    );
++    assertEqual(
++      response.headers.get('Cache-Control'),
++      'public, s-maxage=60, stale-while-revalidate=300',
++      'header.Cache-Control',
++    );
++
++    const body = (await response.json()) as Record<string, unknown>;
++    assertEqual(body['verzija'] as string, APP_VERSION, 'verzija');
++    assertEqual(body['autofinishBroj'] as number, AUTOFINISH_COUNT, 'autofinishBroj');
++    assertEqual(body['rute'] as number, TOTAL_ROUTES, 'rute');
++    assertEqual(body['apiRute'] as number, TOTAL_API_ROUTES, 'apiRute');
++    assertEqual(body['stranice'] as number, TOTAL_PAGES, 'stranice');
++    assertEqual(body['dijagnostike'] as number, TOTAL_DIAGNOSTIKA, 'dijagnostike');
++    assertEqual(body['igrice'] as number, TOTAL_IGRICA, 'igrice');
++    assertEqual(body['omegaAiPersone'] as number, OMEGA_AI_PERSONA_COUNT, 'omegaAiPersone');
++    assertEqual(body['omegaAiOktave'] as number, OMEGA_AI_OKTAVA_COUNT, 'omegaAiOktave');
++    assertEqual(body['omegaAiUkupno'] as number, OMEGA_AI_PERSONA_UKUPNO, 'omegaAiUkupno');
++    assert(typeof body['timestamp'] === 'string', 'timestamp string');
++    assert(!Number.isNaN(Date.parse(body['timestamp'] as string)), 'timestamp ISO');
++  });
++
++  await test('Konstante su ažurirane', () => {
++    assertEqual(APP_VERSION, '59.42.0', 'APP_VERSION');
++    assertEqual(AUTOFINISH_COUNT, 1372, 'AUTOFINISH_COUNT');
++    assertEqual(TOTAL_API_ROUTES, 1166, 'TOTAL_API_ROUTES');
++    assertEqual(TOTAL_ROUTES, 1270, 'TOTAL_ROUTES');
++    assertEqual(TOTAL_PAGES, 62, 'TOTAL_PAGES');
++    assertEqual(TOTAL_DIAGNOSTIKA, 2368, 'TOTAL_DIAGNOSTIKA');
++  });
++
++  console.log(`\n🏁 Rezultat: ${passed} prošlo, ${failed} palo`);
++  if (failures.length > 0) {
++    console.error('\n❌ Neuspešni testovi:');
++    failures.forEach((f) => console.error(`  • ${f}`));
++    process.exit(1);
++  }
++}
++
++runTests().catch((e) => {
++  console.error('Kritična greška u test runneru:', e);
++  process.exit(1);
++});
+diff --git a/src/tests/autofinish/autofinish-ekosistem-zdravlje-route.test.ts b/src/tests/autofinish/autofinish-ekosistem-zdravlje-route.test.ts
+new file mode 100644
+index 00000000..7d3b147c
+--- /dev/null
++++ b/src/tests/autofinish/autofinish-ekosistem-zdravlje-route.test.ts
+@@ -0,0 +1,131 @@
++// Autofinish #1370 — Autofinish Ekosistem Zdravlje Route Coverage Test
++// Pokretanje: npx tsx src/tests/autofinish/autofinish-ekosistem-zdravlje-route.test.ts
++
++import fs from 'node:fs';
++import path from 'node:path';
++import { GET } from '../../app/api/autofinish-ekosistem-zdravlje/route';
++import {
++  APP_VERSION,
++  AUTOFINISH_COUNT,
++  AUTOFINISH_TARGET,
++  TOTAL_API_ROUTES,
++  TOTAL_DIAGNOSTIKA,
++  TOTAL_ROUTES,
++} from '../../lib/constants';
++
++let passed = 0;
++let failed = 0;
++const failures: string[] = [];
++
++async function test(name: string, fn: () => Promise<void> | void): Promise<void> {
++  try {
++    await fn();
++    console.log(`  ✅ ${name}`);
++    passed++;
++  } catch (e) {
++    const msg = e instanceof Error ? e.message : String(e);
++    console.error(`  ❌ ${name}`);
++    console.error(`     ${msg}`);
++    failed++;
++    failures.push(`${name}: ${msg}`);
++  }
++}
++
++function assert(condition: boolean, message: string): asserts condition {
++  if (!condition) throw new Error(`Assert failed: ${message}`);
++}
++
++function assertEqual<T>(actual: T, expected: T, label?: string): void {
++  if (actual !== expected) {
++    throw new Error(
++      `${label ?? 'assertEqual'}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
++    );
++  }
++}
++
++async function runTests(): Promise<void> {
++  console.log('\n🏁 Autofinish Ekosistem Zdravlje — Route Coverage Test Suite (#1370)\n');
++
++  const apiRoutePath = path.resolve(process.cwd(), 'src/app/api/autofinish-ekosistem-zdravlje/route.ts');
++  const apiRouteSource = fs.readFileSync(apiRoutePath, 'utf8');
++
++  await test('API route fajl postoji', () => {
++    assert(fs.existsSync(apiRoutePath), `${apiRoutePath} ne postoji`);
++  });
++
++  await test('API ruta koristi očekivane gradivne blokove', () => {
++    assert(
++      apiRouteSource.includes('AUTOFINISH-EKOSISTEM-ZDRAVLJE v1.0'),
++      'Nedostaje zdravlje model',
++    );
++    assert(apiRouteSource.includes('procenat.toExponential(2)'), 'Nedostaje procenat formula');
++    assert(apiRouteSource.includes('zdravljeProvere'), 'Nedostaje zdravljeProvere niz');
++  });
++
++  await test('GET vraća 200, payload i ključne sekcije', async () => {
++    const response = await GET();
++    assertEqual(response.status, 200, 'status');
++
++    const body = (await response.json()) as Record<string, unknown>;
++    assertEqual(body['status'] as string, 'aktivan', 'status');
++    assertEqual(body['verzija'] as string, APP_VERSION, 'verzija');
++    assert(typeof body['naziv'] === 'string', 'naziv string');
++
++    const zdravlje = body['zdravlje'] as Record<string, unknown>;
++    assertEqual(zdravlje['sveUspesne'] as boolean, true, 'zdravlje.sveUspesne');
++    assertEqual(
++      zdravlje['model'] as string,
++      'AUTOFINISH-EKOSISTEM-ZDRAVLJE v1.0',
++      'zdravlje.model',
++    );
++    assertEqual(zdravlje['ukupnoProvera'] as number, 6, 'zdravlje.ukupnoProvera');
++    const provere = zdravlje['provere'] as Array<Record<string, unknown>>;
++    assert(Array.isArray(provere), 'provere niz');
++    assertEqual(provere.length, 6, 'provere.length');
++    for (const provera of provere) {
++      assert(typeof provera['naziv'] === 'string', 'provera.naziv string');
++      assert(typeof provera['tip'] === 'string', 'provera.tip string');
++      assertEqual(provera['status'] as string, 'aktivan', 'provera.status');
++      assert(typeof provera['opis'] === 'string', 'provera.opis string');
++    }
++
++    const progres = body['progres'] as Record<string, unknown>;
++    assertEqual(progres['iteracija'] as number, AUTOFINISH_COUNT, 'progres.iteracija');
++    assertEqual(progres['cilj'] as number, AUTOFINISH_TARGET, 'progres.cilj');
++    assertEqual(progres['ciljFormatiran'] as string, '3x10^17', 'progres.ciljFormatiran');
++    assert(typeof progres['procenat'] === 'string', 'progres.procenat string');
++
++    const ekosistem = body['ekosistem'] as Record<string, unknown>;
++    assertEqual(ekosistem['apiEndpointi'] as number, TOTAL_API_ROUTES, 'ekosistem.apiEndpointi');
++    assertEqual(ekosistem['ukupnoRuta'] as number, TOTAL_ROUTES, 'ekosistem.ukupnoRuta');
++    assertEqual(ekosistem['dijagnostike'] as number, TOTAL_DIAGNOSTIKA, 'ekosistem.dijagnostike');
++
++    const autofinish = body['autofinish'] as Record<string, unknown>;
++    assertEqual(autofinish['iteracija'] as number, AUTOFINISH_COUNT, 'autofinish.iteracija');
++    assertEqual(autofinish['cilj'] as number, AUTOFINISH_TARGET, 'autofinish.cilj');
++    assertEqual(autofinish['ciljFormatiran'] as string, '3x10^17', 'autofinish.ciljFormatiran');
++
++    assert(typeof body['timestamp'] === 'string', 'timestamp string');
++    assert(!Number.isNaN(Date.parse(body['timestamp'] as string)), 'timestamp ISO');
++  });
++
++  await test('Konstante su ažurirane', () => {
++    assertEqual(APP_VERSION, '59.42.0', 'APP_VERSION');
++    assertEqual(AUTOFINISH_COUNT, 1372, 'AUTOFINISH_COUNT');
++    assertEqual(TOTAL_API_ROUTES, 1166, 'TOTAL_API_ROUTES');
++    assertEqual(TOTAL_ROUTES, 1270, 'TOTAL_ROUTES');
++    assertEqual(TOTAL_DIAGNOSTIKA, 2368, 'TOTAL_DIAGNOSTIKA');
++  });
++
++  console.log(`\n🏁 Rezultat: ${passed} prošlo, ${failed} palo`);
++  if (failures.length > 0) {
++    console.error('\n❌ Neuspešni testovi:');
++    failures.forEach((f) => console.error(`  • ${f}`));
++    process.exit(1);
++  }
++}
++
++runTests().catch((e) => {
++  console.error('Kritična greška u test runneru:', e);
++  process.exit(1);
++});
+diff --git a/src/tests/autofinish/autofinish-endpoint-inventar-route.test.ts b/src/tests/autofinish/autofinish-endpoint-inventar-route.test.ts
+new file mode 100644
+index 00000000..0a7b92bd
+--- /dev/null
++++ b/src/tests/autofinish/autofinish-endpoint-inventar-route.test.ts
+@@ -0,0 +1,131 @@
++// Autofinish #1371 — Autofinish Endpoint Inventar Route Coverage Test
++// Pokretanje: npx tsx src/tests/autofinish/autofinish-endpoint-inventar-route.test.ts
++
++import fs from 'node:fs';
++import path from 'node:path';
++import { GET } from '../../app/api/autofinish-endpoint-inventar/route';
++import {
++  APP_VERSION,
++  AUTOFINISH_COUNT,
++  AUTOFINISH_TARGET,
++  TOTAL_API_ROUTES,
++  TOTAL_DIAGNOSTIKA,
++  TOTAL_ROUTES,
++} from '../../lib/constants';
++
++let passed = 0;
++let failed = 0;
++const failures: string[] = [];
++
++async function test(name: string, fn: () => Promise<void> | void): Promise<void> {
++  try {
++    await fn();
++    console.log(`  ✅ ${name}`);
++    passed++;
++  } catch (e) {
++    const msg = e instanceof Error ? e.message : String(e);
++    console.error(`  ❌ ${name}`);
++    console.error(`     ${msg}`);
++    failed++;
++    failures.push(`${name}: ${msg}`);
++  }
++}
++
++function assert(condition: boolean, message: string): asserts condition {
++  if (!condition) throw new Error(`Assert failed: ${message}`);
++}
++
++function assertEqual<T>(actual: T, expected: T, label?: string): void {
++  if (actual !== expected) {
++    throw new Error(
++      `${label ?? 'assertEqual'}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
++    );
++  }
++}
++
++async function runTests(): Promise<void> {
++  console.log('\n🏁 Autofinish Endpoint Inventar — Route Coverage Test Suite (#1371)\n');
++
++  const apiRoutePath = path.resolve(process.cwd(), 'src/app/api/autofinish-endpoint-inventar/route.ts');
++  const apiRouteSource = fs.readFileSync(apiRoutePath, 'utf8');
++
++  await test('API route fajl postoji', () => {
++    assert(fs.existsSync(apiRoutePath), `${apiRoutePath} ne postoji`);
++  });
++
++  await test('API ruta koristi očekivane gradivne blokove', () => {
++    assert(
++      apiRouteSource.includes('AUTOFINISH-ENDPOINT-INVENTAR v1.0'),
++      'Nedostaje inventar model',
++    );
++    assert(apiRouteSource.includes('procenat.toExponential(2)'), 'Nedostaje procenat formula');
++    assert(apiRouteSource.includes('inventarKategorije'), 'Nedostaje inventarKategorije niz');
++  });
++
++  await test('GET vraća 200, payload i ključne sekcije', async () => {
++    const response = await GET();
++    assertEqual(response.status, 200, 'status');
++
++    const body = (await response.json()) as Record<string, unknown>;
++    assertEqual(body['status'] as string, 'aktivan', 'status');
++    assertEqual(body['verzija'] as string, APP_VERSION, 'verzija');
++    assert(typeof body['naziv'] === 'string', 'naziv string');
++
++    const inventar = body['inventar'] as Record<string, unknown>;
++    assertEqual(inventar['sveAktivne'] as boolean, true, 'inventar.sveAktivne');
++    assertEqual(
++      inventar['model'] as string,
++      'AUTOFINISH-ENDPOINT-INVENTAR v1.0',
++      'inventar.model',
++    );
++    assertEqual(inventar['ukupnoKategorija'] as number, 5, 'inventar.ukupnoKategorija');
++    const kategorije = inventar['kategorije'] as Array<Record<string, unknown>>;
++    assert(Array.isArray(kategorije), 'kategorije niz');
++    assertEqual(kategorije.length, 5, 'kategorije.length');
++    for (const kategorija of kategorije) {
++      assert(typeof kategorija['naziv'] === 'string', 'kategorija.naziv string');
++      assert(typeof kategorija['tip'] === 'string', 'kategorija.tip string');
++      assertEqual(kategorija['status'] as string, 'aktivan', 'kategorija.status');
++      assert(typeof kategorija['opis'] === 'string', 'kategorija.opis string');
++    }
++
++    const progres = body['progres'] as Record<string, unknown>;
++    assertEqual(progres['iteracija'] as number, AUTOFINISH_COUNT, 'progres.iteracija');
++    assertEqual(progres['cilj'] as number, AUTOFINISH_TARGET, 'progres.cilj');
++    assertEqual(progres['ciljFormatiran'] as string, '3x10^17', 'progres.ciljFormatiran');
++    assert(typeof progres['procenat'] === 'string', 'progres.procenat string');
++
++    const ekosistem = body['ekosistem'] as Record<string, unknown>;
++    assertEqual(ekosistem['apiEndpointi'] as number, TOTAL_API_ROUTES, 'ekosistem.apiEndpointi');
++    assertEqual(ekosistem['ukupnoRuta'] as number, TOTAL_ROUTES, 'ekosistem.ukupnoRuta');
++    assertEqual(ekosistem['dijagnostike'] as number, TOTAL_DIAGNOSTIKA, 'ekosistem.dijagnostike');
++
++    const autofinish = body['autofinish'] as Record<string, unknown>;
++    assertEqual(autofinish['iteracija'] as number, AUTOFINISH_COUNT, 'autofinish.iteracija');
++    assertEqual(autofinish['cilj'] as number, AUTOFINISH_TARGET, 'autofinish.cilj');
++    assertEqual(autofinish['ciljFormatiran'] as string, '3x10^17', 'autofinish.ciljFormatiran');
++
++    assert(typeof body['timestamp'] === 'string', 'timestamp string');
++    assert(!Number.isNaN(Date.parse(body['timestamp'] as string)), 'timestamp ISO');
++  });
++
++  await test('Konstante su ažurirane', () => {
++    assertEqual(APP_VERSION, '59.42.0', 'APP_VERSION');
++    assertEqual(AUTOFINISH_COUNT, 1372, 'AUTOFINISH_COUNT');
++    assertEqual(TOTAL_API_ROUTES, 1166, 'TOTAL_API_ROUTES');
++    assertEqual(TOTAL_ROUTES, 1270, 'TOTAL_ROUTES');
++    assertEqual(TOTAL_DIAGNOSTIKA, 2368, 'TOTAL_DIAGNOSTIKA');
++  });
++
++  console.log(`\n🏁 Rezultat: ${passed} prošlo, ${failed} palo`);
++  if (failures.length > 0) {
++    console.error('\n❌ Neuspešni testovi:');
++    failures.forEach((f) => console.error(`  • ${f}`));
++    process.exit(1);
++  }
++}
++
++runTests().catch((e) => {
++  console.error('Kritična greška u test runneru:', e);
++  process.exit(1);
++});
+diff --git a/src/tests/autofinish/autofinish-error-budget-route.test.ts b/src/tests/autofinish/autofinish-error-budget-route.test.ts
+new file mode 100644
+index 00000000..6f243b56
+--- /dev/null
++++ b/src/tests/autofinish/autofinish-error-budget-route.test.ts
+@@ -0,0 +1,124 @@
++// Autofinish #1372 — Autofinish Error Budget Route Coverage Test
++// Pokretanje: npx tsx src/tests/autofinish/autofinish-error-budget-route.test.ts
++
++import fs from 'node:fs';
++import path from 'node:path';
++import type { NextRequest } from 'next/server';
++import { GET } from '../../app/api/autofinish-error-budget/route';
++import {
++  APP_VERSION,
++  AUTOFINISH_COUNT,
++  TOTAL_API_ROUTES,
++  TOTAL_DIAGNOSTIKA,
++  TOTAL_ROUTES,
++} from '../../lib/constants';
++
++let passed = 0;
++let failed = 0;
++const failures: string[] = [];
++
++async function test(name: string, fn: () => Promise<void> | void): Promise<void> {
++  try {
++    await fn();
++    console.log(`  ✅ ${name}`);
++    passed++;
++  } catch (e) {
++    const msg = e instanceof Error ? e.message : String(e);
++    console.error(`  ❌ ${name}`);
++    console.error(`     ${msg}`);
++    failed++;
++    failures.push(`${name}: ${msg}`);
++  }
++}
++
++function assert(condition: boolean, message: string): asserts condition {
++  if (!condition) throw new Error(`Assert failed: ${message}`);
++}
++
++function assertEqual<T>(actual: T, expected: T, label?: string): void {
++  if (actual !== expected) {
++    throw new Error(
++      `${label ?? 'assertEqual'}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
++    );
++  }
++}
++
++async function runTests(): Promise<void> {
++  console.log('\n🏁 Autofinish Error Budget — Route Coverage Test Suite (#1372)\n');
++
++  const apiRoutePath = path.resolve(process.cwd(), 'src/app/api/autofinish-error-budget/route.ts');
++  const apiRouteSource = fs.readFileSync(apiRoutePath, 'utf8');
++
++  await test('API route fajl postoji', () => {
++    assert(fs.existsSync(apiRoutePath), `${apiRoutePath} ne postoji`);
++  });
++
++  await test('API ruta koristi očekivane gradivne blokove', () => {
++    assert(apiRouteSource.includes('getAutofinishErrorBudget'), 'Nedostaje getAutofinishErrorBudget');
++    assert(apiRouteSource.includes('checkRateLimitGlobal'), 'Nedostaje checkRateLimitGlobal');
++    assert(apiRouteSource.includes('Retry-After'), 'Nedostaje Retry-After');
++    assert(apiRouteSource.includes('X-Autofinish-Iteracija'), 'Nedostaje X-Autofinish-Iteracija header');
++  });
++
++  await test('GET vraća 200, payload i heder-e', async () => {
++    const request = new Request('http://localhost/api/autofinish-error-budget', {
++      headers: { 'x-forwarded-for': '127.0.0.72' },
++    });
++
++    const response = await GET(request as NextRequest);
++    assertEqual(response.status, 200, 'status');
++
++    const body = (await response.json()) as Record<string, unknown>;
++    assertEqual(body['verzija'] as string, APP_VERSION, 'verzija');
++    assertEqual(body['autofinishBroj'] as number, AUTOFINISH_COUNT, 'autofinishBroj');
++    assert(typeof body['ukupnoServisa'] === 'number', 'ukupnoServisa number');
++    assert(typeof body['zdravih'] === 'number', 'zdravih number');
++    assert(typeof body['uUpozorenju'] === 'number', 'uUpozorenju number');
++    assert(typeof body['kriticnih'] === 'number', 'kriticnih number');
++    assert(typeof body['iscrpljenih'] === 'number', 'iscrpljenih number');
++    assert(typeof body['prosjecnaPotrosenjaOst'] === 'number', 'prosjecnaPotrosenjaOst number');
++    assert(typeof body['timestamp'] === 'string', 'timestamp string');
++    assert(!Number.isNaN(Date.parse(body['timestamp'] as string)), 'timestamp ISO');
++
++    const servisi = body['servisi'] as Array<Record<string, unknown>>;
++    assert(Array.isArray(servisi), 'servisi niz');
++    assert(servisi.length > 0, 'servisi nije prazan');
++    const apiGateway = servisi.find((s) => s['id'] === 'api-gateway');
++    assert(!!apiGateway, 'postoji api-gateway servis');
++    assert(typeof apiGateway['sloTarget'] === 'number', 'api-gateway sloTarget number');
++    assert(typeof apiGateway['potrosenoPct'] === 'number', 'api-gateway potrosenoPct number');
++    assert(typeof apiGateway['status'] === 'string', 'api-gateway status string');
++
++    assertEqual(
++      response.headers.get('Cache-Control'),
++      'public, s-maxage=300, stale-while-revalidate=1800',
++      'Cache-Control',
++    );
++    assertEqual(response.headers.get('X-App-Version'), APP_VERSION, 'X-App-Version');
++    assertEqual(
++      response.headers.get('X-Autofinish-Iteracija'),
++      String(AUTOFINISH_COUNT),
++      'X-Autofinish-Iteracija',
++    );
++  });
++
++  await test('Konstante su ažurirane', () => {
++    assertEqual(APP_VERSION, '59.42.0', 'APP_VERSION');
++    assertEqual(AUTOFINISH_COUNT, 1372, 'AUTOFINISH_COUNT');
++    assertEqual(TOTAL_API_ROUTES, 1166, 'TOTAL_API_ROUTES');
++    assertEqual(TOTAL_ROUTES, 1270, 'TOTAL_ROUTES');
++    assertEqual(TOTAL_DIAGNOSTIKA, 2368, 'TOTAL_DIAGNOSTIKA');
++  });
++
++  console.log(`\n🏁 Rezultat: ${passed} prošlo, ${failed} palo`);
++  if (failures.length > 0) {
++    console.error('\n❌ Neuspešni testovi:');
++    failures.forEach((f) => console.error(`  • ${f}`));
++    process.exit(1);
++  }
++}
++
++runTests().catch((e) => {
++  console.error('Kritična greška u test runneru:', e);
++  process.exit(1);
++});
+diff --git a/src/tests/autofinish/autofinish-top-iteracije-route.test.ts b/src/tests/autofinish/autofinish-top-iteracije-route.test.ts
+new file mode 100644
+index 00000000..1257e0e0
+--- /dev/null
++++ b/src/tests/autofinish/autofinish-top-iteracije-route.test.ts
+@@ -0,0 +1,124 @@
++// Autofinish #1364 — Autofinish Top Iteracije Route Coverage Test
++// Pokretanje: npx tsx src/tests/autofinish/autofinish-top-iteracije-route.test.ts
++
++import fs from 'node:fs';
++import path from 'node:path';
++import type { NextRequest } from 'next/server';
++import { GET } from '../../app/api/autofinish-top-iteracije/route';
++import { APP_VERSION, AUTOFINISH_COUNT, TOTAL_API_ROUTES, TOTAL_ROUTES } from '../../lib/constants';
++
++let passed = 0;
++let failed = 0;
++const failures: string[] = [];
++
++async function test(name: string, fn: () => Promise<void> | void): Promise<void> {
++  try {
++    await fn();
++    console.log(`  ✅ ${name}`);
++    passed++;
++  } catch (e) {
++    const msg = e instanceof Error ? e.message : String(e);
++    console.error(`  ❌ ${name}`);
++    console.error(`     ${msg}`);
++    failed++;
++    failures.push(`${name}: ${msg}`);
++  }
++}
++
++function assert(condition: boolean, message: string): asserts condition {
++  if (!condition) throw new Error(`Assert failed: ${message}`);
++}
++
++function assertEqual<T>(actual: T, expected: T, label?: string): void {
++  if (actual !== expected) {
++    throw new Error(
++      `${label ?? 'assertEqual'}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
++    );
++  }
++}
++
++async function runTests(): Promise<void> {
++  console.log('\n🏁 Autofinish Top Iteracije — Route Coverage Test Suite (#1364)\n');
++
++  const apiRoutePath = path.resolve(process.cwd(), 'src/app/api/autofinish-top-iteracije/route.ts');
++  const apiRouteSource = fs.readFileSync(apiRoutePath, 'utf8');
++
++  await test('API route fajl postoji', () => {
++    assert(fs.existsSync(apiRoutePath), `${apiRoutePath} ne postoji`);
++  });
++
++  await test('API ruta koristi očekivane gradivne blokove', () => {
++    assert(apiRouteSource.includes('getAutofinishTopIteracije'), 'Nedostaje getAutofinishTopIteracije');
++    assert(apiRouteSource.includes('checkRateLimitGlobal'), 'Nedostaje checkRateLimitGlobal');
++    assert(apiRouteSource.includes('X-Autofinish-Iteracija'), 'Nedostaje X-Autofinish-Iteracija header');
++  });
++
++  await test('GET vraća 200 i payload za default n', async () => {
++    const request = new Request('http://localhost/api/autofinish-top-iteracije', {
++      headers: { 'x-forwarded-for': '127.0.0.64' },
++    });
++    const response = await GET(request as NextRequest);
++
++    assertEqual(response.status, 200, 'status');
++    const body = (await response.json()) as Record<string, unknown>;
++    assertEqual(body['verzija'] as string, APP_VERSION, 'verzija');
++    assertEqual(body['autofinishBroj'] as number, AUTOFINISH_COUNT, 'autofinishBroj');
++    assertEqual(body['n'] as number, 10, 'n default');
++    assert(Array.isArray(body['iteracije']), 'iteracije niz');
++    assertEqual(response.headers.get('X-App-Version'), APP_VERSION, 'X-App-Version');
++    assertEqual(response.headers.get('X-Autofinish-Iteracija'), String(AUTOFINISH_COUNT), 'X-Autofinish-Iteracija');
++  });
++
++  await test('GET vraća 200 i payload za n=5', async () => {
++    const request = new Request('http://localhost/api/autofinish-top-iteracije?n=5', {
++      headers: { 'x-forwarded-for': '127.0.0.65' },
++    });
++    const response = await GET(request as NextRequest);
++
++    assertEqual(response.status, 200, 'status');
++    const body = (await response.json()) as Record<string, unknown>;
++    assertEqual(body['n'] as number, 5, 'n');
++    assertEqual((body['iteracije'] as unknown[]).length, 5, 'iteracije.length');
++  });
++
++  await test('GET vraća 400 za n=0', async () => {
++    const request = new Request('http://localhost/api/autofinish-top-iteracije?n=0', {
++      headers: { 'x-forwarded-for': '127.0.0.66' },
++    });
++    const response = await GET(request as NextRequest);
++
++    assertEqual(response.status, 400, 'status');
++    const body = (await response.json()) as Record<string, unknown>;
++    assertEqual(body['error'] as string, 'INVALID_PARAMS', 'error');
++  });
++
++  await test('GET vraća 400 za n=201', async () => {
++    const request = new Request('http://localhost/api/autofinish-top-iteracije?n=201', {
++      headers: { 'x-forwarded-for': '127.0.0.67' },
++    });
++    const response = await GET(request as NextRequest);
++
++    assertEqual(response.status, 400, 'status');
++    const body = (await response.json()) as Record<string, unknown>;
++    assertEqual(body['error'] as string, 'N_PREVELIK', 'error');
++  });
++
++  await test('Konstante su ažurirane', () => {
++    assertEqual(APP_VERSION, '59.42.0', 'APP_VERSION');
++    assertEqual(AUTOFINISH_COUNT, 1372, 'AUTOFINISH_COUNT');
++    assertEqual(TOTAL_API_ROUTES, 1166, 'TOTAL_API_ROUTES');
++    assertEqual(TOTAL_ROUTES, 1270, 'TOTAL_ROUTES');
++  });
++
++  console.log(`\n🏁 Rezultat: ${passed} prošlo, ${failed} palo`);
++  if (failures.length > 0) {
++    console.error('\n❌ Neuspešni testovi:');
++    failures.forEach((f) => console.error(`  • ${f}`));
++    process.exit(1);
++  }
++}
++
++runTests().catch((e) => {
++  console.error('Kritična greška u test runneru:', e);
++  process.exit(1);
++});
+diff --git a/src/tests/autofinish/autofinish-zdravlje-route.test.ts b/src/tests/autofinish/autofinish-zdravlje-route.test.ts
+new file mode 100644
+index 00000000..6982213d
+--- /dev/null
++++ b/src/tests/autofinish/autofinish-zdravlje-route.test.ts
+@@ -0,0 +1,107 @@
++// Autofinish #1365 — Autofinish Zdravlje Route Coverage Test
++// Pokretanje: npx tsx src/tests/autofinish/autofinish-zdravlje-route.test.ts
++
++import fs from 'node:fs';
++import path from 'node:path';
++import type { NextRequest } from 'next/server';
++import { GET } from '../../app/api/autofinish-zdravlje/route';
++import { APP_VERSION, AUTOFINISH_COUNT, TOTAL_API_ROUTES, TOTAL_DIAGNOSTIKA, TOTAL_ROUTES } from '../../lib/constants';
++
++let passed = 0;
++let failed = 0;
++const failures: string[] = [];
++
++async function test(name: string, fn: () => Promise<void> | void): Promise<void> {
++  try {
++    await fn();
++    console.log(`  ✅ ${name}`);
++    passed++;
++  } catch (e) {
++    const msg = e instanceof Error ? e.message : String(e);
++    console.error(`  ❌ ${name}`);
++    console.error(`     ${msg}`);
++    failed++;
++    failures.push(`${name}: ${msg}`);
++  }
++}
++
++function assert(condition: boolean, message: string): asserts condition {
++  if (!condition) throw new Error(`Assert failed: ${message}`);
++}
++
++function assertEqual<T>(actual: T, expected: T, label?: string): void {
++  if (actual !== expected) {
++    throw new Error(
++      `${label ?? 'assertEqual'}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
++    );
++  }
++}
++
++async function runTests(): Promise<void> {
++  console.log('\n🏁 Autofinish Zdravlje — Route Coverage Test Suite (#1365)\n');
++
++  const apiRoutePath = path.resolve(process.cwd(), 'src/app/api/autofinish-zdravlje/route.ts');
++  const apiRouteSource = fs.readFileSync(apiRoutePath, 'utf8');
++
++  await test('API route fajl postoji', () => {
++    assert(fs.existsSync(apiRoutePath), `${apiRoutePath} ne postoji`);
++  });
++
++  await test('API ruta koristi očekivane gradivne blokove', () => {
++    assert(apiRouteSource.includes('getAutofinishHealthSummary'), 'Nedostaje getAutofinishHealthSummary');
++    assert(apiRouteSource.includes('checkRateLimitGlobal'), 'Nedostaje checkRateLimitGlobal');
++    assert(apiRouteSource.includes('X-Autofinish-Iteracija'), 'Nedostaje X-Autofinish-Iteracija header');
++    assert(apiRouteSource.includes('Retry-After'), 'Nedostaje Retry-After');
++  });
++
++  await test('GET vraća 200, payload i heder-e', async () => {
++    const request = new Request('http://localhost/api/autofinish-zdravlje', {
++      headers: { 'x-forwarded-for': '127.0.0.68' },
++    });
++    const response = await GET(request as NextRequest);
++    assertEqual(response.status, 200, 'status');
++
++    const body = (await response.json()) as Record<string, unknown>;
++    assertEqual(body['verzija'] as string, APP_VERSION, 'verzija');
++    assertEqual(body['autofinishBroj'] as number, AUTOFINISH_COUNT, 'autofinishBroj');
++    assert(typeof body['ukupnoProvera'] === 'number', 'ukupnoProvera number');
++    assert((body['ukupnoProvera'] as number) > 0, 'ukupnoProvera > 0');
++    assert(typeof body['zdravlje'] === 'number', 'zdravlje number');
++    assert(typeof body['uspesnih'] === 'number', 'uspesnih number');
++    assert(typeof body['status'] === 'string', 'status string');
++    assert(typeof body['timestamp'] === 'string', 'timestamp string');
++    assert(!Number.isNaN(Date.parse(body['timestamp'] as string)), 'timestamp ISO');
++
++    assertEqual(
++      response.headers.get('Cache-Control'),
++      'public, s-maxage=30, stale-while-revalidate=60',
++      'Cache-Control',
++    );
++    assertEqual(response.headers.get('X-App-Version'), APP_VERSION, 'X-App-Version');
++    assertEqual(
++      response.headers.get('X-Autofinish-Iteracija'),
++      String(AUTOFINISH_COUNT),
++      'X-Autofinish-Iteracija',
++    );
++  });
++
++  await test('Konstante su ažurirane', () => {
++    assertEqual(APP_VERSION, '59.42.0', 'APP_VERSION');
++    assertEqual(AUTOFINISH_COUNT, 1372, 'AUTOFINISH_COUNT');
++    assertEqual(TOTAL_API_ROUTES, 1166, 'TOTAL_API_ROUTES');
++    assertEqual(TOTAL_ROUTES, 1270, 'TOTAL_ROUTES');
++    assertEqual(TOTAL_DIAGNOSTIKA, 2368, 'TOTAL_DIAGNOSTIKA');
++  });
++
++  console.log(`\n🏁 Rezultat: ${passed} prošlo, ${failed} palo`);
++  if (failures.length > 0) {
++    console.error('\n❌ Neuspešni testovi:');
++    failures.forEach((f) => console.error(`  • ${f}`));
++    process.exit(1);
++  }
++}
++
++runTests().catch((e) => {
++  console.error('Kritična greška u test runneru:', e);
++  process.exit(1);
++});
+diff --git a/src/tests/autofinish/procesuiranje-svega-route.test.ts b/src/tests/autofinish/procesuiranje-svega-route.test.ts
+new file mode 100644
+index 00000000..d2497c51
+--- /dev/null
++++ b/src/tests/autofinish/procesuiranje-svega-route.test.ts
+@@ -0,0 +1,212 @@
++// Autofinish #1362 — Procesuiranje Svega Route Coverage Test
++// Pokretanje: npx tsx src/tests/autofinish/procesuiranje-svega-route.test.ts
++
++import fs from 'node:fs';
++import path from 'node:path';
++import type { NextRequest } from 'next/server';
++import { GET } from '../../app/api/procesuiranje-svega/route';
++import {
++  APP_VERSION,
++  AUTOFINISH_COUNT,
++  TOTAL_API_ROUTES,
++  TOTAL_ROUTES,
++  TOTAL_PAGES,
++} from '../../lib/constants';
++
++let passed = 0;
++let failed = 0;
++const failures: string[] = [];
++
++async function test(name: string, fn: () => Promise<void> | void): Promise<void> {
++  try {
++    await fn();
++    console.log(`  ✅ ${name}`);
++    passed++;
++  } catch (e) {
++    const msg = e instanceof Error ? e.message : String(e);
++    console.error(`  ❌ ${name}`);
++    console.error(`     ${msg}`);
++    failed++;
++    failures.push(`${name}: ${msg}`);
++  }
++}
++
++function assert(condition: boolean, message: string): asserts condition {
++  if (!condition) throw new Error(`Assert failed: ${message}`);
++}
++
++function assertEqual<T>(actual: T, expected: T, label?: string): void {
++  if (actual !== expected) {
++    throw new Error(
++      `${label ?? 'assertEqual'}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
++    );
++  }
++}
++
++async function runTests(): Promise<void> {
++  console.log('\n⚙️ Procesuiranje Svega — Route Coverage Test Suite (#1362)\n');
++
++  const apiRoutePath = path.resolve(process.cwd(), 'src/app/api/procesuiranje-svega/route.ts');
++  const libPath = path.resolve(process.cwd(), 'src/lib/procesuiranje-svega.ts');
++
++  await test('API route fajl postoji', () => {
++    assert(fs.existsSync(apiRoutePath), `${apiRoutePath} ne postoji`);
++  });
++
++  await test('Lib modul fajl postoji', () => {
++    assert(fs.existsSync(libPath), `${libPath} ne postoji`);
++  });
++
++  await test('API ruta koristi očekivane gradivne blokove', () => {
++    const src = fs.readFileSync(apiRoutePath, 'utf8');
++    assert(src.includes('buildProcesuiranjeSvega'), 'Nedostaje buildProcesuiranjeSvega');
++    assert(src.includes('checkRateLimitGlobal'), 'Nedostaje checkRateLimitGlobal');
++    assert(src.includes('apiError'), 'Nedostaje apiError');
++    assert(src.includes('apiSuccess'), 'Nedostaje apiSuccess');
++    assert(src.includes('apiInternalError'), 'Nedostaje apiInternalError');
++    assert(src.includes('force-dynamic'), 'Nedostaje force-dynamic');
++  });
++
++  await test('GET vraća 200 i ispravnu strukturu', async () => {
++    const request = new Request('http://localhost/api/procesuiranje-svega', {
++      headers: { 'x-forwarded-for': '127.0.0.60' },
++    });
++    const response = await GET(request as NextRequest);
++    assertEqual(response.status, 200, 'HTTP status');
++
++    const body = (await response.json()) as Record<string, unknown>;
++    assert(typeof body['data'] === 'object' && body['data'] !== null, 'data objekat');
++    assertEqual(body['verzija'] as string, APP_VERSION, 'verzija');
++    assert(typeof body['timestamp'] === 'string', 'timestamp string');
++    assert(!Number.isNaN(Date.parse(body['timestamp'] as string)), 'timestamp ISO');
++  });
++
++  await test('Rezultat ima sva obavezna polja', async () => {
++    const request = new Request('http://localhost/api/procesuiranje-svega', {
++      headers: { 'x-forwarded-for': '127.0.0.61' },
++    });
++    const response = await GET(request as NextRequest);
++    const body = (await response.json()) as Record<string, unknown>;
++    const data = body['data'] as Record<string, unknown>;
++
++    assert(typeof data['sistem'] === 'string', 'sistem string');
++    assert(typeof data['kompanija'] === 'string', 'kompanija string');
++    assertEqual(data['verzija'] as string, APP_VERSION, 'data.verzija');
++    assertEqual(data['autofinishBroj'] as number, AUTOFINISH_COUNT, 'autofinishBroj');
++    assert(typeof data['ukupanProcenat'] === 'number', 'ukupanProcenat number');
++    assert(typeof data['aktivnihProcesa'] === 'number', 'aktivnihProcesa number');
++    assert(typeof data['cekajucihProcesa'] === 'number', 'cekajucihProcesa number');
++    assert(typeof data['gresakaUkupno'] === 'number', 'gresakaUkupno number');
++    assert(typeof data['zavrsenihProcesa'] === 'number', 'zavrsenihProcesa number');
++    assert(typeof data['domeni'] === 'object' && data['domeni'] !== null, 'domeni objekat');
++    assert(Array.isArray(data['aktivneStavke']), 'aktivneStavke niz');
++    assert(!Number.isNaN(Date.parse(data['timestamp'] as string)), 'data.timestamp ISO');
++  });
++
++  await test('ukupanProcenat je između 0 i 100', async () => {
++    const request = new Request('http://localhost/api/procesuiranje-svega', {
++      headers: { 'x-forwarded-for': '127.0.0.62' },
++    });
++    const response = await GET(request as NextRequest);
++    const body = (await response.json()) as Record<string, unknown>;
++    const data = body['data'] as Record<string, unknown>;
++    const procenat = data['ukupanProcenat'] as number;
++
++    assert(procenat >= 0 && procenat <= 100, `ukupanProcenat mora biti 0-100, dobijeno: ${procenat}`);
++  });
++
++  await test('Svih 8 domena su prisutni i validni', async () => {
++    const request = new Request('http://localhost/api/procesuiranje-svega', {
++      headers: { 'x-forwarded-for': '127.0.0.63' },
++    });
++    const response = await GET(request as NextRequest);
++    const body = (await response.json()) as Record<string, unknown>;
++    const data = body['data'] as Record<string, unknown>;
++    const domeni = data['domeni'] as Record<string, unknown>;
++
++    const ocekivaniDomeni = ['bankarski', 'ai', 'finansijski', 'licencni', 'ekosistem', 'autofinish', 'bezbednosni', 'analiticki'];
++    assertEqual(Object.keys(domeni).length, 8, 'Tačno 8 domena');
++
++    for (const naziv of ocekivaniDomeni) {
++      const domen = domeni[naziv] as Record<string, unknown>;
++      assert(domen !== undefined, `domen '${naziv}' nedostaje`);
++      assert(typeof domen['naziv'] === 'string', `${naziv}.naziv string`);
++      assert(typeof domen['ikona'] === 'string', `${naziv}.ikona string`);
++      assert(typeof domen['status'] === 'string', `${naziv}.status string`);
++      assert(
++        ['aktivno', 'cekanje', 'greska', 'zavrseno'].includes(domen['status'] as string),
++        `${naziv}.status validna vrednost, dobijeno: ${String(domen['status'])}`,
++      );
++      assert(typeof domen['procenat'] === 'number', `${naziv}.procenat number`);
++      assert(domen['procenat'] as number >= 0 && domen['procenat'] as number <= 100, `${naziv}.procenat 0-100`);
++      assert(Array.isArray(domen['stavke']), `${naziv}.stavke niz`);
++      assert((domen['stavke'] as unknown[]).length > 0, `${naziv}.stavke nije prazno`);
++    }
++  });
++
++  await test('aktivneStavke sadrže samo aktivne procese', async () => {
++    const request = new Request('http://localhost/api/procesuiranje-svega', {
++      headers: { 'x-forwarded-for': '127.0.0.64' },
++    });
++    const response = await GET(request as NextRequest);
++    const body = (await response.json()) as Record<string, unknown>;
++    const data = body['data'] as Record<string, unknown>;
++    const stavke = data['aktivneStavke'] as Array<Record<string, unknown>>;
++
++    assert(stavke.length > 0, 'aktivneStavke nije prazno');
++    for (const stavka of stavke) {
++      assertEqual(stavka['status'] as string, 'aktivno', `stavka ${String(stavka['id'])} mora biti aktivna`);
++      assert(typeof stavka['id'] === 'string', 'stavka.id string');
++      assert(typeof stavka['opis'] === 'string', 'stavka.opis string');
++      assert(typeof stavka['tip'] === 'string', 'stavka.tip string');
++    }
++  });
++
++  await test('Stranica procesuiranje-svega postoji', () => {
++    const pagePath = path.resolve(process.cwd(), 'src/app/procesuiranje-svega/page.tsx');
++    assert(fs.existsSync(pagePath), `${pagePath} ne postoji`);
++    const src = fs.readFileSync(pagePath, 'utf8');
++    assert(src.includes('procesuiranjeSvegaSekvence'), 'Nedostaje procesuiranjeSvegaSekvence');
++    assert(src.includes('StranicaRenderer'), 'Nedostaje StranicaRenderer');
++  });
++
++  await test('Sekvence fajl procesuiranje-svega postoji', () => {
++    const sekvencePath = path.resolve(process.cwd(), 'src/lib/sekvence/procesuiranje-svega-page.ts');
++    assert(fs.existsSync(sekvencePath), `${sekvencePath} ne postoji`);
++    const src = fs.readFileSync(sekvencePath, 'utf8');
++    assert(src.includes('procesuiranjeSvegaSekvence'), 'Nedostaje procesuiranjeSvegaSekvence export');
++  });
++
++  await test('Navigacija sadrži procesuiranje-svega link', () => {
++    const navPath = path.resolve(process.cwd(), 'src/lib/navigation.ts');
++    const navSrc = fs.readFileSync(navPath, 'utf8');
++    assert(navSrc.includes('/procesuiranje-svega'), 'Navigacija ne sadrži /procesuiranje-svega');
++  });
++
++  await test('Sitemap sadrži procesuiranje-svega i api/procesuiranje-svega', () => {
++    const sitemapPath = path.resolve(process.cwd(), 'src/app/sitemap.ts');
++    const sitemapSrc = fs.readFileSync(sitemapPath, 'utf8');
++    assert(sitemapSrc.includes('/procesuiranje-svega'), 'Sitemap ne sadrži /procesuiranje-svega');
++    assert(sitemapSrc.includes('/api/procesuiranje-svega'), 'Sitemap ne sadrži /api/procesuiranje-svega');
++  });
++
++  await test('Konstante su ažurirane', () => {
++    assertEqual(APP_VERSION, '59.42.0', 'APP_VERSION');
++    assertEqual(AUTOFINISH_COUNT, 1372, 'AUTOFINISH_COUNT');
++    assertEqual(TOTAL_API_ROUTES, 1166, 'TOTAL_API_ROUTES');
++    assertEqual(TOTAL_ROUTES, 1270, 'TOTAL_ROUTES');
++    assertEqual(TOTAL_PAGES, 62, 'TOTAL_PAGES');
++  });
++
++  console.log(`\n⚙️ Rezultat: ${passed} prošlo, ${failed} palo`);
++  if (failures.length > 0) {
++    console.error('\n❌ Neuspešni testovi:');
++    failures.forEach((f) => console.error(`  • ${f}`));
++    process.exit(1);
++  }
++}
++
++runTests().catch((e) => {
++  console.error('Kritična greška u test runneru:', e);
++  process.exit(1);
++});

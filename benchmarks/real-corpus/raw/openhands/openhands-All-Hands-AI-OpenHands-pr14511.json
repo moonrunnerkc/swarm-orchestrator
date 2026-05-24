@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14511",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14511,
+    "headSha": "392bb5f6312fe253d2879daeaf0563d59ce1d9ff",
+    "baseSha": "9b0cb9e061743e940ff079e1a4388d442b7c5cdd",
+    "title": "feat(acp): persist current_model_id on conversations",
+    "body": "## Why\n\nACP conversations were created with `llm_model = None` in the app_server — there was no upstream signal of which model the ACP harness was actually using. As a result, every ACP conversation came back from the API as:\n\n```json\n{ \"agent_kind\": \"acp\", \"llm_model\": null, ... }\n```\n\n…even for Claude Code / Codex / Gemini CLI sessions where the underlying model is well-defined. The web chip then has nothing useful to show.\n\nThis change reads the model the SDK now exposes (via the companion PR) and persists it like any other conversation's `llm_model`. The frontend chip [already displays this](https://github.com/OpenHands/OpenHands/blob/main/frontend/src/utils/agent-display-label.ts) — no UI change required.\n\n## Summary\n\n- One line change in `live_status_app_conversation_service.py`: replace `llm_model = None` (hard-coded for the ACP branch) with `llm_model = getattr(info, 'current_model_id', None)`.\n- `getattr` keeps the app_server forward-compatible with older SDK builds — degrades to today's `None` behavior if the SDK doesn't surface the field yet.\n\n## Issue Number\n\nNone — follow-up to chip-UX work in #14505 / #14510.\n\n## How to Test\n\nAfter the SDK PR (OpenHands/software-agent-sdk#3347) merges and a new SDK release pins through here, locally:\n\n```bash\n# Bump the SDK pin in pyproject.toml to the new release, then\npoetry lock && poetry install\nENABLE_ACP=true poetry run python -m uvicorn openhands.server.listen:app --host 127.0.0.1 --port 3000\ncd frontend && VITE_BACKEND_HOST=127.0.0.1:3000 npm run dev\n```\n\n1. Start a Claude Code (ACP) conversation. The chip should now show the actual model (e.g. `Claude Opus 4.1`) next to the Claude brand mark, instead of just \"Claude Code\".\n2. Verify via API: `curl http://localhost:3001/api/v1/app-conversations/search?limit=5 | jq '.items[] | select(.agent_kind==\"acp\") | .llm_model'` — should return a non-null string for new ACP convs.\n3. Existing ACP conversations created before this change keep `llm_model: null` (no migration here, by design).\n\n## Video/Screenshots\n\nTo attach after the SDK is bumped — UI difference is the chip text on ACP conversations gaining the underlying model.\n\n## Type\n\n- [ ] Bug fix\n- [x] Feature\n- [ ] Refactor\n- [ ] Breaking change\n- [ ] Docs / chore\n\n## Notes\n\n- **Depends on** OpenHands/software-agent-sdk#3347 (adds `ConversationInfo.current_model_id`) and an SDK release that includes it. Marking this PR as **draft** until the SDK pin can be bumped.\n- The model surfaces via the ACP protocol's UNSTABLE `models.currentModelId` field. All three known ACP providers (Claude Code, Codex, Gemini CLI) implement it today; older / custom servers will leave the field `None` and the chip falls back to the provider brand — same as today's behavior.\n- Existing ACP conversations are left as-is. A backfill would require re-querying the agent-server for each running conversation; not worth it for a cosmetic chip improvement.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\n---\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-392bb5f   docker.openhands.dev/openhands/openhands:392bb5f\n```",
+    "author": "simonrosenberg",
+    "headRef": "feat-acp-persist-current-model-id",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "392bb5f6312fe253d2879daeaf0563d59ce1d9ff",
+    "baseSha": "9b0cb9e061743e940ff079e1a4388d442b7c5cdd"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14511.diff",
+  "vendoredAt": "2026-05-24T03:18:14.764Z",
+  "collectedAt": "2026-05-24T03:18:14.764Z"
+}

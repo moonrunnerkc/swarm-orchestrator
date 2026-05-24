@@ -1,0 +1,127 @@
+diff --git a/src/helpers/beta/zod.ts b/src/helpers/beta/zod.ts
+index 452a28d6..4d3caf50 100644
+--- a/src/helpers/beta/zod.ts
++++ b/src/helpers/beta/zod.ts
+@@ -2,6 +2,7 @@ import { transformJSONSchema } from '../..//lib/transform-json-schema';
+ import type { infer as zodInfer, ZodType } from 'zod';
+ import * as z from 'zod/v4';
+ import { AnthropicError } from '../../core/error';
++import { assertZodV4Schema } from '../../lib/check-zod-version';
+ import { AutoParseableBetaOutputFormat } from '../../lib/beta-parser';
+ import { BetaRunnableTool, BetaToolRunContext, Promisable } from '../../lib/tools/BetaRunnableTool';
+ import { BetaToolResultContentBlockParam } from '../../resources/beta';
+@@ -17,6 +18,7 @@ import { BetaToolResultContentBlockParam } from '../../resources/beta';
+ export function betaZodOutputFormat<ZodInput extends ZodType>(
+   zodObject: ZodInput,
+ ): AutoParseableBetaOutputFormat<zodInfer<ZodInput>> {
++  assertZodV4Schema(zodObject, 'betaZodOutputFormat');
+   let jsonSchema = z.toJSONSchema(zodObject, { reused: 'ref' });
+ 
+   jsonSchema = transformJSONSchema(jsonSchema);
+@@ -55,6 +57,7 @@ export function betaZodTool<InputSchema extends ZodType>(options: {
+     context?: BetaToolRunContext,
+   ) => Promisable<string | Array<BetaToolResultContentBlockParam>>;
+ }): BetaRunnableTool<zodInfer<InputSchema>> {
++  assertZodV4Schema(options.inputSchema, 'betaZodTool');
+   const jsonSchema = z.toJSONSchema(options.inputSchema, { reused: 'ref' });
+ 
+   if (jsonSchema.type !== 'object') {
+diff --git a/src/helpers/zod.ts b/src/helpers/zod.ts
+index 57be86a3..887bc58e 100644
+--- a/src/helpers/zod.ts
++++ b/src/helpers/zod.ts
+@@ -2,6 +2,7 @@ import { transformJSONSchema } from '../lib/transform-json-schema';
+ import type { infer as zodInfer, ZodType } from 'zod';
+ import * as z from 'zod/v4';
+ import { AnthropicError } from '../core/error';
++import { assertZodV4Schema } from '../lib/check-zod-version';
+ import { AutoParseableOutputFormat } from '../lib/parser';
+ 
+ /**
+@@ -16,6 +17,7 @@ import { AutoParseableOutputFormat } from '../lib/parser';
+ export function zodOutputFormat<ZodInput extends ZodType>(
+   zodObject: ZodInput,
+ ): AutoParseableOutputFormat<zodInfer<ZodInput>> {
++  assertZodV4Schema(zodObject, 'zodOutputFormat');
+   let jsonSchema = z.toJSONSchema(zodObject, { reused: 'ref' });
+ 
+   jsonSchema = transformJSONSchema(jsonSchema);
+diff --git a/src/lib/check-zod-version.ts b/src/lib/check-zod-version.ts
+new file mode 100644
+index 00000000..cc621574
+--- /dev/null
++++ b/src/lib/check-zod-version.ts
+@@ -0,0 +1,22 @@
++import { AnthropicError } from '../core/error';
++
++/**
++ * The SDK's zod helpers call `z.toJSONSchema` from `zod/v4`, which only understands
++ * v4-shaped schemas. Passing a v3 schema (constructed via `import { z } from 'zod'`
++ * against a zod 3.x install) makes `toJSONSchema` throw a confusing internal
++ * `TypeError: Cannot read properties of undefined (reading 'def')`.
++ *
++ * v4 schemas always have a `_zod` property; v3 schemas don't. Detect the case and
++ * throw an actionable error pointing at the two unblock paths.
++ */
++export function assertZodV4Schema(zodObject: unknown, callerName: string): void {
++  if (zodObject && typeof zodObject === 'object' && (zodObject as { _zod?: unknown })._zod !== undefined) {
++    return;
++  }
++
++  throw new AnthropicError(
++    `${callerName} requires a zod v4 schema, but received what appears to be a zod v3 schema. ` +
++      `Either upgrade your project to zod v4, or, if you're on zod >= 3.25, import via ` +
++      `\`import { z } from 'zod/v4'\` (the v4 subpath is shipped as a backport in recent zod 3.x releases).`,
++  );
++}
+diff --git a/tests/helpers/zod.test.ts b/tests/helpers/zod.test.ts
+index 9285ded5..586a04f5 100644
+--- a/tests/helpers/zod.test.ts
++++ b/tests/helpers/zod.test.ts
+@@ -1,7 +1,18 @@
+ import { z } from 'zod';
+-import { betaZodOutputFormat } from '../../src/helpers/beta/zod';
++import { betaZodOutputFormat, betaZodTool } from '../../src/helpers/beta/zod';
+ import { zodOutputFormat } from '../../src/helpers/zod';
+ 
++// Mimic the shape of a zod v3 schema: `_def.typeName` is set, `_zod` is absent.
++// We only need enough surface for the type system; runtime never reaches `safeParse`
++// because the v4 assertion short-circuits first.
++function fakeZodV3Schema(): any {
++  return {
++    _def: { typeName: 'ZodObject' },
++    safeParse: () => ({ success: true, data: {} }),
++    parse: (v: unknown) => v,
++  };
++}
++
+ describe('beta zod helpers', () => {
+   describe('betaZodOutputFormat', () => {
+     it('creates valid JSON schema from simple Zod object', () => {
+@@ -504,4 +515,26 @@ describe('GA zod helpers', () => {
+       expect(() => format.parse('{"incomplete": ')).toThrow();
+     });
+   });
++
++  describe('zod v3 schema rejection', () => {
++    it('zodOutputFormat throws a clear error when given a v3-shaped schema', () => {
++      expect(() => zodOutputFormat(fakeZodV3Schema())).toThrow(/zod v4 schema/);
++      expect(() => zodOutputFormat(fakeZodV3Schema())).toThrow(/zod\/v4/);
++    });
++
++    it('betaZodOutputFormat throws a clear error when given a v3-shaped schema', () => {
++      expect(() => betaZodOutputFormat(fakeZodV3Schema())).toThrow(/zod v4 schema/);
++    });
++
++    it('betaZodTool throws a clear error when given a v3-shaped input schema', () => {
++      expect(() =>
++        betaZodTool({
++          name: 'noop',
++          description: 'noop',
++          inputSchema: fakeZodV3Schema(),
++          run: async () => 'ok',
++        }),
++      ).toThrow(/zod v4 schema/);
++    });
++  });
+ });

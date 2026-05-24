@@ -1,0 +1,563 @@
+diff --git a/apps/web/index.html b/apps/web/index.html
+index bd7b102..3f45ded 100644
+--- a/apps/web/index.html
++++ b/apps/web/index.html
+@@ -54,34 +54,14 @@
+     <meta name="twitter:description" content="Site, funil, WhatsApp e automação para negócios locais. Primeira versão em até 72h. Orçamento em 24h." />
+     <meta name="twitter:image" content="https://images.unsplash.com/photo-1486406146926-c627a92cc1b1?auto=format&fit=crop&w=1200&h=630&q=88" />
+ 
+-    <!-- Core Web Vitals: font preconnect antes do preload -->
+-    <link rel="preconnect" href="https://fonts.googleapis.com" />
+-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+     <link rel="preconnect" href="https://images.unsplash.com" crossorigin />
+-    <link rel="preconnect" href="https://videos.pexels.com" crossorigin />
+-    <link
+-      rel="preload"
+-      as="style"
+-      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap"
+-    />
+-    <link
+-      rel="stylesheet"
+-      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap"
+-      media="print"
+-      onload="this.media='all'"
+-    />
+-    <noscript>
+-      <link
+-        rel="stylesheet"
+-        href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap"
+-      />
+-    </noscript>
+ 
+     <link
+       rel="preload"
+-      href="https://images.unsplash.com/photo-1486406146926-c627a92cc1b1?auto=format&fit=crop&w=1920&q=92&fm=webp"
++      href="https://images.unsplash.com/photo-1486406146926-c627a92cc1b1?auto=format&fit=crop&w=1200&h=675&q=75&fm=webp"
+       as="image"
+       type="image/webp"
++      fetchpriority="high"
+       crossorigin
+     />
+ 
+diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+index 866c5af..4827749 100644
+--- a/apps/web/src/App.tsx
++++ b/apps/web/src/App.tsx
+@@ -6,12 +6,9 @@ import { SiteFooter } from '@/components/SiteFooter';
+ import { CookieConsent } from '@/components/CookieConsent';
+ import { WhatsAppFab } from '@/components/WhatsAppFab';
+ import { AnalyticsProvider } from '@/components/AnalyticsProvider';
+-import { ExitIntentModal } from '@/components/engagement/ExitIntentModal';
+-import { AssistWidget } from '@/components/engagement/AssistWidget';
+-import { PlanosEngagementBanner } from '@/components/engagement/PlanosEngagementBanner';
++import { DeferredEngagement } from '@/components/DeferredEngagement';
+ import { ScrollToTop } from '@/components/ScrollToTop';
+-
+-const Home = lazy(() => import('@/pages/Home'));
++import Home from '@/pages/Home';
+ const Projetos = lazy(() => import('@/pages/Projetos'));
+ const ProjectPage = lazy(() => import('@/pages/projetos/ProjectPage'));
+ const Blog = lazy(() => import('@/pages/Blog'));
+@@ -82,9 +79,7 @@ export default function App() {
+       <SiteFooter />
+       <CookieConsent />
+       <WhatsAppFab />
+-      <AssistWidget />
+-      <PlanosEngagementBanner />
+-      <ExitIntentModal />
++      <DeferredEngagement />
+     </Router>
+     </ThemeProvider>
+   );
+diff --git a/apps/web/src/components/DeferredEngagement.tsx b/apps/web/src/components/DeferredEngagement.tsx
+new file mode 100644
+index 0000000..e66a8e1
+--- /dev/null
++++ b/apps/web/src/components/DeferredEngagement.tsx
+@@ -0,0 +1,33 @@
++import { lazy, Suspense, useEffect, useState } from 'react';
++import { runAfterFirstPaint } from '@/lib/defer-idle';
++
++const AssistWidget = lazy(() =>
++  import('@/components/engagement/AssistWidget').then((m) => ({ default: m.AssistWidget })),
++);
++const PlanosEngagementBanner = lazy(() =>
++  import('@/components/engagement/PlanosEngagementBanner').then((m) => ({
++    default: m.PlanosEngagementBanner,
++  })),
++);
++const ExitIntentModal = lazy(() =>
++  import('@/components/engagement/ExitIntentModal').then((m) => ({ default: m.ExitIntentModal })),
++);
++
++/** Widgets de conversão — após primeiro paint para não competir com LCP */
++export function DeferredEngagement() {
++  const [ready, setReady] = useState(false);
++
++  useEffect(() => {
++    runAfterFirstPaint(() => setReady(true), 400);
++  }, []);
++
++  if (!ready) return null;
++
++  return (
++    <Suspense fallback={null}>
++      <AssistWidget />
++      <PlanosEngagementBanner />
++      <ExitIntentModal />
++    </Suspense>
++  );
++}
+diff --git a/apps/web/src/components/HeroVideo.tsx b/apps/web/src/components/HeroVideo.tsx
+index 292cbc1..4808abe 100644
+--- a/apps/web/src/components/HeroVideo.tsx
++++ b/apps/web/src/components/HeroVideo.tsx
+@@ -1,6 +1,7 @@
+ import { useState, useEffect, useRef, useMemo } from 'react';
+ import { BRAND } from '@/lib/brand';
+-import { LOCAL_HERO_VIDEO } from '@/lib/media';
++import { HERO_POSTER_LCP, HERO_POSTER_SRCSET, LOCAL_HERO_VIDEO } from '@/lib/media';
++import { runWhenIdle } from '@/lib/defer-idle';
+ 
+ const LOCAL_HERO_CACHE_KEY = 'rdv-hero-local';
+ 
+@@ -12,6 +13,8 @@ type HeroVideoProps = {
+   preferLocalHero?: boolean;
+   /** Força um único vídeo (performance LCP) */
+   singleClip?: boolean;
++  /** Adia o `<video>` até após idle — poster cobre o LCP */
++  deferVideo?: boolean;
+ };
+ 
+ function getReducedMotion(): boolean {
+@@ -43,9 +46,11 @@ export function HeroVideo({
+   src,
+   preferLocalHero = false,
+   singleClip = false,
++  deferVideo = true,
+ }: HeroVideoProps) {
+   const [reduceMotion] = useState(getReducedMotion);
+   const [useHd, setUseHd] = useState(true);
++  const [shouldPlayVideo, setShouldPlayVideo] = useState(() => !deferVideo);
+   const [localHeroReady, setLocalHeroReady] = useState(() =>
+     preferLocalHero ? readLocalHeroCached() : false,
+   );
+@@ -64,28 +69,35 @@ export function HeroVideo({
+ 
+   const [loaded, setLoaded] = useState<boolean[]>(() => videos.map(() => false));
+   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+-  const posterUrl = poster ?? BRAND.heroPosterUrl;
++  const posterUrl = poster ?? HERO_POSTER_LCP;
+ 
+   useEffect(() => {
+     setUseHd(preferHdHero());
+   }, []);
+ 
++  useEffect(() => {
++    if (reduceMotion || !deferVideo || shouldPlayVideo) return;
++    runWhenIdle(() => setShouldPlayVideo(true), 1800);
++  }, [reduceMotion, deferVideo, shouldPlayVideo]);
++
+   useEffect(() => {
+     if (!preferLocalHero || localHeroReady) return;
+     let cancelled = false;
+-    fetch(LOCAL_HERO_VIDEO.mp4, { method: 'HEAD' })
+-      .then((r) => {
+-        if (cancelled || !r.ok) return;
+-        try {
+-          sessionStorage.setItem(LOCAL_HERO_CACHE_KEY, '1');
+-        } catch {
+-          /* ignore */
+-        }
+-        setLocalHeroReady(true);
+-      })
+-      .catch(() => {
+-        /* Pexels */
+-      });
++    runWhenIdle(() => {
++      fetch(LOCAL_HERO_VIDEO.mp4, { method: 'HEAD' })
++        .then((r) => {
++          if (cancelled || !r.ok) return;
++          try {
++            sessionStorage.setItem(LOCAL_HERO_CACHE_KEY, '1');
++          } catch {
++            /* ignore */
++          }
++          setLocalHeroReady(true);
++        })
++        .catch(() => {
++          /* Pexels */
++        });
++    }, 3500);
+     return () => {
+       cancelled = true;
+     };
+@@ -117,16 +129,18 @@ export function HeroVideo({
+     <div className={className ?? 'absolute inset-0'} aria-hidden="true">
+       <img
+         src={posterUrl}
++        srcSet={HERO_POSTER_SRCSET}
+         alt=""
+         className="absolute inset-0 h-full w-full object-cover object-center"
+         loading="eager"
+         fetchPriority="high"
+         decoding="async"
+-        width={1920}
+-        height={1080}
++        width={1200}
++        height={675}
+         sizes="100vw"
+       />
+       {!reduceMotion &&
++        shouldPlayVideo &&
+         videos.map((videoSrc, i) => (
+           <video
+             key={videoSrc}
+@@ -136,7 +150,7 @@ export function HeroVideo({
+             muted
+             loop
+             playsInline
+-            preload={i === 0 ? 'auto' : 'metadata'}
++            preload={i === 0 ? 'metadata' : 'none'}
+             poster={posterUrl}
+             crossOrigin={videoSrc.startsWith('http') ? 'anonymous' : undefined}
+             onCanPlay={() => markLoaded(i)}
+diff --git a/apps/web/src/index.css b/apps/web/src/index.css
+index 2051d53..6ee8cc7 100644
+--- a/apps/web/src/index.css
++++ b/apps/web/src/index.css
+@@ -159,6 +159,33 @@ html.light ::selection {
+   color: rgba(248, 248, 250, 0.55);
+ }
+ 
++/* Hero — animação CSS (sem framer-motion no above-the-fold) */
++@keyframes hero-enter-rise {
++  from {
++    opacity: 0;
++    transform: translateY(20px);
++  }
++  to {
++    opacity: 1;
++    transform: translateY(0);
++  }
++}
++
++.hero-enter {
++  animation: hero-enter-rise 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
++}
++
++.hero-enter-delay-1 { animation-delay: 0.04s; }
++.hero-enter-delay-2 { animation-delay: 0.1s; }
++.hero-enter-delay-3 { animation-delay: 0.18s; }
++.hero-enter-delay-4 { animation-delay: 0.26s; }
++.hero-enter-delay-5 { animation-delay: 0.34s; }
++.hero-enter-delay-6 { animation-delay: 0.42s; }
++
++.hero-content {
++  contain: layout style;
++}
++
+ .section-below-fold {
+   content-visibility: auto;
+   contain-intrinsic-size: auto 480px;
+@@ -586,6 +613,10 @@ img, video { max-width: 100%; height: auto; display: block; }
+ 
+ @media (min-width: 641px) and (max-width: 1024px) {
+   .text-display { font-size: clamp(2.4rem, 6vw, 4.5rem); }
++  .hero-content {
++    padding-left: 2rem;
++    padding-right: 2rem;
++  }
+ }
+ 
+ /* ─── WhatsApp FAB animado ─── */
+@@ -623,4 +654,9 @@ img, video { max-width: 100%; height: auto; display: block; }
+     transition-duration: 0.01ms !important;
+     scroll-behavior: auto !important;
+   }
++
++  .hero-enter {
++    opacity: 1;
++    transform: none;
++  }
+ }
+diff --git a/apps/web/src/lib/defer-idle.ts b/apps/web/src/lib/defer-idle.ts
+new file mode 100644
+index 0000000..7b3546e
+--- /dev/null
++++ b/apps/web/src/lib/defer-idle.ts
+@@ -0,0 +1,38 @@
++/** Executa após idle ou timeout — não bloqueia LCP / first paint */
++export function runWhenIdle(fn: () => void, timeoutMs = 2200): void {
++  if (typeof window === 'undefined') return;
++
++  const run = () => {
++    try {
++      fn();
++    } catch {
++      /* ignore */
++    }
++  };
++
++  if ('requestIdleCallback' in window) {
++    window.requestIdleCallback(run, { timeout: timeoutMs });
++    return;
++  }
++
++  setTimeout(run, Math.min(timeoutMs, 1500));
++}
++
++export function runAfterFirstPaint(fn: () => void, delayMs = 0): void {
++  if (typeof document === 'undefined') return;
++
++  const run = () => runWhenIdle(fn, 2800);
++
++  if (document.readyState === 'complete') {
++    setTimeout(run, delayMs);
++    return;
++  }
++
++  window.addEventListener(
++    'load',
++    () => {
++      setTimeout(run, delayMs);
++    },
++    { once: true },
++  );
++}
+diff --git a/apps/web/src/lib/media.ts b/apps/web/src/lib/media.ts
+index 0cec8e1..360950c 100644
+--- a/apps/web/src/lib/media.ts
++++ b/apps/web/src/lib/media.ts
+@@ -63,8 +63,18 @@ export const HERO_PROFESSION_VIDEOS_UHD = [
+   PEXELS.heroSkyline,
+ ] as const;
+ 
+-export const HERO_POSTER =
+-  'https://images.unsplash.com/photo-1486406146926-c627a92cc1b1?auto=format&fit=crop&w=1920&q=85&fm=webp';
++const HERO_PHOTO_ID = 'photo-1486406146926-c627a92cc1b1';
++
++/** Poster LCP — menor que 1920 para first paint < 3s */
++export const HERO_POSTER_LCP = `https://images.unsplash.com/${HERO_PHOTO_ID}?auto=format&fit=crop&w=1200&h=675&q=75&fm=webp`;
++
++export const HERO_POSTER_SRCSET = [
++  `${HERO_POSTER_LCP} 1200w`,
++  `https://images.unsplash.com/${HERO_PHOTO_ID}?auto=format&fit=crop&w=1920&h=1080&q=80&fm=webp 1920w`,
++].join(', ');
++
++/** Compat: OG, lazy sections e fallbacks */
++export const HERO_POSTER = HERO_POSTER_LCP;
+ 
+ /** Open Graph / Twitter — mesmo frame editorial do hero (1200×630) */
+ export const OG_SHARE_IMAGE =
+diff --git a/apps/web/src/main.tsx b/apps/web/src/main.tsx
+index 9f7cfbb..4c69e73 100644
+--- a/apps/web/src/main.tsx
++++ b/apps/web/src/main.tsx
+@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
+ import App from './App'
+ import './index.css'
+ import { initTracking } from './lib/analytics'
++import { runAfterFirstPaint } from './lib/defer-idle'
+ 
+ function initThemeClass() {
+   const root = document.documentElement
+@@ -22,23 +23,28 @@ function initThemeClass() {
+ }
+ 
+ initThemeClass()
+-initTracking()
++
++createRoot(document.getElementById('root')!).render(
++  <StrictMode>
++    <App />
++  </StrictMode>,
++)
++
++runAfterFirstPaint(() => {
++  initTracking()
++}, 800)
+ 
+ if ('serviceWorker' in navigator) {
+   if (import.meta.env.DEV) {
+     navigator.serviceWorker
+       .getRegistrations()
+       .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+-      .catch(() => undefined);
++      .catch(() => undefined)
+   }
+ 
+   if (import.meta.env.PROD) {
+-    navigator.serviceWorker.register('/sw.js').catch(() => undefined);
++    runAfterFirstPaint(() => {
++      navigator.serviceWorker.register('/sw.js').catch(() => undefined)
++    }, 1200)
+   }
+ }
+-
+-createRoot(document.getElementById('root')!).render(
+-  <StrictMode>
+-    <App />
+-  </StrictMode>,
+-)
+diff --git a/apps/web/src/pages/Home.tsx b/apps/web/src/pages/Home.tsx
+index 690fab0..5fdef3a 100644
+--- a/apps/web/src/pages/Home.tsx
++++ b/apps/web/src/pages/Home.tsx
+@@ -1,6 +1,5 @@
+-import { lazy, Suspense, useEffect, useRef } from 'react';
++import { lazy, Suspense, useEffect } from 'react';
+ import { Link } from 'react-router-dom';
+-import { motion, useScroll, useTransform, useReducedMotion } from 'framer-motion';
+ import { applySeo } from '@/lib/seo';
+ import { buildHomeJsonLd } from '@/lib/seo-schema';
+ import { DEFAULT_OG_IMAGE, HOME_SEO } from '@/lib/seo-meta';
+@@ -22,19 +21,11 @@ const CinematicVideoBand = lazy(() =>
+   import('@/components/home/CinematicVideoBand').then((m) => ({ default: m.CinematicVideoBand })),
+ );
+ 
+-const EASE_LUXURY = [0.16, 1, 0.3, 1] as const;
+-
+ function SectionFallback() {
+   return <div className="min-h-[8rem] bg-[color:var(--page-bg)]" aria-hidden />;
+ }
+ 
+ export default function Home() {
+-  const heroRef = useRef<HTMLDivElement>(null);
+-  const reduceMotion = useReducedMotion();
+-  const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
+-  const heroY = useTransform(scrollYProgress, [0, 1], ['0%', reduceMotion ? '0%' : '12%']);
+-  const heroOpacity = useTransform(scrollYProgress, [0, 0.65], [1, 0]);
+-
+   useEffect(() => {
+     applySeo({
+       title: HOME_SEO.title,
+@@ -47,18 +38,15 @@ export default function Home() {
+ 
+   return (
+     <main className="page-surface overflow-x-hidden">
+-      <section ref={heroRef} className="hero-dark relative isolate min-h-[100dvh] min-h-[100svh] overflow-hidden">
+-        <motion.div style={{ y: heroY }} className="absolute inset-0 parallax-bg">
+-          <HeroVideo preferLocalHero singleClip />
+-        </motion.div>
++      <section className="hero-dark relative isolate min-h-[100dvh] min-h-[100svh] overflow-hidden">
++        <div className="absolute inset-0 parallax-bg">
++          <HeroVideo preferLocalHero singleClip deferVideo />
++        </div>
+         <div className="absolute inset-0 bg-[#030303]/55" />
+         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/15 to-black/85" />
+ 
+-        <motion.div
+-          style={{ opacity: heroOpacity }}
+-          className="relative flex min-h-[100dvh] min-h-[100svh] flex-col items-center justify-center px-4 pb-[max(5rem,env(safe-area-inset-bottom))] pt-28 text-center sm:px-6 sm:pt-32"
+-        >
+-          <Reveal>
++        <div className="hero-content relative flex min-h-[100dvh] min-h-[100svh] flex-col items-center justify-center px-4 pb-[max(5rem,env(safe-area-inset-bottom))] pt-[max(6.5rem,env(safe-area-inset-top))] text-center sm:px-6 md:px-8 md:pt-32 lg:px-10">
++          <div className="hero-enter hero-enter-delay-1">
+             <Link
+               to="/diagnostico"
+               className="mb-8 inline-flex items-center gap-3 border border-[#C9A84C]/25 bg-[#C9A84C]/[0.06] px-5 py-2.5 backdrop-blur-sm transition-colors hover:border-[#C9A84C]/45"
+@@ -68,66 +56,48 @@ export default function Home() {
+                 {CTA.orcamento}
+               </span>
+             </Link>
+-          </Reveal>
++          </div>
+ 
+           <div className="max-w-4xl">
+-            <Reveal delay={0.06}>
+-              <h1 className="text-display font-semibold hero-ink">
+-                <motion.span
+-                  className="block text-gradient-gold"
+-                  initial={reduceMotion ? false : { opacity: 0, y: 24 }}
+-                  animate={{ opacity: 1, y: 0 }}
+-                  transition={{ duration: 0.8, ease: EASE_LUXURY, delay: 0.1 }}
+-                >
+-                  Seu negócio local
+-                </motion.span>
+-                <motion.span
+-                  className="block text-gradient-titanium"
+-                  initial={reduceMotion ? false : { opacity: 0, y: 24 }}
+-                  animate={{ opacity: 1, y: 0 }}
+-                  transition={{ duration: 0.8, ease: EASE_LUXURY, delay: 0.2 }}
+-                >
+-                  vendendo como as gigantes.
+-                </motion.span>
+-              </h1>
+-            </Reveal>
++            <h1 className="text-display font-semibold hero-ink">
++              <span className="hero-enter hero-enter-delay-2 block text-gradient-gold">Seu negócio local</span>
++              <span className="hero-enter hero-enter-delay-3 block text-gradient-titanium">
++                vendendo como as gigantes.
++              </span>
++            </h1>
+           </div>
+ 
+-          <Reveal delay={0.14}>
+-            <p className="mt-6 max-w-md text-base hero-ink-muted md:text-lg">{HERO_COPY.subhead}</p>
+-          </Reveal>
+-
+-          <Reveal delay={0.22}>
+-            <div className="mt-10 flex w-full max-w-md flex-col gap-3 sm:max-w-none sm:flex-row sm:justify-center">
+-              <Link
+-                to="/diagnostico"
+-                className="btn-glow touch-target inline-flex h-14 w-full items-center justify-center px-8 text-[11px] font-bold uppercase tracking-[0.28em] text-white sm:w-auto sm:px-12"
+-              >
+-                {HERO_COPY.ctaPrimary}
+-              </Link>
+-              <Link
+-                to="/projetos"
+-                className="btn-ghost touch-target inline-flex h-14 w-full items-center justify-center px-8 text-[11px] font-bold uppercase tracking-[0.28em] text-white/85 sm:w-auto sm:px-10"
+-              >
+-                {HERO_COPY.ctaSecondary}
+-              </Link>
+-            </div>
+-          </Reveal>
+-
+-          <Reveal delay={0.3}>
+-            <div className="mt-12 grid w-full max-w-xs grid-cols-3 gap-4 sm:flex sm:max-w-none sm:items-center sm:gap-10">
+-              {TRUST_STATS.map((item) => (
+-                <div key={item.label} className="flex flex-col items-center gap-1">
+-                  <span className="text-base font-bold hero-ink sm:text-lg">{item.value}</span>
+-                  <span className="text-[8px] font-semibold uppercase tracking-[0.18em] hero-ink-muted sm:text-[9px]">
+-                    {item.label}
+-                  </span>
+-                </div>
+-              ))}
+-            </div>
+-          </Reveal>
++          <p className="hero-enter hero-enter-delay-4 mt-6 max-w-md text-base hero-ink-muted md:max-w-xl md:text-lg">
++            {HERO_COPY.subhead}
++          </p>
++
++          <div className="hero-enter hero-enter-delay-5 mt-10 flex w-full max-w-md flex-col gap-3 sm:max-w-none sm:flex-row sm:justify-center md:gap-4">
++            <Link
++              to="/diagnostico"
++              className="btn-glow touch-target inline-flex h-14 w-full items-center justify-center px-8 text-[11px] font-bold uppercase tracking-[0.28em] text-white sm:w-auto sm:px-12"
++            >
++              {HERO_COPY.ctaPrimary}
++            </Link>
++            <Link
++              to="/projetos"
++              className="btn-ghost touch-target inline-flex h-14 w-full items-center justify-center px-8 text-[11px] font-bold uppercase tracking-[0.28em] text-white/85 sm:w-auto sm:px-10"
++            >
++              {HERO_COPY.ctaSecondary}
++            </Link>
++          </div>
++
++          <div className="hero-enter hero-enter-delay-6 mt-12 grid w-full max-w-xs grid-cols-3 gap-4 sm:flex sm:max-w-none sm:items-center sm:gap-10 md:gap-12">
++            {TRUST_STATS.map((item) => (
++              <div key={item.label} className="flex flex-col items-center gap-1">
++                <span className="text-base font-bold hero-ink sm:text-lg">{item.value}</span>
++                <span className="text-[8px] font-semibold uppercase tracking-[0.18em] hero-ink-muted sm:text-[9px]">
++                  {item.label}
++                </span>
++              </div>
++            ))}
++          </div>
+           <HeroScrollCue />
+-        </motion.div>
++        </div>
+       </section>
+ 
+       <div className="section-below-fold">

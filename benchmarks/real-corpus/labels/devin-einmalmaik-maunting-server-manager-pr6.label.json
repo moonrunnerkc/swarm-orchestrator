@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Architectural refactor: migrates the Maunting Server Manager game-server lifecycle from systemd/POSIX-user-based isolation to Docker-container-only. Plugin base class gets a Docker-specific contract (build_container_command, build_container_env, build_port_publishes, build_volume_binds) with default lifecycle methods that delegate to docker_service. Adds new helpers (container_name_for, run_steamcmd_install, run_steamcmd_workshop_download) and re-exports them through games/__init__.py. The mock-of-hallucination and error-swallow detectors both fired here. Both are likely false positives: mock-of-hallucination on a docker_service import the detector couldn't resolve against the Python manifest (the project uses local services/ module), and error-swallow on a try/except around docker container operations where empty-except after logging is a legitimate idiom. Real architectural work with coherent imports and structure.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T04:00:00.000Z"
+}

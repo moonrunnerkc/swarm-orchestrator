@@ -1,0 +1,237 @@
+diff --git a/app/(protected)/capacites/page.tsx b/app/(protected)/capacites/page.tsx
+new file mode 100644
+index 0000000..78f3be3
+--- /dev/null
++++ b/app/(protected)/capacites/page.tsx
+@@ -0,0 +1,116 @@
++import Link from "next/link";
++import {
++  ArrowRight,
++  LayoutDashboard,
++  Settings,
++  Target,
++  Zap,
++} from "lucide-react";
++import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
++import { buttonVariants } from "@/components/ui/button";
++import { cn } from "@/lib/utils";
++
++const zones = [
++  {
++    href: "/dashboard",
++    hash: "#mode-full-auto",
++    title: "Dashboard",
++    icon: LayoutDashboard,
++    description:
++      "Vue d’ensemble : mode full-auto (niche → campagne → messages), indicateurs et découverte de niches.",
++    cta: "Ouvrir le dashboard",
++  },
++  {
++    href: "/prospects",
++    hash: "#generer-prospects",
++    title: "Prospects",
++    icon: Target,
++    description:
++      "Générer des profils, rédiger les messages LinkedIn + email, mémoire des corrections et pipeline (statuts, deals).",
++    cta: "Aller aux prospects",
++  },
++  {
++    href: "/campaigns",
++    title: "Campagnes & meta-agent",
++    icon: Zap,
++    description:
++      "Suivre les campagnes, lancer le meta-agent (blueprints / sous-agents) et consulter les journaux d’audit.",
++    cta: "Ouvrir les campagnes",
++  },
++  {
++    href: "/settings",
++    title: "Réglages",
++    icon: Settings,
++    description:
++      "Lien Stripe, montant de proposition par défaut et rappel des variables d’environnement (Clerk, Supabase, OpenRouter, crons).",
++    cta: "Ouvrir les réglages",
++  },
++] as const;
++
++export default function CapacitesPage() {
++  return (
++    <div className="space-y-10">
++      <div>
++        <h1 className="text-2xl font-black tracking-tight sm:text-3xl">Capacités du cockpit</h1>
++        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
++          Tout ce que tu peux faire dans l’app est regroupé ici avec des liens directs. Les sections « Prospects »
++          utilisent des ancres (<code className="text-xs text-amber-200/90">#…</code>) pour te poser au bon endroit
++          sur la page.
++        </p>
++      </div>
++
++      <div className="grid gap-4 sm:grid-cols-2">
++        {zones.map(({ href, hash, title, icon: Icon, description, cta }) => (
++          <Card key={href} className="border-white/10 bg-white/[0.03]">
++            <CardHeader>
++              <div className="flex items-start gap-3">
++                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-300">
++                  <Icon className="size-5" />
++                </span>
++                <div>
++                  <CardTitle className="text-lg">{title}</CardTitle>
++                  <CardDescription className="mt-1 text-muted-foreground">{description}</CardDescription>
++                </div>
++              </div>
++            </CardHeader>
++            <CardContent>
++              <Link
++                href={`${href}${hash ?? ""}`}
++                className={cn(
++                  buttonVariants({ variant: "outline", size: "sm" }),
++                  "border-amber-500/40 text-amber-200 hover:bg-amber-500/10 hover:text-amber-100",
++                )}
++              >
++                {cta}
++                <ArrowRight className="ml-2 size-4" />
++              </Link>
++            </CardContent>
++          </Card>
++        ))}
++      </div>
++
++      <Card className="border-white/10 bg-white/[0.03]">
++        <CardHeader>
++          <CardTitle className="text-base">En arrière-plan (sans page dédiée)</CardTitle>
++          <CardDescription className="text-muted-foreground">
++            Ces briques tournent côté serveur ou via des crons — tu les configures dans Vercel / Supabase.
++          </CardDescription>
++        </CardHeader>
++        <CardContent className="space-y-2 text-sm text-muted-foreground">
++          <p>
++            <span className="font-medium text-foreground">Relances IA</span> — cron sur{" "}
++            <code className="text-xs text-amber-200/90">/api/ai/follow-up</code> (prospects contactés sans activité).
++          </p>
++          <p>
++            <span className="font-medium text-foreground">Stripe</span> — webhook checkout pour marquer un deal quand
++            un paiement est confirmé (lien de paiement dans les réglages).
++          </p>
++          <p>
++            <span className="font-medium text-foreground">Quotas IA</span> — compteur consommé par les routes{" "}
++            <code className="text-xs text-amber-200/90">/api/ai/*</code>.
++          </p>
++        </CardContent>
++      </Card>
++    </div>
++  );
++}
+diff --git a/app/(protected)/dashboard/page.tsx b/app/(protected)/dashboard/page.tsx
+index 9f083ad..5b89652 100644
+--- a/app/(protected)/dashboard/page.tsx
++++ b/app/(protected)/dashboard/page.tsx
+@@ -1,3 +1,4 @@
++import Link from "next/link";
+ import { auth } from "@clerk/nextjs/server";
+ import { redirect } from "next/navigation";
+ import { DiscoverPanel } from "@/components/discover-panel";
+@@ -26,12 +27,25 @@ export default async function DashboardPage() {
+           Revenus, pipeline, messages et deals — alimenté par Supabase + agents OpenRouter. Ici tu gagnes du temps
+           sur la <strong className="text-foreground/90">rédaction</strong> et le suivi ; l’
+           <strong className="text-foreground/90">envoi réel</strong> vers des contacts réels reste de ton côté
+-          (outils, conformité, délivrabilité).
++          (outils, conformité, délivrabilité).{" "}
++          <Link
++            href="/capacites"
++            className="font-medium text-amber-400 underline-offset-4 hover:text-amber-300 hover:underline"
++          >
++            Voir toutes les capacités
++          </Link>
++          .
+         </p>
+       </div>
+-      <DashboardFullAuto />
+-      <DashboardStats data={data} />
+-      <DiscoverPanel />
++      <section id="mode-full-auto" className="scroll-mt-28">
++        <DashboardFullAuto />
++      </section>
++      <section id="indicateurs" className="scroll-mt-28">
++        <DashboardStats data={data} />
++      </section>
++      <section id="niches" className="scroll-mt-28">
++        <DiscoverPanel />
++      </section>
+     </div>
+   );
+ }
+diff --git a/app/(protected)/prospects/page.tsx b/app/(protected)/prospects/page.tsx
+index 57b900b..3bfbbb8 100644
+--- a/app/(protected)/prospects/page.tsx
++++ b/app/(protected)/prospects/page.tsx
+@@ -1,3 +1,4 @@
++import Link from "next/link";
+ import { auth } from "@clerk/nextjs/server";
+ import { redirect } from "next/navigation";
+ import { createSupabaseAdmin } from "@/lib/supabase/admin";
+@@ -27,7 +28,14 @@ export default async function ProspectsPage() {
+         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+           Génération IA, messages closing, tableau interactif et compteur d’envois. Par défaut les profils sont{" "}
+           <strong className="text-foreground/90">fictifs mais réalistes</strong> pour itérer sur le copy ; pour du
+-          réel, importe tes contacts (CSV, etc.) selon ta stack.
++          réel, importe tes contacts (CSV, etc.) selon ta stack.{" "}
++          <Link
++            href="/capacites"
++            className="font-medium text-amber-400 underline-offset-4 hover:text-amber-300 hover:underline"
++          >
++            Carte des capacités
++          </Link>
++          .
+         </p>
+       </div>
+       <ProspectsWorkspace initial={rows} />
+diff --git a/components/layout/app-shell.tsx b/components/layout/app-shell.tsx
+index 67ae01c..b529b4a 100644
+--- a/components/layout/app-shell.tsx
++++ b/components/layout/app-shell.tsx
+@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
+ import { UserButton, useUser } from "@clerk/nextjs";
+ import {
+   LayoutDashboard,
++  LayoutGrid,
+   Menu,
+   Settings,
+   Sparkles,
+@@ -17,6 +18,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+ 
+ const nav = [
+   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
++  { href: "/capacites", label: "Capacités", icon: LayoutGrid },
+   { href: "/prospects", label: "Prospects", icon: Target },
+   { href: "/campaigns", label: "Campagnes", icon: Zap },
+   { href: "/settings", label: "Réglages", icon: Settings },
+diff --git a/components/prospects-workspace.tsx b/components/prospects-workspace.tsx
+index 6a0296e..edc8120 100644
+--- a/components/prospects-workspace.tsx
++++ b/components/prospects-workspace.tsx
+@@ -10,13 +10,19 @@ export function ProspectsWorkspace({ initial }: { initial: ProspectUi[] }) {
+   const router = useRouter();
+   return (
+     <div className="space-y-10">
+-      <ProspectFactory onCreated={() => router.refresh()} />
+-      <MessageGenerator
+-        prospects={initial}
+-        onMessagesUpdated={() => router.refresh()}
+-      />
+-      <FeedbackBox />
+-      <section className="space-y-4">
++      <section id="generer-prospects" className="scroll-mt-28">
++        <ProspectFactory onCreated={() => router.refresh()} />
++      </section>
++      <section id="messages-closing" className="scroll-mt-28">
++        <MessageGenerator
++          prospects={initial}
++          onMessagesUpdated={() => router.refresh()}
++        />
++      </section>
++      <section id="memoire-corrections" className="scroll-mt-28">
++        <FeedbackBox />
++      </section>
++      <section id="pipeline-tableau" className="scroll-mt-28 space-y-4">
+         <h2 className="text-lg font-semibold tracking-tight">Pipeline (tableau)</h2>
+         <ProspectsTable initial={initial} />
+       </section>

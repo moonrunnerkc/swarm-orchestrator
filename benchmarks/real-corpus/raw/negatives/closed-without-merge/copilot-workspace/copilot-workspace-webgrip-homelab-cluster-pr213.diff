@@ -1,0 +1,70 @@
+diff --git a/.copilot-review/result.md b/.copilot-review/result.md
+new file mode 100644
+index 00000000..c284271a
+--- /dev/null
++++ b/.copilot-review/result.md
+@@ -0,0 +1,64 @@
++pr: 211
++
++## Dependency Update Review
++
++**Verdict:** Yellow Caution
++**Recommendation:** Merge after checks
++**Confidence:** High
++
++### Executive summary
++
++This PR updates the Envoy Gateway Helm chart from v1.7.0 to v1.8.0, a minor release published 2026-05-13. The chart is used both as a CRD bootstrapper (`bootstrap/helmfile.d/00-crds.yaml`) and as the live controller deployment via Flux OCIRepository (`kubernetes/apps/network/envoy-gateway/`). The OCIRepository manifest already targets v1.8.0 with a pinned digest, so the helmfile CRD file is the only thing being aligned. v1.8.0 carries two Go/dependency CVE bumps and a notable security-relevant fix (client certificate delivery bug for SecurityPolicy JWT/OIDC and ExtAuth backends), alongside 20+ new features and fixes. No confirmed breaking changes were found in the release notes, but this is critical network-path infrastructure that handles all external and internal ingress, warranting careful post-deploy verification.
++
++### Update inventory
++
++| Dependency | Ecosystem | Change | Scope | Local role | Risk |
++|---|---|---|---|---|---|
++| `mirror.gcr.io/envoyproxy/gateway-helm` | OCI Helm Chart | `v1.7.0 → v1.8.0` | minor | runtime / infra (API gateway, CRDs, all HTTP ingress) | Yellow |
++
++### Important upstream changes
++
++- **[security]** Go runtime bumped for CVE(s) ([envoyproxy/gateway#8709](https://github.com/envoyproxy/gateway/pull/8709)) and a separate dependency CVE fix ([envoyproxy/gateway#8669](https://github.com/envoyproxy/gateway/pull/8669)). Specific CVE IDs are not detailed in the release body; recommend reviewing those PRs before merging.
++- **[bugfix]** Client certificate secrets were never delivered when exclusively referenced by a `SecurityPolicy` `extAuth` backend ([envoyproxy/gateway#8654](https://github.com/envoyproxy/gateway/pull/8654)) or JWT/OIDC backend ([envoyproxy/gateway#8711](https://github.com/envoyproxy/gateway/pull/8711)). If mTLS-backed ExtAuth or OIDC is in use, this is a meaningful correctness fix.
++- **[bugfix]** Helm RBAC secrets fix for `GatewayNamespace` deploy type with watched namespace lists ([envoyproxy/gateway#8706](https://github.com/envoyproxy/gateway/pull/8706)). **This repo uses `GatewayNamespace` deploy mode** — this fix is directly relevant.
++- **[bugfix]** HTTP/3 now correctly disabled when client TLS is configured ([envoyproxy/gateway#8583](https://github.com/envoyproxy/gateway/pull/8583)). This repo's `ClientTrafficPolicy` enables `http3: {}` globally; behaviour may change subtly if a listener also has client TLS.
++- **[bugfix]** Duplicate CIDR entries in local rate limit rules fixed ([envoyproxy/gateway#8650](https://github.com/envoyproxy/gateway/pull/8650)).
++- **[bugfix]** Route idle timeout fixed ([envoyproxy/gateway#8058](https://github.com/envoyproxy/gateway/pull/8058)).
++- **[bugfix]** Per-route rate limit filter correctly applied ([envoyproxy/gateway#8741](https://github.com/envoyproxy/gateway/pull/8741)).
++- **[behavior]** JSON log encoder now uses abbreviated field keys ([envoyproxy/gateway#8555](https://github.com/envoyproxy/gateway/pull/8555)). Any log-parsing dashboards/alerts keyed on specific JSON field names may need updating.
++- **[feature]** `clientValidation.optional` field is now deprecated with a warning ([envoyproxy/gateway#8609](https://github.com/envoyproxy/gateway/pull/8609)). Check if this field is used in any `ClientTrafficPolicy` resources.
++- **[feature]** Merged `EnvoyProxy` settings support ([envoyproxy/gateway#8169](https://github.com/envoyproxy/gateway/pull/8169)).
++- **[feature]** Cross-namespace policy attachment ([envoyproxy/gateway#8676](https://github.com/envoyproxy/gateway/pull/8676)).
++- **[feature]** Bandwidth limiting support in `BackendTrafficPolicy` ([envoyproxy/gateway#8862](https://github.com/envoyproxy/gateway/pull/8862)).
++- **[feature]** `extraEnv` support in the controller deployment via Helm ([envoyproxy/gateway#8733](https://github.com/envoyproxy/gateway/pull/8733)).
++
++### Local impact
++
++Envoy Gateway is the critical ingress layer for this cluster. All application `HTTPRoute` resources across many namespaces (freshrss, searxng, longhorn, n8n, backstage, grafana, invoiceninja, drawio, and more) route through the two Gateways (`envoy-external` and `envoy-internal`).
++
++**Files affected by this update:**
++- `bootstrap/helmfile.d/00-crds.yaml` — bumped from v1.7.0 → v1.8.0; this is used to install/update CRDs manually before Flux reconciles. New CRDs must be applied before the controller is upgraded.
++- `kubernetes/apps/network/envoy-gateway/app/ocirepository.yaml` — already pinned to v1.8.0 with digest `sha256:828b0bf1dd0a8312665590802d7e3d0d360560d44ac8afd9f4ce6ed72564c56d`, so the Flux-deployed controller will upgrade automatically once Flux reconciles.
++- `kubernetes/apps/network/envoy-gateway/app/helmrelease.yaml` — `GatewayNamespace` deploy type is active; the Helm RBAC fix ([#8706](https://github.com/envoyproxy/gateway/pull/8706)) is directly applicable.
++- `kubernetes/apps/network/envoy-gateway/app/envoy.yaml` — defines `ClientTrafficPolicy` with `http3: {}` enabled; the HTTP/3 + client-TLS fix may subtly change behaviour.
++- `kubernetes/apps/observability/kube-prometheus-stack/app/prometheusrule-platform-envoy-gateway.yaml` — monitoring rules keyed to Envoy Gateway metrics; abbreviated JSON log keys change ([#8555](https://github.com/envoyproxy/gateway/pull/8555)) should be verified against any log-based alerts.
++- `kubernetes/apps/observability/grafana/app/dashboards/envoy-gateway-traffic.yaml` — traffic dashboard; dashboard panel PromQL query fixes ([#8528](https://github.com/envoyproxy/gateway/pull/8528)) are beneficial.
++
++Rollback requires downgrading the `ocirepository.yaml` tag+digest and re-running `helmfile apply` for CRDs. CRD downgrades carry risk if new fields were written to etcd.
++
++### Pre-merge checks
++
++- [ ] Run `helmfile apply` (or equivalent CRD-only install) with `00-crds.yaml` at v1.8.0 **before** Flux reconciles the HelmRelease to avoid CRD version mismatch.
++- [ ] Review CVE details in [envoyproxy/gateway#8669](https://github.com/envoyproxy/gateway/pull/8669) and [envoyproxy/gateway#8709](https://github.com/envoyproxy/gateway/pull/8709) to confirm severity and impact.
++- [ ] Verify the `GatewayNamespace` RBAC fix ([#8706](https://github.com/envoyproxy/gateway/pull/8706)) does not require manual role/rolebinding cleanup in the `network` namespace.
++- [ ] Check if `clientValidation.optional` is referenced in any `ClientTrafficPolicy` manifests (currently not found, but worth confirming).
++- [ ] After upgrade, confirm all `HTTPRoute` listeners on `envoy-external` and `envoy-internal` are `Accepted` and traffic flows to at least one representative app.
++- [ ] Verify the Grafana Envoy Gateway traffic dashboard and PrometheusRule still function correctly (JSON log key changes may affect log-based alerting).
++- [ ] Confirm HTTP/3 behaviour on the `envoy-external` Gateway if client TLS is also configured on any listener.
++
++### Evidence reviewed
++
++- **PR:** "feat(container): update image mirror.gcr.io/envoyproxy/gateway-helm ( v1.7.0 ➔ v1.8.0 )" — Renovate bot, single-file diff in `bootstrap/helmfile.d/00-crds.yaml`.
++- **Files in repo:** `bootstrap/helmfile.d/00-crds.yaml`, `kubernetes/apps/network/envoy-gateway/app/{ocirepository.yaml,helmrelease.yaml,envoy.yaml,ks.yaml}`, `kubernetes/apps/observability/kube-prometheus-stack/app/prometheusrule-platform-envoy-gateway.yaml`, `kubernetes/apps/observability/grafana/app/dashboards/envoy-gateway-traffic.yaml`, multiple `HTTPRoute` manifests across namespaces.
++- **Upstream sources checked:** GitHub Releases API `https://api.github.com/repos/envoyproxy/gateway/releases/tags/v1.8.0` (full changelog reviewed), gateway.envoyproxy.io release announcement (redirected, unavailable at crawl time).
++- **Notable uncertainty:** CVE IDs in #8669 and #8709 were not detailed in the release body — reviewing those PRs directly is recommended before merging.

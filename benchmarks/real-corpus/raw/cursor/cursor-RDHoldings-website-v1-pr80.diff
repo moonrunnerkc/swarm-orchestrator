@@ -1,0 +1,63 @@
+diff --git a/.github/workflows/deploy-github-pages.yml b/.github/workflows/deploy-github-pages.yml
+index 9cd10b4..8bd1bc8 100644
+--- a/.github/workflows/deploy-github-pages.yml
++++ b/.github/workflows/deploy-github-pages.yml
+@@ -6,6 +6,8 @@ name: Deploy website + Pages
+ on:
+   push:
+     branches: [main]
++  pull_request:
++    branches: [main]
+   workflow_dispatch:
+ 
+ permissions:
+@@ -55,6 +57,9 @@ jobs:
+       - name: Install dependencies
+         run: npm ci
+ 
++      - name: Markdown lint
++        run: npm run lint:md
++
+       - name: Build website bundle
+         run: npm run build
+         # Vite copies public/ → dist/ (includes public/precision-pilot/** and public/precision-pilot-test/**)
+@@ -255,6 +260,7 @@ jobs:
+           node functions/scripts/bootstrap-invite.mjs --project "$FIREBASE_PROJECT_ID_RESOLVED" --email "$BOOTSTRAP_ADMIN_EMAIL" --region "$VITE_FIREBASE_FUNCTIONS_REGION" --automation-key "$BOOTSTRAP_AUTOMATION_KEY"
+ 
+   deploy:
++    if: github.event_name != 'pull_request'
+     needs: build
+     runs-on: ubuntu-latest
+     environment:
+diff --git a/.vscode/extensions.json b/.vscode/extensions.json
+new file mode 100644
+index 0000000..564cef0
+--- /dev/null
++++ b/.vscode/extensions.json
+@@ -0,0 +1,3 @@
++{
++  "recommendations": ["DavidAnson.vscode-markdownlint"]
++}
+diff --git a/.vscode/settings.json b/.vscode/settings.json
+index d1820bb..9e5a87c 100644
+--- a/.vscode/settings.json
++++ b/.vscode/settings.json
+@@ -1,4 +1,6 @@
+ {
++  "markdownlint.cli2ConfigFile": ".markdownlint-cli2.jsonc",
++  "markdownlint.run": "onSave",
+   "markdown.preview.breaks": true,
+   "markdown.preview.linkify": true,
+   "markdown.preview.typographer": true,
+diff --git a/package.json b/package.json
+index 5e41ead..3364b38 100644
+--- a/package.json
++++ b/package.json
+@@ -11,6 +11,7 @@
+     "build": "vite build",
+     "postbuild": "node scripts/copy-spa-route-shells.mjs && node scripts/rewrite-flutter-embed-base-href.mjs && node scripts/inject-google-maps-key.mjs && node scripts/inject-flutter-web-env.mjs && node scripts/verify-flutter-embed-assets.mjs && node scripts/verify-living-bible-web-embed.mjs",
+     "lint": "eslint .",
++    "lint:md": "npx --yes markdownlint-cli2",
+     "lint:functions": "npm --prefix functions run lint",
+     "test:functions": "npm --prefix functions run test",
+     "install:functions": "npm --prefix functions install",

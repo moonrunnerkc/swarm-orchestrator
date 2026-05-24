@@ -1,0 +1,1242 @@
+diff --git a/codex-rs/app-server-protocol/schema/json/ClientRequest.json b/codex-rs/app-server-protocol/schema/json/ClientRequest.json
+index 97b5f698c27c..eace6abe71e6 100644
+--- a/codex-rs/app-server-protocol/schema/json/ClientRequest.json
++++ b/codex-rs/app-server-protocol/schema/json/ClientRequest.json
+@@ -4030,6 +4030,24 @@
+       ],
+       "type": "object"
+     },
++    "UsageRange": {
++      "enum": [
++        "day",
++        "week"
++      ],
++      "type": "string"
++    },
++    "UsageReadParams": {
++      "properties": {
++        "range": {
++          "$ref": "#/definitions/UsageRange"
++        }
++      },
++      "required": [
++        "range"
++      ],
++      "type": "object"
++    },
+     "UserInput": {
+       "oneOf": [
+         {
+@@ -4829,6 +4847,30 @@
+       "title": "Plugin/listRequest",
+       "type": "object"
+     },
++    {
++      "properties": {
++        "id": {
++          "$ref": "#/definitions/RequestId"
++        },
++        "method": {
++          "enum": [
++            "usage/read"
++          ],
++          "title": "Usage/readRequestMethod",
++          "type": "string"
++        },
++        "params": {
++          "$ref": "#/definitions/UsageReadParams"
++        }
++      },
++      "required": [
++        "id",
++        "method",
++        "params"
++      ],
++      "title": "Usage/readRequest",
++      "type": "object"
++    },
+     {
+       "properties": {
+         "id": {
+diff --git a/codex-rs/app-server-protocol/schema/json/ServerNotification.json b/codex-rs/app-server-protocol/schema/json/ServerNotification.json
+index dfb999cf314f..90899cb15278 100644
+--- a/codex-rs/app-server-protocol/schema/json/ServerNotification.json
++++ b/codex-rs/app-server-protocol/schema/json/ServerNotification.json
+@@ -6546,4 +6546,4 @@
+     }
+   ],
+   "title": "ServerNotification"
+-}
++}
+\ No newline at end of file
+diff --git a/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.schemas.json b/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.schemas.json
+index 155afbb29b0c..4f2046db29ec 100644
+--- a/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.schemas.json
++++ b/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.schemas.json
+@@ -829,6 +829,30 @@
+           "title": "Plugin/listRequest",
+           "type": "object"
+         },
++        {
++          "properties": {
++            "id": {
++              "$ref": "#/definitions/v2/RequestId"
++            },
++            "method": {
++              "enum": [
++                "usage/read"
++              ],
++              "title": "Usage/readRequestMethod",
++              "type": "string"
++            },
++            "params": {
++              "$ref": "#/definitions/v2/UsageReadParams"
++            }
++          },
++          "required": [
++            "id",
++            "method",
++            "params"
++          ],
++          "title": "Usage/readRequest",
++          "type": "object"
++        },
+         {
+           "properties": {
+             "id": {
+@@ -18570,6 +18594,177 @@
+         "title": "TurnSteerResponse",
+         "type": "object"
+       },
++      "UsageContributorKind": {
++        "enum": [
++          "skill",
++          "subagent",
++          "agentTask",
++          "app",
++          "mcpServer",
++          "plugin"
++        ],
++        "type": "string"
++      },
++      "UsageEntry": {
++        "properties": {
++          "attributedTokens": {
++            "format": "int64",
++            "type": "integer"
++          },
++          "id": {
++            "type": "string"
++          },
++          "kind": {
++            "$ref": "#/definitions/v2/UsageContributorKind"
++          },
++          "label": {
++            "type": "string"
++          },
++          "percentOfUsage": {
++            "format": "uint8",
++            "minimum": 0.0,
++            "type": "integer"
++          }
++        },
++        "required": [
++          "attributedTokens",
++          "id",
++          "kind",
++          "label",
++          "percentOfUsage"
++        ],
++        "type": "object"
++      },
++      "UsageHeadline": {
++        "properties": {
++          "entry": {
++            "$ref": "#/definitions/v2/UsageEntry"
++          },
++          "note": {
++            "type": [
++              "string",
++              "null"
++            ]
++          }
++        },
++        "required": [
++          "entry"
++        ],
++        "type": "object"
++      },
++      "UsageRange": {
++        "enum": [
++          "day",
++          "week"
++        ],
++        "type": "string"
++      },
++      "UsageReadParams": {
++        "$schema": "http://json-schema.org/draft-07/schema#",
++        "properties": {
++          "range": {
++            "$ref": "#/definitions/v2/UsageRange"
++          }
++        },
++        "required": [
++          "range"
++        ],
++        "title": "UsageReadParams",
++        "type": "object"
++      },
++      "UsageReadResponse": {
++        "$schema": "http://json-schema.org/draft-07/schema#",
++        "properties": {
++          "report": {
++            "$ref": "#/definitions/v2/UsageReport"
++          }
++        },
++        "required": [
++          "report"
++        ],
++        "title": "UsageReadResponse",
++        "type": "object"
++      },
++      "UsageReport": {
++        "properties": {
++          "agentTasks": {
++            "items": {
++              "$ref": "#/definitions/v2/UsageEntry"
++            },
++            "type": "array"
++          },
++          "apps": {
++            "items": {
++              "$ref": "#/definitions/v2/UsageEntry"
++            },
++            "type": "array"
++          },
++          "generatedAt": {
++            "format": "int64",
++            "type": "integer"
++          },
++          "headline": {
++            "anyOf": [
++              {
++                "$ref": "#/definitions/v2/UsageHeadline"
++              },
++              {
++                "type": "null"
++              }
++            ]
++          },
++          "mcpServers": {
++            "items": {
++              "$ref": "#/definitions/v2/UsageEntry"
++            },
++            "type": "array"
++          },
++          "plugins": {
++            "items": {
++              "$ref": "#/definitions/v2/UsageEntry"
++            },
++            "type": "array"
++          },
++          "range": {
++            "$ref": "#/definitions/v2/UsageRange"
++          },
++          "skills": {
++            "items": {
++              "$ref": "#/definitions/v2/UsageEntry"
++            },
++            "type": "array"
++          },
++          "subagents": {
++            "items": {
++              "$ref": "#/definitions/v2/UsageEntry"
++            },
++            "type": "array"
++          },
++          "totalTokens": {
++            "format": "int64",
++            "type": "integer"
++          },
++          "trackedFrom": {
++            "format": "int64",
++            "type": [
++              "integer",
++              "null"
++            ]
++          }
++        },
++        "required": [
++          "agentTasks",
++          "apps",
++          "generatedAt",
++          "mcpServers",
++          "plugins",
++          "range",
++          "skills",
++          "subagents",
++          "totalTokens"
++        ],
++        "type": "object"
++      },
+       "UserInput": {
+         "oneOf": [
+           {
+diff --git a/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.v2.schemas.json b/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.v2.schemas.json
+index a636cf1de38e..ea9661587ceb 100644
+--- a/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.v2.schemas.json
++++ b/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.v2.schemas.json
+@@ -1555,6 +1555,30 @@
+           "title": "Plugin/listRequest",
+           "type": "object"
+         },
++        {
++          "properties": {
++            "id": {
++              "$ref": "#/definitions/RequestId"
++            },
++            "method": {
++              "enum": [
++                "usage/read"
++              ],
++              "title": "Usage/readRequestMethod",
++              "type": "string"
++            },
++            "params": {
++              "$ref": "#/definitions/UsageReadParams"
++            }
++          },
++          "required": [
++            "id",
++            "method",
++            "params"
++          ],
++          "title": "Usage/readRequest",
++          "type": "object"
++        },
+         {
+           "properties": {
+             "id": {
+@@ -16394,6 +16418,177 @@
+       "title": "TurnSteerResponse",
+       "type": "object"
+     },
++    "UsageContributorKind": {
++      "enum": [
++        "skill",
++        "subagent",
++        "agentTask",
++        "app",
++        "mcpServer",
++        "plugin"
++      ],
++      "type": "string"
++    },
++    "UsageEntry": {
++      "properties": {
++        "attributedTokens": {
++          "format": "int64",
++          "type": "integer"
++        },
++        "id": {
++          "type": "string"
++        },
++        "kind": {
++          "$ref": "#/definitions/UsageContributorKind"
++        },
++        "label": {
++          "type": "string"
++        },
++        "percentOfUsage": {
++          "format": "uint8",
++          "minimum": 0.0,
++          "type": "integer"
++        }
++      },
++      "required": [
++        "attributedTokens",
++        "id",
++        "kind",
++        "label",
++        "percentOfUsage"
++      ],
++      "type": "object"
++    },
++    "UsageHeadline": {
++      "properties": {
++        "entry": {
++          "$ref": "#/definitions/UsageEntry"
++        },
++        "note": {
++          "type": [
++            "string",
++            "null"
++          ]
++        }
++      },
++      "required": [
++        "entry"
++      ],
++      "type": "object"
++    },
++    "UsageRange": {
++      "enum": [
++        "day",
++        "week"
++      ],
++      "type": "string"
++    },
++    "UsageReadParams": {
++      "$schema": "http://json-schema.org/draft-07/schema#",
++      "properties": {
++        "range": {
++          "$ref": "#/definitions/UsageRange"
++        }
++      },
++      "required": [
++        "range"
++      ],
++      "title": "UsageReadParams",
++      "type": "object"
++    },
++    "UsageReadResponse": {
++      "$schema": "http://json-schema.org/draft-07/schema#",
++      "properties": {
++        "report": {
++          "$ref": "#/definitions/UsageReport"
++        }
++      },
++      "required": [
++        "report"
++      ],
++      "title": "UsageReadResponse",
++      "type": "object"
++    },
++    "UsageReport": {
++      "properties": {
++        "agentTasks": {
++          "items": {
++            "$ref": "#/definitions/UsageEntry"
++          },
++          "type": "array"
++        },
++        "apps": {
++          "items": {
++            "$ref": "#/definitions/UsageEntry"
++          },
++          "type": "array"
++        },
++        "generatedAt": {
++          "format": "int64",
++          "type": "integer"
++        },
++        "headline": {
++          "anyOf": [
++            {
++              "$ref": "#/definitions/UsageHeadline"
++            },
++            {
++              "type": "null"
++            }
++          ]
++        },
++        "mcpServers": {
++          "items": {
++            "$ref": "#/definitions/UsageEntry"
++          },
++          "type": "array"
++        },
++        "plugins": {
++          "items": {
++            "$ref": "#/definitions/UsageEntry"
++          },
++          "type": "array"
++        },
++        "range": {
++          "$ref": "#/definitions/UsageRange"
++        },
++        "skills": {
++          "items": {
++            "$ref": "#/definitions/UsageEntry"
++          },
++          "type": "array"
++        },
++        "subagents": {
++          "items": {
++            "$ref": "#/definitions/UsageEntry"
++          },
++          "type": "array"
++        },
++        "totalTokens": {
++          "format": "int64",
++          "type": "integer"
++        },
++        "trackedFrom": {
++          "format": "int64",
++          "type": [
++            "integer",
++            "null"
++          ]
++        }
++      },
++      "required": [
++        "agentTasks",
++        "apps",
++        "generatedAt",
++        "mcpServers",
++        "plugins",
++        "range",
++        "skills",
++        "subagents",
++        "totalTokens"
++      ],
++      "type": "object"
++    },
+     "UserInput": {
+       "oneOf": [
+         {
+diff --git a/codex-rs/app-server-protocol/schema/json/v2/UsageReadParams.json b/codex-rs/app-server-protocol/schema/json/v2/UsageReadParams.json
+new file mode 100644
+index 000000000000..a0833295d7ef
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/json/v2/UsageReadParams.json
+@@ -0,0 +1,22 @@
++{
++  "$schema": "http://json-schema.org/draft-07/schema#",
++  "definitions": {
++    "UsageRange": {
++      "enum": [
++        "day",
++        "week"
++      ],
++      "type": "string"
++    }
++  },
++  "properties": {
++    "range": {
++      "$ref": "#/definitions/UsageRange"
++    }
++  },
++  "required": [
++    "range"
++  ],
++  "title": "UsageReadParams",
++  "type": "object"
++}
+\ No newline at end of file
+diff --git a/codex-rs/app-server-protocol/schema/json/v2/UsageReadResponse.json b/codex-rs/app-server-protocol/schema/json/v2/UsageReadResponse.json
+new file mode 100644
+index 000000000000..59f7b4083e9d
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/json/v2/UsageReadResponse.json
+@@ -0,0 +1,160 @@
++{
++  "$schema": "http://json-schema.org/draft-07/schema#",
++  "definitions": {
++    "UsageContributorKind": {
++      "enum": [
++        "skill",
++        "subagent",
++        "agentTask",
++        "app",
++        "mcpServer",
++        "plugin"
++      ],
++      "type": "string"
++    },
++    "UsageEntry": {
++      "properties": {
++        "attributedTokens": {
++          "format": "int64",
++          "type": "integer"
++        },
++        "id": {
++          "type": "string"
++        },
++        "kind": {
++          "$ref": "#/definitions/UsageContributorKind"
++        },
++        "label": {
++          "type": "string"
++        },
++        "percentOfUsage": {
++          "format": "uint8",
++          "minimum": 0.0,
++          "type": "integer"
++        }
++      },
++      "required": [
++        "attributedTokens",
++        "id",
++        "kind",
++        "label",
++        "percentOfUsage"
++      ],
++      "type": "object"
++    },
++    "UsageHeadline": {
++      "properties": {
++        "entry": {
++          "$ref": "#/definitions/UsageEntry"
++        },
++        "note": {
++          "type": [
++            "string",
++            "null"
++          ]
++        }
++      },
++      "required": [
++        "entry"
++      ],
++      "type": "object"
++    },
++    "UsageRange": {
++      "enum": [
++        "day",
++        "week"
++      ],
++      "type": "string"
++    },
++    "UsageReport": {
++      "properties": {
++        "agentTasks": {
++          "items": {
++            "$ref": "#/definitions/UsageEntry"
++          },
++          "type": "array"
++        },
++        "apps": {
++          "items": {
++            "$ref": "#/definitions/UsageEntry"
++          },
++          "type": "array"
++        },
++        "generatedAt": {
++          "format": "int64",
++          "type": "integer"
++        },
++        "headline": {
++          "anyOf": [
++            {
++              "$ref": "#/definitions/UsageHeadline"
++            },
++            {
++              "type": "null"
++            }
++          ]
++        },
++        "mcpServers": {
++          "items": {
++            "$ref": "#/definitions/UsageEntry"
++          },
++          "type": "array"
++        },
++        "plugins": {
++          "items": {
++            "$ref": "#/definitions/UsageEntry"
++          },
++          "type": "array"
++        },
++        "range": {
++          "$ref": "#/definitions/UsageRange"
++        },
++        "skills": {
++          "items": {
++            "$ref": "#/definitions/UsageEntry"
++          },
++          "type": "array"
++        },
++        "subagents": {
++          "items": {
++            "$ref": "#/definitions/UsageEntry"
++          },
++          "type": "array"
++        },
++        "totalTokens": {
++          "format": "int64",
++          "type": "integer"
++        },
++        "trackedFrom": {
++          "format": "int64",
++          "type": [
++            "integer",
++            "null"
++          ]
++        }
++      },
++      "required": [
++        "agentTasks",
++        "apps",
++        "generatedAt",
++        "mcpServers",
++        "plugins",
++        "range",
++        "skills",
++        "subagents",
++        "totalTokens"
++      ],
++      "type": "object"
++    }
++  },
++  "properties": {
++    "report": {
++      "$ref": "#/definitions/UsageReport"
++    }
++  },
++  "required": [
++    "report"
++  ],
++  "title": "UsageReadResponse",
++  "type": "object"
++}
+\ No newline at end of file
+diff --git a/codex-rs/app-server-protocol/schema/typescript/ClientRequest.ts b/codex-rs/app-server-protocol/schema/typescript/ClientRequest.ts
+index 86ba2cd171fa..03b070af24c2 100644
+--- a/codex-rs/app-server-protocol/schema/typescript/ClientRequest.ts
++++ b/codex-rs/app-server-protocol/schema/typescript/ClientRequest.ts
+@@ -80,9 +80,10 @@ import type { ThreadUnsubscribeParams } from "./v2/ThreadUnsubscribeParams";
+ import type { TurnInterruptParams } from "./v2/TurnInterruptParams";
+ import type { TurnStartParams } from "./v2/TurnStartParams";
+ import type { TurnSteerParams } from "./v2/TurnSteerParams";
++import type { UsageReadParams } from "./v2/UsageReadParams";
+ import type { WindowsSandboxSetupStartParams } from "./v2/WindowsSandboxSetupStartParams";
+ 
+ /**
+  * Request from the client to the server.
+  */
+-export type ClientRequest ={ "method": "initialize", id: RequestId, params: InitializeParams, } | { "method": "thread/start", id: RequestId, params: ThreadStartParams, } | { "method": "thread/resume", id: RequestId, params: ThreadResumeParams, } | { "method": "thread/fork", id: RequestId, params: ThreadForkParams, } | { "method": "thread/archive", id: RequestId, params: ThreadArchiveParams, } | { "method": "thread/unsubscribe", id: RequestId, params: ThreadUnsubscribeParams, } | { "method": "thread/name/set", id: RequestId, params: ThreadSetNameParams, } | { "method": "thread/goal/set", id: RequestId, params: ThreadGoalSetParams, } | { "method": "thread/goal/get", id: RequestId, params: ThreadGoalGetParams, } | { "method": "thread/goal/clear", id: RequestId, params: ThreadGoalClearParams, } | { "method": "thread/metadata/update", id: RequestId, params: ThreadMetadataUpdateParams, } | { "method": "thread/unarchive", id: RequestId, params: ThreadUnarchiveParams, } | { "method": "thread/compact/start", id: RequestId, params: ThreadCompactStartParams, } | { "method": "thread/shellCommand", id: RequestId, params: ThreadShellCommandParams, } | { "method": "thread/approveGuardianDeniedAction", id: RequestId, params: ThreadApproveGuardianDeniedActionParams, } | { "method": "thread/rollback", id: RequestId, params: ThreadRollbackParams, } | { "method": "thread/list", id: RequestId, params: ThreadListParams, } | { "method": "thread/loaded/list", id: RequestId, params: ThreadLoadedListParams, } | { "method": "thread/read", id: RequestId, params: ThreadReadParams, } | { "method": "thread/inject_items", id: RequestId, params: ThreadInjectItemsParams, } | { "method": "skills/list", id: RequestId, params: SkillsListParams, } | { "method": "hooks/list", id: RequestId, params: HooksListParams, } | { "method": "marketplace/add", id: RequestId, params: MarketplaceAddParams, } | { "method": "marketplace/remove", id: RequestId, params: MarketplaceRemoveParams, } | { "method": "marketplace/upgrade", id: RequestId, params: MarketplaceUpgradeParams, } | { "method": "plugin/list", id: RequestId, params: PluginListParams, } | { "method": "plugin/installed", id: RequestId, params: PluginInstalledParams, } | { "method": "plugin/read", id: RequestId, params: PluginReadParams, } | { "method": "plugin/skill/read", id: RequestId, params: PluginSkillReadParams, } | { "method": "plugin/share/save", id: RequestId, params: PluginShareSaveParams, } | { "method": "plugin/share/updateTargets", id: RequestId, params: PluginShareUpdateTargetsParams, } | { "method": "plugin/share/list", id: RequestId, params: PluginShareListParams, } | { "method": "plugin/share/checkout", id: RequestId, params: PluginShareCheckoutParams, } | { "method": "plugin/share/delete", id: RequestId, params: PluginShareDeleteParams, } | { "method": "app/list", id: RequestId, params: AppsListParams, } | { "method": "fs/readFile", id: RequestId, params: FsReadFileParams, } | { "method": "fs/writeFile", id: RequestId, params: FsWriteFileParams, } | { "method": "fs/createDirectory", id: RequestId, params: FsCreateDirectoryParams, } | { "method": "fs/getMetadata", id: RequestId, params: FsGetMetadataParams, } | { "method": "fs/readDirectory", id: RequestId, params: FsReadDirectoryParams, } | { "method": "fs/remove", id: RequestId, params: FsRemoveParams, } | { "method": "fs/copy", id: RequestId, params: FsCopyParams, } | { "method": "fs/watch", id: RequestId, params: FsWatchParams, } | { "method": "fs/unwatch", id: RequestId, params: FsUnwatchParams, } | { "method": "skills/config/write", id: RequestId, params: SkillsConfigWriteParams, } | { "method": "plugin/install", id: RequestId, params: PluginInstallParams, } | { "method": "plugin/uninstall", id: RequestId, params: PluginUninstallParams, } | { "method": "turn/start", id: RequestId, params: TurnStartParams, } | { "method": "turn/steer", id: RequestId, params: TurnSteerParams, } | { "method": "turn/interrupt", id: RequestId, params: TurnInterruptParams, } | { "method": "review/start", id: RequestId, params: ReviewStartParams, } | { "method": "model/list", id: RequestId, params: ModelListParams, } | { "method": "modelProvider/capabilities/read", id: RequestId, params: ModelProviderCapabilitiesReadParams, } | { "method": "experimentalFeature/list", id: RequestId, params: ExperimentalFeatureListParams, } | { "method": "permissionProfile/list", id: RequestId, params: PermissionProfileListParams, } | { "method": "experimentalFeature/enablement/set", id: RequestId, params: ExperimentalFeatureEnablementSetParams, } | { "method": "mcpServer/oauth/login", id: RequestId, params: McpServerOauthLoginParams, } | { "method": "config/mcpServer/reload", id: RequestId, params: undefined, } | { "method": "mcpServerStatus/list", id: RequestId, params: ListMcpServerStatusParams, } | { "method": "mcpServer/resource/read", id: RequestId, params: McpResourceReadParams, } | { "method": "mcpServer/tool/call", id: RequestId, params: McpServerToolCallParams, } | { "method": "windowsSandbox/setupStart", id: RequestId, params: WindowsSandboxSetupStartParams, } | { "method": "windowsSandbox/readiness", id: RequestId, params: undefined, } | { "method": "account/login/start", id: RequestId, params: LoginAccountParams, } | { "method": "account/login/cancel", id: RequestId, params: CancelLoginAccountParams, } | { "method": "account/logout", id: RequestId, params: undefined, } | { "method": "account/rateLimits/read", id: RequestId, params: undefined, } | { "method": "account/sendAddCreditsNudgeEmail", id: RequestId, params: SendAddCreditsNudgeEmailParams, } | { "method": "feedback/upload", id: RequestId, params: FeedbackUploadParams, } | { "method": "command/exec", id: RequestId, params: CommandExecParams, } | { "method": "command/exec/write", id: RequestId, params: CommandExecWriteParams, } | { "method": "command/exec/terminate", id: RequestId, params: CommandExecTerminateParams, } | { "method": "command/exec/resize", id: RequestId, params: CommandExecResizeParams, } | { "method": "config/read", id: RequestId, params: ConfigReadParams, } | { "method": "externalAgentConfig/detect", id: RequestId, params: ExternalAgentConfigDetectParams, } | { "method": "externalAgentConfig/import", id: RequestId, params: ExternalAgentConfigImportParams, } | { "method": "config/value/write", id: RequestId, params: ConfigValueWriteParams, } | { "method": "config/batchWrite", id: RequestId, params: ConfigBatchWriteParams, } | { "method": "configRequirements/read", id: RequestId, params: undefined, } | { "method": "account/read", id: RequestId, params: GetAccountParams, } | { "method": "getConversationSummary", id: RequestId, params: GetConversationSummaryParams, } | { "method": "gitDiffToRemote", id: RequestId, params: GitDiffToRemoteParams, } | { "method": "getAuthStatus", id: RequestId, params: GetAuthStatusParams, } | { "method": "fuzzyFileSearch", id: RequestId, params: FuzzyFileSearchParams, };
++export type ClientRequest ={ "method": "initialize", id: RequestId, params: InitializeParams, } | { "method": "thread/start", id: RequestId, params: ThreadStartParams, } | { "method": "thread/resume", id: RequestId, params: ThreadResumeParams, } | { "method": "thread/fork", id: RequestId, params: ThreadForkParams, } | { "method": "thread/archive", id: RequestId, params: ThreadArchiveParams, } | { "method": "thread/unsubscribe", id: RequestId, params: ThreadUnsubscribeParams, } | { "method": "thread/name/set", id: RequestId, params: ThreadSetNameParams, } | { "method": "thread/goal/set", id: RequestId, params: ThreadGoalSetParams, } | { "method": "thread/goal/get", id: RequestId, params: ThreadGoalGetParams, } | { "method": "thread/goal/clear", id: RequestId, params: ThreadGoalClearParams, } | { "method": "thread/metadata/update", id: RequestId, params: ThreadMetadataUpdateParams, } | { "method": "thread/unarchive", id: RequestId, params: ThreadUnarchiveParams, } | { "method": "thread/compact/start", id: RequestId, params: ThreadCompactStartParams, } | { "method": "thread/shellCommand", id: RequestId, params: ThreadShellCommandParams, } | { "method": "thread/approveGuardianDeniedAction", id: RequestId, params: ThreadApproveGuardianDeniedActionParams, } | { "method": "thread/rollback", id: RequestId, params: ThreadRollbackParams, } | { "method": "thread/list", id: RequestId, params: ThreadListParams, } | { "method": "thread/loaded/list", id: RequestId, params: ThreadLoadedListParams, } | { "method": "thread/read", id: RequestId, params: ThreadReadParams, } | { "method": "thread/inject_items", id: RequestId, params: ThreadInjectItemsParams, } | { "method": "skills/list", id: RequestId, params: SkillsListParams, } | { "method": "hooks/list", id: RequestId, params: HooksListParams, } | { "method": "marketplace/add", id: RequestId, params: MarketplaceAddParams, } | { "method": "marketplace/remove", id: RequestId, params: MarketplaceRemoveParams, } | { "method": "marketplace/upgrade", id: RequestId, params: MarketplaceUpgradeParams, } | { "method": "plugin/list", id: RequestId, params: PluginListParams, } | { "method": "usage/read", id: RequestId, params: UsageReadParams, } | { "method": "plugin/installed", id: RequestId, params: PluginInstalledParams, } | { "method": "plugin/read", id: RequestId, params: PluginReadParams, } | { "method": "plugin/skill/read", id: RequestId, params: PluginSkillReadParams, } | { "method": "plugin/share/save", id: RequestId, params: PluginShareSaveParams, } | { "method": "plugin/share/updateTargets", id: RequestId, params: PluginShareUpdateTargetsParams, } | { "method": "plugin/share/list", id: RequestId, params: PluginShareListParams, } | { "method": "plugin/share/checkout", id: RequestId, params: PluginShareCheckoutParams, } | { "method": "plugin/share/delete", id: RequestId, params: PluginShareDeleteParams, } | { "method": "app/list", id: RequestId, params: AppsListParams, } | { "method": "fs/readFile", id: RequestId, params: FsReadFileParams, } | { "method": "fs/writeFile", id: RequestId, params: FsWriteFileParams, } | { "method": "fs/createDirectory", id: RequestId, params: FsCreateDirectoryParams, } | { "method": "fs/getMetadata", id: RequestId, params: FsGetMetadataParams, } | { "method": "fs/readDirectory", id: RequestId, params: FsReadDirectoryParams, } | { "method": "fs/remove", id: RequestId, params: FsRemoveParams, } | { "method": "fs/copy", id: RequestId, params: FsCopyParams, } | { "method": "fs/watch", id: RequestId, params: FsWatchParams, } | { "method": "fs/unwatch", id: RequestId, params: FsUnwatchParams, } | { "method": "skills/config/write", id: RequestId, params: SkillsConfigWriteParams, } | { "method": "plugin/install", id: RequestId, params: PluginInstallParams, } | { "method": "plugin/uninstall", id: RequestId, params: PluginUninstallParams, } | { "method": "turn/start", id: RequestId, params: TurnStartParams, } | { "method": "turn/steer", id: RequestId, params: TurnSteerParams, } | { "method": "turn/interrupt", id: RequestId, params: TurnInterruptParams, } | { "method": "review/start", id: RequestId, params: ReviewStartParams, } | { "method": "model/list", id: RequestId, params: ModelListParams, } | { "method": "modelProvider/capabilities/read", id: RequestId, params: ModelProviderCapabilitiesReadParams, } | { "method": "experimentalFeature/list", id: RequestId, params: ExperimentalFeatureListParams, } | { "method": "permissionProfile/list", id: RequestId, params: PermissionProfileListParams, } | { "method": "experimentalFeature/enablement/set", id: RequestId, params: ExperimentalFeatureEnablementSetParams, } | { "method": "mcpServer/oauth/login", id: RequestId, params: McpServerOauthLoginParams, } | { "method": "config/mcpServer/reload", id: RequestId, params: undefined, } | { "method": "mcpServerStatus/list", id: RequestId, params: ListMcpServerStatusParams, } | { "method": "mcpServer/resource/read", id: RequestId, params: McpResourceReadParams, } | { "method": "mcpServer/tool/call", id: RequestId, params: McpServerToolCallParams, } | { "method": "windowsSandbox/setupStart", id: RequestId, params: WindowsSandboxSetupStartParams, } | { "method": "windowsSandbox/readiness", id: RequestId, params: undefined, } | { "method": "account/login/start", id: RequestId, params: LoginAccountParams, } | { "method": "account/login/cancel", id: RequestId, params: CancelLoginAccountParams, } | { "method": "account/logout", id: RequestId, params: undefined, } | { "method": "account/rateLimits/read", id: RequestId, params: undefined, } | { "method": "account/sendAddCreditsNudgeEmail", id: RequestId, params: SendAddCreditsNudgeEmailParams, } | { "method": "feedback/upload", id: RequestId, params: FeedbackUploadParams, } | { "method": "command/exec", id: RequestId, params: CommandExecParams, } | { "method": "command/exec/write", id: RequestId, params: CommandExecWriteParams, } | { "method": "command/exec/terminate", id: RequestId, params: CommandExecTerminateParams, } | { "method": "command/exec/resize", id: RequestId, params: CommandExecResizeParams, } | { "method": "config/read", id: RequestId, params: ConfigReadParams, } | { "method": "externalAgentConfig/detect", id: RequestId, params: ExternalAgentConfigDetectParams, } | { "method": "externalAgentConfig/import", id: RequestId, params: ExternalAgentConfigImportParams, } | { "method": "config/value/write", id: RequestId, params: ConfigValueWriteParams, } | { "method": "config/batchWrite", id: RequestId, params: ConfigBatchWriteParams, } | { "method": "configRequirements/read", id: RequestId, params: undefined, } | { "method": "account/read", id: RequestId, params: GetAccountParams, } | { "method": "getConversationSummary", id: RequestId, params: GetConversationSummaryParams, } | { "method": "gitDiffToRemote", id: RequestId, params: GitDiffToRemoteParams, } | { "method": "getAuthStatus", id: RequestId, params: GetAuthStatusParams, } | { "method": "fuzzyFileSearch", id: RequestId, params: FuzzyFileSearchParams, };
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/UsageContributorKind.ts b/codex-rs/app-server-protocol/schema/typescript/v2/UsageContributorKind.ts
+new file mode 100644
+index 000000000000..b68ed6b35ade
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/UsageContributorKind.ts
+@@ -0,0 +1,5 @@
++// GENERATED CODE! DO NOT MODIFY BY HAND!
++
++// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
++
++export type UsageContributorKind = "skill" | "subagent" | "agentTask" | "app" | "mcpServer" | "plugin";
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/UsageEntry.ts b/codex-rs/app-server-protocol/schema/typescript/v2/UsageEntry.ts
+new file mode 100644
+index 000000000000..d2e4486b7e16
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/UsageEntry.ts
+@@ -0,0 +1,6 @@
++// GENERATED CODE! DO NOT MODIFY BY HAND!
++
++// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
++import type { UsageContributorKind } from "./UsageContributorKind";
++
++export type UsageEntry = { kind: UsageContributorKind, id: string, label: string, attributedTokens: number, percentOfUsage: number, };
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/UsageHeadline.ts b/codex-rs/app-server-protocol/schema/typescript/v2/UsageHeadline.ts
+new file mode 100644
+index 000000000000..6b110fb15fa3
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/UsageHeadline.ts
+@@ -0,0 +1,6 @@
++// GENERATED CODE! DO NOT MODIFY BY HAND!
++
++// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
++import type { UsageEntry } from "./UsageEntry";
++
++export type UsageHeadline = { entry: UsageEntry, note: string | null, };
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/UsageRange.ts b/codex-rs/app-server-protocol/schema/typescript/v2/UsageRange.ts
+new file mode 100644
+index 000000000000..c38e3b7184a3
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/UsageRange.ts
+@@ -0,0 +1,5 @@
++// GENERATED CODE! DO NOT MODIFY BY HAND!
++
++// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
++
++export type UsageRange = "day" | "week";
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/UsageReadParams.ts b/codex-rs/app-server-protocol/schema/typescript/v2/UsageReadParams.ts
+new file mode 100644
+index 000000000000..1334673b4c2d
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/UsageReadParams.ts
+@@ -0,0 +1,6 @@
++// GENERATED CODE! DO NOT MODIFY BY HAND!
++
++// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
++import type { UsageRange } from "./UsageRange";
++
++export type UsageReadParams = { range: UsageRange, };
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/UsageReadResponse.ts b/codex-rs/app-server-protocol/schema/typescript/v2/UsageReadResponse.ts
+new file mode 100644
+index 000000000000..f13c8fa36808
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/UsageReadResponse.ts
+@@ -0,0 +1,6 @@
++// GENERATED CODE! DO NOT MODIFY BY HAND!
++
++// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
++import type { UsageReport } from "./UsageReport";
++
++export type UsageReadResponse = { report: UsageReport, };
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/UsageReport.ts b/codex-rs/app-server-protocol/schema/typescript/v2/UsageReport.ts
+new file mode 100644
+index 000000000000..83e107862a11
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/UsageReport.ts
+@@ -0,0 +1,8 @@
++// GENERATED CODE! DO NOT MODIFY BY HAND!
++
++// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
++import type { UsageEntry } from "./UsageEntry";
++import type { UsageHeadline } from "./UsageHeadline";
++import type { UsageRange } from "./UsageRange";
++
++export type UsageReport = { range: UsageRange, generatedAt: number, trackedFrom: number | null, totalTokens: number, headline: UsageHeadline | null, skills: Array<UsageEntry>, subagents: Array<UsageEntry>, agentTasks: Array<UsageEntry>, apps: Array<UsageEntry>, mcpServers: Array<UsageEntry>, plugins: Array<UsageEntry>, };
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/index.ts b/codex-rs/app-server-protocol/schema/typescript/v2/index.ts
+index d5ae15e8e279..f6b2d8b16fdd 100644
+--- a/codex-rs/app-server-protocol/schema/typescript/v2/index.ts
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/index.ts
+@@ -449,6 +449,13 @@ export type { TurnStartedNotification } from "./TurnStartedNotification";
+ export type { TurnStatus } from "./TurnStatus";
+ export type { TurnSteerParams } from "./TurnSteerParams";
+ export type { TurnSteerResponse } from "./TurnSteerResponse";
++export type { UsageContributorKind } from "./UsageContributorKind";
++export type { UsageEntry } from "./UsageEntry";
++export type { UsageHeadline } from "./UsageHeadline";
++export type { UsageRange } from "./UsageRange";
++export type { UsageReadParams } from "./UsageReadParams";
++export type { UsageReadResponse } from "./UsageReadResponse";
++export type { UsageReport } from "./UsageReport";
+ export type { UserInput } from "./UserInput";
+ export type { WarningNotification } from "./WarningNotification";
+ export type { WebSearchAction } from "./WebSearchAction";
+diff --git a/codex-rs/app-server-protocol/src/protocol/common.rs b/codex-rs/app-server-protocol/src/protocol/common.rs
+index dd1971116867..2ab174778f91 100644
+--- a/codex-rs/app-server-protocol/src/protocol/common.rs
++++ b/codex-rs/app-server-protocol/src/protocol/common.rs
+@@ -635,6 +635,11 @@ client_request_definitions! {
+         serialization: None,
+         response: v2::PluginListResponse,
+     },
++    UsageRead => "usage/read" {
++        params: v2::UsageReadParams,
++        serialization: None,
++        response: v2::UsageReadResponse,
++    },
+     PluginInstalled => "plugin/installed" {
+         params: v2::PluginInstalledParams,
+         serialization: None,
+diff --git a/codex-rs/app-server-protocol/src/protocol/v2/mod.rs b/codex-rs/app-server-protocol/src/protocol/v2/mod.rs
+index b5fa9fdc6590..1ac1f898cfb1 100644
+--- a/codex-rs/app-server-protocol/src/protocol/v2/mod.rs
++++ b/codex-rs/app-server-protocol/src/protocol/v2/mod.rs
+@@ -24,6 +24,7 @@ mod review;
+ mod thread;
+ mod thread_data;
+ mod turn;
++mod usage;
+ mod windows_sandbox;
+ 
+ pub use account::*;
+@@ -51,6 +52,7 @@ pub use shared::*;
+ pub use thread::*;
+ pub use thread_data::*;
+ pub use turn::*;
++pub use usage::*;
+ pub use windows_sandbox::*;
+ 
+ #[cfg(test)]
+diff --git a/codex-rs/app-server-protocol/src/protocol/v2/usage.rs b/codex-rs/app-server-protocol/src/protocol/v2/usage.rs
+new file mode 100644
+index 000000000000..22ca88e6f6a2
+--- /dev/null
++++ b/codex-rs/app-server-protocol/src/protocol/v2/usage.rs
+@@ -0,0 +1,92 @@
++use codex_protocol::protocol::UsageContributorKind as CoreUsageContributorKind;
++use schemars::JsonSchema;
++use serde::Deserialize;
++use serde::Serialize;
++use ts_rs::TS;
++
++#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
++#[serde(rename_all = "camelCase")]
++#[ts(rename_all = "camelCase", export_to = "v2/")]
++pub enum UsageRange {
++    Day,
++    Week,
++}
++
++#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
++#[serde(rename_all = "camelCase")]
++#[ts(export_to = "v2/")]
++pub struct UsageReadParams {
++    pub range: UsageRange,
++}
++
++#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
++#[serde(rename_all = "camelCase")]
++#[ts(export_to = "v2/")]
++pub struct UsageEntry {
++    pub kind: UsageContributorKind,
++    pub id: String,
++    pub label: String,
++    #[ts(type = "number")]
++    pub attributed_tokens: i64,
++    pub percent_of_usage: u8,
++}
++
++#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
++#[serde(rename_all = "camelCase")]
++#[ts(export_to = "v2/")]
++pub struct UsageHeadline {
++    pub entry: UsageEntry,
++    pub note: Option<String>,
++}
++
++#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
++#[serde(rename_all = "camelCase")]
++#[ts(export_to = "v2/")]
++pub struct UsageReport {
++    pub range: UsageRange,
++    #[ts(type = "number")]
++    pub generated_at: i64,
++    #[ts(type = "number | null")]
++    pub tracked_from: Option<i64>,
++    #[ts(type = "number")]
++    pub total_tokens: i64,
++    pub headline: Option<UsageHeadline>,
++    pub skills: Vec<UsageEntry>,
++    pub subagents: Vec<UsageEntry>,
++    pub agent_tasks: Vec<UsageEntry>,
++    pub apps: Vec<UsageEntry>,
++    pub mcp_servers: Vec<UsageEntry>,
++    pub plugins: Vec<UsageEntry>,
++}
++
++#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
++#[serde(rename_all = "camelCase")]
++#[ts(export_to = "v2/")]
++pub struct UsageReadResponse {
++    pub report: UsageReport,
++}
++
++#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
++#[serde(rename_all = "camelCase")]
++#[ts(rename_all = "camelCase", export_to = "v2/")]
++pub enum UsageContributorKind {
++    Skill,
++    Subagent,
++    AgentTask,
++    App,
++    McpServer,
++    Plugin,
++}
++
++impl From<CoreUsageContributorKind> for UsageContributorKind {
++    fn from(value: CoreUsageContributorKind) -> Self {
++        match value {
++            CoreUsageContributorKind::Skill => Self::Skill,
++            CoreUsageContributorKind::Subagent => Self::Subagent,
++            CoreUsageContributorKind::AgentTask => Self::AgentTask,
++            CoreUsageContributorKind::App => Self::App,
++            CoreUsageContributorKind::McpServer => Self::McpServer,
++            CoreUsageContributorKind::Plugin => Self::Plugin,
++        }
++    }
++}
+diff --git a/codex-rs/app-server/README.md b/codex-rs/app-server/README.md
+index 2ceffc86fec4..64f049e6cae9 100644
+--- a/codex-rs/app-server/README.md
++++ b/codex-rs/app-server/README.md
+@@ -206,6 +206,7 @@ Example with notification opt-out:
+ - `plugin/skill/read` — read remote plugin skill markdown on demand by `remoteMarketplaceName`, `remotePluginId`, and `skillName`. This lets clients preview uninstalled remote plugin skills without downloading the plugin bundle.
+ - `skills/changed` — notification emitted when watched local skill files change.
+ - `app/list` — list available apps.
++- `usage/read` — read forward-only local token usage for a rolling `day` or `week` range, grouped by skills, subagents, agent tasks, apps, MCP servers, and plugins when Codex has tracked those contributors in sqlite.
+ - `remoteControl/enable` — experimental; enable remote control for the current app-server process and return the current remote-control status snapshot. The caller is responsible for persisting the desired setting outside app-server.
+ - `remoteControl/disable` — experimental; disable remote control for the current app-server process and return the current remote-control status snapshot. This does not revoke already enrolled controller devices.
+ - `remoteControl/status/read` — experimental; read the current remote-control status snapshot. `status` is one of `disabled`, `connecting`, `connected`, or `errored`; `serverName` is the local machine name used by this app-server process; `environmentId` is a string when the app-server has a current enrollment and `null` when that enrollment is cleared, invalidated, or remote control is disabled.
+diff --git a/codex-rs/app-server/src/message_processor.rs b/codex-rs/app-server/src/message_processor.rs
+index 0e1f019de921..77dbfddce4f0 100644
+--- a/codex-rs/app-server/src/message_processor.rs
++++ b/codex-rs/app-server/src/message_processor.rs
+@@ -35,6 +35,7 @@ use crate::request_processors::SearchRequestProcessor;
+ use crate::request_processors::ThreadGoalRequestProcessor;
+ use crate::request_processors::ThreadRequestProcessor;
+ use crate::request_processors::TurnRequestProcessor;
++use crate::request_processors::UsageRequestProcessor;
+ use crate::request_processors::WindowsSandboxRequestProcessor;
+ use crate::request_serialization::QueuedInitializedRequest;
+ use crate::request_serialization::RequestSerializationQueueKey;
+@@ -181,6 +182,7 @@ pub(crate) struct MessageProcessor {
+     thread_goal_processor: ThreadGoalRequestProcessor,
+     thread_processor: ThreadRequestProcessor,
+     turn_processor: TurnRequestProcessor,
++    usage_processor: UsageRequestProcessor,
+     windows_sandbox_processor: WindowsSandboxRequestProcessor,
+     request_serialization_queues: RequestSerializationQueues,
+ }
+@@ -423,9 +425,10 @@ impl MessageProcessor {
+             thread_watch_manager.clone(),
+             Arc::clone(&thread_list_state_permit),
+             thread_goal_processor.clone(),
+-            state_db,
++            state_db.clone(),
+             Arc::clone(&skills_watcher),
+         );
++        let usage_processor = UsageRequestProcessor::new(state_db);
+         let turn_processor = TurnRequestProcessor::new(
+             auth_manager.clone(),
+             Arc::clone(&thread_manager),
+@@ -502,6 +505,7 @@ impl MessageProcessor {
+             thread_goal_processor,
+             thread_processor,
+             turn_processor,
++            usage_processor,
+             windows_sandbox_processor,
+             request_serialization_queues: RequestSerializationQueues::default(),
+         }
+@@ -1118,6 +1122,11 @@ impl MessageProcessor {
+             ClientRequest::PluginList { params, .. } => {
+                 self.plugin_processor.plugin_list(params).await
+             }
++            ClientRequest::UsageRead { params, .. } => self
++                .usage_processor
++                .usage_read(params)
++                .await
++                .map(|response| Some(response.into())),
+             ClientRequest::PluginInstalled { params, .. } => {
+                 self.plugin_processor.plugin_installed(params).await
+             }
+diff --git a/codex-rs/app-server/src/request_processors.rs b/codex-rs/app-server/src/request_processors.rs
+index d0958e80ab95..c081e565408d 100644
+--- a/codex-rs/app-server/src/request_processors.rs
++++ b/codex-rs/app-server/src/request_processors.rs
+@@ -470,6 +470,7 @@ mod search;
+ mod thread_processor;
+ mod token_usage_replay;
+ mod turn_processor;
++mod usage_processor;
+ mod windows_sandbox_processor;
+ 
+ pub(crate) use account_processor::AccountRequestProcessor;
+@@ -492,6 +493,7 @@ pub(crate) use search::SearchRequestProcessor;
+ pub(crate) use thread_goal_processor::ThreadGoalRequestProcessor;
+ pub(crate) use thread_processor::ThreadRequestProcessor;
+ pub(crate) use turn_processor::TurnRequestProcessor;
++pub(crate) use usage_processor::UsageRequestProcessor;
+ pub(crate) use windows_sandbox_processor::WindowsSandboxRequestProcessor;
+ 
+ use crate::error_code::internal_error;
+diff --git a/codex-rs/app-server/src/request_processors/usage_processor.rs b/codex-rs/app-server/src/request_processors/usage_processor.rs
+new file mode 100644
+index 000000000000..470e226fe403
+--- /dev/null
++++ b/codex-rs/app-server/src/request_processors/usage_processor.rs
+@@ -0,0 +1,77 @@
++use super::*;
++use crate::error_code::internal_error;
++use chrono::Utc;
++use codex_app_server_protocol::UsageEntry;
++use codex_app_server_protocol::UsageHeadline;
++use codex_app_server_protocol::UsageRange;
++use codex_app_server_protocol::UsageReadParams;
++use codex_app_server_protocol::UsageReadResponse;
++use codex_app_server_protocol::UsageReport;
++use codex_rollout::StateDbHandle;
++
++#[derive(Clone)]
++pub(crate) struct UsageRequestProcessor {
++    state_db: Option<StateDbHandle>,
++}
++
++impl UsageRequestProcessor {
++    pub(crate) fn new(state_db: Option<StateDbHandle>) -> Self {
++        Self { state_db }
++    }
++
++    pub(crate) async fn usage_read(
++        &self,
++        params: UsageReadParams,
++    ) -> Result<UsageReadResponse, JSONRPCErrorError> {
++        let state_db = self
++            .state_db
++            .as_ref()
++            .ok_or_else(|| internal_error("sqlite state db unavailable for usage"))?;
++        let report = state_db
++            .read_usage_report(state_usage_range(params.range), Utc::now().timestamp())
++            .await
++            .map_err(|err| internal_error(format!("failed to read usage report: {err}")))?;
++        Ok(UsageReadResponse {
++            report: UsageReport {
++                range: api_usage_range(report.range),
++                generated_at: report.generated_at,
++                tracked_from: report.tracked_from,
++                total_tokens: report.total_tokens,
++                headline: report.headline.map(|headline| UsageHeadline {
++                    entry: usage_entry(headline.entry),
++                    note: headline.note,
++                }),
++                skills: report.skills.into_iter().map(usage_entry).collect(),
++                subagents: report.subagents.into_iter().map(usage_entry).collect(),
++                agent_tasks: report.agent_tasks.into_iter().map(usage_entry).collect(),
++                apps: report.apps.into_iter().map(usage_entry).collect(),
++                mcp_servers: report.mcp_servers.into_iter().map(usage_entry).collect(),
++                plugins: report.plugins.into_iter().map(usage_entry).collect(),
++            },
++        })
++    }
++}
++
++fn usage_entry(entry: codex_state::UsageEntry) -> UsageEntry {
++    UsageEntry {
++        kind: entry.kind.into(),
++        id: entry.id,
++        label: entry.label,
++        attributed_tokens: entry.attributed_tokens,
++        percent_of_usage: entry.percent_of_usage,
++    }
++}
++
++fn state_usage_range(value: UsageRange) -> codex_state::UsageRange {
++    match value {
++        UsageRange::Day => codex_state::UsageRange::Day,
++        UsageRange::Week => codex_state::UsageRange::Week,
++    }
++}
++
++fn api_usage_range(value: codex_state::UsageRange) -> UsageRange {
++    match value {
++        codex_state::UsageRange::Day => UsageRange::Day,
++        codex_state::UsageRange::Week => UsageRange::Week,
++    }
++}
+diff --git a/codex-rs/core/src/compact_remote_v2.rs b/codex-rs/core/src/compact_remote_v2.rs
+index 22d2fe9a50c3..50025b1ad303 100644
+--- a/codex-rs/core/src/compact_remote_v2.rs
++++ b/codex-rs/core/src/compact_remote_v2.rs
+@@ -32,6 +32,7 @@ use codex_protocol::models::ContentItem;
+ use codex_protocol::models::ResponseItem;
+ use codex_protocol::protocol::CompactedItem;
+ use codex_protocol::protocol::EventMsg;
++use codex_protocol::protocol::TokenUsage;
+ use codex_protocol::protocol::TruncationPolicy;
+ use codex_protocol::protocol::TurnStartedEvent;
+ use codex_rollout_trace::CompactionCheckpointTracePayload;
+@@ -193,11 +194,16 @@ async fn run_remote_compact_task_inner_impl(
+     .await?;
+     let mut input = prompt_input.clone();
+     input.push(ResponseItem::CompactionTrigger);
++    let usage_attribution = crate::usage::UsagePromptAttribution::from_prompt(
++        &input,
++        &tool_router,
++        base_instructions.text.as_str(),
++    );
+     let prompt = Prompt {
+         input,
+         tools: tool_router.model_visible_specs(),
+         parallel_tool_calls: turn_context.model_info.supports_parallel_tool_calls,
+-        usage_attribution: Default::default(),
++        usage_attribution,
+         base_instructions,
+         personality: turn_context.personality,
+         output_schema: None,
+@@ -232,9 +238,16 @@ async fn run_remote_compact_task_inner_impl(
+     trace_attempt.record_result(
+         compaction_output_result
+             .as_ref()
+-            .map(|(item, _)| std::slice::from_ref(item)),
++            .map(|(item, _, _)| std::slice::from_ref(item)),
+     );
+-    let (compaction_output, response_id) = compaction_output_result?;
++    let (compaction_output, response_id, token_usage) = compaction_output_result?;
++    sess.record_usage_attribution(
++        turn_context,
++        &prompt,
++        response_id.as_str(),
++        token_usage.as_ref(),
++    )
++    .await;
+     let compacted_history = build_v2_compacted_history(&prompt_input, compaction_output);
+     let new_history = process_compacted_history(
+         sess.as_ref(),
+@@ -277,7 +290,7 @@ async fn run_remote_compaction_request_v2(
+     client_session: &mut ModelClientSession,
+     prompt: &Prompt,
+     turn_metadata_header: Option<&str>,
+-) -> CodexResult<(ResponseItem, String)> {
++) -> CodexResult<(ResponseItem, String, Option<TokenUsage>)> {
+     let stream = client_session
+         .stream(
+             prompt,
+@@ -307,11 +320,12 @@ async fn run_remote_compaction_request_v2(
+ 
+ async fn collect_compaction_output(
+     mut stream: ResponseStream,
+-) -> CodexResult<(ResponseItem, String)> {
++) -> CodexResult<(ResponseItem, String, Option<TokenUsage>)> {
+     let mut output_item_count = 0usize;
+     let mut compaction_count = 0usize;
+     let mut compaction_output = None;
+     let mut completed_response_id = None;
++    let mut completed_token_usage = None;
+     while let Some(event) = stream.next().await {
+         match event? {
+             ResponseEvent::OutputItemDone(item) => {
+@@ -323,8 +337,13 @@ async fn collect_compaction_output(
+                     }
+                 }
+             }
+-            ResponseEvent::Completed { response_id, .. } => {
++            ResponseEvent::Completed {
++                response_id,
++                token_usage,
++                ..
++            } => {
+                 completed_response_id = Some(response_id);
++                completed_token_usage = token_usage;
+                 break;
+             }
+             _ => {}
+@@ -346,7 +365,7 @@ async fn collect_compaction_output(
+     let Some(compaction_output) = compaction_output else {
+         unreachable!("compaction output must exist when count is exactly one");
+     };
+-    Ok((compaction_output, response_id))
++    Ok((compaction_output, response_id, completed_token_usage))
+ }
+ 
+ fn build_v2_compacted_history(
+@@ -670,6 +689,13 @@ mod tests {
+         let compaction = ResponseItem::Compaction {
+             encrypted_content: "encrypted".to_string(),
+         };
++        let expected_token_usage = TokenUsage {
++            input_tokens: 100,
++            cached_input_tokens: 25,
++            output_tokens: 10,
++            reasoning_output_tokens: 0,
++            total_tokens: 110,
++        };
+         let stream = response_stream(vec![
+             Ok(ResponseEvent::OutputItemDone(message(
+                 "assistant",
+@@ -679,16 +705,17 @@ mod tests {
+             Ok(ResponseEvent::OutputItemDone(compaction.clone())),
+             Ok(ResponseEvent::Completed {
+                 response_id: "resp-compact".to_string(),
+-                token_usage: None,
++                token_usage: Some(expected_token_usage.clone()),
+                 end_turn: Some(true),
+             }),
+         ]);
+ 
+-        let (output, response_id) = collect_compaction_output(stream)
++        let (output, response_id, token_usage) = collect_compaction_output(stream)
+             .await
+             .expect("compaction should be collected");
+ 
+         assert_eq!(output, compaction);
+         assert_eq!(response_id, "resp-compact");
++        assert_eq!(token_usage, Some(expected_token_usage));
+     }
+ }

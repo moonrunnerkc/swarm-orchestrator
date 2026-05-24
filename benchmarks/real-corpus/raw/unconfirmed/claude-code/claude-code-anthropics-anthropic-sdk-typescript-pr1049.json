@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1049",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1049,
+    "headSha": "16e77484934eab557a2a1d42e5e7e8a0b424ff4e",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02",
+    "title": "fix(stream): detect mixed newline SSE boundaries",
+    "body": "## Summary\n\n- detect SSE chunk boundaries made from mixed adjacent line endings such as `\\n\\r\\n` and `\\r\\n\\n`\n- replace the hard-coded double-newline byte patterns with a small line-ending scanner\n- add focused regression coverage for mixed adjacent line endings\n\n## Context\n\nThe SSE chunk scanner previously recognized only `\\n\\n`, `\\r\\r`, and `\\r\\n\\r\\n`. Event streams allow lines to end with `\\r`, `\\n`, or `\\r\\n`, so mixed adjacent line endings are valid blank-line boundaries. Without detecting those boundaries, a live stream using a mixed separator can keep events buffered until another recognized separator or the response close.\n\n## Validation\n\n- `./node_modules/.bin/jest tests/internal/decoders/line.test.ts --runInBand`\n- `./node_modules/.bin/jest tests/streaming.test.ts --runInBand`\n- `./node_modules/.bin/prettier --check src/internal/decoders/line.ts tests/internal/decoders/line.test.ts`\n- `./node_modules/.bin/eslint src/internal/decoders/line.ts tests/internal/decoders/line.test.ts`\n- `./node_modules/typescript/bin/tsc --noEmit`\n- `git diff --check`\n\nNote: `yarn install --frozen-lockfile` failed because the current lockfile needs dependency metadata updates; a plain `yarn install` was used for local validation, and install-only lockfile churn was excluded from this PR.\n",
+    "author": "pragnyanramtha",
+    "headRef": "codex/sse-mixed-newline-boundaries",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "16e77484934eab557a2a1d42e5e7e8a0b424ff4e",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1049.diff",
+  "vendoredAt": "2026-05-24T03:16:23.039Z",
+  "collectedAt": "2026-05-24T03:16:23.039Z"
+}

@@ -1,0 +1,965 @@
+diff --git a/.github/workflows/quality_gate.yml b/.github/workflows/quality_gate.yml
+index a495fc3..21fbf05 100644
+--- a/.github/workflows/quality_gate.yml
++++ b/.github/workflows/quality_gate.yml
+@@ -1,4 +1,4 @@
+-name: Quality Gate
++name: 🔍 Quality Gate
+ 
+ on:
+   pull_request:
+@@ -14,6 +14,9 @@ concurrency:
+   cancel-in-progress: true
+ 
+ jobs:
++  # ──────────────────────────────────────────────
++  # Detect which modules were changed in the PR
++  # ──────────────────────────────────────────────
+   detect-changes:
+     name: 🗺️ Detect Changed Modules
+     runs-on: ubuntu-latest
+@@ -42,13 +45,11 @@ jobs:
+               fi
+               dir=$(dirname "$dir")
+             done
+-          
+             if [ -f "pubspec.yaml" ] && [[ "$file" != *"/"* ]]; then
+               MODULES+=(".")
+             fi
+           done <<< "$CHANGED_FILES"
+ 
+-         
+           UNIQUE_MODULES=$(printf '%s\n' "${MODULES[@]}" | sort -u | jq -R . | jq -sc .)
+ 
+           if [ "$UNIQUE_MODULES" = "[]" ] || [ -z "$UNIQUE_MODULES" ]; then
+@@ -59,28 +60,31 @@ jobs:
+             echo "modules=$UNIQUE_MODULES" >> $GITHUB_OUTPUT
+           fi
+ 
+-
++  # ──────────────────────────────────────────────
++  # Formatting — dart format
++  # ──────────────────────────────────────────────
+   format-check:
+-    name: Dart Format
++    name: 🎨 Dart Format
+     runs-on: ubuntu-latest
+     needs: detect-changes
+     if: needs.detect-changes.outputs.has_changes == 'true'
+     outputs:
+       result: ${{ steps.format.outputs.result }}
+-      details: ${{ steps.format.outputs.details }}
+     steps:
+       - uses: actions/checkout@v4
+       - uses: subosito/flutter-action@v2
+         with:
+           flutter-version: '3.41.9'
+-          channel: stable 
++          channel: stable
+           cache: true
+ 
+       - name: Check formatting
+         id: format
+         run: |
+           MODULES='${{ needs.detect-changes.outputs.modules }}'
+-          FAILED_FILES=""
++          mkdir -p /tmp/qg-reports
++          REPORT_FILE="/tmp/qg-reports/format.md"
++          OVERALL_RESULT="success"
+ 
+           for module in $(echo "$MODULES" | jq -r '.[]'); do
+             echo "Checking format in: $module"
+@@ -88,20 +92,32 @@ jobs:
+ 
+             UNFORMATTED=$(dart format --output=none --set-exit-if-changed . 2>&1 || true)
+             if echo "$UNFORMATTED" | grep -q "Formatted"; then
+-              FAILED_FILES+="$UNFORMATTED\n"
++              OVERALL_RESULT="failure"
++              echo "#### $module" >> "$REPORT_FILE"
++              echo '```' >> "$REPORT_FILE"
++              echo "$UNFORMATTED" | head -20 >> "$REPORT_FILE"
++              echo '```' >> "$REPORT_FILE"
+             fi
+           done
+ 
+-          if [ -n "$FAILED_FILES" ]; then
+-            echo "result=failure" >> $GITHUB_OUTPUT
+-            echo "details=$(echo -e "$FAILED_FILES" | head -20 | jq -Rs .)" >> $GITHUB_OUTPUT
+-          else
+-            echo "result=success" >> $GITHUB_OUTPUT
+-            echo "details=\"All files are properly formatted\"" >> $GITHUB_OUTPUT
++          if [ "$OVERALL_RESULT" = "success" ]; then
++            echo "_All files are properly formatted._" > "$REPORT_FILE"
+           fi
+ 
++          echo "result=$OVERALL_RESULT" >> $GITHUB_OUTPUT
++
++      - uses: actions/upload-artifact@v4
++        if: always()
++        with:
++          name: qg-format-report
++          path: /tmp/qg-reports/format.md
++          if-no-files-found: ignore
++
++  # ──────────────────────────────────────────────
++  # Static analysis — flutter analyze
++  # ──────────────────────────────────────────────
+   static-analysis:
+-    name: Static Analysis
++    name: 🔬 Static Analysis
+     runs-on: ubuntu-latest
+     needs: detect-changes
+     if: needs.detect-changes.outputs.has_changes == 'true'
+@@ -110,31 +126,30 @@ jobs:
+       errors: ${{ steps.analyze.outputs.errors }}
+       warnings: ${{ steps.analyze.outputs.warnings }}
+       infos: ${{ steps.analyze.outputs.infos }}
+-      details: ${{ steps.analyze.outputs.details }}
+     steps:
+       - uses: actions/checkout@v4
+       - uses: subosito/flutter-action@v2
+         with:
+           flutter-version: '3.41.9'
+-          channel: stable 
++          channel: stable
+           cache: true
+ 
+       - name: Run flutter analyze
+         id: analyze
+         run: |
+           MODULES='${{ needs.detect-changes.outputs.modules }}'
++          mkdir -p /tmp/qg-reports
++          REPORT_FILE="/tmp/qg-reports/analyze.md"
+           TOTAL_ERRORS=0
+           TOTAL_WARNINGS=0
+           TOTAL_INFOS=0
+-          ALL_OUTPUT=""
+ 
+           for module in $(echo "$MODULES" | jq -r '.[]'); do
+             echo "Analyzing: $module"
+             cd "$GITHUB_WORKSPACE/$module"
+-            flutter pub get --quiet
++            flutter pub get
+ 
+             OUTPUT=$(flutter analyze --no-pub 2>&1 || true)
+-            ALL_OUTPUT+="### \`$module\`\n$OUTPUT\n\n"
+ 
+             ERRORS=$(echo "$OUTPUT" | grep -c "error •" || true)
+             WARNINGS=$(echo "$OUTPUT" | grep -c "warning •" || true)
+@@ -143,12 +158,18 @@ jobs:
+             TOTAL_ERRORS=$((TOTAL_ERRORS + ERRORS))
+             TOTAL_WARNINGS=$((TOTAL_WARNINGS + WARNINGS))
+             TOTAL_INFOS=$((TOTAL_INFOS + INFOS))
++
++            if [ "$ERRORS" -gt 0 ] || [ "$WARNINGS" -gt 0 ]; then
++              echo "#### $module — $ERRORS error(s), $WARNINGS warning(s)" >> "$REPORT_FILE"
++              echo '```' >> "$REPORT_FILE"
++              echo "$OUTPUT" | grep -E "error •|warning •" | head -30 >> "$REPORT_FILE"
++              echo '```' >> "$REPORT_FILE"
++            fi
+           done
+ 
+           echo "errors=$TOTAL_ERRORS" >> $GITHUB_OUTPUT
+           echo "warnings=$TOTAL_WARNINGS" >> $GITHUB_OUTPUT
+           echo "infos=$TOTAL_INFOS" >> $GITHUB_OUTPUT
+-          echo "details=$(echo -e "$ALL_OUTPUT" | jq -Rs .)" >> $GITHUB_OUTPUT
+ 
+           if [ "$TOTAL_ERRORS" -gt 0 ]; then
+             echo "result=failure" >> $GITHUB_OUTPUT
+@@ -156,23 +177,32 @@ jobs:
+             echo "result=warning" >> $GITHUB_OUTPUT
+           else
+             echo "result=success" >> $GITHUB_OUTPUT
++            echo "_No errors or warnings found._" > "$REPORT_FILE"
+           fi
+ 
++      - uses: actions/upload-artifact@v4
++        if: always()
++        with:
++          name: qg-analyze-report
++          path: /tmp/qg-reports/analyze.md
++          if-no-files-found: ignore
++
++  # ──────────────────────────────────────────────
++  # Tests + Coverage >= 80%
++  # ──────────────────────────────────────────────
+   test-coverage:
+-    name: Tests & Coverage
++    name: 🧪 Tests & Coverage
+     runs-on: ubuntu-latest
+     needs: detect-changes
+     if: needs.detect-changes.outputs.has_changes == 'true'
+     outputs:
+       result: ${{ steps.coverage.outputs.result }}
+-      details: ${{ steps.coverage.outputs.details }}
+-      coverage_table: ${{ steps.coverage.outputs.coverage_table }}
+     steps:
+       - uses: actions/checkout@v4
+       - uses: subosito/flutter-action@v2
+         with:
+           flutter-version: '3.41.9'
+-          channel: stable 
++          channel: stable
+           cache: true
+ 
+       - name: Install lcov
+@@ -182,64 +212,67 @@ jobs:
+         id: coverage
+         run: |
+           MODULES='${{ needs.detect-changes.outputs.modules }}'
+-          FAILED_MODULES=""
+-          LOW_COVERAGE_MODULES=""
+-          COVERAGE_TABLE="| Módulo | Cobertura | Status |\n|--------|-----------|--------|\n"
++          mkdir -p /tmp/qg-reports
++          TABLE_FILE="/tmp/qg-reports/coverage-table.md"
++          DETAILS_FILE="/tmp/qg-reports/coverage-details.md"
+           OVERALL_RESULT="success"
+ 
++          echo "| Module | Coverage | Status |" >> "$TABLE_FILE"
++          echo "|--------|----------|--------|" >> "$TABLE_FILE"
++
+           for module in $(echo "$MODULES" | jq -r '.[]'); do
+             echo "Testing: $module"
+             cd "$GITHUB_WORKSPACE/$module"
+-            flutter pub get --quiet
++            flutter pub get
+ 
+-            
+             if [ ! -d "test" ]; then
+-              COVERAGE_TABLE+="| \`$module\` | N/A | No tests |\n"
++              echo "| \`$module\` | N/A | No tests found |" >> "$TABLE_FILE"
+               continue
+             fi
+ 
+-            # Executa os testes
+             TEST_OUTPUT=$(flutter test --coverage --no-pub 2>&1)
+             TEST_EXIT=$?
+ 
+             if [ $TEST_EXIT -ne 0 ]; then
+-              FAILED_MODULES+="- \`$module\`: Failing tests\n"
+-              COVERAGE_TABLE+="| \`$module\` | ❌ | ❌ Fail |\n"
++              echo "| \`$module\` | — | Tests failing |" >> "$TABLE_FILE"
++              echo "#### $module — Tests failing" >> "$DETAILS_FILE"
++              echo '```' >> "$DETAILS_FILE"
++              echo "$TEST_OUTPUT" | tail -30 >> "$DETAILS_FILE"
++              echo '```' >> "$DETAILS_FILE"
+               OVERALL_RESULT="failure"
+               continue
+             fi
+ 
+             if [ -f "coverage/lcov.info" ]; then
+-              COVERAGE_SUMMARY=$(lcov --summary coverage/lcov.info 2>&1 | grep "lines" || echo "")
+-              COVERAGE_PCT=$(echo "$COVERAGE_SUMMARY" | grep -oP '\d+\.\d+(?=%)' | head -1)
+-
+-              if [ -z "$COVERAGE_PCT" ]; then
+-                COVERAGE_PCT="0"
+-              fi
+-
++              COVERAGE_PCT=$(lcov --summary coverage/lcov.info 2>&1 \
++                | grep "lines" | grep -oP '\d+\.\d+(?=%)' | head -1)
++              COVERAGE_PCT="${COVERAGE_PCT:-0}"
+               COVERAGE_INT=$(echo "$COVERAGE_PCT" | cut -d. -f1)
+ 
+               if [ "$COVERAGE_INT" -ge 80 ]; then
+-                COVERAGE_TABLE+="| \`$module\` | ${COVERAGE_PCT}% | ✅ |\n"
++                echo "| \`$module\` | ${COVERAGE_PCT}% | Passed |" >> "$TABLE_FILE"
+               else
+-                COVERAGE_TABLE+="| \`$module\` | ${COVERAGE_PCT}% | ❌ < 80% |\n"
+-                LOW_COVERAGE_MODULES+="- \`$module\`: ${COVERAGE_PCT}% (min: 80%)\n"
++                echo "| \`$module\` | ${COVERAGE_PCT}% | Below 80% |" >> "$TABLE_FILE"
++                echo "#### $module — Insufficient coverage: ${COVERAGE_PCT}% (minimum: 80%)" >> "$DETAILS_FILE"
+                 OVERALL_RESULT="failure"
+               fi
+             else
+-              COVERAGE_TABLE+="| \`$module\` | N/A | ⚠️ No reports|\n"
++              echo "| \`$module\` | N/A | No report generated |" >> "$TABLE_FILE"
+             fi
+           done
+ 
+           echo "result=$OVERALL_RESULT" >> $GITHUB_OUTPUT
+-          echo "coverage_table=$(echo -e "$COVERAGE_TABLE" | jq -Rs .)" >> $GITHUB_OUTPUT
+-
+-          DETAILS=""
+-          [ -n "$FAILED_MODULES" ] && DETAILS+="**Failing tests:**\n$FAILED_MODULES\n"
+-          [ -n "$LOW_COVERAGE_MODULES" ] && DETAILS+="**Insufficient coverage:**\n$LOW_COVERAGE_MODULES"
+-          echo "details=$(echo -e "$DETAILS" | jq -Rs .)" >> $GITHUB_OUTPUT
+ 
++      - uses: actions/upload-artifact@v4
++        if: always()
++        with:
++          name: qg-coverage-report
++          path: /tmp/qg-reports/
++          if-no-files-found: ignore
+ 
++  # ──────────────────────────────────────────────
++  # Dead code & duplicate functions
++  # ──────────────────────────────────────────────
+   dead-code-duplicates:
+     name: 🧟 Dead Code & Duplicates
+     runs-on: ubuntu-latest
+@@ -247,7 +280,6 @@ jobs:
+     if: needs.detect-changes.outputs.has_changes == 'true'
+     outputs:
+       result: ${{ steps.analysis.outputs.result }}
+-      details: ${{ steps.analysis.outputs.details }}
+     steps:
+       - uses: actions/checkout@v4
+       - uses: subosito/flutter-action@v2
+@@ -257,52 +289,61 @@ jobs:
+           cache: true
+ 
+       - name: Install dart_code_metrics
+-        run: |
+-          dart pub global activate dart_code_metrics
++        run: dart pub global activate dart_code_metrics
+ 
+       - name: Detect dead code & duplicates
+         id: analysis
+         run: |
+           MODULES='${{ needs.detect-changes.outputs.modules }}'
+-          DEAD_CODE_FINDINGS=""
+-          DUPLICATE_FINDINGS=""
++          mkdir -p /tmp/qg-reports
++          REPORT_FILE="/tmp/qg-reports/dead-code.md"
+           OVERALL_RESULT="success"
+ 
+           for module in $(echo "$MODULES" | jq -r '.[]'); do
+-            echo "Checking dead code/duplicates in: $module"
++            echo "Checking: $module"
+             cd "$GITHUB_WORKSPACE/$module"
+-            flutter pub get --quiet
++            flutter pub get
+ 
+-            # Código morto via dart_code_metrics
+             DCM_OUTPUT=$(dart pub global run dart_code_metrics:metrics analyze lib \
+-              --metrics=unused-code \
+-              --reporter=console 2>&1 || true)
++              --metrics=unused-code --reporter=console 2>&1 || true)
+ 
+             if echo "$DCM_OUTPUT" | grep -qi "unused"; then
+-              DEAD_CODE_FINDINGS+="**\`$module\`**:\n\`\`\`\n$(echo "$DCM_OUTPUT" | grep -i "unused" | head -10)\n\`\`\`\n"
++              echo "#### $module — Dead code detected" >> "$REPORT_FILE"
++              echo '```' >> "$REPORT_FILE"
++              echo "$DCM_OUTPUT" | grep -i "unused" | head -10 >> "$REPORT_FILE"
++              echo '```' >> "$REPORT_FILE"
+               OVERALL_RESULT="warning"
+             fi
+ 
+-            # Funções/métodos duplicados — heurística via diff de assinaturas
+             FUNC_SIGS=$(grep -rn "^\s*\(Future\|void\|String\|int\|bool\|double\|List\|Map\|Widget\|dynamic\)" lib/ \
+-              --include="*.dart" 2>/dev/null | \
+-              grep -oP '(?<=\s)\w+\s*\(' | sort | uniq -d | head -20 || true)
++              --include="*.dart" 2>/dev/null \
++              | grep -oP '(?<=\s)\w+\s*\(' | sort | uniq -d | head -20 || true)
+ 
+             if [ -n "$FUNC_SIGS" ]; then
+-              DUPLICATE_FINDINGS+="**\`$module\`** — possíveis funções duplicadas:\n\`\`\`\n$FUNC_SIGS\n\`\`\`\n"
++              echo "#### $module — Possible duplicate functions" >> "$REPORT_FILE"
++              echo '```' >> "$REPORT_FILE"
++              echo "$FUNC_SIGS" >> "$REPORT_FILE"
++              echo '```' >> "$REPORT_FILE"
+               OVERALL_RESULT="warning"
+             fi
+           done
+ 
+-          echo "result=$OVERALL_RESULT" >> $GITHUB_OUTPUT
++          if [ "$OVERALL_RESULT" = "success" ]; then
++            echo "_No dead code or duplicates found._" > "$REPORT_FILE"
++          fi
+ 
+-          DETAILS=""
+-          [ -n "$DEAD_CODE_FINDINGS" ] && DETAILS+="### 🧟 Dead Code\n$DEAD_CODE_FINDINGS\n"
+-          [ -n "$DUPLICATE_FINDINGS" ] && DETAILS+="### 🔁 Possible Duplicates\n$DUPLICATE_FINDINGS\n"
+-          [ -z "$DETAILS" ] && DETAILS="No issues found."
+-          echo "details=$(echo -e "$DETAILS" | jq -Rs .)" >> $GITHUB_OUTPUT
++          echo "result=$OVERALL_RESULT" >> $GITHUB_OUTPUT
+ 
++      - uses: actions/upload-artifact@v4
++        if: always()
++        with:
++          name: qg-dead-code-report
++          path: /tmp/qg-reports/dead-code.md
++          if-no-files-found: ignore
+ 
++  # ──────────────────────────────────────────────
++  # Consolidated PR comment
++  # ──────────────────────────────────────────────
+   pr-comment:
+     name: 💬 PR Quality Report
+     runs-on: ubuntu-latest
+@@ -314,106 +355,121 @@ jobs:
+       - dead-code-duplicates
+     if: always() && needs.detect-changes.outputs.has_changes == 'true'
+     steps:
++      - name: Download all reports
++        uses: actions/download-artifact@v4
++        with:
++          pattern: qg-*-report
++          path: /tmp/qg-reports
++          merge-multiple: true
++
+       - name: Build and post PR comment
+         uses: actions/github-script@v7
++        env:
++          FORMAT_RESULT:    ${{ needs.format-check.outputs.result }}
++          ANALYZE_RESULT:   ${{ needs.static-analysis.outputs.result }}
++          ANALYZE_ERRORS:   ${{ needs.static-analysis.outputs.errors }}
++          ANALYZE_WARNINGS: ${{ needs.static-analysis.outputs.warnings }}
++          ANALYZE_INFOS:    ${{ needs.static-analysis.outputs.infos }}
++          TEST_RESULT:      ${{ needs.test-coverage.outputs.result }}
++          DEAD_RESULT:      ${{ needs.dead-code-duplicates.outputs.result }}
+         with:
+           github-token: ${{ secrets.GITHUB_TOKEN }}
+           script: |
+-            const formatResult    = '${{ needs.format-check.outputs.result }}';
+-            const analyzeResult   = '${{ needs.static-analysis.outputs.result }}';
+-            const testResult      = '${{ needs.test-coverage.outputs.result }}';
+-            const deadCodeResult  = '${{ needs.dead-code-duplicates.outputs.result }}';
+-
+-            const icon = (r) => ({ success: '✅', failure: '❌', warning: '⚠️' }[r] ?? '⚙️');
+-            const badge = (r) => ({ success: '**PASSOU**', failure: '**FALHOU**', warning: '**ATENÇÃO**' }[r] ?? 'N/A');
+-
+-            const allPassed = [formatResult, analyzeResult, testResult].every(r => r === 'success');
+-            const hasWarnings = [deadCodeResult, analyzeResult].some(r => r === 'warning');
+-
+-            const overallIcon  = allPassed ? '✅' : '❌';
+-            const overallLabel = allPassed
+-              ? (hasWarnings ? '⚠️ APPROVED WITH WARNINGS' : '✅ APPROVED')
+-              : '❌ REJECTED — fix the required items';
+-
+-            const coverageTable = JSON.parse('${{ needs.test-coverage.outputs.coverage_table }}' || '""') || '';
+-            const analyzeErrors   = '${{ needs.static-analysis.outputs.errors }}';
+-            const analyzeWarnings = '${{ needs.static-analysis.outputs.warnings }}';
+-            const analyzeInfos    = '${{ needs.static-analysis.outputs.infos }}';
+-            const deadDetails     = JSON.parse('${{ needs.dead-code-duplicates.outputs.details }}' || '""') || '';
+-            const testDetails     = JSON.parse('${{ needs.test-coverage.outputs.details }}' || '""') || '';
+-
+-            const body = `## ${overallIcon} Quality Gate — ${overallLabel}
+-
+-            > Automatic analysis of the PR · ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
+-
+-            ---
+-
+-            | Check | Status | Result |
+-            |-------|--------|-----------|
+-            | 🎨 Format | ${icon(formatResult)} | ${badge(formatResult)} |
+-            | 🔬 Static Analysis | ${icon(analyzeResult)} | ${badge(analyzeResult)} |
+-            | 🧪 Tests & Coverage ≥ 80% | ${icon(testResult)} | ${badge(testResult)} |
+-
+-            ### Informative Checklist (doesn't block merge, but should be reviewed)
+-
+-            | Check | Status | Result |
+-            |-------|--------|-----------|
+-            | 🧟 Dead Code & Duplicates | ${icon(deadCodeResult)} | ${badge(deadCodeResult)} |
+-
+-            ---
+-
+-            ### 🧪 Coverage by Module
+-
+-            ${coverageTable || '_No modules with tests found._'}
+-
+-            ---
+-
+-            ### 🔬 Static Analysis
+-
+-            | Errors | Warnings | Infos |
+-            |-------|--------|-------|
+-            | ${analyzeErrors} ❌ | ${analyzeWarnings} ⚠️ | ${analyzeInfos} ℹ️ |
+-
+-            ${parseInt(analyzeErrors) > 0 || parseInt(analyzeWarnings) > 0 ? '> ⚠️ Fix the errors and warnings before merging.' : '> No critical issues found.'}
+-
+-            ---
+-
+-            ### 🧟 Dead Code & Duplicates
+-
+-            ${deadDetails || '_Analysis not available._'}
+-
+-            ---
+-
+-            ${testDetails ? `### ❌ Test Failure Details\n\n${testDetails}\n\n---` : ''}
+-
+-            <details>
+-            <summary>ℹ️ How to fix common issues</summary>
+-
+-            **Formatting:**
+-            \`\`\`bash
+-            dart format .
+-            \`\`\`
+-
+-            **Static Analysis:**
+-            \`\`\`bash
+-            flutter analyze
+-            \`\`\`
+-
+-            **Tests & Coverage:**
+-            \`\`\`bash
+-            flutter test --coverage
+-            genhtml coverage/lcov.info -o coverage/html
+-            \`\`\`
+-
+-            **Dead Code:**
+-            \`\`\`bash
+-            dart pub global run dart_code_metrics:metrics analyze lib
+-            \`\`\`
+-            </details>
+-
+-            ---
+-            _🤖 Automatically generated by Quality Gate · [View workflow](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})_
+-            `;
++            const fs = require('fs');
++
++            const readReport = (path) => {
++              try { return fs.readFileSync(path, 'utf8').trim(); }
++              catch { return '_Report not available._'; }
++            };
++
++            const formatReport    = readReport('/tmp/qg-reports/format.md');
++            const analyzeReport   = readReport('/tmp/qg-reports/analyze.md');
++            const coverageTable   = readReport('/tmp/qg-reports/coverage-table.md');
++            const coverageDetails = readReport('/tmp/qg-reports/coverage-details.md');
++            const deadCodeReport  = readReport('/tmp/qg-reports/dead-code.md');
++
++            const formatResult  = process.env.FORMAT_RESULT  || 'skipped';
++            const analyzeResult = process.env.ANALYZE_RESULT || 'skipped';
++            const testResult    = process.env.TEST_RESULT    || 'skipped';
++            const deadResult    = process.env.DEAD_RESULT    || 'skipped';
++            const errors        = process.env.ANALYZE_ERRORS   || '0';
++            const warnings      = process.env.ANALYZE_WARNINGS || '0';
++            const infos         = process.env.ANALYZE_INFOS    || '0';
++
++            const icon  = (r) => ({ success: '✅', failure: '❌', warning: '⚠️', skipped: '⏭️' }[r] ?? '⚙️');
++            const badge = (r) => ({ success: '**PASSED**', failure: '**FAILED**', warning: '**WARNING**', skipped: 'Skipped' }[r] ?? 'N/A');
++
++            const mandatory  = [formatResult, analyzeResult, testResult];
++            const allPassed  = mandatory.every(r => r === 'success');
++            const anyFailed  = mandatory.some(r => r === 'failure');
++            const hasWarnings = [deadResult, analyzeResult].some(r => r === 'warning');
++
++            const overallIcon  = anyFailed ? '❌' : (hasWarnings ? '⚠️' : '✅');
++            const overallLabel = anyFailed
++              ? 'FAILED — fix the mandatory checks before merging'
++              : allPassed
++                ? (hasWarnings ? 'PASSED WITH WARNINGS' : 'PASSED')
++                : 'PARTIAL';
++
++            const now = new Date().toUTCString();
++
++            const lines = [
++              `## ${overallIcon} Quality Gate — ${overallLabel}`,
++              `> Automated PR analysis · ${now} · Flutter 3.41.9`,
++              `---`,
++              `### Mandatory checks (block merge on failure)`,
++              `| Check | Status | Result |`,
++              `|-------|--------|--------|`,
++              `| 🎨 Formatting \`dart format\` | ${icon(formatResult)} | ${badge(formatResult)} |`,
++              `| 🔬 Static analysis \`flutter analyze\` | ${icon(analyzeResult)} | ${badge(analyzeResult)} |`,
++              `| 🧪 Tests & Coverage >= 80% | ${icon(testResult)} | ${badge(testResult)} |`,
++              ``,
++              `### Informational checks (do not block merge)`,
++              `| Check | Status | Result |`,
++              `|-------|--------|--------|`,
++              `| 🧟 Dead code & Duplicates | ${icon(deadResult)} | ${badge(deadResult)} |`,
++              `---`,
++              `### 🧪 Coverage by module`,
++              coverageTable,
++              coverageDetails ? `\n${coverageDetails}` : '',
++              `---`,
++              `### 🔬 Static analysis`,
++              `| Errors | Warnings | Info |`,
++              `|--------|----------|------|`,
++              `| ${errors} ❌ | ${warnings} ⚠️ | ${infos} ℹ️ |`,
++              ``,
++              analyzeReport,
++              `---`,
++              `### 🧟 Dead code & Duplicates`,
++              deadCodeReport,
++              `---`,
++              `<details>`,
++              `<summary>🎨 Formatting details</summary>`,
++              ``,
++              formatReport,
++              `</details>`,
++              ``,
++              `<details>`,
++              `<summary>ℹ️ How to fix common issues</summary>`,
++              ``,
++              `**Formatting:** \`dart format .\``,
++              ``,
++              `**Static analysis:** \`flutter analyze\``,
++              ``,
++              `**Tests with coverage:**`,
++              `\`\`\`bash`,
++              `flutter test --coverage`,
++              `genhtml coverage/lcov.info -o coverage/html`,
++              `\`\`\``,
++              ``,
++              `**Dead code:** \`dart pub global run dart_code_metrics:metrics analyze lib\``,
++              `</details>`,
++              ``,
++              `---`,
++              `_🤖 Quality Gate · [View run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})_`,
++            ];
++
++            const body = lines.join('\n');
+ 
+             const { data: comments } = await github.rest.issues.listComments({
+               owner: context.repo.owner,
+@@ -447,5 +503,5 @@ jobs:
+           needs.static-analysis.outputs.result == 'failure' ||
+           needs.test-coverage.outputs.result == 'failure'
+         run: |
+-          echo "❌ Quality Gate Fails. Fix the mandatory items before merging."
++          echo "Quality Gate FAILED. Fix all mandatory checks before merging."
+           exit 1
+\ No newline at end of file
+diff --git a/core_sdk/horta_ui/lib/horta_ui.dart b/core_sdk/horta_ui/lib/horta_ui.dart
+index e65c3ec..6b88b15 100644
+--- a/core_sdk/horta_ui/lib/horta_ui.dart
++++ b/core_sdk/horta_ui/lib/horta_ui.dart
+@@ -1,2 +1,4 @@
+ export 'widgets/widgets.dart';
++export 'widgets/text_field/horta_text_field.dart';
++export 'widgets/text_field/horta_text_field_factory.dart';
+ export 'theme/horta_theme.dart';
+diff --git a/core_sdk/horta_ui/lib/widgets/icons/horta_icons.dart b/core_sdk/horta_ui/lib/widgets/icons/horta_icons.dart
+new file mode 100644
+index 0000000..a6d4c59
+--- /dev/null
++++ b/core_sdk/horta_ui/lib/widgets/icons/horta_icons.dart
+@@ -0,0 +1,11 @@
++import 'package:flutter/material.dart';
++
++class HortaIcons {
++  static const IconData person = Icons.person;
++  static const IconData email = Icons.email;
++  static const IconData phone = Icons.phone;
++  static const IconData location_on = Icons.location_on;
++  static const IconData lock = Icons.lock;
++  static const IconData visibility = Icons.visibility;
++  static const IconData visibility_off = Icons.visibility_off;
++}
+diff --git a/core_sdk/horta_ui/lib/widgets/text_field/horta_text_field.dart b/core_sdk/horta_ui/lib/widgets/text_field/horta_text_field.dart
+new file mode 100644
+index 0000000..78b4d82
+--- /dev/null
++++ b/core_sdk/horta_ui/lib/widgets/text_field/horta_text_field.dart
+@@ -0,0 +1,105 @@
++import 'package:flutter/material.dart';
++import 'package:flutter/services.dart';
++
++class HortaTextField extends StatefulWidget {
++  const HortaTextField({
++    super.key,
++    required this.label,
++    this.hint,
++    this.isObscure = false,
++    this.onChanged,
++    this.controller,
++    this.keyboardType = TextInputType.text,
++    this.maxLines = 1,
++    this.prefixIcon,
++    this.suffixIcon,
++  });
++
++  final String label;
++  final String? hint;
++  final bool isObscure;
++  final ValueChanged<String>? onChanged;
++  final TextEditingController? controller;
++  final TextInputType keyboardType;
++  final int maxLines;
++  final Widget? prefixIcon;
++  final Widget? suffixIcon;
++
++  @override
++  State<HortaTextField> createState() => _HortaTextFieldState();
++}
++
++class _HortaTextFieldState extends State<HortaTextField> {
++  bool _obscureText = false;
++
++  @override
++  Widget build(BuildContext context) {
++    final theme = Theme.of(context);
++    final colorScheme = theme.colorScheme;
++    final textTheme = theme.textTheme;
++
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.stretch,
++      children: [
++        Container(
++          padding: const EdgeInsets.symmetric(
++            horizontal: HortaPaddingSize.small.value,
++            vertical: HortaPaddingSize.medium.value,
++          ),
++          decoration: BoxDecoration(
++            color: widget.controller?.text.isEmpty
++                ? colorScheme.errorContainer.withOpacity(0.1)
++                : colorScheme.surfaceContainerHighest,
++            borderRadius: BorderRadius.circular(12),
++            border: Border.all(
++              color: widget.controller?.text.isEmpty
++                  ? colorScheme.error
++                  : colorScheme.outline,
++              width: 1,
++            ),
++          ),
++          child: TextField(
++            controller: widget.controller,
++            onChanged: widget.onChanged,
++            obscureText: widget.isObscure ? _obscureText : false,
++            keyboardType: widget.keyboardType,
++            maxLines: widget.maxLines,
++            decoration: InputDecoration(
++              labelText: widget.label,
++              hintText: widget.hint,
++              labelStyle: textTheme.labelSmall.copyWith(
++                color: widget.controller?.text.isEmpty ? colorScheme.error : colorScheme.onSurfaceVariant,
++              ),
++              hintStyle: textTheme.bodySmall?.copyWith(
++                color: colorScheme.onSurfaceVariant.withOpacity(0.5),
++              ),
++              errorText: widget.controller?.text.isEmpty ? 'Campo obrigatório' : null,
++              errorStyle: textTheme.bodySmall?.copyWith(
++                color: colorScheme.error,
++              ),
++              prefixIcon: widget.prefixIcon != null
++                  ? Padding(
++                      padding: const EdgeInsets.only(right: HortaPaddingSize.small.value),
++                      child: widget.prefixIcon,
++                    )
++                  : null,
++              suffixIcon: widget.isObscure && widget.suffixIcon == null
++                  ? IconButton(
++                      icon: Icon(
++                        _obscureText ? Icons.visibility : Icons.visibility_off,
++                        color: colorScheme.onSurfaceVariant,
++                      ),
++                      onPressed: () {
++                        setState(() {
++                          _obscureText = !_obscureText;
++                        });
++                      },
++                    )
++                  : widget.suffixIcon,
++            ),
++          ),
++        ),
++      ],
++    );
++  }
++}
+diff --git a/core_sdk/horta_ui/lib/widgets/text_field/horta_text_field_factory.dart b/core_sdk/horta_ui/lib/widgets/text_field/horta_text_field_factory.dart
+new file mode 100644
+index 0000000..5548874
+--- /dev/null
++++ b/core_sdk/horta_ui/lib/widgets/text_field/horta_text_field_factory.dart
+@@ -0,0 +1,96 @@
++import 'package:flutter/material.dart';
++import 'package:flutter/services.dart';
++
++extension HortaTextFieldExtensions on HortaTextField {
++  static HortaTextField name({
++    Key? key,
++    String? hint,
++    ValueChanged<String>? onChanged,
++    TextEditingController? controller,
++    String? errorMsg,
++  }) {
++    return HortaTextField(
++      key: key,
++      label: 'Nome',
++      hint: hint,
++      onChanged: onChanged,
++      controller: controller,
++      keyboardType: TextInputType.name,
++      prefixIcon: const Icon(Icons.person),
++    );
++  }
++
++  static HortaTextField email({
++    Key? key,
++    String? hint,
++    ValueChanged<String>? onChanged,
++    TextEditingController? controller,
++    String? errorMsg,
++  }) {
++    return HortaTextField(
++      key: key,
++      label: 'E-mail',
++      hint: hint,
++      onChanged: onChanged,
++      controller: controller,
++      keyboardType: TextInputType.emailAddress,
++      prefixIcon: const Icon(Icons.email),
++    );
++  }
++
++  static HortaTextField phone({
++    Key? key,
++    String? hint,
++    ValueChanged<String>? onChanged,
++    TextEditingController? controller,
++    String? errorMsg,
++  }) {
++    return HortaTextField(
++      key: key,
++      label: 'Telefone',
++      hint: hint,
++      onChanged: onChanged,
++      controller: controller,
++      keyboardType: TextInputType.phone,
++      prefixIcon: const Icon(Icons.phone),
++    );
++  }
++
++  static HortaTextField cep({
++    Key? key,
++    String? hint,
++    ValueChanged<String>? onChanged,
++    TextEditingController? controller,
++    String? errorMsg,
++  }) {
++    return HortaTextField(
++      key: key,
++      label: 'CEP',
++      hint: hint,
++      onChanged: onChanged,
++      controller: controller,
++      keyboardType: TextInputType.number,
++      prefixIcon: const Icon(Icons.location_on),
++    );
++  }
++
++  static HortaTextField password({
++    Key? key,
++    String? hint,
++    ValueChanged<String>? onChanged,
++    TextEditingController? controller,
++    String? errorMsg,
++  }) {
++    return HortaTextField(
++      key: key,
++      label: 'Senha',
++      hint: hint,
++      onChanged: onChanged,
++      controller: controller,
++      keyboardType: TextInputType.visiblePassword,
++      isObscure: true,
++      prefixIcon: const Icon(Icons.lock),
++      suffixIcon: const Icon(Icons.visibility),
++    );
++  }
++}
+diff --git a/core_sdk/horta_ui/test/widgets/text_field/horta_text_field_test.dart b/core_sdk/horta_ui/test/widgets/text_field/horta_text_field_test.dart
+new file mode 100644
+index 0000000..89e1ab6
+--- /dev/null
++++ b/core_sdk/horta_ui/test/widgets/text_field/horta_text_field_test.dart
+@@ -0,0 +1,106 @@
++import 'package:flutter/material.dart';
++import 'package:flutter_test/flutter_test.dart';
++import 'package:core_sdk/horta_ui/widgets/text_field/horta_text_field.dart';
++import 'package:core_sdk/horta_ui/widgets/text_field/horta_text_field_factory.dart';
++
++void main() {
++  testWidgets('HortaTextField renders with correct label', (WidgetTester tester) async {
++    await tester.pumpWidget(
++      MaterialApp(
++        theme: ThemeData(useMaterial3: true),
++        home: Scaffold(
++          body: HortaTextField(
++            label: 'Test Label',
++          ),
++        ),
++      ),
++    );
++
++    expect(find.text('Test Label'), findsOneWidget);
++  });
++
++  testWidgets('HortaTextField.email uses correct keyboardType', (WidgetTester tester) async {
++    await tester.pumpWidget(
++      MaterialApp(
++        theme: ThemeData(useMaterial3: true),
++        home: Scaffold(
++          body: HortaTextField.email(),
++        ),
++      ),
++    );
++
++    final textField = tester.widget<TextField>(find.byType(TextField));
++    expect(textField.keyboardType, TextInputType.emailAddress);
++  });
++
++  testWidgets('HortaTextField.password isObscure is true', (WidgetTester tester) async {
++    await tester.pumpWidget(
++      MaterialApp(
++        theme: ThemeData(useMaterial3: true),
++        home: Scaffold(
++          body: HortaTextField.password(),
++        ),
++      ),
++    );
++
++    final textField = tester.widget<TextField>(find.byType(TextField));
++    expect(textField.obscureText, isTrue);
++  });
++
++  testWidgets('HortaTextField.name uses person icon', (WidgetTester tester) async {
++    await tester.pumpWidget(
++      MaterialApp(
++        theme: ThemeData(useMaterial3: true),
++        home: Scaffold(
++          body: HortaTextField.name(),
++        ),
++      ),
++    );
++
++    expect(find.byIcon(Icons.person), findsOneWidget);
++  });
++
++  testWidgets('HortaTextField.cep uses number keyboardType', (WidgetTester tester) async {
++    await tester.pumpWidget(
++      MaterialApp(
++        theme: ThemeData(useMaterial3: true),
++        home: Scaffold(
++          body: HortaTextField.cep(),
++        ),
++      ),
++    );
++
++    final textField = tester.widget<TextField>(find.byType(TextField));
++    expect(textField.keyboardType, TextInputType.number);
++  });
++
++  testWidgets('HortaTextField.password shows visibility toggle', (WidgetTester tester) async {
++    await tester.pumpWidget(
++      MaterialApp(
++        theme: ThemeData(useMaterial3: true),
++        home: Scaffold(
++          body: HortaTextField.password(),
++        ),
++      ),
++    );
++
++    expect(find.byIcon(Icons.visibility), findsOneWidget);
++    expect(find.byIcon(Icons.visibility_off), findsOneWidget);
++  });
++
++  testWidgets('HortaTextField shows error message when errorMsg is provided', (WidgetTester tester) async {
++    await tester.pumpWidget(
++      MaterialApp(
++        theme: ThemeData(useMaterial3: true),
++        home: Scaffold(
++          body: HortaTextField(
++            label: 'Test',
++            errorMsg: 'Erro de validação',
++          ),
++        ),
++      ),
++    );
++
++    expect(find.text('Erro de validação'), findsOneWidget);
++  });
++}

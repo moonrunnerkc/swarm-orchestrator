@@ -1,0 +1,661 @@
+diff --git a/AUDIT.md b/AUDIT.md
+index 8599eff..8839935 100644
+--- a/AUDIT.md
++++ b/AUDIT.md
+@@ -69,7 +69,7 @@
+ 
+ - [x] **HIGH-3: GetNameUTXO always fetches output index 0** — `namedb/utxo.go:217-220` — Logic/API Contract — `GetNameUTXO` ignores `record.OutIndex` and always calls `GetUTXO(&record.TxHash, 0)`. Names stored at non-zero output indices will get wrong UTXO lookups or false "not found" errors. — **Remediation:** Call `GetUTXO(&record.TxHash, record.OutIndex)`. Validate with `go test -race ./namedb/...`.
+ 
+-- [ ] **HIGH-4: Reorg rollback never restores expired names** — `chain/blockchain.go:974-988, 1760-1773` — Reorg/Data Lifecycle — Expiration processing deletes names and history, but the disconnect (rollback) path never restores entries that were expired by a now-disconnected block. Reorgs across expiration heights permanently lose names and corrupt state. — **Remediation:** Persist expired records for rollback restoration, or reconstruct them from history on disconnect. Validate with `go test -race ./chain/...`.
++- [x] **HIGH-4: Reorg rollback never restores expired names** — COMPLETED — Added `expiredNamesBucket` and `expiredNamesIdxBucket` to track expired names by block height. `handleExpiredNames()` now calls `StoreExpiredName()` before deletion. `rollbackNameOperations()` calls `RestoreExpiredNamesForBlock()` to restore names during reorg. Added comprehensive tests in `namedb/expiration_reorg_test.go`. Validated with `go test -race ./chain/... ./namedb/...`.
+ 
+ - [x] **HIGH-5: Rollback paths discard database errors** — `chain/blockchain.go:1779, 1809, 1816-1820, 1839-1844` — Error Handling — Reorg rollback operations (e.g., `RemoveLastHistoryEntry`) discard errors and continue. A failed rollback silently leaves the name database inconsistent. — **Remediation:** Propagate or aggregate rollback failures and abort claiming success when DB operations fail. Validate with `go test -race ./chain/...`.
+ 
+@@ -89,7 +89,7 @@
+ 
+ - [x] **MEDIUM-3: lookupActiveNameRecord off-by-one in expiration check** — COMPLETED — Changed expiration check from `ExpiresAt <= bestHeight` to `ExpiresAt < bestHeight` to match project convention. Added explanatory comment. Validated with `go test -race ./rpc/...`.
+ 
+-- [ ] **MEDIUM-4: walletpassphrase timer accumulation** — `rpc/server.go:1398-1400` — Resource Lifecycle/Logic — Each `walletpassphrase` call creates a new auto-lock timer without cancelling prior timers. Earlier timers can still fire and lock the wallet sooner than expected. — **Remediation:** Store the timer handle and cancel/reset it on subsequent calls. Validate with `go test -race ./rpc/...`.
++- [x] **MEDIUM-4: walletpassphrase timer accumulation** — COMPLETED — Added `autoLockTimer` and `autoLockMu` fields to Server struct. Updated `walletpassphrase` handler to cancel existing timer before creating new one. Updated `walletlock` handler to cancel timer on manual lock. Timer clears itself after firing. Validated with `go test -race ./rpc/... -run Wallet`.
+ 
+ - [x] **MEDIUM-5: Global defaultLogger has unsynchronized read/write** — COMPLETED — Added `defaultLoggerMu` RWMutex. `GetDefault()` acquires read lock, `SetDefault()` acquires write lock. Prevents concurrent read/write data races. Validated with `go test -race ./internal/logging/...`.
+ 
+diff --git a/chain/blockchain.go b/chain/blockchain.go
+index 8c1ba3f..54c2972 100644
+--- a/chain/blockchain.go
++++ b/chain/blockchain.go
+@@ -997,6 +997,8 @@ func (bc *BlockChain) updateNameDatabase(block *btcutil.Block) error {
+ }
+ 
+ // handleExpiredNames deletes expired names and their history at given height.
++// Before deletion, names are stored in the expired names bucket for potential
++// restoration during blockchain reorganizations.
+ func (bc *BlockChain) handleExpiredNames(height int32) error {
+ 	expired, err := bc.nameDB.GetExpiredNames(height)
+ 	if err != nil {
+@@ -1004,6 +1006,19 @@ func (bc *BlockChain) handleExpiredNames(height int32) error {
+ 	}
+ 
+ 	for _, name := range expired {
++		// Get the name record before deletion for rollback support
++		record, err := bc.nameDB.GetName(name)
++		if err != nil {
++			// Name may have been deleted already, skip
++			continue
++		}
++
++		// Store the expired name for potential restoration during reorg
++		if err := bc.nameDB.StoreExpiredName(record, height); err != nil {
++			return fmt.Errorf("failed to store expired name %s for rollback: %w", name, err)
++		}
++
++		// Now delete the name and its history
+ 		if err := bc.nameDB.DeleteName(name); err != nil {
+ 			return err
+ 		}
+@@ -1787,6 +1802,11 @@ func (bc *BlockChain) rollbackNameOperations(block *btcutil.Block) {
+ 	restoredCommitments := make(map[string]bool)
+ 	var rollbackErrors []error
+ 
++	// First, restore any names that were expired at this block height
++	if err := bc.nameDB.RestoreExpiredNamesForBlock(block.Height()); err != nil {
++		rollbackErrors = append(rollbackErrors, fmt.Errorf("failed to restore expired names for block %d: %w", block.Height(), err))
++	}
++
+ 	txs := block.Transactions()
+ 	for i := len(txs) - 1; i >= 0; i-- {
+ 		tx := txs[i]
+diff --git a/namedb/expiration_reorg_test.go b/namedb/expiration_reorg_test.go
+new file mode 100644
+index 0000000..2c5edbd
+--- /dev/null
++++ b/namedb/expiration_reorg_test.go
+@@ -0,0 +1,349 @@
++package namedb
++
++import (
++	"testing"
++	"time"
++
++	"github.com/btcsuite/btcd/chaincfg/chainhash"
++)
++
++// TestStoreAndRestoreExpiredName tests storing and restoring a single expired name
++func TestStoreAndRestoreExpiredName(t *testing.T) {
++	tmpDir := t.TempDir()
++	dbPath := tmpDir + "/test.db"
++
++	ndb, err := NewNameDatabase(dbPath)
++	if err != nil {
++		t.Fatalf("Failed to create database: %v", err)
++	}
++	defer ndb.Close()
++
++	// Create a name record
++	txHash, _ := chainhash.NewHashFromStr("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
++	record := &NameRecord{
++		Name:          "d/test",
++		Value:         `{"ip":"1.2.3.4"}`,
++		TxHash:        *txHash,
++		OutIndex:      0,
++		Height:        100,
++		ExpiresAt:     200,
++		Address:       "NTestAddress123",
++		UpdatedAt:     time.Now(),
++		NameNewHeight: 95,
++	}
++
++	// Store the name
++	err = ndb.PutName(record.Name, record)
++	if err != nil {
++		t.Fatalf("Failed to store name: %v", err)
++	}
++
++	// Verify name exists
++	retrieved, err := ndb.GetName("d/test")
++	if err != nil {
++		t.Fatalf("Failed to retrieve name: %v", err)
++	}
++	if retrieved.Value != record.Value {
++		t.Errorf("Value mismatch: got %s, want %s", retrieved.Value, record.Value)
++	}
++
++	// Store as expired at height 201
++	expiredAtHeight := int32(201)
++	err = ndb.StoreExpiredName(record, expiredAtHeight)
++	if err != nil {
++		t.Fatalf("Failed to store expired name: %v", err)
++	}
++
++	// Delete the name (simulating expiration)
++	err = ndb.DeleteName("d/test")
++	if err != nil {
++		t.Fatalf("Failed to delete name: %v", err)
++	}
++
++	// Verify name is deleted
++	_, err = ndb.GetName("d/test")
++	if err != ErrNameNotFound {
++		t.Errorf("Expected ErrNameNotFound, got %v", err)
++	}
++
++	// Restore expired names for that height (simulating reorg)
++	err = ndb.RestoreExpiredNamesForBlock(expiredAtHeight)
++	if err != nil {
++		t.Fatalf("Failed to restore expired names: %v", err)
++	}
++
++	// Verify name is restored
++	restored, err := ndb.GetName("d/test")
++	if err != nil {
++		t.Fatalf("Failed to retrieve restored name: %v", err)
++	}
++
++	// Verify data integrity
++	if restored.Name != record.Name {
++		t.Errorf("Name mismatch: got %s, want %s", restored.Name, record.Name)
++	}
++	if restored.Value != record.Value {
++		t.Errorf("Value mismatch: got %s, want %s", restored.Value, record.Value)
++	}
++	if restored.Height != record.Height {
++		t.Errorf("Height mismatch: got %d, want %d", restored.Height, record.Height)
++	}
++	if restored.ExpiresAt != record.ExpiresAt {
++		t.Errorf("ExpiresAt mismatch: got %d, want %d", restored.ExpiresAt, record.ExpiresAt)
++	}
++	if restored.Address != record.Address {
++		t.Errorf("Address mismatch: got %s, want %s", restored.Address, record.Address)
++	}
++}
++
++// TestRestoreMultipleExpiredNames tests restoring multiple names expired at the same height
++func TestRestoreMultipleExpiredNames(t *testing.T) {
++	tmpDir := t.TempDir()
++	dbPath := tmpDir + "/test.db"
++
++	ndb, err := NewNameDatabase(dbPath)
++	if err != nil {
++		t.Fatalf("Failed to create database: %v", err)
++	}
++	defer ndb.Close()
++
++	expiredAtHeight := int32(300)
++	numNames := 5
++
++	// Create and store multiple names
++	var records []*NameRecord
++	for i := 0; i < numNames; i++ {
++		txHash, _ := chainhash.NewHashFromStr("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
++		txHash[0] = byte(i) // Make each hash unique
++
++		record := &NameRecord{
++			Name:          "d/test" + string(rune('0'+i)),
++			Value:         `{"ip":"1.2.3.` + string(rune('0'+i)) + `"}`,
++			TxHash:        *txHash,
++			OutIndex:      0,
++			Height:        200,
++			ExpiresAt:     299,
++			Address:       "NTestAddress" + string(rune('0'+i)),
++			UpdatedAt:     time.Now(),
++			NameNewHeight: 195,
++		}
++
++		// Store the name
++		err = ndb.PutName(record.Name, record)
++		if err != nil {
++			t.Fatalf("Failed to store name %d: %v", i, err)
++		}
++
++		// Store as expired
++		err = ndb.StoreExpiredName(record, expiredAtHeight)
++		if err != nil {
++			t.Fatalf("Failed to store expired name %d: %v", i, err)
++		}
++
++		records = append(records, record)
++	}
++
++	// Delete all names (simulating expiration)
++	for _, record := range records {
++		err = ndb.DeleteName(record.Name)
++		if err != nil {
++			t.Fatalf("Failed to delete name %s: %v", record.Name, err)
++		}
++	}
++
++	// Verify all names are deleted
++	for _, record := range records {
++		_, err = ndb.GetName(record.Name)
++		if err != ErrNameNotFound {
++			t.Errorf("Expected ErrNameNotFound for %s, got %v", record.Name, err)
++		}
++	}
++
++	// Restore all expired names for that height
++	err = ndb.RestoreExpiredNamesForBlock(expiredAtHeight)
++	if err != nil {
++		t.Fatalf("Failed to restore expired names: %v", err)
++	}
++
++	// Verify all names are restored
++	for i, record := range records {
++		restored, err := ndb.GetName(record.Name)
++		if err != nil {
++			t.Errorf("Failed to retrieve restored name %d (%s): %v", i, record.Name, err)
++			continue
++		}
++
++		if restored.Value != record.Value {
++			t.Errorf("Name %d value mismatch: got %s, want %s", i, restored.Value, record.Value)
++		}
++		if restored.Height != record.Height {
++			t.Errorf("Name %d height mismatch: got %d, want %d", i, restored.Height, record.Height)
++		}
++	}
++}
++
++// TestCleanupOldExpiredNames tests cleanup of old expired name backups
++func TestCleanupOldExpiredNames(t *testing.T) {
++	tmpDir := t.TempDir()
++	dbPath := tmpDir + "/test.db"
++
++	ndb, err := NewNameDatabase(dbPath)
++	if err != nil {
++		t.Fatalf("Failed to create database: %v", err)
++	}
++	defer ndb.Close()
++
++	// Create names expired at different heights
++	heights := []int32{100, 200, 300, 400, 500}
++	records := make(map[int32]*NameRecord)
++
++	for _, height := range heights {
++		txHash, _ := chainhash.NewHashFromStr("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
++		txHash[0] = byte(height) // Make each hash unique
++
++		record := &NameRecord{
++			Name:          "d/test" + string(rune('0'+(height/100))),
++			Value:         `{"height":` + string(rune('0'+(height/100))) + `}`,
++			TxHash:        *txHash,
++			OutIndex:      0,
++			Height:        height - 100,
++			ExpiresAt:     height - 1,
++			Address:       "NTestAddr",
++			UpdatedAt:     time.Now(),
++			NameNewHeight: height - 105,
++		}
++
++		// Store the name
++		err = ndb.PutName(record.Name, record)
++		if err != nil {
++			t.Fatalf("Failed to store name at height %d: %v", height, err)
++		}
++
++		// Store as expired
++		err = ndb.StoreExpiredName(record, height)
++		if err != nil {
++			t.Fatalf("Failed to store expired name at height %d: %v", height, err)
++		}
++
++		// Delete (simulate expiration)
++		err = ndb.DeleteName(record.Name)
++		if err != nil {
++			t.Fatalf("Failed to delete name at height %d: %v", height, err)
++		}
++
++		records[height] = record
++	}
++
++	// Cleanup old expired names (keep from height 300 onwards)
++	keepFromHeight := int32(300)
++	err = ndb.CleanupOldExpiredNames(keepFromHeight)
++	if err != nil {
++		t.Fatalf("Failed to cleanup old expired names: %v", err)
++	}
++
++	// Try to restore names from different heights
++	for _, height := range heights {
++		err = ndb.RestoreExpiredNamesForBlock(height)
++		if err != nil {
++			t.Fatalf("Failed to restore expired names for height %d: %v", height, err)
++		}
++
++		record := records[height]
++		_, err := ndb.GetName(record.Name)
++
++		if height < keepFromHeight {
++			// Should NOT be restored (cleaned up)
++			if err == nil {
++				t.Errorf("Name at height %d should have been cleaned up but was restored", height)
++			}
++		} else {
++			// Should be restored
++			if err != nil {
++				t.Errorf("Name at height %d should have been restored but wasn't: %v", height, err)
++			}
++		}
++	}
++}
++
++// TestExpiredNameReorgScenario tests a realistic reorg scenario with expiration
++func TestExpiredNameReorgScenario(t *testing.T) {
++	tmpDir := t.TempDir()
++	dbPath := tmpDir + "/test.db"
++
++	ndb, err := NewNameDatabase(dbPath)
++	if err != nil {
++		t.Fatalf("Failed to create database: %v", err)
++	}
++	defer ndb.Close()
++
++	// Scenario: Name registered at height 100, expires at 36100
++	txHash, _ := chainhash.NewHashFromStr("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
++	record := &NameRecord{
++		Name:          "d/important",
++		Value:         `{"domain":"example.com"}`,
++		TxHash:        *txHash,
++		OutIndex:      0,
++		Height:        100,
++		ExpiresAt:     36100,
++		Address:       "NOwnerAddress",
++		UpdatedAt:     time.Now(),
++		NameNewHeight: 95,
++	}
++
++	// Store the name
++	err = ndb.PutName(record.Name, record)
++	if err != nil {
++		t.Fatalf("Failed to store name: %v", err)
++	}
++
++	// Chain advances to height 36101, name expires
++	expirationHeight := int32(36101)
++
++	// Store before expiration
++	err = ndb.StoreExpiredName(record, expirationHeight)
++	if err != nil {
++		t.Fatalf("Failed to store expired name: %v", err)
++	}
++
++	// Delete name and history (simulating expiration processing)
++	err = ndb.DeleteName("d/important")
++	if err != nil {
++		t.Fatalf("Failed to delete name: %v", err)
++	}
++
++	// Verify name is gone
++	_, err = ndb.GetName("d/important")
++	if err != ErrNameNotFound {
++		t.Errorf("Expected name to be deleted, got error: %v", err)
++	}
++
++	// Reorg happens: block 36101 is disconnected
++	// Restore expired names from that block
++	err = ndb.RestoreExpiredNamesForBlock(expirationHeight)
++	if err != nil {
++		t.Fatalf("Failed to restore expired names during reorg: %v", err)
++	}
++
++	// Verify name is restored
++	restored, err := ndb.GetName("d/important")
++	if err != nil {
++		t.Fatalf("Failed to retrieve restored name after reorg: %v", err)
++	}
++
++	// Verify all data is intact
++	if restored.Name != "d/important" {
++		t.Errorf("Restored name mismatch: got %s, want d/important", restored.Name)
++	}
++	if restored.Value != record.Value {
++		t.Errorf("Restored value mismatch: got %s, want %s", restored.Value, record.Value)
++	}
++	if restored.Height != record.Height {
++		t.Errorf("Restored height mismatch: got %d, want %d", restored.Height, record.Height)
++	}
++	if restored.ExpiresAt != record.ExpiresAt {
++		t.Errorf("Restored ExpiresAt mismatch: got %d, want %d", restored.ExpiresAt, record.ExpiresAt)
++	}
++
++	// The name should now be valid again at height 36100
++	// (it can be re-expired in a future block)
++}
+diff --git a/namedb/namedb.go b/namedb/namedb.go
+index bc112c6..10ddc01 100644
+--- a/namedb/namedb.go
++++ b/namedb/namedb.go
+@@ -18,11 +18,13 @@ var (
+ 	historyBucket      = []byte("history")
+ 	historyIndexBucket = []byte("history_index")
+ 	expirationBucket   = []byte("expiration")
+-	nameNewBucket      = []byte("name_new")       // Tracks NAME_NEW commitments
+-	utxoBucket         = []byte("utxo")           // Tracks unspent transaction outputs
+-	utxoAddrBucket     = []byte("utxo_addr")      // Index: address -> UTXOs
+-	spentUtxoBucket    = []byte("spent_utxo")     // Tracks spent UTXOs for reorg restoration (indexed by block height)
+-	spentUtxoIdxBucket = []byte("spent_utxo_idx") // Index: height -> list of spent UTXO keys
++	nameNewBucket      = []byte("name_new")         // Tracks NAME_NEW commitments
++	utxoBucket         = []byte("utxo")             // Tracks unspent transaction outputs
++	utxoAddrBucket     = []byte("utxo_addr")        // Index: address -> UTXOs
++	spentUtxoBucket    = []byte("spent_utxo")       // Tracks spent UTXOs for reorg restoration (indexed by block height)
++	spentUtxoIdxBucket = []byte("spent_utxo_idx")   // Index: height -> list of spent UTXO keys
++	expiredNamesBucket = []byte("expired_names")    // Tracks expired names for reorg restoration (indexed by block height)
++	expiredNamesIdxBucket = []byte("expired_names_idx") // Index: height -> list of expired name keys
+ )
+ 
+ // Sentinel errors for namedb operations
+@@ -150,7 +152,7 @@ func NewNameDatabase(dbPath string) (*NameDatabase, error) {
+ 
+ 	// Initialize buckets
+ 	err = db.Update(func(tx *bbolt.Tx) error {
+-		for _, bucket := range [][]byte{namesBucket, historyBucket, historyIndexBucket, expirationBucket, nameNewBucket, utxoBucket, utxoAddrBucket, spentUtxoBucket, spentUtxoIdxBucket} {
++		for _, bucket := range [][]byte{namesBucket, historyBucket, historyIndexBucket, expirationBucket, nameNewBucket, utxoBucket, utxoAddrBucket, spentUtxoBucket, spentUtxoIdxBucket, expiredNamesBucket, expiredNamesIdxBucket} {
+ 			if _, err := tx.CreateBucketIfNotExists(bucket); err != nil {
+ 				return err
+ 			}
+@@ -368,6 +370,155 @@ func (ndb *NameDatabase) GetExpiredNames(height int32) ([]string, error) {
+ 	return expired, err
+ }
+ 
++// StoreExpiredName stores an expired name record for potential restoration during reorganization.
++// The name record is indexed by the block height where it expired, allowing efficient
++// restoration during reorgs. This should be called before DeleteName during expiration processing.
++func (ndb *NameDatabase) StoreExpiredName(record *NameRecord, expiredAtHeight int32) error {
++	ndb.mu.Lock()
++	defer ndb.mu.Unlock()
++
++	return ndb.db.Update(func(tx *bbolt.Tx) error {
++		expiredBkt := tx.Bucket(expiredNamesBucket)
++		idxBkt := tx.Bucket(expiredNamesIdxBucket)
++
++		// Encode name record
++		data := encodeNameRecord(record)
++
++		// Store in expired names bucket
++		// Key: name (as string)
++		if err := expiredBkt.Put([]byte(record.Name), data); err != nil {
++			return err
++		}
++
++		// Add to height index for efficient lookup and cleanup
++		// Key: height(4) + name
++		nameBytes := []byte(record.Name)
++		heightKey := make([]byte, 4+len(nameBytes))
++		binary.BigEndian.PutUint32(heightKey[0:4], uint32(expiredAtHeight))
++		copy(heightKey[4:], nameBytes)
++
++		return idxBkt.Put(heightKey, []byte{1}) // Value doesn't matter, just presence
++	})
++}
++
++// RestoreExpiredNamesForBlock restores all names that were expired at the given height.
++// This is called during blockchain reorganization to undo expiration processing.
++// Names are restored to both the names bucket and expiration index, then removed from
++// the expired names tracking buckets.
++func (ndb *NameDatabase) RestoreExpiredNamesForBlock(height int32) error {
++	ndb.mu.Lock()
++	defer ndb.mu.Unlock()
++
++	return ndb.db.Update(func(tx *bbolt.Tx) error {
++		namesBkt := tx.Bucket(namesBucket)
++		expirationBkt := tx.Bucket(expirationBucket)
++		expiredBkt := tx.Bucket(expiredNamesBucket)
++		idxBkt := tx.Bucket(expiredNamesIdxBucket)
++
++		// Find all names expired at this height using the index
++		heightPrefix := make([]byte, 4)
++		binary.BigEndian.PutUint32(heightPrefix, uint32(height))
++
++		c := idxBkt.Cursor()
++		var namesToRestore []string
++
++		// Collect all names expired at this height
++		for k, _ := c.Seek(heightPrefix); k != nil && bytes.HasPrefix(k, heightPrefix); k, _ = c.Next() {
++			// Extract name from key (skip height prefix)
++			name := string(k[4:])
++			namesToRestore = append(namesToRestore, name)
++		}
++
++		// Restore each name
++		for _, name := range namesToRestore {
++			// Get the stored expired name record
++			data := expiredBkt.Get([]byte(name))
++			if data == nil {
++				continue // Already cleaned up or never stored
++			}
++
++			// Decode the record
++			record, err := decodeNameRecord(data)
++			if err != nil {
++				return fmt.Errorf("failed to decode expired name %s: %w", name, err)
++			}
++			record.Name = name
++
++			// Restore to names bucket
++			if err := namesBkt.Put([]byte(name), data); err != nil {
++				return fmt.Errorf("failed to restore name %s: %w", name, err)
++			}
++
++			// Restore to expiration index
++			expirationKey := makeExpirationKey(record.ExpiresAt, name)
++			if err := expirationBkt.Put(expirationKey, []byte{1}); err != nil {
++				return fmt.Errorf("failed to restore expiration index for %s: %w", name, err)
++			}
++
++			// Remove from expired names bucket
++			if err := expiredBkt.Delete([]byte(name)); err != nil {
++				return fmt.Errorf("failed to delete from expired names bucket: %w", err)
++			}
++
++			// Remove from expired names index
++			heightKey := make([]byte, 4+len(name))
++			binary.BigEndian.PutUint32(heightKey[0:4], uint32(height))
++			copy(heightKey[4:], name)
++			if err := idxBkt.Delete(heightKey); err != nil {
++				return fmt.Errorf("failed to delete from expired names index: %w", err)
++			}
++
++			// Invalidate cache entry since we're restoring the name
++			ndb.cache.Delete(name)
++		}
++
++		return nil
++	})
++}
++
++// CleanupOldExpiredNames removes expired name backups older than the given height.
++// This should be called periodically to prevent unbounded growth of the expired names storage.
++// Typical usage: keep the last 100-200 blocks worth of expired names for reorg safety.
++func (ndb *NameDatabase) CleanupOldExpiredNames(keepFromHeight int32) error {
++	ndb.mu.Lock()
++	defer ndb.mu.Unlock()
++
++	return ndb.db.Update(func(tx *bbolt.Tx) error {
++		expiredBkt := tx.Bucket(expiredNamesBucket)
++		idxBkt := tx.Bucket(expiredNamesIdxBucket)
++
++		c := idxBkt.Cursor()
++		var keysToDelete [][]byte
++		var namesToDelete []string
++
++		// Scan index for entries older than keepFromHeight
++		for k, _ := c.First(); k != nil; k, _ = c.Next() {
++			if len(k) < 4 {
++				continue // Invalid key
++			}
++
++			height := int32(binary.BigEndian.Uint32(k[:4]))
++			if height < keepFromHeight {
++				keysToDelete = append(keysToDelete, append([]byte(nil), k...))
++				name := string(k[4:])
++				namesToDelete = append(namesToDelete, name)
++			}
++		}
++
++		// Delete expired names and index entries
++		for i, key := range keysToDelete {
++			if err := idxBkt.Delete(key); err != nil {
++				return err
++			}
++			if err := expiredBkt.Delete([]byte(namesToDelete[i])); err != nil {
++				return err
++			}
++		}
++
++		return nil
++	})
++}
++
+ // ListNames returns all names in the database
+ func (ndb *NameDatabase) ListNames() ([]*NameRecord, error) {
+ 	ndb.mu.RLock()
+diff --git a/rpc/server.go b/rpc/server.go
+index b2d03cd..7ac4a42 100644
+--- a/rpc/server.go
++++ b/rpc/server.go
+@@ -54,6 +54,8 @@ type Server struct {
+ 	maxRequestSize int64
+ 	logger         *logging.Logger
+ 	mu             sync.RWMutex
++	autoLockTimer  *time.Timer // Auto-lock timer for walletpassphrase
++	autoLockMu     sync.Mutex  // Protects autoLockTimer
+ }
+ 
+ // Config holds RPC server configuration
+@@ -1405,9 +1407,21 @@ func (s *Server) walletPassphrase(req *Request) *Response {
+ 		return errorResponse(req.ID, -14, fmt.Sprintf("Failed to unlock wallet: %v", err))
+ 	}
+ 
+-	time.AfterFunc(time.Duration(timeout)*time.Second, func() {
++	// Cancel any existing auto-lock timer before creating a new one
++	s.autoLockMu.Lock()
++	if s.autoLockTimer != nil {
++		s.autoLockTimer.Stop()
++		s.autoLockTimer = nil
++	}
++	// Create new auto-lock timer
++	s.autoLockTimer = time.AfterFunc(time.Duration(timeout)*time.Second, func() {
+ 		s.wallet.Lock()
++		// Clear the timer reference after it fires
++		s.autoLockMu.Lock()
++		s.autoLockTimer = nil
++		s.autoLockMu.Unlock()
+ 	})
++	s.autoLockMu.Unlock()
+ 
+ 	return successResponse(req.ID, nil)
+ }
+@@ -1457,6 +1471,14 @@ func (s *Server) walletLock(req *Request) *Response {
+ 		}
+ 	}
+ 
++	// Cancel any active auto-lock timer when manually locking
++	s.autoLockMu.Lock()
++	if s.autoLockTimer != nil {
++		s.autoLockTimer.Stop()
++		s.autoLockTimer = nil
++	}
++	s.autoLockMu.Unlock()
++
+ 	if err := s.wallet.Lock(); err != nil {
+ 		return &Response{
+ 			Jsonrpc: "2.0",

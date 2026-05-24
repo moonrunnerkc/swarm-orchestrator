@@ -1,0 +1,193 @@
+diff --git a/aider/models.py b/aider/models.py
+index 5b0f2166aa4..29d323208cd 100644
+--- a/aider/models.py
++++ b/aider/models.py
+@@ -721,6 +721,7 @@ def fast_validate_environment(self):
+             anthropic="ANTHROPIC_API_KEY",
+             groq="GROQ_API_KEY",
+             fireworks_ai="FIREWORKS_API_KEY",
++            perplexity="PERPLEXITY_API_KEY",
+         )
+         var = None
+         if model in OPENAI_MODELS:
+diff --git a/aider/onboarding.py b/aider/onboarding.py
+index 9b6abd54b8d..8586bd1e9aa 100644
+--- a/aider/onboarding.py
++++ b/aider/onboarding.py
+@@ -66,6 +66,7 @@ def try_to_select_default_model():
+         ("OPENAI_API_KEY", "gpt-4o"),
+         ("GEMINI_API_KEY", "gemini/gemini-2.5-pro-exp-03-25"),
+         ("VERTEXAI_PROJECT", "vertex_ai/gemini-2.5-pro-exp-03-25"),
++        ("PERPLEXITY_API_KEY", "perplexity/sonar-pro"),
+     ]
+ 
+     for env_key, model_name in model_key_pairs:
+diff --git a/aider/resources/model-settings.yml b/aider/resources/model-settings.yml
+index c4d14cd0801..a9be91f59a2 100644
+--- a/aider/resources/model-settings.yml
++++ b/aider/resources/model-settings.yml
+@@ -3126,3 +3126,44 @@
+   use_repo_map: true
+   use_temperature: false
+   accepts_settings: ["reasoning_effort"]
++
++- name: perplexity/sonar-pro
++  edit_format: diff
++  weak_model_name: perplexity/sonar
++  use_repo_map: true
++  examples_as_sys_msg: true
++  editor_model_name: perplexity/sonar-pro
++  editor_edit_format: editor-diff
++
++- name: perplexity/sonar
++  edit_format: whole
++  weak_model_name: perplexity/sonar
++  use_repo_map: true
++  examples_as_sys_msg: true
++
++- name: perplexity/sonar-reasoning
++  edit_format: diff
++  weak_model_name: perplexity/sonar
++  use_repo_map: true
++  examples_as_sys_msg: true
++  use_temperature: false
++  editor_model_name: perplexity/sonar-pro
++  editor_edit_format: editor-diff
++
++- name: perplexity/sonar-reasoning-pro
++  edit_format: diff
++  weak_model_name: perplexity/sonar
++  use_repo_map: true
++  examples_as_sys_msg: true
++  use_temperature: false
++  editor_model_name: perplexity/sonar-pro
++  editor_edit_format: editor-diff
++
++- name: perplexity/sonar-deep-research
++  edit_format: diff
++  weak_model_name: perplexity/sonar
++  use_repo_map: true
++  examples_as_sys_msg: true
++  use_temperature: false
++  editor_model_name: perplexity/sonar-pro
++  editor_edit_format: editor-diff
+diff --git a/aider/website/docs/llms/perplexity.md b/aider/website/docs/llms/perplexity.md
+new file mode 100644
+index 00000000000..1297438af69
+--- /dev/null
++++ b/aider/website/docs/llms/perplexity.md
+@@ -0,0 +1,55 @@
++---
++parent: Connecting to LLMs
++nav_order: 510
++---
++
++# Perplexity
++
++Aider can connect to [Perplexity's Sonar models](https://docs.perplexity.ai/models/model-cards)
++through Perplexity's OpenAI-compatible Agent API.
++You'll need a [Perplexity API key](https://www.perplexity.ai/settings/api).
++
++First, install aider:
++
++{% include install.md %}
++
++Then configure your API keys:
++
++```
++export PERPLEXITY_API_KEY=<key> # Mac/Linux
++setx   PERPLEXITY_API_KEY <key> # Windows, restart shell after setx
++```
++
++Start working with aider and Perplexity on your codebase:
++
++```bash
++# Change directory into your codebase
++cd /to/your/project
++
++# Use Perplexity's default Sonar Pro model
++aider --model perplexity/sonar-pro
++
++# Or any other Perplexity model
++aider --model perplexity/sonar
++aider --model perplexity/sonar-reasoning
++aider --model perplexity/sonar-reasoning-pro
++aider --model perplexity/sonar-deep-research
++
++# List models available from Perplexity
++aider --list-models perplexity/
++```
++
++Perplexity exposes an OpenAI-compatible Agent API at
++`https://api.perplexity.ai`, so requests go through aider's standard
++OpenAI-compatible client (via LiteLLM).
++
++## Available models
++
++- `perplexity/sonar` — fast, lightweight Sonar model
++- `perplexity/sonar-pro` — flagship Sonar model (default)
++- `perplexity/sonar-reasoning` — Sonar with chain-of-thought reasoning
++- `perplexity/sonar-reasoning-pro` — high-capacity reasoning model
++- `perplexity/sonar-deep-research` — long-form research model
++
++See [Perplexity's documentation](https://docs.perplexity.ai) for the latest
++model list, pricing, and feature details.
+diff --git a/tests/basic/test_models.py b/tests/basic/test_models.py
+index ef8557a9c96..d72a3886c34 100644
+--- a/tests/basic/test_models.py
++++ b/tests/basic/test_models.py
+@@ -596,5 +596,36 @@ def test_gpt_5_5_model_settings(self):
+                 self.assertIn("reasoning_effort", model.accepts_settings)
+ 
+ 
++    def test_perplexity_model_settings(self):
++        names = [
++            "perplexity/sonar",
++            "perplexity/sonar-pro",
++            "perplexity/sonar-reasoning",
++            "perplexity/sonar-reasoning-pro",
++            "perplexity/sonar-deep-research",
++        ]
++
++        for name in names:
++            with self.subTest(name=name):
++                model = Model(name)
++                self.assertTrue(model.use_repo_map)
++                self.assertTrue(model.examples_as_sys_msg)
++
++        # Default integration model uses diff format
++        self.assertEqual(Model("perplexity/sonar-pro").edit_format, "diff")
++        self.assertEqual(
++            Model("perplexity/sonar-pro").weak_model_name, "perplexity/sonar"
++        )
++
++        # Reasoning models should not pass temperature
++        for name in (
++            "perplexity/sonar-reasoning",
++            "perplexity/sonar-reasoning-pro",
++            "perplexity/sonar-deep-research",
++        ):
++            with self.subTest(name=name):
++                self.assertFalse(Model(name).use_temperature)
++
++
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/tests/basic/test_onboarding.py b/tests/basic/test_onboarding.py
+index 398bd7f4ee3..d87c57407f1 100644
+--- a/tests/basic/test_onboarding.py
++++ b/tests/basic/test_onboarding.py
+@@ -138,6 +138,13 @@ def test_try_select_default_model_vertex(self, mock_check_tier):
+         self.assertEqual(try_to_select_default_model(), "vertex_ai/gemini-2.5-pro-exp-03-25")
+         mock_check_tier.assert_not_called()
+ 
++    @patch("aider.onboarding.check_openrouter_tier")
++    @patch.dict(os.environ, {"PERPLEXITY_API_KEY": "pp_key"}, clear=True)
++    def test_try_select_default_model_perplexity(self, mock_check_tier):
++        """Test Perplexity model selection."""
++        self.assertEqual(try_to_select_default_model(), "perplexity/sonar-pro")
++        mock_check_tier.assert_not_called()
++
+     @patch("aider.onboarding.check_openrouter_tier", return_value=False)  # Paid
+     @patch.dict(
+         os.environ, {"OPENROUTER_API_KEY": "or_key", "OPENAI_API_KEY": "oa_key"}, clear=True

@@ -1,0 +1,22 @@
+diff --git a/.github/workflows/build-test-and-deploy.yml b/.github/workflows/build-test-and-deploy.yml
+index 4dbfb7a85..ed38487e4 100644
+--- a/.github/workflows/build-test-and-deploy.yml
++++ b/.github/workflows/build-test-and-deploy.yml
+@@ -310,6 +310,8 @@ jobs:
+           # admin-on-repo scope. RELEASE_PAT is already provisioned with the
+           # repo scope (used by the release job) so reuse it here.
+           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
++          # Register ephemeral runners on the repo that queued this workflow.
++          GH_REPO: ${{ github.repository }}
+           SUPPRESS_LABEL_WARNING: "True"
+         run: |
+           cd system-integration/ci/oci-runners
+@@ -426,6 +428,8 @@ jobs:
+             --deselect integration-tests/test/tests/shared/test_bonding_validators.py \
+             --deselect integration-tests/test/tests/custom/test_joiner_self_proposes_at_epoch_boundary.py \
+             --deselect integration-tests/test/tests/shared/test_observer_lfs_sync.py \
++            --deselect integration-tests/test/tests/custom/test_shard_degradation.py \
++            --deselect integration-tests/test/tests/shared/test_contract_lifecycle.py \
+             --provider=${{ matrix.provider }} \
+             -v --tb=short --instafail --maxfail=10 \
+             -n auto --dist=loadgroup --timeout=1200 $SCALE_FLAG

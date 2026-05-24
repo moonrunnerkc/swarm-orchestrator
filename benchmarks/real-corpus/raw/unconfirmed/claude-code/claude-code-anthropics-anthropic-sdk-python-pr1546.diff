@@ -1,0 +1,80 @@
+diff --git a/src/anthropic/resources/beta/messages/batches.py b/src/anthropic/resources/beta/messages/batches.py
+index 5c2ad54da..0d3864b9b 100644
+--- a/src/anthropic/resources/beta/messages/batches.py
++++ b/src/anthropic/resources/beta/messages/batches.py
+@@ -366,7 +366,9 @@ def results(
+ 
+         Each line in the file is a JSON object containing the result of a single request
+         in the Message Batch. Results are not guaranteed to be in the same order as
+-        requests. Use the `custom_id` field to match results to requests.
++        requests. Use the `custom_id` field to match results to requests. Each
++        `custom_id` must be unique within the batch and be at most 64 characters
++        long.
+ 
+         Learn more about the Message Batches API in our
+         [user guide](https://docs.claude.com/en/docs/build-with-claude/batch-processing)
+@@ -755,7 +757,9 @@ async def results(
+ 
+         Each line in the file is a JSON object containing the result of a single request
+         in the Message Batch. Results are not guaranteed to be in the same order as
+-        requests. Use the `custom_id` field to match results to requests.
++        requests. Use the `custom_id` field to match results to requests. Each
++        `custom_id` must be unique within the batch and be at most 64 characters
++        long.
+ 
+         Learn more about the Message Batches API in our
+         [user guide](https://docs.claude.com/en/docs/build-with-claude/batch-processing)
+diff --git a/src/anthropic/resources/messages/batches.py b/src/anthropic/resources/messages/batches.py
+index 213337119..e6bc5ac9a 100644
+--- a/src/anthropic/resources/messages/batches.py
++++ b/src/anthropic/resources/messages/batches.py
+@@ -291,7 +291,9 @@ def results(
+ 
+         Each line in the file is a JSON object containing the result of a single request
+         in the Message Batch. Results are not guaranteed to be in the same order as
+-        requests. Use the `custom_id` field to match results to requests.
++        requests. Use the `custom_id` field to match results to requests. Each
++        `custom_id` must be unique within the batch and be at most 64 characters
++        long.
+ 
+         Learn more about the Message Batches API in our
+         [user guide](https://docs.claude.com/en/docs/build-with-claude/batch-processing)
+@@ -594,7 +596,9 @@ async def results(
+ 
+         Each line in the file is a JSON object containing the result of a single request
+         in the Message Batch. Results are not guaranteed to be in the same order as
+-        requests. Use the `custom_id` field to match results to requests.
++        requests. Use the `custom_id` field to match results to requests. Each
++        `custom_id` must be unique within the batch and be at most 64 characters
++        long.
+ 
+         Learn more about the Message Batches API in our
+         [user guide](https://docs.claude.com/en/docs/build-with-claude/batch-processing)
+diff --git a/src/anthropic/types/beta/messages/batch_create_params.py b/src/anthropic/types/beta/messages/batch_create_params.py
+index 9fcd90fb1..e52e85706 100644
+--- a/src/anthropic/types/beta/messages/batch_create_params.py
++++ b/src/anthropic/types/beta/messages/batch_create_params.py
+@@ -31,7 +31,8 @@ class Request(TypedDict, total=False):
+     Useful for matching results to requests, as results may be given out of request
+     order.
+ 
+-    Must be unique for each request within the Message Batch.
++    Must be unique for each request within the Message Batch and be at most 64
++    characters long.
+     """
+ 
+     params: Required[MessageCreateParamsNonStreaming]
+diff --git a/src/anthropic/types/messages/batch_create_params.py b/src/anthropic/types/messages/batch_create_params.py
+index e60c74f13..8790a4066 100644
+--- a/src/anthropic/types/messages/batch_create_params.py
++++ b/src/anthropic/types/messages/batch_create_params.py
+@@ -25,7 +25,8 @@ class Request(TypedDict, total=False):
+     Useful for matching results to requests, as results may be given out of request
+     order.
+ 
+-    Must be unique for each request within the Message Batch.
++    Must be unique for each request within the Message Batch and be at most 64
++    characters long.
+     """
+ 
+     params: Required[MessageCreateParamsNonStreaming]

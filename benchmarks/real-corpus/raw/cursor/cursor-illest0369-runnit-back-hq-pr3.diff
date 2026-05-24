@@ -1,0 +1,51 @@
+diff --git a/AGENTS.md b/AGENTS.md
+new file mode 100644
+index 0000000..1efecd9
+--- /dev/null
++++ b/AGENTS.md
+@@ -0,0 +1,45 @@
++# AGENTS.md
++
++## Cursor Cloud specific instructions
++
++### Overview
++
++Runnit Back HQ is a sports clip curation and distribution platform built with **Next.js 14 (Pages Router)**, React 18, TypeScript, and Supabase. Operators review short-form video clips in a dashboard and approve/reject them for publishing across branded channels.
++
++### Running the application
++
++- **Dev server**: `npm run dev` (starts on port 3000)
++- **Build**: `npm run build` (runs `next build` + TypeScript check on `posting/server.js`)
++- **TypeScript check (frontend)**: `npx tsc --noEmit`
++- **TypeScript check (worker)**: `npm run build:worker`
++
++### Required environment variables
++
++The app starts without Supabase credentials, but the login API (`/api/login`) returns 503 without them. To complete the full login flow, set:
++
++- `NEXT_PUBLIC_SUPABASE_URL` — Supabase project URL
++- `SUPABASE_ANON_KEY` (or `NEXT_PUBLIC_SUPABASE_ANON_KEY`) — Supabase anon key
++
++### Login credentials (hardcoded, development only)
++
++| Username | Password    | Channel |
++|----------|-------------|---------|
++| manny    | sports123   | sports  |
++| matt     | arena123    | arena   |
++| maly     | women123    | women   |
++| agent    | combat123   | combat  |
++
++The client-side PIN for first login is `000000` (users are forced to set a new PIN on first login).
++
++### Key architecture notes
++
++- **Middleware** (`middleware.ts`) protects `/dashboard`, `/clip`, `/intake`, `/queue`, `/publish`, `/performance` routes — redirects to `/login` if no session cookie.
++- **Session**: base64url-encoded JSON cookie (`rb_session`), not JWT.
++- **Edge runtime**: `lib/auth-edge.ts` provides an edge-compatible session decoder (uses `atob` instead of Node.js `Buffer`).
++- **No lint config**: There is no ESLint config or lint script in `package.json`. TypeScript strict mode (`--noEmit`) is the primary static analysis.
++- **No test framework**: No test runner is configured. Use TypeScript checking and manual testing.
++- **No lock on Node version**: Works with Node.js 18+. The environment uses Node 22.
++
++### Video pipeline (separate from web app)
++
++The `scripts/` directory contains shell/Python scripts for video processing (yt-dlp, ffmpeg, OpenCV/YOLOv8). These are not needed for dashboard development and require additional system dependencies (Python, ffmpeg, etc.).

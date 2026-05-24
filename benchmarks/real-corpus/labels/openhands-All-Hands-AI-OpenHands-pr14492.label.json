@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Bug fix for APP-1862: deep_merge was recursively merging mcp_config and acp_env dicts, which silently resurrected MCP servers and env vars after the operator deleted them via the org-members settings UI. The fix introduces deep_merge_with_wholesale_keys, which replaces (not merges) at the configured key boundaries (mcp_config.mcpServers and acp_env). Updates the two write paths (OrgMemberStore.update_all_members_settings_async and SaasSettingsStore.store) to use the new helper. Adds two comprehensive integration tests that arrange 3 servers, update with 2, and assert the third does not reappear. The mock-of-hallucination detector fired likely on a local SQLAlchemy ORM import (e.g., 'from server.routes.org_models import OrgMemberSettingsUpdate') that the detector couldn't resolve against the manifest. Detector false positive on a real bug fix with thorough tests.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T04:00:00.000Z"
+}

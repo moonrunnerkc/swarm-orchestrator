@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24255",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24255,
+    "headSha": "17826c9623dc45ea64d05a52370463a8e77b01d2",
+    "baseSha": "7d47056ea42636271ac020b86347fbbef49490aa",
+    "title": "TUI config cleanup: trusted projects",
+    "body": "## Why\nTUI onboarding trusted-project persistence should go through the same app-server config write path as other config mutations. Writing `config.toml` directly from the trust widget bypasses that layer and can let onboarding proceed even when the trust decision was not actually persisted.\n\n## What changed\n- Added a TUI config helper that writes the existing project trust structure through `config/batchWrite`.\n- Persists trust decisions as `projects.<project>.trust_level = \"trusted\"` using the existing project trust key helper.\n- Changed the trust directory widget to only record the user selection; onboarding performs the app-server write before reporting success.\n- Keeps the user on the trust screen and shows an error if app-server persistence fails.\n\n## Verification\n- `cargo test -p codex-tui --lib trust_persistence_failure_keeps_trust_step_in_progress`\n- `cargo test -p codex-tui --lib trusted_project_edit_targets_project_trust_level`\n- Manual: built the local `codex-cli`, accepted the trust prompt in a temp project, confirmed `projects.<project>.trust_level = \"trusted\"`, and simulated an unwritable config to verify onboarding stays on the trust screen without writing trust.",
+    "author": "etraut-openai",
+    "headRef": "etraut/tui-trust-app-server-config",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "17826c9623dc45ea64d05a52370463a8e77b01d2",
+    "baseSha": "7d47056ea42636271ac020b86347fbbef49490aa"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24255.diff",
+  "vendoredAt": "2026-05-24T03:20:36.796Z",
+  "collectedAt": "2026-05-24T03:20:36.796Z"
+}

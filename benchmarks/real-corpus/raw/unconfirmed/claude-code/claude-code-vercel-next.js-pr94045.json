@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-vercel-next.js-pr94045",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 94045,
+    "headSha": "d98b0912e08e01a3196e86abdc50785225bfcf50",
+    "baseSha": "2e753e236c3f32f7f5876dc77a24088b10d22988",
+    "title": "Update ctor from 0.10 to 1.0.6",
+    "body": "### What?\r\n\r\nUpdates the `ctor` crate dependency from `0.10` to `1.0.6` in the workspace and migrates the two call sites to the new API.\r\n\r\n### Why?\r\n\r\nWe've been running into a rust-analyzer issue with `ctor` 0.10 that the newer release looks like it should fix. While bumping, the major version jump also brings in a number of stability and safety improvements (post-libc-init default priority, required `unsafe` marker, declarative re-export form, expanded platform support).\r\n\r\n### How?\r\n\r\n`ctor` 1.x has several breaking changes that affect us:\r\n\r\n1. **`#[ctor]` now requires an explicit `unsafe` marker.** Both call sites were updated:\r\n   - `turbopack/crates/turbo-tasks-macros-tests/tests/trybuild.rs`: `#[ctor::ctor]` → `#[ctor::ctor(unsafe)]`. The function body already wraps `std::env::remove_var` in `unsafe`, so no further change was needed.\r\n   - `turbopack/crates/turbo-tasks-macros/src/value_impl_macro.rs`: the proc-macro emits a vtable registration ctor for every `#[turbo_tasks::value_impl]`. Migrated to the new declarative form (see next bullet).\r\n\r\n2. **`crate_path = ...` is deprecated in favor of `ctor::declarative::ctor!`.** The ctor 1.0.6 docs explicitly recommend the declarative macro for crates that re-export ctor (`turbo-tasks` re-exports it via `macro_helpers::ctor` so user crates don't need a direct dep). The emission in `value_impl_macro.rs` was rewritten from\r\n\r\n   ```rust\r\n   #[turbo_tasks::macro_helpers::ctor::ctor(\r\n       crate_path = turbo_tasks::macro_helpers::ctor,\r\n   )]\r\n   #[allow(non_snake_case)]\r\n   fn #vtable_register_ident() { ... }\r\n   ```\r\n\r\n   to\r\n\r\n   ```rust\r\n   turbo_tasks::macro_helpers::ctor::declarative::ctor! {\r\n       #[ctor(unsafe)]\r\n       #[allow(non_snake_case)]\r\n       fn #vtable_register_ident() { ... }\r\n   }\r\n   ```\r\n\r\n3. **Default priority changed.** In 0.x the default priority was `0` (run before C library init); in 1.x the default is `default` (≈500, after libc init). We don't specify a priority, and the registration ctors only push into a `Vec` guarded by a registry — they don't touch libc — so the later timing is safe and we accept the new default. The lazy `VTableRegistry::finalize` step (driven by the `VALUES` `LazyLock`) is unchanged, so visible ordering semantics for downstream code are preserved.\r\n\r\n4. **Other 1.x breaking changes verified as non-issues for this repo:**\r\n   - `dtor` was split into its own crate — not used here.\r\n   - `priority = naked` syntax removed — not used.\r\n   - MSRV bumps: base is 1.60, only the optional `priority` feature requires 1.85 — we don't enable `priority`.\r\n   - `used_linker` / `no_warn_on_missing_unsafe` were replaced by `--cfg linktime_*` flags — neither was used here.\r\n\r\n#### Verification\r\n\r\n- `cargo check` / `cargo clippy` clean across `turbo-tasks`, `turbo-tasks-backend`, `turbo-tasks-macros`, `turbo-tasks-macros-tests`, and `turbopack-tests`.\r\n- `cargo test -p turbo-tasks-backend`: all tests pass (58 in the largest suite, 0 failures across all integration tests, 0 doc-test failures).\r\n- `cargo test -p turbopack-tests`: 218 + 87 tests pass, 0 failures, 1 ignored.\r\n\r\n#### Lockfile changes\r\n\r\n`Cargo.lock` reflects the new dep graph: `ctor` jumps to `1.0.6`, `link-section` to `0.17.2`, a new `linktime-proc-macro` is pulled in, and the old `ctor-proc-macro` / `dtor` / `dtor-proc-macro` entries are dropped (they were transitive deps of `ctor` 0.10).\r\n\r\n<!-- NEXT_JS_LLM_PR -->\r\n",
+    "author": "sokra",
+    "headRef": "sokra/ctor",
+    "repository": "vercel/next.js"
+  },
+  "diffRef": {
+    "repository": "vercel/next.js",
+    "headSha": "d98b0912e08e01a3196e86abdc50785225bfcf50",
+    "baseSha": "2e753e236c3f32f7f5876dc77a24088b10d22988"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-vercel-next.js-pr94045.diff",
+  "vendoredAt": "2026-05-24T03:21:27.131Z",
+  "collectedAt": "2026-05-24T03:21:27.131Z"
+}

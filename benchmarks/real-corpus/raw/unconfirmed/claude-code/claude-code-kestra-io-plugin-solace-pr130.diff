@@ -1,0 +1,21 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.solace.md b/src/main/resources/doc/io.kestra.plugin.solace.md
+new file mode 100644
+index 0000000..ea0aaab
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.solace.md
+@@ -0,0 +1,15 @@
++# How to use the Solace plugin
++
++Publish and consume messages on Solace PubSub+ from Kestra flows.
++
++## Authentication
++
++Set `host` to your Solace broker URL (required) and `vpn` to the message VPN name (default `default`). For authenticated brokers, set `username` and `password`. Store secrets in [secrets](https://kestra.io/docs/concepts/secret) and apply connection properties globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
++
++## Tasks
++
++`Produce` publishes messages to a `topicDestination` (required) — set `from` as the message source (required). Control serialization with `messageSerializer` (default `STRING`). Set `deliveryMode` to `PERSISTENT` (default) or `NON_PERSISTENT`.
++
++`Consume` reads messages from a `queueName` (required) — set `queueType` (required). Bound the batch with `maxMessages` (default 100) and `maxDuration` (default 10 seconds). Filter with `messageSelector`. Control deserialization with `messageDeserializer` (default `STRING`).
++
++`Trigger` polls a Solace queue on a schedule (default 60 seconds) and starts one execution per batch. Set `queueName`, `queueType`, and consumer options the same way as `Consume`.

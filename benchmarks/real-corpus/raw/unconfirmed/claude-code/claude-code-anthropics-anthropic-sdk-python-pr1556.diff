@@ -1,0 +1,73 @@
+diff --git a/src/anthropic/lib/bedrock/_client.py b/src/anthropic/lib/bedrock/_client.py
+index cda0690df..5106058cb 100644
+--- a/src/anthropic/lib/bedrock/_client.py
++++ b/src/anthropic/lib/bedrock/_client.py
+@@ -240,6 +240,7 @@ def copy(
+         aws_secret_key: str | None = None,
+         aws_access_key: str | None = None,
+         aws_region: str | None = None,
++        aws_profile: str | None = None,
+         aws_session_token: str | None = None,
+         api_key: str | None = None,
+         base_url: str | httpx.URL | None = None,
+@@ -277,6 +278,7 @@ def copy(
+             aws_secret_key=aws_secret_key or self.aws_secret_key,
+             aws_access_key=aws_access_key or self.aws_access_key,
+             aws_region=aws_region or self.aws_region,
++            aws_profile=aws_profile or self.aws_profile,
+             aws_session_token=aws_session_token or self.aws_session_token,
+             api_key=api_key or self.api_key,
+             base_url=base_url or self.base_url,
+@@ -405,6 +407,7 @@ def copy(
+         aws_secret_key: str | None = None,
+         aws_access_key: str | None = None,
+         aws_region: str | None = None,
++        aws_profile: str | None = None,
+         aws_session_token: str | None = None,
+         api_key: str | None = None,
+         base_url: str | httpx.URL | None = None,
+@@ -442,6 +445,7 @@ def copy(
+             aws_secret_key=aws_secret_key or self.aws_secret_key,
+             aws_access_key=aws_access_key or self.aws_access_key,
+             aws_region=aws_region or self.aws_region,
++            aws_profile=aws_profile or self.aws_profile,
+             aws_session_token=aws_session_token or self.aws_session_token,
+             api_key=api_key or self.api_key,
+             base_url=base_url or self.base_url,
+diff --git a/tests/lib/test_bedrock.py b/tests/lib/test_bedrock.py
+index 6e45c27f7..fcc3a011d 100644
+--- a/tests/lib/test_bedrock.py
++++ b/tests/lib/test_bedrock.py
+@@ -275,3 +275,32 @@ def test_region_infer_from_specified_profile(
+     client = AnthropicBedrock()
+ 
+     assert client.aws_region == next(profile for profile in profiles if profile["name"] == aws_profile)["region"]
++
++
++def test_copy_preserves_aws_profile(monkeypatch: t.Any) -> None:
++    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
++
++    client = AnthropicBedrock(aws_region="us-east-1", aws_profile="my-profile")
++    copied = client.copy()
++
++    assert copied.aws_region == "us-east-1"
++    assert copied.aws_profile == "my-profile"
++
++
++def test_copy_overrides_aws_profile(monkeypatch: t.Any) -> None:
++    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
++
++    client = AnthropicBedrock(aws_region="us-east-1", aws_profile="my-profile")
++    copied = client.copy(aws_profile="other-profile")
++
++    assert copied.aws_profile == "other-profile"
++
++
++def test_copy_preserves_aws_profile_async(monkeypatch: t.Any) -> None:
++    monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
++
++    client = AsyncAnthropicBedrock(aws_region="us-east-1", aws_profile="my-profile")
++    copied = client.copy()
++
++    assert copied.aws_region == "us-east-1"
++    assert copied.aws_profile == "my-profile"

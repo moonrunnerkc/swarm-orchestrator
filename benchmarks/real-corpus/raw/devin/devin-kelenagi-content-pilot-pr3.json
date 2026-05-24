@@ -1,0 +1,26 @@
+{
+  "id": "devin-kelenagi-content-pilot-pr3",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 3,
+    "headSha": "14066daa34eaa05bfd730dfca98ddabcacfcc073",
+    "baseSha": "32673921f383282a5f6e52a42ba75a87e14902ea",
+    "title": "feat: switch to OpenNext adapter for Cloudflare Pages deployment",
+    "body": "## Summary\n\nReplaces the deprecated `@cloudflare/next-on-pages` with the officially recommended **OpenNext Cloudflare adapter** (`@opennextjs/cloudflare`). This fixes the Cloudflare Pages build error.\n\n**What changed:**\n- Added `@opennextjs/cloudflare` dependency and `wrangler` as devDependency\n- Created `wrangler.jsonc` config with nodejs_compat flag\n- Created `open-next.config.ts` \n- Added Cloudflare build/deploy scripts to `package.json`\n- Updated `.gitignore` for `.open-next` and `.dev.vars`\n\n**Build verified locally** — `opennextjs-cloudflare build` completes successfully.\n\n## Review & Testing Checklist for Human\n\n- [ ] After merging, update Cloudflare Pages build settings:\n  - **Build command:** `npx opennextjs-cloudflare build`\n  - **Build output directory:** `.open-next/assets`\n- [ ] Verify deployment succeeds on Cloudflare Pages\n- [ ] Test the live site works (landing page, settings, chat, content creation)\n\n### Notes\n- `@cloudflare/next-on-pages` is deprecated and doesn't support Next.js 16 properly\n- OpenNext is the recommended replacement by Cloudflare: https://opennext.js.org/cloudflare\n- The `edge` runtime export on `/api/chat` is no longer needed for OpenNext but doesn't hurt to keep\n\nLink to Devin session: https://app.devin.ai/sessions/8fc7e30c5a6543d8aef8ed81385daf74\nRequested by: @kelenagi",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779593061-cloudflare-opennext",
+    "repository": "kelenagi/content-pilot"
+  },
+  "diffRef": {
+    "repository": "kelenagi/content-pilot",
+    "headSha": "14066daa34eaa05bfd730dfca98ddabcacfcc073",
+    "baseSha": "32673921f383282a5f6e52a42ba75a87e14902ea"
+  },
+  "vendoredDiffPath": "devin/devin-kelenagi-content-pilot-pr3.diff",
+  "vendoredAt": "2026-05-24T03:34:13.339Z",
+  "collectedAt": "2026-05-24T03:34:13.339Z"
+}

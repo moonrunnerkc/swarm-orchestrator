@@ -1,0 +1,195 @@
+diff --git a/.github/workflows/link-check.yml b/.github/workflows/link-check.yml
+new file mode 100644
+index 0000000..bc18a69
+--- /dev/null
++++ b/.github/workflows/link-check.yml
+@@ -0,0 +1,102 @@
++# ═══════════════════════════════════════════════════════════════════════════════
++# Link Check · Detección de enlaces rotos en documentación
++#
++# Propósito: Escanea archivos Markdown buscando enlaces HTTP rotos o
++# referencias internas inválidas. Ayuda a mantener la documentación actualizada.
++#
++# Se ejecuta en:
++#   - Semanalmente (lunes 08:00 UTC)
++#   - Manualmente (workflow_dispatch)
++#
++# ROADMAP: 4.2.1
++# ═══════════════════════════════════════════════════════════════════════════════
++
++name: Link Check
++
++on:
++  schedule:
++    - cron: "0 8 * * 1"
++  workflow_dispatch:
++
++permissions:
++  contents: read
++  issues: write
++
++jobs:
++  check-links:
++    name: Verificar enlaces
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++
++      - name: Instalar lychee
++        run: |
++          LYCHEE_VERSION="v0.18.0"
++          curl -sSfL "https://github.com/lycheeverse/lychee/releases/download/${LYCHEE_VERSION}/lychee-${LYCHEE_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
++            | tar xz -C /usr/local/bin
++
++      - name: Ejecutar lychee
++        id: lychee
++        run: |
++          EXIT_CODE=0
++          lychee \
++            --exclude-path '.git' \
++            --exclude-path 'artefactos' \
++            --exclude-path 'node_modules' \
++            --exclude 'localhost' \
++            --exclude '127\.0\.0\.1' \
++            --exclude 'example\.com' \
++            --exclude 'tu-.*\.com' \
++            --accept '200..=299,403,429' \
++            --max-retries 3 \
++            --timeout 30 \
++            --no-progress \
++            --format markdown \
++            --output /tmp/lychee-report.md \
++            '**/*.md' || EXIT_CODE=$?
++
++          if [ "$EXIT_CODE" -ne 0 ] && [ -s /tmp/lychee-report.md ]; then
++            echo "has_broken=true" >> "$GITHUB_OUTPUT"
++          else
++            echo "has_broken=false" >> "$GITHUB_OUTPUT"
++          fi
++
++      - name: Crear issue si hay enlaces rotos
++        if: steps.lychee.outputs.has_broken == 'true' && github.event_name == 'schedule'
++        uses: actions/github-script@v7
++        with:
++          script: |
++            const fs = require('fs');
++            const report = fs.readFileSync('/tmp/lychee-report.md', 'utf8');
++
++            const title = `🔗 Enlaces rotos detectados (${new Date().toISOString().split('T')[0]})`;
++
++            // Buscar issue existente para no duplicar
++            const existing = await github.rest.issues.listForRepo({
++              owner: context.repo.owner,
++              repo: context.repo.repo,
++              state: 'open',
++              labels: 'links-rotos',
++              per_page: 1,
++            });
++
++            const body = `## Reporte automático de enlaces rotos\n\n${report}\n\n---\n*Generado por \`.github/workflows/link-check.yml\`*`;
++
++            if (existing.data.length > 0) {
++              await github.rest.issues.update({
++                owner: context.repo.owner,
++                repo: context.repo.repo,
++                issue_number: existing.data[0].number,
++                body: body,
++              });
++              console.log(`Actualizado issue #${existing.data[0].number}`);
++            } else {
++              await github.rest.issues.create({
++                owner: context.repo.owner,
++                repo: context.repo.repo,
++                title: title,
++                body: body,
++                labels: ['links-rotos'],
++              });
++              console.log('Nuevo issue creado');
++            }
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+new file mode 100644
+index 0000000..d981949
+--- /dev/null
++++ b/.github/workflows/release.yml
+@@ -0,0 +1,81 @@
++# ═══════════════════════════════════════════════════════════════════════════════
++# Release · Publicación automática de versiones
++#
++# Propósito: Al pushear un tag semver (v*), extrae las notas de CHANGELOG.md
++# para esa versión y crea una GitHub Release con tarball adjunto.
++#
++# Se ejecuta en:
++#   - Push de tags v* (ej: v1.0.0, v1.1.0-rc.1)
++#
++# ROADMAP: 3.1.4
++# ═══════════════════════════════════════════════════════════════════════════════
++
++name: Release
++
++on:
++  push:
++    tags:
++      - "v*"
++
++permissions:
++  contents: write
++
++jobs:
++  release:
++    name: Crear Release
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++        with:
++          fetch-depth: 0
++
++      - name: Extraer versión del tag
++        id: version
++        run: |
++          TAG="${GITHUB_REF#refs/tags/}"
++          VERSION="${TAG#v}"
++          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
++          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
++          echo "📦 Release: $TAG (versión $VERSION)"
++
++      - name: Extraer notas de CHANGELOG.md
++        id: notes
++        run: |
++          TAG="${{ steps.version.outputs.tag }}"
++          VERSION="${{ steps.version.outputs.version }}"
++
++          # Extraer la sección del CHANGELOG para esta versión
++          # Busca entre "## [VERSION]" y el siguiente "## ["
++          NOTES=$(awk -v ver="$VERSION" '
++            /^## \[/ {
++              if (found) exit
++              if ($0 ~ "## \\[" ver "\\]") { found=1; next }
++            }
++            found { print }
++          ' CHANGELOG.md)
++
++          if [ -z "$NOTES" ]; then
++            NOTES="Release $TAG — ver CHANGELOG.md para detalles."
++          fi
++
++          # Escribir notas a archivo para el paso de release
++          echo "$NOTES" > /tmp/release-notes.md
++          echo "📝 Notas extraídas para $TAG"
++
++      - uses: actions/setup-python@v5
++        with:
++          python-version: "3.12"
++      - name: Validar sistema antes de release
++        run: |
++          pip install pyyaml
++          python validar_repo.py --strict
++
++      - name: Crear GitHub Release
++        uses: softprops/action-gh-release@v2
++        with:
++          tag_name: ${{ steps.version.outputs.tag }}
++          name: ${{ steps.version.outputs.tag }}
++          body_path: /tmp/release-notes.md
++          draft: false
++          prerelease: ${{ contains(steps.version.outputs.tag, '-') }}
++          generate_release_notes: false

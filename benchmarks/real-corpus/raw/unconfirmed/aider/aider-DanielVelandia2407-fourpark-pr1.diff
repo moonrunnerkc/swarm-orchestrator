@@ -1,0 +1,1305 @@
+diff --git a/.gitignore b/.gitignore
+index 1539b9c..1d5641c 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,16 +1,5 @@
+ # See http://help.github.com/ignore-files/ for more about ignoring files.
+ 
+-# Compiled output
+-/dist
+-/tmp
+-/out-tsc
+-/bazel-out
+-
+-# Node
+-/node_modules
+-npm-debug.log
+-yarn-error.log
+-
+ # IDEs and editors
+ .idea/
+ .project
+@@ -28,18 +17,28 @@ yarn-error.log
+ !.vscode/extensions.json
+ .history/*
+ 
+-# Miscellaneous
+-/.angular/cache
+-.sass-cache/
+-/connect.lock
+-/coverage
+-/libpeerconnection.log
+-testem.log
+-/typings
+-
+ # System files
+ .DS_Store
+ Thumbs.db
++
++# Aider
++.aider*
++
++# Frontend (Angular)
++frontend/node_modules/
++frontend/dist/
++frontend/.angular/
++frontend/tmp/
++frontend/out-tsc/
++frontend/bazel-out/
++frontend/.sass-cache/
++frontend/connect.lock
++frontend/coverage/
++frontend/libpeerconnection.log
++frontend/testem.log
++frontend/typings/
++npm-debug.log
++yarn-error.log
+ .vercel
+ 
+ # Backend (Node.js / Express)
+diff --git a/AGENTS.md b/AGENTS.md
+new file mode 100644
+index 0000000..5b0342c
+--- /dev/null
++++ b/AGENTS.md
+@@ -0,0 +1,102 @@
++# FourPark — Contexto del proyecto
++
++Sistema de reservas de parqueaderos en Colombia. Usuarios buscan parqueaderos, hacen reservas y pagan con tarjeta. Los administradores gestionan parqueaderos y ven estadísticas. El SuperAdministrador gestiona todo el sistema.
++
++## Estructura del repositorio
++
++```
++fourpark/
++├── src/                        ← Frontend Angular
++├── backend/                    ← Backend Node.js + Express + PostgreSQL
++│   └── src/
++│       ├── controllers/        ← Lógica de negocio por dominio
++│       ├── routes/             ← Definición de endpoints
++│       ├── middlewares/        ← JWT auth, upload (multer)
++│       ├── services/           ← Email, geocoding, PDF, Excel
++│       ├── config/database.js  ← Pool PostgreSQL (pg)
++│       └── database/           ← schema.sql, seed.sql, init-admin.js
++└── AGENTS.md
++```
++
++## Comandos del frontend (Angular)
++
++```bash
++npm start           # Levanta en http://localhost:5173
++npm run build       # Build de producción
++npm test            # Tests unitarios con Karma
++```
++
++## Comandos del backend (desde /backend)
++
++```bash
++npm run dev         # Nodemon en http://localhost:3000
++npm start           # Producción
++
++# Base de datos (requiere .env configurado)
++npm run db:schema   # Crear tablas
++npm run db:seed     # Insertar datos iniciales
++npm run db:init-admin  # Crear usuario SuperAdmin (superadmin / Admin123!)
++```
++
++## Variables de entorno del backend
++
++Copiar `backend/.env.example` → `backend/.env` y completar:
++
++- `DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD` — PostgreSQL
++- `JWT_SECRET` — clave secreta larga y aleatoria
++- `SMTP_USER / SMTP_PASS` — cuenta Gmail con App Password
++- `FRONTEND_URL` — origen permitido por CORS (ej. `http://localhost:5173`)
++
++## API base URL
++
++- Frontend apunta a: `https://fourparkscolombia.onrender.com/api`
++- Backend local corre en: `http://localhost:3000/api`
++- Para desarrollo local, cambiar en `src/environments/environment.ts`
++
++## Roles de usuario
++
++| Rol | Acceso |
++|---|---|
++| `SuperAdministrador` | Todo el sistema |
++| `Administrador` | Sus propios parqueaderos y reservas asociadas |
++| `Usuario` | Sus reservas y perfil |
++
++## Modelo de datos (tablas principales)
++
++`users` → `user_controllers` (bloqueos), `cards` (pago), `tokens` (reset/verify)
++`parkings` → `parking_controllers` (capacidad y tarifa por vehículo)
++`reservations` → `invoices` (factura con montos calculados en checkout)
++`records` — log de auditoría (login, acciones admin)
++
++## Endpoints principales
++
++| Método | Ruta | Auth |
++|---|---|---|
++| POST | `/api/login` | No |
++| POST | `/api/register` | No |
++| POST | `/api/request-token` | No |
++| GET  | `/api/parkings` | No |
++| GET  | `/api/user` | JWT |
++| POST | `/api/reservations` | JWT |
++| PUT  | `/api/check-in/:id` | JWT + Admin |
++| PUT  | `/api/check-out/:id` | JWT + Admin |
++| POST | `/api/statistics-admin` | JWT + Admin |
++| POST | `/api/statistics-pdf` | JWT + SuperAdmin |
++
++## Convenciones de código
++
++- **Backend:** CommonJS (`require`), async/await, validaciones con Joi en cada controller
++- **Frontend:** Angular standalone components, `HttpClient` con interceptor JWT en `src/app/auth/interceptor.ts`
++- **Imágenes:** subidas a `backend/uploads/parkings/`, servidas en `/uploads/`
++- **Contraseñas:** hasheadas con bcryptjs salt rounds 12
++- **Errores:** siempre `{ error: "mensaje en español" }` con HTTP status apropiado
++
++## Flujo de estado de reservas
++
++```
++Pendiente → (check-in)  → En curso
++          → (cancelar)  → Cancelada
++En curso  → (check-out) → Finalizada
++```
++
++El checkout calcula automáticamente tiempo extra y reembolso del 50% por tiempo no utilizado.
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 7c49ea9..7455904 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -6,7 +6,14 @@ Sistema de reservas de parqueaderos en Colombia. Usuarios buscan parqueaderos, h
+ 
+ ```
+ fourpark/
+-├── src/                        ← Frontend Angular
++├── frontend/                   ← Frontend Angular
++│   ├── src/
++│   │   ├── app/                ← Componentes, páginas, guards, interceptors
++│   │   ├── assets/
++│   │   └── environments/
++│   ├── angular.json
++│   ├── package.json
++│   └── tsconfig.json
+ ├── backend/                    ← Backend Node.js + Express + PostgreSQL
+ │   └── src/
+ │       ├── controllers/        ← Lógica de negocio por dominio
+@@ -18,9 +25,10 @@ fourpark/
+ └── CLAUDE.md
+ ```
+ 
+-## Comandos del frontend (Angular)
++## Comandos del frontend (Angular, desde /frontend)
+ 
+ ```bash
++npm install         # Instalar dependencias (primera vez)
+ npm start           # Levanta en http://localhost:5173
+ npm run build       # Build de producción
+ npm test            # Tests unitarios con Karma
+@@ -51,7 +59,7 @@ Copiar `backend/.env.example` → `backend/.env` y completar:
+ 
+ - Frontend apunta a: `https://fourparkscolombia.onrender.com/api`
+ - Backend local corre en: `http://localhost:3000/api`
+-- Para desarrollo local, cambiar en `src/environments/environment.ts`
++- Para desarrollo local, cambiar en `frontend/src/environments/environment.ts`
+ 
+ ## Roles de usuario
+ 
+@@ -86,7 +94,7 @@ Copiar `backend/.env.example` → `backend/.env` y completar:
+ ## Convenciones de código
+ 
+ - **Backend:** CommonJS (`require`), async/await, validaciones con Joi en cada controller
+-- **Frontend:** Angular standalone components, `HttpClient` con interceptor JWT en `src/app/auth/interceptor.ts`
++- **Frontend:** Angular standalone components, `HttpClient` con interceptor JWT en `frontend/src/app/auth/interceptor.ts`
+ - **Imágenes:** subidas a `backend/uploads/parkings/`, servidas en `/uploads/`
+ - **Contraseñas:** hasheadas con bcryptjs salt rounds 12
+ - **Errores:** siempre `{ error: "mensaje en español" }` con HTTP status apropiado
+diff --git a/README.md b/README.md
+index aad721f..48926c5 100644
+--- a/README.md
++++ b/README.md
+@@ -1,27 +1,257 @@
+-# Parqueadero
++# FourPark
+ 
+-This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 17.3.5.
++[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18-blue)](https://nodejs.org/)
++[![Angular Version](https://img.shields.io/badge/angular-%3E%3D17.3.0-blue)](https://angular.io/)
++[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
++[![Project Status](https://img.shields.io/badge/status-development-blue)](https://github.com/DanielVelandia2407/fourpark)
+ 
+-## Development server
++Sistema fullstack de reservas de parqueaderos en Colombia. Los usuarios buscan parqueaderos, hacen reservas y pagan con tarjeta. Los administradores gestionan sus parqueaderos y visualizan estadísticas. Desarrollado como proyecto universitario en la Universidad Distrital Francisco José de Caldas.
+ 
+-Run `ng serve` for a dev server. Navigate to `http://localhost:4200/`. The application will automatically reload if you change any of the source files.
++---
+ 
+-## Code scaffolding
++## Tabla de Contenidos
+ 
+-Run `ng generate component component-name` to generate a new component. You can also use `ng generate directive|pipe|service|class|guard|interface|enum|module`.
++- [Stack Tecnológico](#stack-tecnológico)
++- [Estructura del Proyecto](#estructura-del-proyecto)
++- [Requisitos Previos](#requisitos-previos)
++- [Instalación y Configuración](#instalación-y-configuración)
++- [Variables de Entorno](#variables-de-entorno)
++- [Levantar el Proyecto](#levantar-el-proyecto)
++- [Roles del Sistema](#roles-del-sistema)
++- [Flujo de Reservas](#flujo-de-reservas)
++- [API Endpoints](#api-endpoints)
++- [Scripts Disponibles](#scripts-disponibles)
++- [Autores](#autores)
+ 
+-## Build
++---
+ 
+-Run `ng build` to build the project. The build artifacts will be stored in the `dist/` directory.
++## Stack Tecnológico
+ 
+-## Running unit tests
++| Capa | Tecnología |
++|------|-----------|
++| Frontend | Angular 17.3, TailwindCSS 3.4, RxJS 7.8 |
++| Backend | Node.js 18+, Express 4.19 |
++| Base de datos | PostgreSQL 14+ |
++| Auth | JWT (jsonwebtoken 9.0) + bcryptjs |
++| Email | Nodemailer 6.9 (Gmail SMTP) |
++| Reportes | PDFKit, ExcelJS |
+ 
+-Run `ng test` to execute the unit tests via [Karma](https://karma-runner.github.io).
++---
+ 
+-## Running end-to-end tests
++## Estructura del Proyecto
+ 
+-Run `ng e2e` to execute the end-to-end tests via a platform of your choice. To use this command, you need to first add a package that implements end-to-end testing capabilities.
++```
++fourpark/
++├── frontend/                   ← Frontend Angular
++│   ├── src/
++│   │   ├── app/
++│   │   │   ├── auth/           ← Interceptor JWT
++│   │   │   ├── domains/        ← Páginas y componentes por dominio
++│   │   │   └── guards/         ← Guards de rutas
++│   │   └── environments/       ← environment.ts (URL del API)
++│   ├── angular.json
++│   ├── package.json
++│   └── tsconfig.json
++└── backend/                    ← Backend Node.js + Express
++    └── src/
++        ├── controllers/        ← Lógica de negocio por dominio
++        ├── routes/             ← Definición de endpoints
++        ├── middlewares/        ← Auth JWT, upload (Multer)
++        ├── services/           ← Email, geocoding, PDF, Excel
++        ├── config/database.js  ← Pool de conexión PostgreSQL
++        └── database/
++            ├── schema.sql      ← Creación de tablas
++            ├── seed.sql        ← Datos iniciales
++            └── init-admin.js   ← Crea usuario SuperAdmin
++```
+ 
+-## Further help
++---
+ 
+-To get more help on the Angular CLI use `ng help` or go check out the [Angular CLI Overview and Command Reference](https://angular.io/cli) page.
++## Requisitos Previos
++
++- Node.js 18 o superior
++- PostgreSQL 14 o superior
++- Cuenta de Gmail con [App Password](https://myaccount.google.com/apppasswords) habilitado
++- Git
++
++---
++
++## Instalación y Configuración
++
++**1. Clonar el repositorio**
++
++```bash
++git clone https://github.com/DanielVelandia2407/fourpark.git
++cd fourpark
++```
++
++**2. Instalar dependencias**
++
++```bash
++# Frontend
++cd frontend && npm install
++
++# Backend
++cd backend && npm install
++```
++
++**3. Configurar variables de entorno**
++
++```bash
++cp backend/.env.example backend/.env
++# Editar backend/.env con tus valores (ver sección Variables de Entorno)
++```
++
++**4. Crear la base de datos**
++
++```bash
++# Desde PostgreSQL, crear la base de datos:
++createdb fourpark
++
++# O desde psql:
++# CREATE DATABASE fourpark;
++```
++
++**5. Inicializar el esquema y datos**
++
++```bash
++cd backend
++npm run db:schema      # Crea las tablas
++npm run db:seed        # Inserta datos de ejemplo
++npm run db:init-admin  # Crea el usuario SuperAdmin
++```
++
++Credenciales del SuperAdmin por defecto:
++- **Usuario:** `superadmin`
++- **Contraseña:** `Admin123!`
++
++> Cambiar la contraseña inmediatamente en producción.
++
++---
++
++## Variables de Entorno
++
++Archivo: `backend/.env`
++
++| Variable | Descripción | Ejemplo |
++|----------|-------------|---------|
++| `PORT` | Puerto del servidor | `3000` |
++| `NODE_ENV` | Entorno de ejecución | `development` |
++| `DB_HOST` | Host PostgreSQL | `localhost` |
++| `DB_PORT` | Puerto PostgreSQL | `5432` |
++| `DB_NAME` | Nombre de la base de datos | `fourpark` |
++| `DB_USER` | Usuario PostgreSQL | `postgres` |
++| `DB_PASSWORD` | Contraseña PostgreSQL | `tu_contraseña` |
++| `DB_SSL` | Conexión SSL | `false` |
++| `JWT_SECRET` | Clave secreta para firmar tokens | (cadena larga aleatoria) |
++| `JWT_EXPIRES_IN` | Duración del token | `24h` |
++| `SMTP_HOST` | Servidor SMTP | `smtp.gmail.com` |
++| `SMTP_PORT` | Puerto SMTP | `587` |
++| `SMTP_USER` | Correo Gmail | `tu_correo@gmail.com` |
++| `SMTP_PASS` | App Password de Gmail | `xxxx xxxx xxxx xxxx` |
++| `EMAIL_FROM` | Remitente visible | `FourPark <tu_correo@gmail.com>` |
++| `FRONTEND_URL` | Origen permitido por CORS | `http://localhost:5173` |
++
++---
++
++## Levantar el Proyecto
++
++**Backend** (desde `/backend`):
++
++```bash
++npm run dev   # Desarrollo con Nodemon — http://localhost:3000
++npm start     # Producción
++```
++
++**Frontend** (desde `/frontend`):
++
++```bash
++npm start     # http://localhost:5173
++```
++
++### Desarrollo local vs. producción
++
++El frontend apunta por defecto al backend desplegado en Render. Para desarrollar localmente, cambiar la URL en `frontend/src/environments/environment.ts`:
++
++```ts
++// Producción (por defecto)
++apiUrl: 'https://fourparkscolombia.onrender.com/api'
++
++// Desarrollo local
++apiUrl: 'http://localhost:3000/api'
++```
++
++---
++
++## Roles del Sistema
++
++| Rol | Acceso |
++|-----|--------|
++| `SuperAdministrador` | Todo el sistema: usuarios, parqueaderos, estadísticas globales |
++| `Administrador` | Sus propios parqueaderos y las reservas asociadas |
++| `Usuario` | Sus reservas y su perfil |
++
++---
++
++## Flujo de Reservas
++
++```
++Pendiente ──► (check-in)   ──► En curso
++          └─► (cancelar)   ──► Cancelada
++
++En curso  ──► (check-out)  ──► Finalizada
++```
++
++El checkout calcula automáticamente el tiempo extra y aplica un reembolso del 50% por tiempo no utilizado.
++
++---
++
++## API Endpoints
++
++| Método | Ruta | Descripción | Auth |
++|--------|------|-------------|------|
++| POST | `/api/login` | Iniciar sesión | No |
++| POST | `/api/register` | Registrar usuario | No |
++| POST | `/api/request-token` | Solicitar token de recuperación/verificación | No |
++| GET | `/api/parkings` | Listar parqueaderos disponibles | No |
++| GET | `/api/user` | Datos del usuario autenticado | JWT |
++| POST | `/api/reservations` | Crear reserva | JWT |
++| PUT | `/api/check-in/:id` | Registrar check-in | JWT + Admin |
++| PUT | `/api/check-out/:id` | Registrar check-out y generar factura | JWT + Admin |
++| POST | `/api/statistics-admin` | Estadísticas del administrador | JWT + Admin |
++| POST | `/api/statistics-pdf` | Reporte PDF global | JWT + SuperAdmin |
++
++---
++
++## Scripts Disponibles
++
++### Backend (`/backend`)
++
++```bash
++npm run dev            # Servidor con recarga automática (Nodemon)
++npm start              # Servidor de producción
++npm run db:schema      # Crear tablas
++npm run db:seed        # Insertar datos de ejemplo
++npm run db:init-admin  # Crear usuario SuperAdmin
++```
++
++### Frontend (`/frontend`)
++
++```bash
++npm start        # Servidor de desarrollo
++npm run build    # Build de producción
++npm test         # Tests unitarios con Karma
++```
++
++---
++
++## Autores
++
++**Daniel Felipe Velandia Jerez**
++- GitHub: [@DanielVelandia2407](https://github.com/DanielVelandia2407)
++
++---
++
++## Licencia
++
++MIT — ver [LICENSE](LICENSE) para más detalles.
+diff --git a/.editorconfig b/frontend/.editorconfig
+similarity index 100%
+rename from .editorconfig
+rename to frontend/.editorconfig
+diff --git a/angular.json b/frontend/angular.json
+similarity index 100%
+rename from angular.json
+rename to frontend/angular.json
+diff --git a/package-lock.json b/frontend/package-lock.json
+similarity index 100%
+rename from package-lock.json
+rename to frontend/package-lock.json
+diff --git a/package.json b/frontend/package.json
+similarity index 100%
+rename from package.json
+rename to frontend/package.json
+diff --git a/src/app/admin_parking/stats/stats.component.css b/frontend/src/app/admin_parking/stats/stats.component.css
+similarity index 100%
+rename from src/app/admin_parking/stats/stats.component.css
+rename to frontend/src/app/admin_parking/stats/stats.component.css
+diff --git a/src/app/admin_parking/stats/stats.component.html b/frontend/src/app/admin_parking/stats/stats.component.html
+similarity index 100%
+rename from src/app/admin_parking/stats/stats.component.html
+rename to frontend/src/app/admin_parking/stats/stats.component.html
+diff --git a/src/app/admin_parking/stats/stats.component.spec.ts b/frontend/src/app/admin_parking/stats/stats.component.spec.ts
+similarity index 100%
+rename from src/app/admin_parking/stats/stats.component.spec.ts
+rename to frontend/src/app/admin_parking/stats/stats.component.spec.ts
+diff --git a/src/app/admin_parking/stats/stats.component.ts b/frontend/src/app/admin_parking/stats/stats.component.ts
+similarity index 100%
+rename from src/app/admin_parking/stats/stats.component.ts
+rename to frontend/src/app/admin_parking/stats/stats.component.ts
+diff --git a/src/app/app.component.spec.ts b/frontend/src/app/app.component.spec.ts
+similarity index 100%
+rename from src/app/app.component.spec.ts
+rename to frontend/src/app/app.component.spec.ts
+diff --git a/src/app/app.component.ts b/frontend/src/app/app.component.ts
+similarity index 100%
+rename from src/app/app.component.ts
+rename to frontend/src/app/app.component.ts
+diff --git a/src/app/app.config.ts b/frontend/src/app/app.config.ts
+similarity index 100%
+rename from src/app/app.config.ts
+rename to frontend/src/app/app.config.ts
+diff --git a/src/app/app.module.ts b/frontend/src/app/app.module.ts
+similarity index 100%
+rename from src/app/app.module.ts
+rename to frontend/src/app/app.module.ts
+diff --git a/src/app/app.routes.ts b/frontend/src/app/app.routes.ts
+similarity index 100%
+rename from src/app/app.routes.ts
+rename to frontend/src/app/app.routes.ts
+diff --git a/src/app/auth/interceptor.ts b/frontend/src/app/auth/interceptor.ts
+similarity index 100%
+rename from src/app/auth/interceptor.ts
+rename to frontend/src/app/auth/interceptor.ts
+diff --git a/src/app/domains/admin/admin-parking/admin-page.component.css b/frontend/src/app/domains/admin/admin-parking/admin-page.component.css
+similarity index 100%
+rename from src/app/domains/admin/admin-parking/admin-page.component.css
+rename to frontend/src/app/domains/admin/admin-parking/admin-page.component.css
+diff --git a/src/app/domains/admin/admin-parking/admin-page.component.html b/frontend/src/app/domains/admin/admin-parking/admin-page.component.html
+similarity index 100%
+rename from src/app/domains/admin/admin-parking/admin-page.component.html
+rename to frontend/src/app/domains/admin/admin-parking/admin-page.component.html
+diff --git a/src/app/domains/admin/admin-parking/admin-page.component.spec.ts b/frontend/src/app/domains/admin/admin-parking/admin-page.component.spec.ts
+similarity index 100%
+rename from src/app/domains/admin/admin-parking/admin-page.component.spec.ts
+rename to frontend/src/app/domains/admin/admin-parking/admin-page.component.spec.ts
+diff --git a/src/app/domains/admin/admin-parking/admin-page.component.ts b/frontend/src/app/domains/admin/admin-parking/admin-page.component.ts
+similarity index 100%
+rename from src/app/domains/admin/admin-parking/admin-page.component.ts
+rename to frontend/src/app/domains/admin/admin-parking/admin-page.component.ts
+diff --git a/src/app/domains/admin/admin-parkings/admin-parkings.component.css b/frontend/src/app/domains/admin/admin-parkings/admin-parkings.component.css
+similarity index 100%
+rename from src/app/domains/admin/admin-parkings/admin-parkings.component.css
+rename to frontend/src/app/domains/admin/admin-parkings/admin-parkings.component.css
+diff --git a/src/app/domains/admin/admin-parkings/admin-parkings.component.html b/frontend/src/app/domains/admin/admin-parkings/admin-parkings.component.html
+similarity index 100%
+rename from src/app/domains/admin/admin-parkings/admin-parkings.component.html
+rename to frontend/src/app/domains/admin/admin-parkings/admin-parkings.component.html
+diff --git a/src/app/domains/admin/admin-parkings/admin-parkings.component.spec.ts b/frontend/src/app/domains/admin/admin-parkings/admin-parkings.component.spec.ts
+similarity index 100%
+rename from src/app/domains/admin/admin-parkings/admin-parkings.component.spec.ts
+rename to frontend/src/app/domains/admin/admin-parkings/admin-parkings.component.spec.ts
+diff --git a/src/app/domains/admin/admin-parkings/admin-parkings.component.ts b/frontend/src/app/domains/admin/admin-parkings/admin-parkings.component.ts
+similarity index 100%
+rename from src/app/domains/admin/admin-parkings/admin-parkings.component.ts
+rename to frontend/src/app/domains/admin/admin-parkings/admin-parkings.component.ts
+diff --git a/src/app/domains/admin/admin-parkings/edit-admin-parkings.component.css b/frontend/src/app/domains/admin/admin-parkings/edit-admin-parkings.component.css
+similarity index 100%
+rename from src/app/domains/admin/admin-parkings/edit-admin-parkings.component.css
+rename to frontend/src/app/domains/admin/admin-parkings/edit-admin-parkings.component.css
+diff --git a/src/app/domains/admin/admin-parkings/edit-admin-parkings.component.html b/frontend/src/app/domains/admin/admin-parkings/edit-admin-parkings.component.html
+similarity index 100%
+rename from src/app/domains/admin/admin-parkings/edit-admin-parkings.component.html
+rename to frontend/src/app/domains/admin/admin-parkings/edit-admin-parkings.component.html
+diff --git a/src/app/domains/admin/admin-users/admin-users.component.css b/frontend/src/app/domains/admin/admin-users/admin-users.component.css
+similarity index 100%
+rename from src/app/domains/admin/admin-users/admin-users.component.css
+rename to frontend/src/app/domains/admin/admin-users/admin-users.component.css
+diff --git a/src/app/domains/admin/admin-users/admin-users.component.html b/frontend/src/app/domains/admin/admin-users/admin-users.component.html
+similarity index 100%
+rename from src/app/domains/admin/admin-users/admin-users.component.html
+rename to frontend/src/app/domains/admin/admin-users/admin-users.component.html
+diff --git a/src/app/domains/admin/admin-users/admin-users.component.spec.ts b/frontend/src/app/domains/admin/admin-users/admin-users.component.spec.ts
+similarity index 100%
+rename from src/app/domains/admin/admin-users/admin-users.component.spec.ts
+rename to frontend/src/app/domains/admin/admin-users/admin-users.component.spec.ts
+diff --git a/src/app/domains/admin/admin-users/admin-users.component.ts b/frontend/src/app/domains/admin/admin-users/admin-users.component.ts
+similarity index 100%
+rename from src/app/domains/admin/admin-users/admin-users.component.ts
+rename to frontend/src/app/domains/admin/admin-users/admin-users.component.ts
+diff --git a/src/app/domains/admin/admin-users/edit-user-admin.component.css b/frontend/src/app/domains/admin/admin-users/edit-user-admin.component.css
+similarity index 100%
+rename from src/app/domains/admin/admin-users/edit-user-admin.component.css
+rename to frontend/src/app/domains/admin/admin-users/edit-user-admin.component.css
+diff --git a/src/app/domains/admin/admin-users/edit-user-admin.component.html b/frontend/src/app/domains/admin/admin-users/edit-user-admin.component.html
+similarity index 100%
+rename from src/app/domains/admin/admin-users/edit-user-admin.component.html
+rename to frontend/src/app/domains/admin/admin-users/edit-user-admin.component.html
+diff --git a/src/app/domains/admin/administrators-of-parkings/administrators-of-parkings.component.css b/frontend/src/app/domains/admin/administrators-of-parkings/administrators-of-parkings.component.css
+similarity index 100%
+rename from src/app/domains/admin/administrators-of-parkings/administrators-of-parkings.component.css
+rename to frontend/src/app/domains/admin/administrators-of-parkings/administrators-of-parkings.component.css
+diff --git a/src/app/domains/admin/administrators-of-parkings/administrators-of-parkings.component.html b/frontend/src/app/domains/admin/administrators-of-parkings/administrators-of-parkings.component.html
+similarity index 100%
+rename from src/app/domains/admin/administrators-of-parkings/administrators-of-parkings.component.html
+rename to frontend/src/app/domains/admin/administrators-of-parkings/administrators-of-parkings.component.html
+diff --git a/src/app/domains/admin/administrators-of-parkings/administrators-of-parkings.component.spec.ts b/frontend/src/app/domains/admin/administrators-of-parkings/administrators-of-parkings.component.spec.ts
+similarity index 100%
+rename from src/app/domains/admin/administrators-of-parkings/administrators-of-parkings.component.spec.ts
+rename to frontend/src/app/domains/admin/administrators-of-parkings/administrators-of-parkings.component.spec.ts
+diff --git a/src/app/domains/admin/administrators-of-parkings/administrators-of-parkings.component.ts b/frontend/src/app/domains/admin/administrators-of-parkings/administrators-of-parkings.component.ts
+similarity index 100%
+rename from src/app/domains/admin/administrators-of-parkings/administrators-of-parkings.component.ts
+rename to frontend/src/app/domains/admin/administrators-of-parkings/administrators-of-parkings.component.ts
+diff --git a/src/app/domains/admin/logs-component/logs.component.css b/frontend/src/app/domains/admin/logs-component/logs.component.css
+similarity index 100%
+rename from src/app/domains/admin/logs-component/logs.component.css
+rename to frontend/src/app/domains/admin/logs-component/logs.component.css
+diff --git a/src/app/domains/admin/logs-component/logs.component.html b/frontend/src/app/domains/admin/logs-component/logs.component.html
+similarity index 100%
+rename from src/app/domains/admin/logs-component/logs.component.html
+rename to frontend/src/app/domains/admin/logs-component/logs.component.html
+diff --git a/src/app/domains/admin/logs-component/logs.component.spec.ts b/frontend/src/app/domains/admin/logs-component/logs.component.spec.ts
+similarity index 100%
+rename from src/app/domains/admin/logs-component/logs.component.spec.ts
+rename to frontend/src/app/domains/admin/logs-component/logs.component.spec.ts
+diff --git a/src/app/domains/admin/logs-component/logs.component.ts b/frontend/src/app/domains/admin/logs-component/logs.component.ts
+similarity index 100%
+rename from src/app/domains/admin/logs-component/logs.component.ts
+rename to frontend/src/app/domains/admin/logs-component/logs.component.ts
+diff --git a/src/app/domains/admin/main-admin-page/main-admin-page.component.css b/frontend/src/app/domains/admin/main-admin-page/main-admin-page.component.css
+similarity index 100%
+rename from src/app/domains/admin/main-admin-page/main-admin-page.component.css
+rename to frontend/src/app/domains/admin/main-admin-page/main-admin-page.component.css
+diff --git a/src/app/domains/admin/main-admin-page/main-admin-page.component.html b/frontend/src/app/domains/admin/main-admin-page/main-admin-page.component.html
+similarity index 100%
+rename from src/app/domains/admin/main-admin-page/main-admin-page.component.html
+rename to frontend/src/app/domains/admin/main-admin-page/main-admin-page.component.html
+diff --git a/src/app/domains/admin/main-admin-page/main-admin-page.component.spec.ts b/frontend/src/app/domains/admin/main-admin-page/main-admin-page.component.spec.ts
+similarity index 100%
+rename from src/app/domains/admin/main-admin-page/main-admin-page.component.spec.ts
+rename to frontend/src/app/domains/admin/main-admin-page/main-admin-page.component.spec.ts
+diff --git a/src/app/domains/admin/main-admin-page/main-admin-page.component.ts b/frontend/src/app/domains/admin/main-admin-page/main-admin-page.component.ts
+similarity index 100%
+rename from src/app/domains/admin/main-admin-page/main-admin-page.component.ts
+rename to frontend/src/app/domains/admin/main-admin-page/main-admin-page.component.ts
+diff --git a/src/app/domains/admin/register-administrator/register-administrator.component.css b/frontend/src/app/domains/admin/register-administrator/register-administrator.component.css
+similarity index 100%
+rename from src/app/domains/admin/register-administrator/register-administrator.component.css
+rename to frontend/src/app/domains/admin/register-administrator/register-administrator.component.css
+diff --git a/src/app/domains/admin/register-administrator/register-administrator.component.html b/frontend/src/app/domains/admin/register-administrator/register-administrator.component.html
+similarity index 100%
+rename from src/app/domains/admin/register-administrator/register-administrator.component.html
+rename to frontend/src/app/domains/admin/register-administrator/register-administrator.component.html
+diff --git a/src/app/domains/admin/register-administrator/register-administrator.component.spec.ts b/frontend/src/app/domains/admin/register-administrator/register-administrator.component.spec.ts
+similarity index 100%
+rename from src/app/domains/admin/register-administrator/register-administrator.component.spec.ts
+rename to frontend/src/app/domains/admin/register-administrator/register-administrator.component.spec.ts
+diff --git a/src/app/domains/admin/register-administrator/register-administrator.component.ts b/frontend/src/app/domains/admin/register-administrator/register-administrator.component.ts
+similarity index 100%
+rename from src/app/domains/admin/register-administrator/register-administrator.component.ts
+rename to frontend/src/app/domains/admin/register-administrator/register-administrator.component.ts
+diff --git a/src/app/domains/admin/stats-super-admin/stats-super-admin.component.css b/frontend/src/app/domains/admin/stats-super-admin/stats-super-admin.component.css
+similarity index 100%
+rename from src/app/domains/admin/stats-super-admin/stats-super-admin.component.css
+rename to frontend/src/app/domains/admin/stats-super-admin/stats-super-admin.component.css
+diff --git a/src/app/domains/admin/stats-super-admin/stats-super-admin.component.html b/frontend/src/app/domains/admin/stats-super-admin/stats-super-admin.component.html
+similarity index 100%
+rename from src/app/domains/admin/stats-super-admin/stats-super-admin.component.html
+rename to frontend/src/app/domains/admin/stats-super-admin/stats-super-admin.component.html
+diff --git a/src/app/domains/admin/stats-super-admin/stats-super-admin.component.spec.ts b/frontend/src/app/domains/admin/stats-super-admin/stats-super-admin.component.spec.ts
+similarity index 100%
+rename from src/app/domains/admin/stats-super-admin/stats-super-admin.component.spec.ts
+rename to frontend/src/app/domains/admin/stats-super-admin/stats-super-admin.component.spec.ts
+diff --git a/src/app/domains/admin/stats-super-admin/stats-super-admin.component.ts b/frontend/src/app/domains/admin/stats-super-admin/stats-super-admin.component.ts
+similarity index 100%
+rename from src/app/domains/admin/stats-super-admin/stats-super-admin.component.ts
+rename to frontend/src/app/domains/admin/stats-super-admin/stats-super-admin.component.ts
+diff --git a/src/app/domains/info/pages/about/about.component.css b/frontend/src/app/domains/info/pages/about/about.component.css
+similarity index 100%
+rename from src/app/domains/info/pages/about/about.component.css
+rename to frontend/src/app/domains/info/pages/about/about.component.css
+diff --git a/src/app/domains/info/pages/about/about.component.html b/frontend/src/app/domains/info/pages/about/about.component.html
+similarity index 100%
+rename from src/app/domains/info/pages/about/about.component.html
+rename to frontend/src/app/domains/info/pages/about/about.component.html
+diff --git a/src/app/domains/info/pages/about/about.component.spec.ts b/frontend/src/app/domains/info/pages/about/about.component.spec.ts
+similarity index 100%
+rename from src/app/domains/info/pages/about/about.component.spec.ts
+rename to frontend/src/app/domains/info/pages/about/about.component.spec.ts
+diff --git a/src/app/domains/info/pages/about/about.component.ts b/frontend/src/app/domains/info/pages/about/about.component.ts
+similarity index 100%
+rename from src/app/domains/info/pages/about/about.component.ts
+rename to frontend/src/app/domains/info/pages/about/about.component.ts
+diff --git a/src/app/domains/info/pages/maps/maps.component.css b/frontend/src/app/domains/info/pages/maps/maps.component.css
+similarity index 100%
+rename from src/app/domains/info/pages/maps/maps.component.css
+rename to frontend/src/app/domains/info/pages/maps/maps.component.css
+diff --git a/src/app/domains/info/pages/maps/maps.component.html b/frontend/src/app/domains/info/pages/maps/maps.component.html
+similarity index 100%
+rename from src/app/domains/info/pages/maps/maps.component.html
+rename to frontend/src/app/domains/info/pages/maps/maps.component.html
+diff --git a/src/app/domains/info/pages/maps/maps.component.spec.ts b/frontend/src/app/domains/info/pages/maps/maps.component.spec.ts
+similarity index 100%
+rename from src/app/domains/info/pages/maps/maps.component.spec.ts
+rename to frontend/src/app/domains/info/pages/maps/maps.component.spec.ts
+diff --git a/src/app/domains/info/pages/maps/maps.component.ts b/frontend/src/app/domains/info/pages/maps/maps.component.ts
+similarity index 100%
+rename from src/app/domains/info/pages/maps/maps.component.ts
+rename to frontend/src/app/domains/info/pages/maps/maps.component.ts
+diff --git a/src/app/domains/info/pages/not-found/not-found.component.css b/frontend/src/app/domains/info/pages/not-found/not-found.component.css
+similarity index 100%
+rename from src/app/domains/info/pages/not-found/not-found.component.css
+rename to frontend/src/app/domains/info/pages/not-found/not-found.component.css
+diff --git a/src/app/domains/info/pages/not-found/not-found.component.html b/frontend/src/app/domains/info/pages/not-found/not-found.component.html
+similarity index 100%
+rename from src/app/domains/info/pages/not-found/not-found.component.html
+rename to frontend/src/app/domains/info/pages/not-found/not-found.component.html
+diff --git a/src/app/domains/info/pages/not-found/not-found.component.spec.ts b/frontend/src/app/domains/info/pages/not-found/not-found.component.spec.ts
+similarity index 100%
+rename from src/app/domains/info/pages/not-found/not-found.component.spec.ts
+rename to frontend/src/app/domains/info/pages/not-found/not-found.component.spec.ts
+diff --git a/src/app/domains/info/pages/not-found/not-found.component.ts b/frontend/src/app/domains/info/pages/not-found/not-found.component.ts
+similarity index 100%
+rename from src/app/domains/info/pages/not-found/not-found.component.ts
+rename to frontend/src/app/domains/info/pages/not-found/not-found.component.ts
+diff --git a/src/app/domains/info/pages/tyc/tyc.component.css b/frontend/src/app/domains/info/pages/tyc/tyc.component.css
+similarity index 100%
+rename from src/app/domains/info/pages/tyc/tyc.component.css
+rename to frontend/src/app/domains/info/pages/tyc/tyc.component.css
+diff --git a/src/app/domains/info/pages/tyc/tyc.component.html b/frontend/src/app/domains/info/pages/tyc/tyc.component.html
+similarity index 100%
+rename from src/app/domains/info/pages/tyc/tyc.component.html
+rename to frontend/src/app/domains/info/pages/tyc/tyc.component.html
+diff --git a/src/app/domains/info/pages/tyc/tyc.component.spec.ts b/frontend/src/app/domains/info/pages/tyc/tyc.component.spec.ts
+similarity index 100%
+rename from src/app/domains/info/pages/tyc/tyc.component.spec.ts
+rename to frontend/src/app/domains/info/pages/tyc/tyc.component.spec.ts
+diff --git a/src/app/domains/info/pages/tyc/tyc.component.ts b/frontend/src/app/domains/info/pages/tyc/tyc.component.ts
+similarity index 100%
+rename from src/app/domains/info/pages/tyc/tyc.component.ts
+rename to frontend/src/app/domains/info/pages/tyc/tyc.component.ts
+diff --git a/src/app/domains/products/components/product/product.component.css b/frontend/src/app/domains/products/components/product/product.component.css
+similarity index 100%
+rename from src/app/domains/products/components/product/product.component.css
+rename to frontend/src/app/domains/products/components/product/product.component.css
+diff --git a/src/app/domains/products/components/product/product.component.html b/frontend/src/app/domains/products/components/product/product.component.html
+similarity index 100%
+rename from src/app/domains/products/components/product/product.component.html
+rename to frontend/src/app/domains/products/components/product/product.component.html
+diff --git a/src/app/domains/products/components/product/product.component.spec.ts b/frontend/src/app/domains/products/components/product/product.component.spec.ts
+similarity index 100%
+rename from src/app/domains/products/components/product/product.component.spec.ts
+rename to frontend/src/app/domains/products/components/product/product.component.spec.ts
+diff --git a/src/app/domains/products/components/product/product.component.ts b/frontend/src/app/domains/products/components/product/product.component.ts
+similarity index 100%
+rename from src/app/domains/products/components/product/product.component.ts
+rename to frontend/src/app/domains/products/components/product/product.component.ts
+diff --git a/src/app/domains/products/pages/forgot-password/forgot-password.component.css b/frontend/src/app/domains/products/pages/forgot-password/forgot-password.component.css
+similarity index 100%
+rename from src/app/domains/products/pages/forgot-password/forgot-password.component.css
+rename to frontend/src/app/domains/products/pages/forgot-password/forgot-password.component.css
+diff --git a/src/app/domains/products/pages/forgot-password/forgot-password.component.html b/frontend/src/app/domains/products/pages/forgot-password/forgot-password.component.html
+similarity index 100%
+rename from src/app/domains/products/pages/forgot-password/forgot-password.component.html
+rename to frontend/src/app/domains/products/pages/forgot-password/forgot-password.component.html
+diff --git a/src/app/domains/products/pages/forgot-password/forgot-password.component.spec.ts b/frontend/src/app/domains/products/pages/forgot-password/forgot-password.component.spec.ts
+similarity index 100%
+rename from src/app/domains/products/pages/forgot-password/forgot-password.component.spec.ts
+rename to frontend/src/app/domains/products/pages/forgot-password/forgot-password.component.spec.ts
+diff --git a/src/app/domains/products/pages/forgot-password/forgot-password.component.ts b/frontend/src/app/domains/products/pages/forgot-password/forgot-password.component.ts
+similarity index 100%
+rename from src/app/domains/products/pages/forgot-password/forgot-password.component.ts
+rename to frontend/src/app/domains/products/pages/forgot-password/forgot-password.component.ts
+diff --git a/src/app/domains/products/pages/list/list.component.css b/frontend/src/app/domains/products/pages/list/list.component.css
+similarity index 100%
+rename from src/app/domains/products/pages/list/list.component.css
+rename to frontend/src/app/domains/products/pages/list/list.component.css
+diff --git a/src/app/domains/products/pages/list/list.component.html b/frontend/src/app/domains/products/pages/list/list.component.html
+similarity index 100%
+rename from src/app/domains/products/pages/list/list.component.html
+rename to frontend/src/app/domains/products/pages/list/list.component.html
+diff --git a/src/app/domains/products/pages/list/list.component.spec.ts b/frontend/src/app/domains/products/pages/list/list.component.spec.ts
+similarity index 100%
+rename from src/app/domains/products/pages/list/list.component.spec.ts
+rename to frontend/src/app/domains/products/pages/list/list.component.spec.ts
+diff --git a/src/app/domains/products/pages/list/list.component.ts b/frontend/src/app/domains/products/pages/list/list.component.ts
+similarity index 100%
+rename from src/app/domains/products/pages/list/list.component.ts
+rename to frontend/src/app/domains/products/pages/list/list.component.ts
+diff --git a/src/app/domains/products/pages/login/login.component.css b/frontend/src/app/domains/products/pages/login/login.component.css
+similarity index 100%
+rename from src/app/domains/products/pages/login/login.component.css
+rename to frontend/src/app/domains/products/pages/login/login.component.css
+diff --git a/src/app/domains/products/pages/login/login.component.html b/frontend/src/app/domains/products/pages/login/login.component.html
+similarity index 100%
+rename from src/app/domains/products/pages/login/login.component.html
+rename to frontend/src/app/domains/products/pages/login/login.component.html
+diff --git a/src/app/domains/products/pages/login/login.component.spec.ts b/frontend/src/app/domains/products/pages/login/login.component.spec.ts
+similarity index 100%
+rename from src/app/domains/products/pages/login/login.component.spec.ts
+rename to frontend/src/app/domains/products/pages/login/login.component.spec.ts
+diff --git a/src/app/domains/products/pages/login/login.component.ts b/frontend/src/app/domains/products/pages/login/login.component.ts
+similarity index 100%
+rename from src/app/domains/products/pages/login/login.component.ts
+rename to frontend/src/app/domains/products/pages/login/login.component.ts
+diff --git a/src/app/domains/products/pages/pasarela/actualizarTarjeta/actualizar-tarjeta/actualizar-tarjeta.component.css b/frontend/src/app/domains/products/pages/pasarela/actualizarTarjeta/actualizar-tarjeta/actualizar-tarjeta.component.css
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/actualizarTarjeta/actualizar-tarjeta/actualizar-tarjeta.component.css
+rename to frontend/src/app/domains/products/pages/pasarela/actualizarTarjeta/actualizar-tarjeta/actualizar-tarjeta.component.css
+diff --git a/src/app/domains/products/pages/pasarela/actualizarTarjeta/actualizar-tarjeta/actualizar-tarjeta.component.html b/frontend/src/app/domains/products/pages/pasarela/actualizarTarjeta/actualizar-tarjeta/actualizar-tarjeta.component.html
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/actualizarTarjeta/actualizar-tarjeta/actualizar-tarjeta.component.html
+rename to frontend/src/app/domains/products/pages/pasarela/actualizarTarjeta/actualizar-tarjeta/actualizar-tarjeta.component.html
+diff --git a/src/app/domains/products/pages/pasarela/actualizarTarjeta/actualizar-tarjeta/actualizar-tarjeta.component.spec.ts b/frontend/src/app/domains/products/pages/pasarela/actualizarTarjeta/actualizar-tarjeta/actualizar-tarjeta.component.spec.ts
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/actualizarTarjeta/actualizar-tarjeta/actualizar-tarjeta.component.spec.ts
+rename to frontend/src/app/domains/products/pages/pasarela/actualizarTarjeta/actualizar-tarjeta/actualizar-tarjeta.component.spec.ts
+diff --git a/src/app/domains/products/pages/pasarela/actualizarTarjeta/actualizar-tarjeta/actualizar-tarjeta.component.ts b/frontend/src/app/domains/products/pages/pasarela/actualizarTarjeta/actualizar-tarjeta/actualizar-tarjeta.component.ts
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/actualizarTarjeta/actualizar-tarjeta/actualizar-tarjeta.component.ts
+rename to frontend/src/app/domains/products/pages/pasarela/actualizarTarjeta/actualizar-tarjeta/actualizar-tarjeta.component.ts
+diff --git a/src/app/domains/products/pages/pasarela/design/active-states.jpg b/frontend/src/app/domains/products/pages/pasarela/design/active-states.jpg
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/design/active-states.jpg
+rename to frontend/src/app/domains/products/pages/pasarela/design/active-states.jpg
+diff --git a/src/app/domains/products/pages/pasarela/design/complete-state-desktop.jpg b/frontend/src/app/domains/products/pages/pasarela/design/complete-state-desktop.jpg
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/design/complete-state-desktop.jpg
+rename to frontend/src/app/domains/products/pages/pasarela/design/complete-state-desktop.jpg
+diff --git a/src/app/domains/products/pages/pasarela/design/complete-state-mobile.jpg b/frontend/src/app/domains/products/pages/pasarela/design/complete-state-mobile.jpg
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/design/complete-state-mobile.jpg
+rename to frontend/src/app/domains/products/pages/pasarela/design/complete-state-mobile.jpg
+diff --git a/src/app/domains/products/pages/pasarela/design/desktop-design.jpg b/frontend/src/app/domains/products/pages/pasarela/design/desktop-design.jpg
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/design/desktop-design.jpg
+rename to frontend/src/app/domains/products/pages/pasarela/design/desktop-design.jpg
+diff --git a/src/app/domains/products/pages/pasarela/design/desktop-preview.jpg b/frontend/src/app/domains/products/pages/pasarela/design/desktop-preview.jpg
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/design/desktop-preview.jpg
+rename to frontend/src/app/domains/products/pages/pasarela/design/desktop-preview.jpg
+diff --git a/src/app/domains/products/pages/pasarela/design/mobile-design.jpg b/frontend/src/app/domains/products/pages/pasarela/design/mobile-design.jpg
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/design/mobile-design.jpg
+rename to frontend/src/app/domains/products/pages/pasarela/design/mobile-design.jpg
+diff --git a/src/app/domains/products/pages/pasarela/images/LOGOSOP1.png b/frontend/src/app/domains/products/pages/pasarela/images/LOGOSOP1.png
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/images/LOGOSOP1.png
+rename to frontend/src/app/domains/products/pages/pasarela/images/LOGOSOP1.png
+diff --git a/src/app/domains/products/pages/pasarela/images/LOGOSOP2.png b/frontend/src/app/domains/products/pages/pasarela/images/LOGOSOP2.png
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/images/LOGOSOP2.png
+rename to frontend/src/app/domains/products/pages/pasarela/images/LOGOSOP2.png
+diff --git a/src/app/domains/products/pages/pasarela/images/bg-card-back.png b/frontend/src/app/domains/products/pages/pasarela/images/bg-card-back.png
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/images/bg-card-back.png
+rename to frontend/src/app/domains/products/pages/pasarela/images/bg-card-back.png
+diff --git a/src/app/domains/products/pages/pasarela/images/bg-card-front.png b/frontend/src/app/domains/products/pages/pasarela/images/bg-card-front.png
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/images/bg-card-front.png
+rename to frontend/src/app/domains/products/pages/pasarela/images/bg-card-front.png
+diff --git a/src/app/domains/products/pages/pasarela/images/bg-main-desktop.png b/frontend/src/app/domains/products/pages/pasarela/images/bg-main-desktop.png
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/images/bg-main-desktop.png
+rename to frontend/src/app/domains/products/pages/pasarela/images/bg-main-desktop.png
+diff --git a/src/app/domains/products/pages/pasarela/images/bg-main-mobile.png b/frontend/src/app/domains/products/pages/pasarela/images/bg-main-mobile.png
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/images/bg-main-mobile.png
+rename to frontend/src/app/domains/products/pages/pasarela/images/bg-main-mobile.png
+diff --git a/src/app/domains/products/pages/pasarela/images/card-logo.svg b/frontend/src/app/domains/products/pages/pasarela/images/card-logo.svg
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/images/card-logo.svg
+rename to frontend/src/app/domains/products/pages/pasarela/images/card-logo.svg
+diff --git a/src/app/domains/products/pages/pasarela/images/favicon-32x32.png b/frontend/src/app/domains/products/pages/pasarela/images/favicon-32x32.png
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/images/favicon-32x32.png
+rename to frontend/src/app/domains/products/pages/pasarela/images/favicon-32x32.png
+diff --git a/src/app/domains/products/pages/pasarela/images/icon-complete.svg b/frontend/src/app/domains/products/pages/pasarela/images/icon-complete.svg
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/images/icon-complete.svg
+rename to frontend/src/app/domains/products/pages/pasarela/images/icon-complete.svg
+diff --git a/src/app/domains/products/pages/pasarela/images/icon-dollar.svg b/frontend/src/app/domains/products/pages/pasarela/images/icon-dollar.svg
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/images/icon-dollar.svg
+rename to frontend/src/app/domains/products/pages/pasarela/images/icon-dollar.svg
+diff --git a/src/app/domains/products/pages/pasarela/images/icon-person.svg b/frontend/src/app/domains/products/pages/pasarela/images/icon-person.svg
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/images/icon-person.svg
+rename to frontend/src/app/domains/products/pages/pasarela/images/icon-person.svg
+diff --git a/src/app/domains/products/pages/pasarela/images/logo.svg b/frontend/src/app/domains/products/pages/pasarela/images/logo.svg
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/images/logo.svg
+rename to frontend/src/app/domains/products/pages/pasarela/images/logo.svg
+diff --git a/src/app/domains/products/pages/pasarela/pasarela.component.css b/frontend/src/app/domains/products/pages/pasarela/pasarela.component.css
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/pasarela.component.css
+rename to frontend/src/app/domains/products/pages/pasarela/pasarela.component.css
+diff --git a/src/app/domains/products/pages/pasarela/pasarela.component.html b/frontend/src/app/domains/products/pages/pasarela/pasarela.component.html
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/pasarela.component.html
+rename to frontend/src/app/domains/products/pages/pasarela/pasarela.component.html
+diff --git a/src/app/domains/products/pages/pasarela/pasarela.component.spec.ts b/frontend/src/app/domains/products/pages/pasarela/pasarela.component.spec.ts
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/pasarela.component.spec.ts
+rename to frontend/src/app/domains/products/pages/pasarela/pasarela.component.spec.ts
+diff --git a/src/app/domains/products/pages/pasarela/pasarela.component.ts b/frontend/src/app/domains/products/pages/pasarela/pasarela.component.ts
+similarity index 100%
+rename from src/app/domains/products/pages/pasarela/pasarela.component.ts
+rename to frontend/src/app/domains/products/pages/pasarela/pasarela.component.ts
+diff --git a/src/app/domains/products/pages/register/register.component.css b/frontend/src/app/domains/products/pages/register/register.component.css
+similarity index 100%
+rename from src/app/domains/products/pages/register/register.component.css
+rename to frontend/src/app/domains/products/pages/register/register.component.css
+diff --git a/src/app/domains/products/pages/register/register.component.html b/frontend/src/app/domains/products/pages/register/register.component.html
+similarity index 100%
+rename from src/app/domains/products/pages/register/register.component.html
+rename to frontend/src/app/domains/products/pages/register/register.component.html
+diff --git a/src/app/domains/products/pages/register/register.component.spec.ts b/frontend/src/app/domains/products/pages/register/register.component.spec.ts
+similarity index 100%
+rename from src/app/domains/products/pages/register/register.component.spec.ts
+rename to frontend/src/app/domains/products/pages/register/register.component.spec.ts
+diff --git a/src/app/domains/products/pages/register/register.component.ts b/frontend/src/app/domains/products/pages/register/register.component.ts
+similarity index 100%
+rename from src/app/domains/products/pages/register/register.component.ts
+rename to frontend/src/app/domains/products/pages/register/register.component.ts
+diff --git a/src/app/domains/products/pages/restore-password/restore-password.component.css b/frontend/src/app/domains/products/pages/restore-password/restore-password.component.css
+similarity index 100%
+rename from src/app/domains/products/pages/restore-password/restore-password.component.css
+rename to frontend/src/app/domains/products/pages/restore-password/restore-password.component.css
+diff --git a/src/app/domains/products/pages/restore-password/restore-password.component.html b/frontend/src/app/domains/products/pages/restore-password/restore-password.component.html
+similarity index 100%
+rename from src/app/domains/products/pages/restore-password/restore-password.component.html
+rename to frontend/src/app/domains/products/pages/restore-password/restore-password.component.html
+diff --git a/src/app/domains/products/pages/restore-password/restore-password.component.spec.ts b/frontend/src/app/domains/products/pages/restore-password/restore-password.component.spec.ts
+similarity index 100%
+rename from src/app/domains/products/pages/restore-password/restore-password.component.spec.ts
+rename to frontend/src/app/domains/products/pages/restore-password/restore-password.component.spec.ts
+diff --git a/src/app/domains/products/pages/restore-password/restore-password.component.ts b/frontend/src/app/domains/products/pages/restore-password/restore-password.component.ts
+similarity index 100%
+rename from src/app/domains/products/pages/restore-password/restore-password.component.ts
+rename to frontend/src/app/domains/products/pages/restore-password/restore-password.component.ts
+diff --git a/src/app/domains/products/pages/send-verify/send-verify.component.css b/frontend/src/app/domains/products/pages/send-verify/send-verify.component.css
+similarity index 100%
+rename from src/app/domains/products/pages/send-verify/send-verify.component.css
+rename to frontend/src/app/domains/products/pages/send-verify/send-verify.component.css
+diff --git a/src/app/domains/products/pages/send-verify/send-verify.component.html b/frontend/src/app/domains/products/pages/send-verify/send-verify.component.html
+similarity index 100%
+rename from src/app/domains/products/pages/send-verify/send-verify.component.html
+rename to frontend/src/app/domains/products/pages/send-verify/send-verify.component.html
+diff --git a/src/app/domains/products/pages/send-verify/send-verify.component.spec.ts b/frontend/src/app/domains/products/pages/send-verify/send-verify.component.spec.ts
+similarity index 100%
+rename from src/app/domains/products/pages/send-verify/send-verify.component.spec.ts
+rename to frontend/src/app/domains/products/pages/send-verify/send-verify.component.spec.ts
+diff --git a/src/app/domains/products/pages/send-verify/send-verify.component.ts b/frontend/src/app/domains/products/pages/send-verify/send-verify.component.ts
+similarity index 100%
+rename from src/app/domains/products/pages/send-verify/send-verify.component.ts
+rename to frontend/src/app/domains/products/pages/send-verify/send-verify.component.ts
+diff --git a/src/app/domains/products/pages/verify-email/verify-email.component.css b/frontend/src/app/domains/products/pages/verify-email/verify-email.component.css
+similarity index 100%
+rename from src/app/domains/products/pages/verify-email/verify-email.component.css
+rename to frontend/src/app/domains/products/pages/verify-email/verify-email.component.css
+diff --git a/src/app/domains/products/pages/verify-email/verify-email.component.html b/frontend/src/app/domains/products/pages/verify-email/verify-email.component.html
+similarity index 100%
+rename from src/app/domains/products/pages/verify-email/verify-email.component.html
+rename to frontend/src/app/domains/products/pages/verify-email/verify-email.component.html
+diff --git a/src/app/domains/products/pages/verify-email/verify-email.component.spec.ts b/frontend/src/app/domains/products/pages/verify-email/verify-email.component.spec.ts
+similarity index 100%
+rename from src/app/domains/products/pages/verify-email/verify-email.component.spec.ts
+rename to frontend/src/app/domains/products/pages/verify-email/verify-email.component.spec.ts
+diff --git a/src/app/domains/products/pages/verify-email/verify-email.component.ts b/frontend/src/app/domains/products/pages/verify-email/verify-email.component.ts
+similarity index 100%
+rename from src/app/domains/products/pages/verify-email/verify-email.component.ts
+rename to frontend/src/app/domains/products/pages/verify-email/verify-email.component.ts
+diff --git a/src/app/domains/products/pages/visualizar-reserva/visualizar-reserva.component.css b/frontend/src/app/domains/products/pages/visualizar-reserva/visualizar-reserva.component.css
+similarity index 100%
+rename from src/app/domains/products/pages/visualizar-reserva/visualizar-reserva.component.css
+rename to frontend/src/app/domains/products/pages/visualizar-reserva/visualizar-reserva.component.css
+diff --git a/src/app/domains/products/pages/visualizar-reserva/visualizar-reserva.component.html b/frontend/src/app/domains/products/pages/visualizar-reserva/visualizar-reserva.component.html
+similarity index 100%
+rename from src/app/domains/products/pages/visualizar-reserva/visualizar-reserva.component.html
+rename to frontend/src/app/domains/products/pages/visualizar-reserva/visualizar-reserva.component.html
+diff --git a/src/app/domains/products/pages/visualizar-reserva/visualizar-reserva.component.spec.ts b/frontend/src/app/domains/products/pages/visualizar-reserva/visualizar-reserva.component.spec.ts
+similarity index 100%
+rename from src/app/domains/products/pages/visualizar-reserva/visualizar-reserva.component.spec.ts
+rename to frontend/src/app/domains/products/pages/visualizar-reserva/visualizar-reserva.component.spec.ts
+diff --git a/src/app/domains/products/pages/visualizar-reserva/visualizar-reserva.component.ts b/frontend/src/app/domains/products/pages/visualizar-reserva/visualizar-reserva.component.ts
+similarity index 100%
+rename from src/app/domains/products/pages/visualizar-reserva/visualizar-reserva.component.ts
+rename to frontend/src/app/domains/products/pages/visualizar-reserva/visualizar-reserva.component.ts
+diff --git a/src/app/domains/shared/card/card.service.spec.ts b/frontend/src/app/domains/shared/card/card.service.spec.ts
+similarity index 100%
+rename from src/app/domains/shared/card/card.service.spec.ts
+rename to frontend/src/app/domains/shared/card/card.service.spec.ts
+diff --git a/src/app/domains/shared/card/card.service.ts b/frontend/src/app/domains/shared/card/card.service.ts
+similarity index 100%
+rename from src/app/domains/shared/card/card.service.ts
+rename to frontend/src/app/domains/shared/card/card.service.ts
+diff --git a/src/app/domains/shared/components/counter/counter.component.css b/frontend/src/app/domains/shared/components/counter/counter.component.css
+similarity index 100%
+rename from src/app/domains/shared/components/counter/counter.component.css
+rename to frontend/src/app/domains/shared/components/counter/counter.component.css
+diff --git a/src/app/domains/shared/components/counter/counter.component.html b/frontend/src/app/domains/shared/components/counter/counter.component.html
+similarity index 100%
+rename from src/app/domains/shared/components/counter/counter.component.html
+rename to frontend/src/app/domains/shared/components/counter/counter.component.html
+diff --git a/src/app/domains/shared/components/counter/counter.component.spec.ts b/frontend/src/app/domains/shared/components/counter/counter.component.spec.ts
+similarity index 100%
+rename from src/app/domains/shared/components/counter/counter.component.spec.ts
+rename to frontend/src/app/domains/shared/components/counter/counter.component.spec.ts
+diff --git a/src/app/domains/shared/components/counter/counter.component.ts b/frontend/src/app/domains/shared/components/counter/counter.component.ts
+similarity index 100%
+rename from src/app/domains/shared/components/counter/counter.component.ts
+rename to frontend/src/app/domains/shared/components/counter/counter.component.ts
+diff --git a/src/app/domains/shared/components/header/header.component.css b/frontend/src/app/domains/shared/components/header/header.component.css
+similarity index 100%
+rename from src/app/domains/shared/components/header/header.component.css
+rename to frontend/src/app/domains/shared/components/header/header.component.css
+diff --git a/src/app/domains/shared/components/header/header.component.html b/frontend/src/app/domains/shared/components/header/header.component.html
+similarity index 100%
+rename from src/app/domains/shared/components/header/header.component.html
+rename to frontend/src/app/domains/shared/components/header/header.component.html
+diff --git a/src/app/domains/shared/components/header/header.component.spec.ts b/frontend/src/app/domains/shared/components/header/header.component.spec.ts
+similarity index 100%
+rename from src/app/domains/shared/components/header/header.component.spec.ts
+rename to frontend/src/app/domains/shared/components/header/header.component.spec.ts
+diff --git a/src/app/domains/shared/components/header/header.component.ts b/frontend/src/app/domains/shared/components/header/header.component.ts
+similarity index 100%
+rename from src/app/domains/shared/components/header/header.component.ts
+rename to frontend/src/app/domains/shared/components/header/header.component.ts
+diff --git a/src/app/domains/shared/components/layout/layout.component.css b/frontend/src/app/domains/shared/components/layout/layout.component.css
+similarity index 100%
+rename from src/app/domains/shared/components/layout/layout.component.css
+rename to frontend/src/app/domains/shared/components/layout/layout.component.css
+diff --git a/src/app/domains/shared/components/layout/layout.component.html b/frontend/src/app/domains/shared/components/layout/layout.component.html
+similarity index 100%
+rename from src/app/domains/shared/components/layout/layout.component.html
+rename to frontend/src/app/domains/shared/components/layout/layout.component.html
+diff --git a/src/app/domains/shared/components/layout/layout.component.spec.ts b/frontend/src/app/domains/shared/components/layout/layout.component.spec.ts
+similarity index 100%
+rename from src/app/domains/shared/components/layout/layout.component.spec.ts
+rename to frontend/src/app/domains/shared/components/layout/layout.component.spec.ts
+diff --git a/src/app/domains/shared/components/layout/layout.component.ts b/frontend/src/app/domains/shared/components/layout/layout.component.ts
+similarity index 100%
+rename from src/app/domains/shared/components/layout/layout.component.ts
+rename to frontend/src/app/domains/shared/components/layout/layout.component.ts
+diff --git a/src/app/domains/shared/components/vnologueo/vista/vistanl/vistanl.component.css b/frontend/src/app/domains/shared/components/vnologueo/vista/vistanl/vistanl.component.css
+similarity index 100%
+rename from src/app/domains/shared/components/vnologueo/vista/vistanl/vistanl.component.css
+rename to frontend/src/app/domains/shared/components/vnologueo/vista/vistanl/vistanl.component.css
+diff --git a/src/app/domains/shared/components/vnologueo/vista/vistanl/vistanl.component.html b/frontend/src/app/domains/shared/components/vnologueo/vista/vistanl/vistanl.component.html
+similarity index 100%
+rename from src/app/domains/shared/components/vnologueo/vista/vistanl/vistanl.component.html
+rename to frontend/src/app/domains/shared/components/vnologueo/vista/vistanl/vistanl.component.html
+diff --git a/src/app/domains/shared/components/vnologueo/vista/vistanl/vistanl.component.spec.ts b/frontend/src/app/domains/shared/components/vnologueo/vista/vistanl/vistanl.component.spec.ts
+similarity index 100%
+rename from src/app/domains/shared/components/vnologueo/vista/vistanl/vistanl.component.spec.ts
+rename to frontend/src/app/domains/shared/components/vnologueo/vista/vistanl/vistanl.component.spec.ts
+diff --git a/src/app/domains/shared/components/vnologueo/vista/vistanl/vistanl.component.ts b/frontend/src/app/domains/shared/components/vnologueo/vista/vistanl/vistanl.component.ts
+similarity index 100%
+rename from src/app/domains/shared/components/vnologueo/vista/vistanl/vistanl.component.ts
+rename to frontend/src/app/domains/shared/components/vnologueo/vista/vistanl/vistanl.component.ts
+diff --git a/src/app/domains/shared/components/vnologueo/vnologueo.component.css b/frontend/src/app/domains/shared/components/vnologueo/vnologueo.component.css
+similarity index 100%
+rename from src/app/domains/shared/components/vnologueo/vnologueo.component.css
+rename to frontend/src/app/domains/shared/components/vnologueo/vnologueo.component.css
+diff --git a/src/app/domains/shared/components/vnologueo/vnologueo.component.html b/frontend/src/app/domains/shared/components/vnologueo/vnologueo.component.html
+similarity index 100%
+rename from src/app/domains/shared/components/vnologueo/vnologueo.component.html
+rename to frontend/src/app/domains/shared/components/vnologueo/vnologueo.component.html
+diff --git a/src/app/domains/shared/components/vnologueo/vnologueo.component.spec.ts b/frontend/src/app/domains/shared/components/vnologueo/vnologueo.component.spec.ts
+similarity index 100%
+rename from src/app/domains/shared/components/vnologueo/vnologueo.component.spec.ts
+rename to frontend/src/app/domains/shared/components/vnologueo/vnologueo.component.spec.ts
+diff --git a/src/app/domains/shared/components/vnologueo/vnologueo.component.ts b/frontend/src/app/domains/shared/components/vnologueo/vnologueo.component.ts
+similarity index 100%
+rename from src/app/domains/shared/components/vnologueo/vnologueo.component.ts
+rename to frontend/src/app/domains/shared/components/vnologueo/vnologueo.component.ts
+diff --git a/src/app/domains/shared/forgotPassword/forgot-password.service.spec.ts b/frontend/src/app/domains/shared/forgotPassword/forgot-password.service.spec.ts
+similarity index 100%
+rename from src/app/domains/shared/forgotPassword/forgot-password.service.spec.ts
+rename to frontend/src/app/domains/shared/forgotPassword/forgot-password.service.spec.ts
+diff --git a/src/app/domains/shared/forgotPassword/forgot-password.service.ts b/frontend/src/app/domains/shared/forgotPassword/forgot-password.service.ts
+similarity index 100%
+rename from src/app/domains/shared/forgotPassword/forgot-password.service.ts
+rename to frontend/src/app/domains/shared/forgotPassword/forgot-password.service.ts
+diff --git a/src/app/domains/shared/login/login.service.spec.ts b/frontend/src/app/domains/shared/login/login.service.spec.ts
+similarity index 100%
+rename from src/app/domains/shared/login/login.service.spec.ts
+rename to frontend/src/app/domains/shared/login/login.service.spec.ts
+diff --git a/src/app/domains/shared/login/login.service.ts b/frontend/src/app/domains/shared/login/login.service.ts
+similarity index 100%
+rename from src/app/domains/shared/login/login.service.ts
+rename to frontend/src/app/domains/shared/login/login.service.ts
+diff --git a/src/app/domains/shared/models/pasarela.interface.ts b/frontend/src/app/domains/shared/models/pasarela.interface.ts
+similarity index 100%
+rename from src/app/domains/shared/models/pasarela.interface.ts
+rename to frontend/src/app/domains/shared/models/pasarela.interface.ts
+diff --git a/src/app/domains/shared/models/product.model.ts b/frontend/src/app/domains/shared/models/product.model.ts
+similarity index 100%
+rename from src/app/domains/shared/models/product.model.ts
+rename to frontend/src/app/domains/shared/models/product.model.ts
+diff --git a/src/app/domains/shared/models/response.interface.ts b/frontend/src/app/domains/shared/models/response.interface.ts
+similarity index 100%
+rename from src/app/domains/shared/models/response.interface.ts
+rename to frontend/src/app/domains/shared/models/response.interface.ts
+diff --git a/src/app/domains/shared/register/register.service.spec.ts b/frontend/src/app/domains/shared/register/register.service.spec.ts
+similarity index 100%
+rename from src/app/domains/shared/register/register.service.spec.ts
+rename to frontend/src/app/domains/shared/register/register.service.spec.ts
+diff --git a/src/app/domains/shared/register/register.service.ts b/frontend/src/app/domains/shared/register/register.service.ts
+similarity index 100%
+rename from src/app/domains/shared/register/register.service.ts
+rename to frontend/src/app/domains/shared/register/register.service.ts
+diff --git a/src/app/domains/shared/reserva/checkin/checkin.service.spec.ts b/frontend/src/app/domains/shared/reserva/checkin/checkin.service.spec.ts
+similarity index 100%
+rename from src/app/domains/shared/reserva/checkin/checkin.service.spec.ts
+rename to frontend/src/app/domains/shared/reserva/checkin/checkin.service.spec.ts
+diff --git a/src/app/domains/shared/reserva/checkin/checkin.service.ts b/frontend/src/app/domains/shared/reserva/checkin/checkin.service.ts
+similarity index 100%
+rename from src/app/domains/shared/reserva/checkin/checkin.service.ts
+rename to frontend/src/app/domains/shared/reserva/checkin/checkin.service.ts
+diff --git a/src/app/domains/shared/reserva/checkout/checkout.service.spec.ts b/frontend/src/app/domains/shared/reserva/checkout/checkout.service.spec.ts
+similarity index 100%
+rename from src/app/domains/shared/reserva/checkout/checkout.service.spec.ts
+rename to frontend/src/app/domains/shared/reserva/checkout/checkout.service.spec.ts
+diff --git a/src/app/domains/shared/reserva/checkout/checkout.service.ts b/frontend/src/app/domains/shared/reserva/checkout/checkout.service.ts
+similarity index 100%
+rename from src/app/domains/shared/reserva/checkout/checkout.service.ts
+rename to frontend/src/app/domains/shared/reserva/checkout/checkout.service.ts
+diff --git a/src/app/domains/shared/reserva/reserva.service.spec.ts b/frontend/src/app/domains/shared/reserva/reserva.service.spec.ts
+similarity index 100%
+rename from src/app/domains/shared/reserva/reserva.service.spec.ts
+rename to frontend/src/app/domains/shared/reserva/reserva.service.spec.ts
+diff --git a/src/app/domains/shared/reserva/reserva.service.ts b/frontend/src/app/domains/shared/reserva/reserva.service.ts
+similarity index 100%
+rename from src/app/domains/shared/reserva/reserva.service.ts
+rename to frontend/src/app/domains/shared/reserva/reserva.service.ts
+diff --git a/src/app/domains/shared/resetPassword/reset-password.service.spec.ts b/frontend/src/app/domains/shared/resetPassword/reset-password.service.spec.ts
+similarity index 100%
+rename from src/app/domains/shared/resetPassword/reset-password.service.spec.ts
+rename to frontend/src/app/domains/shared/resetPassword/reset-password.service.spec.ts
+diff --git a/src/app/domains/shared/resetPassword/reset-password.service.ts b/frontend/src/app/domains/shared/resetPassword/reset-password.service.ts
+similarity index 100%
+rename from src/app/domains/shared/resetPassword/reset-password.service.ts
+rename to frontend/src/app/domains/shared/resetPassword/reset-password.service.ts
+diff --git a/src/app/domains/shared/sendVerify/send-verify.service.spec.ts b/frontend/src/app/domains/shared/sendVerify/send-verify.service.spec.ts
+similarity index 100%
+rename from src/app/domains/shared/sendVerify/send-verify.service.spec.ts
+rename to frontend/src/app/domains/shared/sendVerify/send-verify.service.spec.ts
+diff --git a/src/app/domains/shared/sendVerify/send-verify.service.ts b/frontend/src/app/domains/shared/sendVerify/send-verify.service.ts
+similarity index 100%
+rename from src/app/domains/shared/sendVerify/send-verify.service.ts
+rename to frontend/src/app/domains/shared/sendVerify/send-verify.service.ts
+diff --git a/src/app/domains/shared/services/product.service.spec.ts b/frontend/src/app/domains/shared/services/product.service.spec.ts
+similarity index 100%
+rename from src/app/domains/shared/services/product.service.spec.ts
+rename to frontend/src/app/domains/shared/services/product.service.spec.ts
+diff --git a/src/app/domains/shared/services/product.service.ts b/frontend/src/app/domains/shared/services/product.service.ts
+similarity index 100%
+rename from src/app/domains/shared/services/product.service.ts
+rename to frontend/src/app/domains/shared/services/product.service.ts
+diff --git a/src/app/domains/shared/token/token.service.spec.ts b/frontend/src/app/domains/shared/token/token.service.spec.ts
+similarity index 100%
+rename from src/app/domains/shared/token/token.service.spec.ts
+rename to frontend/src/app/domains/shared/token/token.service.spec.ts
+diff --git a/src/app/domains/shared/token/token.service.ts b/frontend/src/app/domains/shared/token/token.service.ts
+similarity index 100%
+rename from src/app/domains/shared/token/token.service.ts
+rename to frontend/src/app/domains/shared/token/token.service.ts
+diff --git a/src/app/domains/shared/verifyEmail/verify-email.service.spec.ts b/frontend/src/app/domains/shared/verifyEmail/verify-email.service.spec.ts
+similarity index 100%
+rename from src/app/domains/shared/verifyEmail/verify-email.service.spec.ts
+rename to frontend/src/app/domains/shared/verifyEmail/verify-email.service.spec.ts
+diff --git a/src/app/domains/shared/verifyEmail/verify-email.service.ts b/frontend/src/app/domains/shared/verifyEmail/verify-email.service.ts
+similarity index 100%
+rename from src/app/domains/shared/verifyEmail/verify-email.service.ts
+rename to frontend/src/app/domains/shared/verifyEmail/verify-email.service.ts
+diff --git a/src/app/guards/auth/auth.guard.ts b/frontend/src/app/guards/auth/auth.guard.ts
+similarity index 100%
+rename from src/app/guards/auth/auth.guard.ts
+rename to frontend/src/app/guards/auth/auth.guard.ts
+diff --git a/src/app/guards/auth2/auth2.guard.ts b/frontend/src/app/guards/auth2/auth2.guard.ts
+similarity index 100%
+rename from src/app/guards/auth2/auth2.guard.ts
+rename to frontend/src/app/guards/auth2/auth2.guard.ts
+diff --git a/src/app/reserves/acceptPayment/r-method-points.component.css b/frontend/src/app/reserves/acceptPayment/r-method-points.component.css
+similarity index 100%
+rename from src/app/reserves/acceptPayment/r-method-points.component.css
+rename to frontend/src/app/reserves/acceptPayment/r-method-points.component.css
+diff --git a/src/app/reserves/acceptPayment/r-method-points.component.html b/frontend/src/app/reserves/acceptPayment/r-method-points.component.html
+similarity index 100%
+rename from src/app/reserves/acceptPayment/r-method-points.component.html
+rename to frontend/src/app/reserves/acceptPayment/r-method-points.component.html
+diff --git a/src/app/reserves/acceptPayment/r-method-points.component.spec.ts b/frontend/src/app/reserves/acceptPayment/r-method-points.component.spec.ts
+similarity index 100%
+rename from src/app/reserves/acceptPayment/r-method-points.component.spec.ts
+rename to frontend/src/app/reserves/acceptPayment/r-method-points.component.spec.ts
+diff --git a/src/app/reserves/acceptPayment/r-method-points.component.ts b/frontend/src/app/reserves/acceptPayment/r-method-points.component.ts
+similarity index 100%
+rename from src/app/reserves/acceptPayment/r-method-points.component.ts
+rename to frontend/src/app/reserves/acceptPayment/r-method-points.component.ts
+diff --git a/src/app/reserves/cancel-reserve/cancel-reserve.component.css b/frontend/src/app/reserves/cancel-reserve/cancel-reserve.component.css
+similarity index 100%
+rename from src/app/reserves/cancel-reserve/cancel-reserve.component.css
+rename to frontend/src/app/reserves/cancel-reserve/cancel-reserve.component.css
+diff --git a/src/app/reserves/cancel-reserve/cancel-reserve.component.html b/frontend/src/app/reserves/cancel-reserve/cancel-reserve.component.html
+similarity index 100%
+rename from src/app/reserves/cancel-reserve/cancel-reserve.component.html
+rename to frontend/src/app/reserves/cancel-reserve/cancel-reserve.component.html
+diff --git a/src/app/reserves/cancel-reserve/cancel-reserve.component.spec.ts b/frontend/src/app/reserves/cancel-reserve/cancel-reserve.component.spec.ts
+similarity index 100%
+rename from src/app/reserves/cancel-reserve/cancel-reserve.component.spec.ts
+rename to frontend/src/app/reserves/cancel-reserve/cancel-reserve.component.spec.ts
+diff --git a/src/app/reserves/cancel-reserve/cancel-reserve.component.ts b/frontend/src/app/reserves/cancel-reserve/cancel-reserve.component.ts
+similarity index 100%
+rename from src/app/reserves/cancel-reserve/cancel-reserve.component.ts
+rename to frontend/src/app/reserves/cancel-reserve/cancel-reserve.component.ts
+diff --git a/src/app/reserves/reserves.component.css b/frontend/src/app/reserves/reserves.component.css
+similarity index 100%
+rename from src/app/reserves/reserves.component.css
+rename to frontend/src/app/reserves/reserves.component.css
+diff --git a/src/app/reserves/reserves.component.html b/frontend/src/app/reserves/reserves.component.html
+similarity index 100%
+rename from src/app/reserves/reserves.component.html
+rename to frontend/src/app/reserves/reserves.component.html
+diff --git a/src/app/reserves/reserves.component.spec.ts b/frontend/src/app/reserves/reserves.component.spec.ts
+similarity index 100%
+rename from src/app/reserves/reserves.component.spec.ts
+rename to frontend/src/app/reserves/reserves.component.spec.ts
+diff --git a/src/app/reserves/reserves.component.ts b/frontend/src/app/reserves/reserves.component.ts
+similarity index 100%
+rename from src/app/reserves/reserves.component.ts
+rename to frontend/src/app/reserves/reserves.component.ts
+diff --git a/src/app/services/admin/data.service.ts b/frontend/src/app/services/admin/data.service.ts
+similarity index 100%
+rename from src/app/services/admin/data.service.ts
+rename to frontend/src/app/services/admin/data.service.ts
+diff --git a/src/app/users/edit-user/edit-user.component.css b/frontend/src/app/users/edit-user/edit-user.component.css
+similarity index 100%
+rename from src/app/users/edit-user/edit-user.component.css
+rename to frontend/src/app/users/edit-user/edit-user.component.css
+diff --git a/src/app/users/edit-user/edit-user.component.html b/frontend/src/app/users/edit-user/edit-user.component.html
+similarity index 100%
+rename from src/app/users/edit-user/edit-user.component.html
+rename to frontend/src/app/users/edit-user/edit-user.component.html
+diff --git a/src/app/users/edit-user/edit-user.component.spec.ts b/frontend/src/app/users/edit-user/edit-user.component.spec.ts
+similarity index 100%
+rename from src/app/users/edit-user/edit-user.component.spec.ts
+rename to frontend/src/app/users/edit-user/edit-user.component.spec.ts
+diff --git a/src/app/users/edit-user/edit-user.component.ts b/frontend/src/app/users/edit-user/edit-user.component.ts
+similarity index 100%
+rename from src/app/users/edit-user/edit-user.component.ts
+rename to frontend/src/app/users/edit-user/edit-user.component.ts
+diff --git a/src/assets/.gitkeep b/frontend/src/assets/.gitkeep
+similarity index 100%
+rename from src/assets/.gitkeep
+rename to frontend/src/assets/.gitkeep
+diff --git a/src/environments/environment.ts b/frontend/src/environments/environment.ts
+similarity index 100%
+rename from src/environments/environment.ts
+rename to frontend/src/environments/environment.ts
+diff --git a/src/index.html b/frontend/src/index.html
+similarity index 100%
+rename from src/index.html
+rename to frontend/src/index.html
+diff --git a/src/main.ts b/frontend/src/main.ts
+similarity index 100%
+rename from src/main.ts
+rename to frontend/src/main.ts
+diff --git a/src/styles.css b/frontend/src/styles.css
+similarity index 100%
+rename from src/styles.css
+rename to frontend/src/styles.css
+diff --git a/tailwind.config.js b/frontend/tailwind.config.js
+similarity index 100%
+rename from tailwind.config.js
+rename to frontend/tailwind.config.js
+diff --git a/tsconfig.app.json b/frontend/tsconfig.app.json
+similarity index 100%
+rename from tsconfig.app.json
+rename to frontend/tsconfig.app.json
+diff --git a/tsconfig.json b/frontend/tsconfig.json
+similarity index 100%
+rename from tsconfig.json
+rename to frontend/tsconfig.json
+diff --git a/tsconfig.spec.json b/frontend/tsconfig.spec.json
+similarity index 100%
+rename from tsconfig.spec.json
+rename to frontend/tsconfig.spec.json

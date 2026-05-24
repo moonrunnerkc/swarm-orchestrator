@@ -1,0 +1,52 @@
+diff --git a/src/test/java/starter/pageobjects/magento/MagentoHomePage.java b/src/test/java/starter/pageobjects/magento/MagentoHomePage.java
+index 1220594..1f44fb2 100644
+--- a/src/test/java/starter/pageobjects/magento/MagentoHomePage.java
++++ b/src/test/java/starter/pageobjects/magento/MagentoHomePage.java
+@@ -115,9 +115,6 @@ static boolean isCloudflareSslErrorPage(String title, String pageSource) {
+         if (title != null && title.contains("526: Invalid SSL certificate")) {
+             return true;
+         }
+-        return pageSource != null
+-                && pageSource.contains("cf-error-details")
+-                && (pageSource.contains("Error code 526")
+-                || pageSource.contains("Invalid SSL certificate"));
++        return pageSource != null && pageSource.contains("cf-error-details");
+     }
+ }
+diff --git a/src/test/java/starter/pageobjects/magento/MagentoHomePageTest.java b/src/test/java/starter/pageobjects/magento/MagentoHomePageTest.java
+index 4feedbb..c994ecf 100644
+--- a/src/test/java/starter/pageobjects/magento/MagentoHomePageTest.java
++++ b/src/test/java/starter/pageobjects/magento/MagentoHomePageTest.java
+@@ -25,6 +25,17 @@ void shouldDetectCloudflareSslErrorFromPageSourceMarkers() {
+         assertThat(MagentoHomePage.isCloudflareSslErrorPage("", pageSource)).isTrue();
+     }
+ 
++    @Test
++    void shouldDetectNonSslCloudflareErrors() {
++        String pageSource = """
++                <html>
++                <div id="cf-error-details">Connection timed out Error code 522</div>
++                </html>
++                """;
++
++        assertThat(MagentoHomePage.isCloudflareSslErrorPage("", pageSource)).isTrue();
++    }
++
+     @Test
+     void shouldNotTreatNormalSearchResultsAsCloudflareError() {
+         String pageSource = """
+diff --git a/src/test/java/starter/pageobjects/saucedemo/InventoryPage.java b/src/test/java/starter/pageobjects/saucedemo/InventoryPage.java
+index 1af6f3a..4ed5b80 100644
+--- a/src/test/java/starter/pageobjects/saucedemo/InventoryPage.java
++++ b/src/test/java/starter/pageobjects/saucedemo/InventoryPage.java
+@@ -19,9 +19,7 @@ public java.util.List<String> getProductTitles() {
+     }
+ 
+     public void addProductToCart(String productName) {
+-        // BUG: replaces spaces AFTER lowercasing but also strips apostrophes incorrectly;
+-        // double-replace turns single spaces into double dashes for multi-word names
+-        String slug = productName.toLowerCase().replace(" ", "--").replace("-", "-");
++        String slug = productName.toLowerCase().replace(" ", "-");
+         $(By.id("add-to-cart-" + slug)).waitUntilEnabled().click();
+     }
+ 

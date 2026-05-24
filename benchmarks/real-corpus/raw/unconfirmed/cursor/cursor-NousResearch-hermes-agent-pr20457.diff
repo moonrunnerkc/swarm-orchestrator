@@ -1,0 +1,63 @@
+diff --git a/hermes_cli/auth.py b/hermes_cli/auth.py
+index 482e3c47a20..5a336eb68cf 100644
+--- a/hermes_cli/auth.py
++++ b/hermes_cli/auth.py
+@@ -2337,7 +2337,22 @@ def resolve_codex_runtime_credentials(
+     refresh_skew_seconds: int = CODEX_ACCESS_TOKEN_REFRESH_SKEW_SECONDS,
+ ) -> Dict[str, Any]:
+     """Resolve runtime credentials from Hermes's own Codex token store."""
+-    data = _read_codex_tokens()
++    try:
++        data = _read_codex_tokens()
++    except AuthError as exc:
++        # Hermes keeps its own OAuth session file; when missing, bootstrap once from
++        # ~/.codex/auth.json so headless / gateway setups work after `codex login`.
++        if getattr(exc, "code", None) != "codex_auth_missing":
++            raise
++        cli_tokens = _import_codex_cli_tokens()
++        if not cli_tokens:
++            raise
++        logger.info(
++            "Bootstrapping Hermes Codex credentials from Codex CLI (~/.codex/auth.json); "
++            "copied into Hermes auth store."
++        )
++        _save_codex_tokens(cli_tokens)
++        data = _read_codex_tokens()
+     tokens = dict(data["tokens"])
+     access_token = str(tokens.get("access_token", "") or "").strip()
+     refresh_timeout_seconds = float(os.getenv("HERMES_CODEX_REFRESH_TIMEOUT_SECONDS", "20"))
+diff --git a/tests/hermes_cli/test_auth_codex_provider.py b/tests/hermes_cli/test_auth_codex_provider.py
+index ad5ce40f3db..2a4431ec46b 100644
+--- a/tests/hermes_cli/test_auth_codex_provider.py
++++ b/tests/hermes_cli/test_auth_codex_provider.py
+@@ -195,6 +195,30 @@ def test_resolve_returns_hermes_auth_store_source(tmp_path, monkeypatch):
+     assert creds["base_url"] == DEFAULT_CODEX_BASE_URL
+ 
+ 
++def test_resolve_codex_bootstraps_from_codex_cli_when_hermes_missing(tmp_path, monkeypatch):
++    """When ~/.hermes/auth.json has no Codex row but ~/.codex/auth.json is valid, copy once."""
++    hermes_home = tmp_path / "hermes"
++    hermes_home.mkdir(parents=True, exist_ok=True)
++    (hermes_home / "auth.json").write_text(json.dumps({"version": 1, "providers": {}}))
++
++    codex_home = tmp_path / "codex-cli"
++    codex_home.mkdir(parents=True, exist_ok=True)
++    valid_access = _jwt_with_exp(int(time.time()) + 7200)
++    (codex_home / "auth.json").write_text(json.dumps({
++        "tokens": {"access_token": valid_access, "refresh_token": "cli-rt"},
++    }))
++
++    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
++    monkeypatch.setenv("CODEX_HOME", str(codex_home))
++
++    creds = resolve_codex_runtime_credentials(refresh_if_expiring=False)
++    assert creds["api_key"] == valid_access
++    assert creds["source"] == "hermes-auth-store"
++
++    store = json.loads((hermes_home / "auth.json").read_text())
++    assert store["providers"]["openai-codex"]["tokens"]["refresh_token"] == "cli-rt"
++
++
+ class _StubHTTPResponse:
+     def __init__(self, status_code: int, payload):
+         self.status_code = status_code

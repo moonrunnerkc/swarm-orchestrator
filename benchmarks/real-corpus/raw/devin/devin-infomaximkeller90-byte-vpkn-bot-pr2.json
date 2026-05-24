@@ -1,0 +1,26 @@
+{
+  "id": "devin-infomaximkeller90-byte-vpkn-bot-pr2",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "8c9c8aef286bd978fa83f262b2b673510e05682c",
+    "baseSha": "eb3e5613d70952b710cd4ab9b91bf49af44232a1",
+    "title": "fix(webhook): sanitize WEBHOOK_SECRET into URL-safe form",
+    "body": "## Summary\n\nAfter deploying to Render the bot was not receiving any updates from Telegram. `getWebhookInfo` returned a webhook URL of `https://vpkn-bot.onrender.com/telegram//OlRENLtjek2gSxJzLQROdbxTR6xEaUxmCujmtirkzE=` — note the **double slash** and the trailing `=`.\n\nRoot cause: Render's `generateValue: true` for `WEBHOOK_SECRET` produces standard base64 output that frequently contains `+`, `/` and `=`. Two failure modes from that:\n\n1. A leading `/` in the secret produced `…/telegram//<rest>` in the URL. Telegram's edge / Render's reverse proxy normalises double slashes, so the path Telegram actually POSTed to didn't match the path PTB was listening on.\n2. Telegram's `X-Telegram-Bot-Api-Secret-Token` header only accepts `[A-Za-z0-9_-]`. A secret containing `/` or `+` would fail validation, so the previous defensive `isalnum()` / character-set check silently set `secret_token=None` — meaning we got no header validation either.\n\nThis PR adds `_sanitize_secret()` which converts whatever is in `WEBHOOK_SECRET` into base64url form (`+` → `-`, `/` → `_`, `=` stripped, everything else stripped just in case) and uses that sanitised value as both the URL path component **and** the `secret_token` header. If after sanitisation the token is shorter than 16 chars, we regenerate a fresh `secrets.token_urlsafe(32)` to guarantee we never run with a too-short secret.\n\nAlso adds `drop_pending_updates=True` on the webhook path to discard the queue of failed delivery attempts that built up while the webhook was broken — otherwise the first successful boot would replay them all at once.\n\n## Review & Testing Checklist for Human\n\n- [ ] Merge this PR, wait for Render to auto-redeploy (~5 min Docker build).\n- [ ] In Render → service `vpkn-bot` → **Logs**: look for a line starting with `Starting webhook at https://vpkn-bot.onrender.com/telegram/…` and confirm the path **does not** contain a double slash or trailing `=`.\n- [ ] In Telegram, message [@vpkn_40733511_bot](https://t.me/vpkn_40733511_bot) `/start` — the bot should answer. Then test free-form chat, `/pdf`, `/flyer`, `/image`.\n\n### Notes\n\n- Verified the sanitizer locally on the Render-style secret returned by `getWebhookInfo` (`/OlR…=`) — it produces `_OlR…` (43 chars, all URL-safe).\n- An alternative would have been to override `WEBHOOK_SECRET` in the Render dashboard to a known-good value, but a defensive sanitizer protects against any future regenerate or copy-paste containing forbidden chars.\n\n\nLink to Devin session: https://app.devin.ai/sessions/6091e9aa95da47f98f6a0e25aa82625f\nRequested by: @infomaximkeller90-byte",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779573324-fix-webhook-secret",
+    "repository": "infomaximkeller90-byte/vpkn-bot"
+  },
+  "diffRef": {
+    "repository": "infomaximkeller90-byte/vpkn-bot",
+    "headSha": "8c9c8aef286bd978fa83f262b2b673510e05682c",
+    "baseSha": "eb3e5613d70952b710cd4ab9b91bf49af44232a1"
+  },
+  "vendoredDiffPath": "devin/devin-infomaximkeller90-byte-vpkn-bot-pr2.diff",
+  "vendoredAt": "2026-05-24T03:05:16.428Z",
+  "collectedAt": "2026-05-24T03:05:16.428Z"
+}

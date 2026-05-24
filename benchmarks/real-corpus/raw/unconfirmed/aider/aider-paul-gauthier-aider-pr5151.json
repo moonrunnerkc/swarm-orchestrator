@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5151",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5151,
+    "headSha": "76166bf0aca02ddd5b2c146620a08724e64cefe3",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "fix: catch OSError from Path.is_dir() with invalid filenames",
+    "body": "## Summary\n\nOn macOS/Linux, `Path.is_dir()` can raise `OSError` with `ENAMETOOLONG` (Errno 63) when the path is excessively long or malformed (e.g., when a long `--system-prompt` value ends up as a positional argument). Three locations in `main.py` call `Path(fname).is_dir()` without protection, causing unhandled crashes.\n\nThis fix wraps each call site in `try/except OSError` and provides a user-friendly warning instead of a traceback.\n\n## Changes\n\n- **`aider/main.py`**:\n  - `read_only_fnames` loop: wrap `.expanduser().resolve()` and `.is_dir()` in try/except, skip invalid paths with a warning\n  - Multi-file validation: wrap `Path(fname).is_dir()` in try/except, treat OSError as an invalid path\n  - Single-directory detection: wrap `Path(all_files[0]).is_dir()` and `.resolve()` in try/except, error gracefully on failure\n\n## Related Issues\n\nCloses #5130 — Uncaught OSError in pathlib.py line 1222\nCloses #5082 — Uncaught OSError in pathlib.py line 841",
+    "author": "12310312long",
+    "headRef": "fix/oserror-path-is-dir",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "76166bf0aca02ddd5b2c146620a08724e64cefe3",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5151.diff",
+  "vendoredAt": "2026-05-24T03:19:14.976Z",
+  "collectedAt": "2026-05-24T03:19:14.976Z"
+}

@@ -1,0 +1,392 @@
+diff --git a/enterprise/server/auth/cookie_chunking.py b/enterprise/server/auth/cookie_chunking.py
+new file mode 100644
+index 000000000000..9202b87deb5e
+--- /dev/null
++++ b/enterprise/server/auth/cookie_chunking.py
+@@ -0,0 +1,112 @@
++"""Chunked cookie helpers for the ``keycloak_auth`` session cookie.
++
++Browsers cap a single cookie at ~4096 bytes (name + value + attributes).
++The ``keycloak_auth`` cookie wraps a signed JWS containing the Keycloak
++access and refresh tokens, and that can exceed the cap for users with
++large claim sets (long emails, many realm roles, several allowed-origins
++entries). Chrome silently drops an oversized cookie, which shows up as an
++endless login loop: the OAuth callback "succeeds" but the cookie never
++reaches the next request.
++
++These helpers split an oversized value across numbered sibling cookies
++(``keycloak_auth``, ``keycloak_auth_1``, ``keycloak_auth_2`` ...) and
++reassemble it on read. A value that fits in one chunk is written as a
++single bare cookie, byte-for-byte identical to the previous behaviour, so
++sessions that exist today are unaffected.
++"""
++
++from __future__ import annotations
++
++from fastapi import Request, Response
++
++# Keep each chunk well under the 4096-byte cap after the cookie name and
++# attributes (Domain, Path, Secure, HttpOnly, SameSite) are added.
++CHUNK_SIZE = 3000
++# Upper bound on how many chunks we will ever write or clear. 8 * 3000 =
++# 24KB, far above any realistic token, and well within per-domain cookie
++# limits. Reads stop at the first missing chunk, so this only bounds the
++# stale-chunk cleanup on write/delete.
++MAX_CHUNKS = 8
++
++
++def _chunk_key(key: str, index: int) -> str:
++    """Chunk 0 keeps the bare key so single-cookie writes are unchanged."""
++    return key if index == 0 else f'{key}_{index}'
++
++
++def read_chunked_cookie(request: Request, key: str) -> str | None:
++    """Reassemble a possibly-chunked cookie value, or ``None`` if absent.
++
++    Concatenates ``key``, ``key_1``, ``key_2`` ... in order, stopping at
++    the first missing index. A plain single cookie reads back unchanged.
++    """
++    first = request.cookies.get(key)
++    if first is None:
++        return None
++    parts = [first]
++    for i in range(1, MAX_CHUNKS):
++        part = request.cookies.get(_chunk_key(key, i))
++        if part is None:
++            break
++        parts.append(part)
++    return ''.join(parts)
++
++
++def set_chunked_cookie(
++    response: Response,
++    key: str,
++    value: str,
++    *,
++    domain: str | None = None,
++    secure: bool = True,
++    httponly: bool = True,
++    samesite: str = 'lax',
++) -> None:
++    """Set ``key`` to ``value``, splitting across sibling cookies if needed.
++
++    Always clears trailing chunk indices that this write does not use, so a
++    value that shrank from N chunks to fewer does not leave stale chunks
++    that ``read_chunked_cookie`` would wrongly append.
++    """
++    chunks = [value[i : i + CHUNK_SIZE] for i in range(0, len(value), CHUNK_SIZE)] or [
++        ''
++    ]
++
++    for i, chunk in enumerate(chunks):
++        kwargs: dict = {
++            'httponly': httponly,
++            'secure': secure,
++            'samesite': samesite,
++        }
++        if domain:
++            kwargs['domain'] = domain
++        response.set_cookie(key=_chunk_key(key, i), value=chunk, **kwargs)
++
++    # Expire any chunks left over from a previously larger value.
++    for i in range(len(chunks), MAX_CHUNKS):
++        _delete_one(response, _chunk_key(key, i), domain=domain, samesite=samesite)
++
++
++def delete_chunked_cookie(
++    response: Response,
++    key: str,
++    *,
++    domain: str | None = None,
++    samesite: str = 'lax',
++) -> None:
++    """Delete ``key`` and every sibling chunk."""
++    for i in range(MAX_CHUNKS):
++        _delete_one(response, _chunk_key(key, i), domain=domain, samesite=samesite)
++
++
++def _delete_one(
++    response: Response,
++    key: str,
++    *,
++    domain: str | None = None,
++    samesite: str = 'lax',
++) -> None:
++    kwargs: dict = {'samesite': samesite}
++    if domain:
++        kwargs['domain'] = domain
++    response.delete_cookie(key=key, **kwargs)
+diff --git a/enterprise/server/auth/saas_user_auth.py b/enterprise/server/auth/saas_user_auth.py
+index f9748330236a..3b58395b0649 100644
+--- a/enterprise/server/auth/saas_user_auth.py
++++ b/enterprise/server/auth/saas_user_auth.py
+@@ -19,6 +19,7 @@
+     get_user_org_role,
+ )
+ from server.auth.constants import BITBUCKET_DATA_CENTER_HOST
++from server.auth.cookie_chunking import read_chunked_cookie
+ from server.auth.token_manager import TokenManager
+ from server.logger import logger
+ from server.rate_limit import RateLimiter, create_redis_rate_limiter
+@@ -577,7 +578,7 @@ async def saas_user_auth_from_bearer(request: Request) -> SaasUserAuth | None:
+ 
+ async def saas_user_auth_from_cookie(request: Request) -> SaasUserAuth | None:
+     try:
+-        signed_token = request.cookies.get('keycloak_auth')
++        signed_token = read_chunked_cookie(request, 'keycloak_auth')
+         if not signed_token:
+             return None
+         return await saas_user_auth_from_signed_token(signed_token)
+diff --git a/enterprise/server/middleware.py b/enterprise/server/middleware.py
+index cda15a82e3e2..d3c08829efe1 100644
+--- a/enterprise/server/middleware.py
++++ b/enterprise/server/middleware.py
+@@ -9,6 +9,7 @@
+     NoCredentialsError,
+     TosNotAcceptedError,
+ )
++from server.auth.cookie_chunking import delete_chunked_cookie, read_chunked_cookie
+ from server.auth.gitlab_sync import schedule_gitlab_repo_sync
+ from server.auth.saas_user_auth import SaasUserAuth, token_manager
+ from server.routes.auth import set_response_cookie
+@@ -25,7 +26,7 @@ class SetAuthCookieMiddleware:
+     """
+ 
+     async def __call__(self, request: Request, call_next: Callable):
+-        keycloak_auth_cookie = request.cookies.get('keycloak_auth')
++        keycloak_auth_cookie = read_chunked_cookie(request, 'keycloak_auth')
+         logger.debug('request_with_cookie', extra={'cookie': keycloak_auth_cookie})
+         try:
+             if self._should_attach(request):
+@@ -86,8 +87,9 @@ async def __call__(self, request: Request, call_next: Callable):
+                 {'error': str(e) or e.__class__.__name__}, status.HTTP_401_UNAUTHORIZED
+             )
+             if keycloak_auth_cookie:
+-                response.delete_cookie(
+-                    key='keycloak_auth',
++                delete_chunked_cookie(
++                    response,
++                    'keycloak_auth',
+                     domain=get_cookie_domain(),
+                     samesite=get_cookie_samesite(),
+                 )
+@@ -100,7 +102,7 @@ def _get_user_auth(self, request: Request) -> SaasUserAuth | None:
+         return cast(SaasUserAuth, user_auth)
+ 
+     def _check_tos(self, request: Request):
+-        keycloak_auth_cookie = request.cookies.get('keycloak_auth')
++        keycloak_auth_cookie = read_chunked_cookie(request, 'keycloak_auth')
+         auth_header = request.headers.get('Authorization')
+         mcp_auth_header = request.headers.get('X-Session-API-Key')
+         api_auth_header = request.headers.get('X-Access-Token')
+diff --git a/enterprise/server/routes/auth.py b/enterprise/server/routes/auth.py
+index 27ba6fb5efe2..205094e6336f 100644
+--- a/enterprise/server/routes/auth.py
++++ b/enterprise/server/routes/auth.py
+@@ -26,6 +26,11 @@
+     RECAPTCHA_SITE_KEY,
+     ROLE_CHECK_ENABLED,
+ )
++from server.auth.cookie_chunking import (
++    delete_chunked_cookie,
++    read_chunked_cookie,
++    set_chunked_cookie,
++)
+ from server.auth.gitlab_sync import schedule_gitlab_repo_sync
+ from server.auth.recaptcha_service import recaptcha_service
+ from server.auth.saas_user_auth import SaasUserAuth
+@@ -105,25 +110,20 @@ def set_response_cookie(
+         cookie_data, expires_in=timedelta(weeks=1)
+     )
+ 
+-    # Set secure cookie with signed token
+-    domain = get_cookie_domain()
+-    if domain:
+-        response.set_cookie(
+-            key='keycloak_auth',
+-            value=signed_token,
+-            domain=domain,
+-            httponly=True,
+-            secure=secure,
+-            samesite=get_cookie_samesite(),
+-        )
+-    else:
+-        response.set_cookie(
+-            key='keycloak_auth',
+-            value=signed_token,
+-            httponly=True,
+-            secure=secure,
+-            samesite=get_cookie_samesite(),
+-        )
++    # Set secure cookie with signed token. The value can exceed the
++    # browser's 4096-byte single-cookie cap for users with large Keycloak
++    # claim sets, so write it through the chunked-cookie helper, which
++    # splits oversized values across sibling cookies and stays
++    # byte-identical for values that fit in one cookie.
++    set_chunked_cookie(
++        response,
++        'keycloak_auth',
++        signed_token,
++        domain=get_cookie_domain(),
++        secure=secure,
++        httponly=True,
++        samesite=get_cookie_samesite(),
++    )
+ 
+ 
+ def _extract_oauth_state(state: str | None) -> tuple[str, str | None, str | None]:
+@@ -677,11 +677,12 @@ async def authenticate(request: Request):
+             content={'error': 'User is not authenticated'},
+         )
+ 
+-        # Delete the auth cookie if it exists
+-        keycloak_auth_cookie = request.cookies.get('keycloak_auth')
++        # Delete the auth cookie (and any sibling chunks) if it exists
++        keycloak_auth_cookie = read_chunked_cookie(request, 'keycloak_auth')
+         if keycloak_auth_cookie:
+-            response.delete_cookie(
+-                key='keycloak_auth',
++            delete_chunked_cookie(
++                response,
++                'keycloak_auth',
+                 domain=get_cookie_domain(),
+                 samesite=get_cookie_samesite(),
+             )
+@@ -916,9 +917,10 @@ async def logout(request: Request):
+         content={'message': 'User logged out'},
+     )
+ 
+-    # Always delete the cookie regardless of what happens
+-    response.delete_cookie(
+-        key='keycloak_auth',
++    # Always delete the cookie (and any sibling chunks) regardless of what happens
++    delete_chunked_cookie(
++        response,
++        'keycloak_auth',
+         domain=get_cookie_domain(),
+         samesite=get_cookie_samesite(),
+     )
+diff --git a/enterprise/tests/unit/server/auth/test_cookie_chunking.py b/enterprise/tests/unit/server/auth/test_cookie_chunking.py
+new file mode 100644
+index 000000000000..a39e47aeec7a
+--- /dev/null
++++ b/enterprise/tests/unit/server/auth/test_cookie_chunking.py
+@@ -0,0 +1,100 @@
++"""Tests for the chunked ``keycloak_auth`` cookie helpers.
++
++These exercise the write/read/delete round trip against a real Starlette
++``Response`` (so the actual ``Set-Cookie`` headers are produced) and a
++browser-like cookie jar reconstructed from those headers.
++"""
++
++from http.cookies import SimpleCookie
++from types import SimpleNamespace
++
++import pytest
++from server.auth.cookie_chunking import (
++    CHUNK_SIZE,
++    delete_chunked_cookie,
++    read_chunked_cookie,
++    set_chunked_cookie,
++)
++from starlette.responses import Response
++
++
++def _cookie_jar(response: Response) -> dict[str, str]:
++    """Reduce a response's Set-Cookie headers to what a browser would keep."""
++    jar: dict[str, str] = {}
++    for header in response.headers.getlist('set-cookie'):
++        parsed: SimpleCookie = SimpleCookie()
++        parsed.load(header)
++        for name, morsel in parsed.items():
++            # A deletion is emitted as an empty value with Max-Age=0.
++            if morsel.value == '' and str(morsel['max-age']) == '0':
++                jar.pop(name, None)
++            else:
++                jar[name] = morsel.value
++    return jar
++
++
++def _request_with(jar: dict[str, str]) -> SimpleNamespace:
++    # read_chunked_cookie only touches request.cookies.get(...)
++    return SimpleNamespace(cookies=dict(jar))
++
++
++def _roundtrip(value: str) -> tuple[str | None, dict[str, str]]:
++    resp = Response()
++    set_chunked_cookie(resp, 'keycloak_auth', value, domain='example.com')
++    jar = _cookie_jar(resp)
++    return read_chunked_cookie(_request_with(jar), 'keycloak_auth'), jar
++
++
++def test_small_value_uses_single_cookie_and_roundtrips():
++    value = 'x' * 100
++    got, jar = _roundtrip(value)
++    assert got == value
++    assert set(jar) == {'keycloak_auth'}
++
++
++def test_large_value_splits_into_chunks_each_under_cap():
++    # ~4125 bytes is the testadmin2-sized token that exceeds Chrome's 4096 cap.
++    value = 'y' * 4125
++    got, jar = _roundtrip(value)
++    assert got == value
++    assert 'keycloak_auth' in jar and 'keycloak_auth_1' in jar
++    assert all(len(v) <= CHUNK_SIZE for v in jar.values())
++
++
++def test_absent_cookie_reads_none():
++    assert read_chunked_cookie(_request_with({}), 'keycloak_auth') is None
++
++
++def test_backward_compatible_with_legacy_single_cookie():
++    # A session created before chunking stored one bare cookie.
++    got = read_chunked_cookie(
++        _request_with({'keycloak_auth': 'legacy-token'}), 'keycloak_auth'
++    )
++    assert got == 'legacy-token'
++
++
++def test_shrinking_value_clears_stale_chunks():
++    big = Response()
++    set_chunked_cookie(big, 'keycloak_auth', 'y' * 4125, domain='example.com')
++    assert 'keycloak_auth_1' in _cookie_jar(big)
++
++    # A later, smaller token must not leave keycloak_auth_1 behind, or the
++    # reader would append a stale chunk and corrupt the token.
++    small = Response()
++    set_chunked_cookie(small, 'keycloak_auth', 'x' * 100, domain='example.com')
++    assert set(_cookie_jar(small)) == {'keycloak_auth'}
++
++
++def test_delete_expires_base_and_siblings():
++    resp = Response()
++    delete_chunked_cookie(resp, 'keycloak_auth', domain='example.com')
++    headers = '\n'.join(resp.headers.getlist('set-cookie'))
++    assert 'keycloak_auth=' in headers
++    assert 'keycloak_auth_1=' in headers
++
++
++@pytest.mark.parametrize('size', [CHUNK_SIZE, CHUNK_SIZE + 1, CHUNK_SIZE * 2 + 7])
++def test_boundary_sizes_roundtrip(size):
++    value = 'z' * size
++    got, _ = _roundtrip(value)
++    assert got == value
+diff --git a/enterprise/tests/unit/test_auth_routes.py b/enterprise/tests/unit/test_auth_routes.py
+index 9dd7e7e8f670..a1f8339b624b 100644
+--- a/enterprise/tests/unit/test_auth_routes.py
++++ b/enterprise/tests/unit/test_auth_routes.py
+@@ -871,7 +871,12 @@ async def test_authenticate_failure():
+     with patch('server.routes.auth.get_access_token') as mock_get_token:
+         mock_get_token.side_effect = AuthError()
+ 
+-        result = await authenticate(MagicMock())
++        # request.cookies is a real Mapping[str, str] in production; give the
++        # mock a concrete dict so the cookie-clearing path (which now
++        # reassembles chunked cookies) reads strings rather than MagicMocks.
++        request = MagicMock()
++        request.cookies = {'keycloak_auth': 'some-token'}
++        result = await authenticate(request)
+ 
+         assert isinstance(result, JSONResponse)
+         assert result.status_code == status.HTTP_401_UNAUTHORIZED

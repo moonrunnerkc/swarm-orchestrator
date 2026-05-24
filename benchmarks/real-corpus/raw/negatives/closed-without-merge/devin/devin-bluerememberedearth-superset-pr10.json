@@ -1,0 +1,26 @@
+{
+  "id": "devin-bluerememberedearth-superset-pr10",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 10,
+    "headSha": "1c523c9eb7bfeb30907a5798e2961c627445dd02",
+    "baseSha": "48cb3f5885c751233efd1580ab00a863ca7fbe89",
+    "title": "fix: restore BigQuery memory limit, SQL parse error handling, and frontend i18n lazy loading",
+    "body": "### SUMMARY\n\nFixes three bugs:\n\n1. **BigQuery memory limit** — Implements progressive fetch in `BigQueryEngineSpec.fetch_data` with a configurable `BQ_FETCH_MAX_MB` (default 200 MB) to prevent browser memory overload on large result sets. Samples a first batch to estimate row size, then limits total fetch accordingly. Surfaces a warning message to users when results are truncated.\n\n2. **SQL parse error handling** — Catches `SupersetParseError` in `BaseEngineSpec.get_limit_from_sql` to gracefully handle malformed LIMIT clauses (e.g. `LIMIT` without a value) that fail to parse in sqlglot 30+. Returns `None` instead of crashing.\n\n3. **Frontend i18n lazy loading** — Wraps `t()` calls in arrow functions (`() => t(...)`) for lazy evaluation in DynamicGroupBy, TimeColumn, and TimeGrain control panel configs. This ensures translations are resolved at render time rather than module load time, which fixes incorrect or missing translations.\n\n**Files changed:**\n- `superset/db_engine_specs/bigquery.py` — Progressive fetch with memory budgeting\n- `superset/db_engine_specs/base.py` — SupersetParseError catch in `get_limit_from_sql`\n- `superset/config.py` — New `BQ_FETCH_MAX_MB` setting\n- `superset/common/utils/query_cache_manager.py` — Persist BigQuery memory-limit flag through cache\n- `superset/common/query_context_processor.py` — Surface truncation warning to users\n- `superset/charts/schemas.py` — Add `warning` field to `ChartDataResponseResult`\n- `superset-frontend/src/chartCustomizations/components/DynamicGroupBy/controlPanel.ts` — Lazy i18n\n- `superset-frontend/src/chartCustomizations/components/TimeColumn/controlPanel.ts` — Lazy i18n\n- `superset-frontend/src/chartCustomizations/components/TimeGrain/controlPanel.ts` — Lazy i18n\n\n### BEFORE/AFTER SCREENSHOTS OR ANIMATED GIF\nN/A — Backend logic and i18n changes.\n\n### TESTING INSTRUCTIONS\n1. **BigQuery memory limit**: Connect a BigQuery datasource and run a query returning >200 MB of data. Verify results are truncated and a warning message is displayed.\n2. **SQL parse error**: Submit a SQL query with a malformed LIMIT clause (e.g. `SELECT * FROM t LIMIT`). Verify no crash occurs.\n3. **Frontend i18n**: Switch browser locale and verify DynamicGroupBy, TimeColumn, and TimeGrain filter control panels show translated labels/descriptions.\n4. Run the new unit tests: `npm run test -- controlPanel.test.ts`\n\n### ADDITIONAL INFORMATION\n- [x] Has associated issue: Fixes #9\n- [ ] Required feature flags:\n- [ ] Changes UI\n- [ ] Includes DB Migration\n- [ ] Introduces new feature or API\n- [ ] Removes existing feature or API\n\nLink to Devin session: https://app.devin.ai/sessions/c268db0a1a654056b258e4d2f9e6b390",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/remediate-issue-9",
+    "repository": "bluerememberedearth/superset"
+  },
+  "diffRef": {
+    "repository": "bluerememberedearth/superset",
+    "headSha": "1c523c9eb7bfeb30907a5798e2961c627445dd02",
+    "baseSha": "48cb3f5885c751233efd1580ab00a863ca7fbe89"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/devin/devin-bluerememberedearth-superset-pr10.diff",
+  "vendoredAt": "2026-05-24T04:27:45.252Z",
+  "collectedAt": "2026-05-24T04:27:45.252Z"
+}

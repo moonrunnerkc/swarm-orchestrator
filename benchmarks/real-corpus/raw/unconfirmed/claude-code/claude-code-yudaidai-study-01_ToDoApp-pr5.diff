@@ -1,0 +1,1778 @@
+diff --git a/css/app.css b/css/app.css
+index 049c73c..3778fa5 100644
+--- a/css/app.css
++++ b/css/app.css
+@@ -5,11 +5,27 @@
+   padding: 0;
+ }
+ 
++:root {
++  --bg:        #f2f2f7;
++  --surface-1: #ffffff;
++  --surface-2: #f2f2f7;
++  --surface-3: #e5e5ea;
++  --text-1:    #1c1c1e;
++  --text-2:    #8e8e93;
++  --sep:       #d1d1d6;
++  --blue:      #007AFF;
++  --red:       #FF3B30;
++  --orange:    #FF9500;
++  --amber:     #FFBF00;
++  --green:     #34C759;
++  --purple:    #AF52DE;
++}
++
+ html, body {
+   height: 100%;
+-  background: #f2f2f7;
++  background: var(--bg);
+   font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic', sans-serif;
+-  color: #1c1c1e;
++  color: var(--text-1);
+   -webkit-tap-highlight-color: transparent;
+   overscroll-behavior: none;
+ }
+@@ -19,58 +35,158 @@ button {
+   border: none;
+   background: none;
+   font-family: inherit;
++  color: inherit;
+ }
+ 
+ ul { list-style: none; }
+ 
++.hidden { display: none !important; }
++
+ /* ---------- App shell ---------- */
+ #app {
+   display: flex;
+   flex-direction: column;
+-  height: 100dvh;          /* dynamic viewport height (iPhone notch safe) */
++  height: 100dvh;
+   padding-top: env(safe-area-inset-top);
+   padding-bottom: env(safe-area-inset-bottom);
+ }
+ 
+ /* ---------- Header ---------- */
+ .app-header {
+-  background: #fff;
+-  border-bottom: 1px solid #d1d1d6;
+-  padding: 14px 20px 12px;
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  background: linear-gradient(135deg, #007AFF 0%, #5856D6 100%);
++  border-bottom: none;
++  padding: 14px 20px 16px;
++}
++
++.app-brand {
++  display: flex;
++  align-items: center;
++  gap: 10px;
++}
++
++.brand-mark {
++  width: 36px;
++  height: 36px;
++  flex-shrink: 0;
++}
++
++.brand-text {
++  display: flex;
++  flex-direction: column;
++  gap: 1px;
+ }
+ 
+ .app-header h1 {
+-  font-size: 28px;
++  font-size: 22px;
++  font-weight: 700;
++  color: #fff;
++  letter-spacing: 0.2px;
++}
++
++.header-date {
++  font-size: 11px;
++  font-weight: 400;
++  color: rgba(255,255,255,0.72);
++  letter-spacing: 0.1px;
++}
++
++#btn-organize {
++  font-size: 14px;
+   font-weight: 700;
+   color: #007AFF;
+-  letter-spacing: -0.5px;
++  min-height: 34px;
++  padding: 0 16px;
++  border-radius: 20px;
++  border: none;
++  background: #fff;
++}
++#btn-organize:active { background: rgba(255,255,255,0.8); }
++#btn-organize:disabled {
++  color: rgba(255,255,255,0.45);
++  background: rgba(255,255,255,0.2);
+ }
+ 
+ /* ---------- Filter tabs ---------- */
+ .filter-tabs {
+   display: flex;
+-  background: #fff;
+-  padding: 0 12px 0;
+-  border-bottom: 1px solid #d1d1d6;
++  align-items: center;
++  background: var(--surface-1);
++  padding: 0 12px;
++  border-bottom: 1px solid var(--sep);
+   overflow-x: auto;
+   -webkit-overflow-scrolling: touch;
+   scrollbar-width: none;
+ }
+ .filter-tabs::-webkit-scrollbar { display: none; }
+ 
++/* すべてタブと他タブの間の区切り線 */
++.tab-separator {
++  flex-shrink: 0;
++  width: 1px;
++  height: 16px;
++  background: var(--sep);
++  margin: 0 4px;
++}
++
+ .tab {
+   flex-shrink: 0;
+   padding: 10px 14px;
+-  font-size: 14px;
+-  font-weight: 500;
+-  color: #8e8e93;
++  font-size: 15px;
++  font-weight: 600;
++  color: var(--text-2);
+   border-bottom: 2px solid transparent;
+   min-height: 44px;
+ }
+ .tab.active {
+-  color: #007AFF;
+-  border-bottom-color: #007AFF;
++  color: var(--blue);
++  border-bottom-color: var(--blue);
++}
++.tab[data-filter="done"].active {
++  color: #aeaeb2;
++  border-bottom-color: #c7c7cc;
++}
++.tab[data-filter="done"] {
++  color: #c7c7cc;
++}
++
++/* 買い物タブ: purple accent */
++.tab.tab-shop.active {
++  color: var(--purple);
++  border-bottom-color: var(--purple);
++}
++
++/* 完了タブ: same style, pushed to right */
++.tab.tab-done {
++  margin-left: auto;
++}
++
++/* ---------- Priority filter row ---------- */
++.priority-filters {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  padding: 8px 16px;
++  background: var(--surface-1);
++  border-bottom: 1px solid var(--sep);
++}
++
++.pf-chip {
++  padding: 4px 14px;
++  border-radius: 14px;
++  font-size: 13px;
++  font-weight: 600;
++  border: 1.5px solid var(--sep);
++  color: var(--text-2);
++  min-height: 30px;
++  display: flex;
++  align-items: center;
++  background: var(--surface-2);
++  transition: background 0.15s, color 0.15s, border-color 0.15s;
+ }
++.pf-chip.active         { background: var(--blue); color: #fff; border-color: var(--blue); }
+ 
+ /* ---------- Main scroll area ---------- */
+ main {
+@@ -78,9 +194,10 @@ main {
+   overflow-y: auto;
+   -webkit-overflow-scrolling: touch;
+   padding: 12px 0 8px;
++  background: var(--bg);
+ }
+ 
+-/* ---------- Banner (storage warning) ---------- */
++/* ---------- Banner ---------- */
+ .banner {
+   margin: 0 16px 10px;
+   padding: 10px 14px;
+@@ -89,7 +206,6 @@ main {
+   font-size: 13px;
+   color: #856404;
+ }
+-.banner.hidden { display: none; }
+ 
+ /* ---------- Todo list ---------- */
+ #todo-list {
+@@ -103,24 +219,47 @@ main {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+-  background: #fff;
++  background: var(--surface-1);
+   border-radius: 12px;
+   padding: 12px 14px;
++  border-left: 4px solid var(--surface-3);
+   box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+-  border-left: 4px solid #c7c7cc;
+   transition: opacity 0.15s;
+   position: relative;
+   overflow: hidden;
++  user-select: none;
++  -webkit-user-select: none;
+ }
+ 
+-.todo-item.priority-high   { border-left-color: #FF3B30; }
+-.todo-item.priority-medium { border-left-color: #FF9500; }
+-.todo-item.priority-low    { border-left-color: #34C759; }
++.todo-item.priority-high   { border-left-color: var(--red); }
++.todo-item.priority-medium { border-left-color: var(--amber); }
++.todo-item.priority-low    { border-left-color: var(--green); }
+ 
+-.todo-item.completed {
+-  opacity: 0.55;
++/* 買い物タスクは左ボーダーなし */
++.todo-item.category-shopping { border-left: none; padding-left: 18px; }
++
++/* Tasks due within 3 days: deadline text only — no background tint on the whole item */
++.todo-item.due-soon .todo-deadline {
++  font-size: 12px;
++  font-weight: 600;
+ }
+ 
++/* Pending complete */
++.todo-item.pending-complete { opacity: 0.55; }
++.todo-item.pending-complete .todo-text {
++  text-decoration: line-through;
++  color: var(--text-2);
++}
++.todo-item.pending-complete .check-btn { color: var(--green); }
++
++/* Fully completed (完了 tab) */
++.todo-item.completed { opacity: 0.45; }
++.todo-item.completed .todo-text {
++  text-decoration: line-through;
++  color: var(--text-2);
++}
++.todo-item.completed .check-btn { color: var(--green); }
++
+ /* Check button */
+ .check-btn {
+   flex-shrink: 0;
+@@ -136,108 +275,184 @@ main {
+   color: #c7c7cc;
+   border-radius: 50%;
+ }
+-.todo-item.completed .check-btn {
+-  color: #34C759;
+-}
+ 
+-/* Todo text */
++/* Task text */
+ .todo-text {
+   flex: 1;
+   font-size: 16px;
+   line-height: 1.4;
+   word-break: break-word;
+ }
+-.todo-item.completed .todo-text {
+-  text-decoration: line-through;
+-  color: #8e8e93;
++
++/* Right-side meta: category above, deadline below */
++.todo-meta {
++  flex-shrink: 0;
++  display: flex;
++  flex-direction: column;
++  align-items: flex-end;
++  gap: 4px;
+ }
+ 
+ /* Category badge */
+ .todo-category {
+-  flex-shrink: 0;
+   font-size: 11px;
+-  color: #8e8e93;
+-  background: #f2f2f7;
++  color: var(--text-2);
++  background: var(--surface-2);
+   border-radius: 6px;
+   padding: 2px 7px;
+ }
+ 
+-/* Delete button */
+-.delete-btn {
+-  flex-shrink: 0;
+-  width: 44px;
+-  height: 44px;
+-  display: flex;
+-  align-items: center;
+-  justify-content: center;
+-  color: #c7c7cc;
+-  font-size: 18px;
+-  margin: -9px -9px -9px 0;
+-  border-radius: 8px;
++/* Deadline badges: no color by default, red only when due within 3 days */
++.todo-deadline { font-size: 11px; font-weight: 500; color: var(--text-2); }
++.todo-item.due-soon .todo-deadline { color: var(--red); }
++
++@keyframes overdue-flicker {
++  0%, 100% {
++    box-shadow: 0 0 5px 2px rgba(180,0,0,0.7), 0 0 14px 4px rgba(255,0,0,0.25);
++    opacity: 1;
++  }
++  30% { opacity: 0.82; }
++  55% {
++    box-shadow: 0 0 9px 3px rgba(220,0,0,0.9), 0 0 20px 7px rgba(255,40,0,0.45);
++    opacity: 1;
++  }
++  80% { opacity: 0.88; }
++}
++.todo-deadline.overdue {
++  display: inline-block;
++  font-size: 11px;
++  font-weight: 800;
++  font-style: italic;
++  letter-spacing: 0.06em;
++  color: #ffcccc;
++  background: linear-gradient(135deg, #3d0000 0%, #8b0000 50%, #3d0000 100%);
++  border: 1px solid #cc0000;
++  border-radius: 3px;
++  padding: 2px 6px;
++  text-shadow: 0 0 6px #ff4444, 0 0 14px #ff0000;
++  animation: overdue-flicker 1.8s ease-in-out infinite;
+ }
+-.delete-btn:active { color: #FF3B30; }
+ 
+-/* Swipe-to-delete overlay */
++/* Swipe overlay */
+ .delete-overlay {
+   position: absolute;
+   right: 0; top: 0; bottom: 0;
+-  width: 80px;
+-  background: #FF3B30;
++  width: 88px;
++  background: var(--red);
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   color: #fff;
+-  font-size: 13px;
++  font-size: 15px;
+   font-weight: 600;
+   transform: translateX(100%);
+   transition: transform 0.2s;
+   border-radius: 0 12px 12px 0;
++  cursor: pointer;
++}
++.todo-item.reveal-delete .delete-overlay { transform: translateX(0); }
++
++/* 重要度・期限セクション: 買い物選択時は非活性表示 */
++.section-disabled {
++  opacity: 0.35;
++  pointer-events: none;
++}
++
++/* ---------- Shopping section (すべてタブ内の買い物エリア) ---------- */
++.shopping-section { margin-top: 8px; }
++
++.section-divider {
++  display: flex;
++  align-items: center;
++  gap: 10px;
++  margin: 8px 16px 8px;
+ }
+-.todo-item.reveal-delete .delete-overlay {
+-  transform: translateX(0);
++.section-divider::before,
++.section-divider::after {
++  content: '';
++  flex: 1;
++  height: 1px;
++  background: var(--sep);
++}
++.section-label {
++  font-size: 12px;
++  font-weight: 600;
++  color: var(--text-2);
++  letter-spacing: 0.3px;
++}
++
++#shopping-list {
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++  padding: 0 16px;
++}
++
++/* ---------- Completion date (履歴タブ) ---------- */
++.completed-date { font-size: 11px; font-weight: 500; color: var(--text-2); }
++
++/* ---------- History controls ---------- */
++.history-controls {
++  display: flex;
++  justify-content: flex-end;
++  padding: 0 16px 8px;
++}
++
++#btn-clear-history {
++  font-size: 13px;
++  font-weight: 500;
++  color: var(--red);
++  padding: 6px 14px;
++  border: 1.5px solid var(--red);
++  border-radius: 8px;
++  min-height: 36px;
++}
++#btn-clear-history:active {
++  background: var(--red);
++  color: #fff;
+ }
+ 
+ /* ---------- Empty state ---------- */
+ .empty-msg {
+   text-align: center;
+-  color: #8e8e93;
++  color: var(--text-2);
+   font-size: 15px;
+   padding: 48px 24px;
+ }
+-.empty-msg.hidden { display: none; }
+ 
+-/* ---------- Add bar (footer) ---------- */
++/* ---------- Add bar ---------- */
+ .add-bar {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+-  background: #fff;
+-  border-top: 1px solid #d1d1d6;
++  background: var(--surface-1);
++  border-top: 1px solid var(--sep);
+   padding: 10px 16px;
+   padding-bottom: max(10px, env(safe-area-inset-bottom));
+ }
+ 
+ .add-bar input {
+   flex: 1;
+-  font-size: 16px;   /* MUST be ≥16px — prevents Safari auto-zoom on focus */
+-  border: 1px solid #c7c7cc;
++  font-size: 16px;
++  border: 1px solid var(--sep);
+   border-radius: 10px;
+   padding: 10px 14px;
+   outline: none;
+-  background: #f2f2f7;
+-  color: #1c1c1e;
++  background: var(--surface-2);
++  color: var(--text-1);
+   -webkit-appearance: none;
+ }
++.add-bar input::placeholder { color: var(--text-2); }
+ .add-bar input:focus {
+-  border-color: #007AFF;
+-  background: #fff;
++  border-color: var(--blue);
++  background: var(--surface-1);
+ }
+ 
+ #btn-add {
+   width: 44px;
+   height: 44px;
+   border-radius: 50%;
+-  background: #007AFF;
++  background: var(--blue);
+   color: #fff;
+   font-size: 26px;
+   line-height: 1;
+@@ -259,19 +474,20 @@ main {
+   z-index: 100;
+   padding-bottom: env(safe-area-inset-bottom);
+ }
+-.modal.hidden { display: none; }
+ 
+ .modal-card {
+-  background: #fff;
++  background: var(--surface-1);
+   border-radius: 20px 20px 0 0;
+   padding: 24px 20px 20px;
+   width: 100%;
++  user-select: none;
++  -webkit-user-select: none;
+ }
+ 
+ .modal-title {
+   font-size: 12px;
+   font-weight: 600;
+-  color: #8e8e93;
++  color: var(--text-2);
+   text-transform: uppercase;
+   letter-spacing: 0.5px;
+   margin-bottom: 10px;
+@@ -289,21 +505,107 @@ main {
+   border-radius: 20px;
+   font-size: 15px;
+   font-weight: 500;
+-  border: 1.5px solid #c7c7cc;
+-  color: #3a3a3c;
++  border: 1.5px solid var(--sep);
++  color: var(--text-2);
+   min-height: 44px;
+   display: flex;
+   align-items: center;
+ }
+-.chip.active {
+-  background: #007AFF;
+-  border-color: #007AFF;
+-  color: #fff;
++.chip.active        { background: var(--blue);   border-color: var(--blue);   color: #fff; }
++.chip-high.active   { background: var(--blue); border-color: var(--blue); }
++.chip-medium.active { background: var(--blue); border-color: var(--blue); }
++.chip-low.active    { background: var(--blue); border-color: var(--blue); }
++
++/* 買い物カテゴリチップ */
++.chip-shop.active   { background: var(--purple); border-color: var(--purple); }
++
++/* 日付指定(指定)チップ: purple border to distinguish */
++.chip-date { border-color: var(--purple); color: var(--purple); }
++.chip-date.active { background: var(--purple); border-color: var(--purple); color: #fff; }
++
++/* Edit textarea */
++.edit-textarea {
++  display: block;
++  width: 100%;
++  background: var(--surface-2);
++  border: 1px solid var(--sep);
++  border-radius: 10px;
++  color: var(--text-1);
++  font-size: 16px;
++  font-family: inherit;
++  padding: 10px 14px;
++  resize: none;
++  outline: none;
++  margin-bottom: 18px;
++}
++.edit-textarea:focus { border-color: var(--blue); }
++
++/* Category row: dot + label side by side */
++.todo-cat-row {
++  display: flex;
++  align-items: center;
++  gap: 5px;
++}
++
++/* Comment indicator dot */
++.comment-dot {
++  width: 6px;
++  height: 6px;
++  border-radius: 50%;
++  background: var(--blue);
++  flex-shrink: 0;
++}
++
++/* 期限チップ行: 1行に収める・チップを小さく */
++#deadline-group {
++  flex-wrap: nowrap;
++}
++#deadline-group .chip {
++  flex-shrink: 0;
++  padding: 5px 12px;
++  font-size: 13px;
++  min-height: 36px;
++}
++
++/* カレンダーチップ: input をチップに重ねて直接タップさせる */
++.chip-date-wrap {
++  position: relative;
++  flex-shrink: 0;
++  display: inline-flex;
++}
++.chip-date-wrap input[type="date"] {
++  position: absolute;
++  inset: 0;
++  width: 100%;
++  height: 100%;
++  opacity: 0;
++  cursor: pointer;
++  z-index: 1;
++  -webkit-appearance: none;
++  appearance: none;
++  border: none;
++  background: transparent;
++}
++
++/* Date input */
++.date-input {
++  display: block;
++  width: 100%;
++  background: var(--surface-2);
++  border: 1px solid var(--sep);
++  border-radius: 10px;
++  color: var(--text-1);
++  font-size: 16px;
++  font-family: inherit;
++  padding: 10px 14px;
++  outline: none;
++  margin-bottom: 18px;
++  -webkit-appearance: none;
++  appearance: none;
+ }
+-.chip-high.active   { background: #FF3B30; border-color: #FF3B30; }
+-.chip-medium.active { background: #FF9500; border-color: #FF9500; }
+-.chip-low.active    { background: #34C759; border-color: #34C759; }
++.date-input:focus { border-color: var(--blue); }
+ 
++/* Modal actions */
+ .modal-actions {
+   display: flex;
+   gap: 10px;
+@@ -315,12 +617,13 @@ main {
+   border-radius: 12px;
+   font-size: 17px;
+   font-weight: 500;
+-  border: 1.5px solid #c7c7cc;
+-  color: #3a3a3c;
++  border: 1.5px solid var(--sep);
++  color: var(--text-1);
++  background: var(--surface-1);
+ }
+ .btn-primary {
+-  background: #007AFF !important;
+-  border-color: #007AFF !important;
++  background: var(--blue) !important;
++  border-color: var(--blue) !important;
+   color: #fff !important;
+   font-weight: 600 !important;
+ }
+diff --git a/icons/icon.svg b/icons/icon.svg
+new file mode 100644
+index 0000000..213e7f5
+--- /dev/null
++++ b/icons/icon.svg
+@@ -0,0 +1,11 @@
++<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
++  <defs>
++    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
++      <stop offset="0%" stop-color="#007AFF"/>
++      <stop offset="100%" stop-color="#5856D6"/>
++    </linearGradient>
++  </defs>
++  <rect width="512" height="512" rx="112" fill="url(#g)"/>
++  <path d="M138 256 L214 332 L374 180"
++        stroke="white" stroke-width="44" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
++</svg>
+diff --git a/index.html b/index.html
+index 13204f9..6bc078a 100644
+--- a/index.html
++++ b/index.html
+@@ -3,36 +3,59 @@
+ <head>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+-
+-  <!-- PWA / iPhone home screen -->
+   <meta name="apple-mobile-web-app-capable" content="yes">
+   <meta name="apple-mobile-web-app-status-bar-style" content="default">
+   <meta name="apple-mobile-web-app-title" content="Todo">
+   <meta name="theme-color" content="#007AFF">
+-  <link rel="apple-touch-icon" href="/test/icons/apple-touch-icon.png">
+-  <link rel="manifest" href="/test/manifest.json">
+-
++  <link rel="apple-touch-icon" href="/01_ToDoApp/icons/apple-touch-icon.png">
++  <link rel="manifest" href="/01_ToDoApp/manifest.json">
+   <title>Todo</title>
+-  <link rel="stylesheet" href="/test/css/app.css">
++  <link rel="stylesheet" href="/01_ToDoApp/css/app.css">
+ </head>
+ <body>
+   <div id="app">
+     <header class="app-header">
+-      <h1>Todo</h1>
++      <div class="app-brand">
++        <svg class="brand-mark" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
++          <rect width="36" height="36" rx="9" fill="rgba(255,255,255,0.18)"/>
++          <path d="M9 18 L15.5 24.5 L27 12" stroke="white" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
++        </svg>
++        <div class="brand-text">
++          <h1>Todo</h1>
++          <p class="header-date" id="header-date"></p>
++        </div>
++      </div>
++      <button id="btn-organize" aria-label="整理">整理</button>
+     </header>
+ 
+     <div class="filter-tabs" role="tablist">
+-      <button class="tab active" data-filter="all"    role="tab" aria-selected="true">すべて</button>
+-      <button class="tab"        data-filter="work"   role="tab">仕事</button>
+-      <button class="tab"        data-filter="personal" role="tab">個人</button>
+-      <button class="tab"        data-filter="urgent" role="tab">緊急</button>
++      <button class="tab"            data-filter="all"       role="tab" aria-selected="false">すべて</button>
++      <div class="tab-separator" role="separator"></div>
++      <button class="tab active"     data-filter="personal"  role="tab" aria-selected="true">個人</button>
++      <button class="tab"            data-filter="work"      role="tab" aria-selected="false">仕事</button>
++      <button class="tab tab-shop"   data-filter="shopping"  role="tab" aria-selected="false">買い物</button>
++      <button class="tab tab-done"   data-filter="completed" role="tab" aria-selected="false">履歴</button>
++    </div>
++
++    <div class="priority-filters" role="group" aria-label="重要度フィルター">
++      <button class="pf-chip pf-high   active" data-priority="high">高</button>
++      <button class="pf-chip pf-medium active" data-priority="medium">中</button>
++      <button class="pf-chip pf-low   active" data-priority="low">低</button>
+     </div>
+ 
+     <main>
+       <div id="banner" class="banner hidden" role="alert"></div>
+-
++      <div id="history-controls" class="history-controls hidden">
++        <button id="btn-clear-history">履歴をすべて削除</button>
++      </div>
++      <div id="todo-section-header" class="section-divider hidden">
++        <span class="section-label">タスク</span>
++      </div>
+       <ul id="todo-list" role="list"></ul>
+-
++      <div id="shopping-section" class="shopping-section hidden">
++        <div class="section-divider"><span class="section-label">買い物</span></div>
++        <ul id="shopping-list" role="list"></ul>
++      </div>
+       <p id="empty-msg" class="empty-msg hidden">タスクがありません</p>
+     </main>
+ 
+@@ -49,22 +72,48 @@ <h1>Todo</h1>
+     </footer>
+   </div>
+ 
+-  <!-- Priority / category modal -->
+-  <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="優先度とカテゴリを選択">
++  <!-- Add / Edit modal -->
++  <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="タスクの設定">
+     <div class="modal-card">
+-      <p class="modal-title">優先度</p>
+-      <div class="modal-row" id="priority-group">
+-        <button class="chip chip-high   active" data-priority="high">高</button>
+-        <button class="chip chip-medium"        data-priority="medium">中</button>
+-        <button class="chip chip-low"           data-priority="low">低</button>
++
++      <!-- Edit mode: text field -->
++      <div id="modal-text-row" class="hidden">
++        <textarea id="edit-text" class="edit-textarea" maxlength="200" rows="2"></textarea>
+       </div>
++
++      <!-- カテゴリ: shown first -->
+       <p class="modal-title">カテゴリ</p>
+       <div class="modal-row" id="category-group">
+-        <button class="chip active" data-category="work">仕事</button>
+-        <button class="chip"        data-category="personal">個人</button>
+-        <button class="chip"        data-category="urgent">緊急</button>
+-        <button class="chip"        data-category="other">その他</button>
++        <button class="chip"          data-category="personal">個人</button>
++        <button class="chip"          data-category="work">仕事</button>
++        <button class="chip chip-shop" data-category="shopping">買い物</button>
+       </div>
++
++      <!-- 重要度・期限: hidden for shopping -->
++      <div id="priority-section">
++        <p class="modal-title">重要度</p>
++        <div class="modal-row" id="priority-group">
++          <button class="chip chip-high"   data-priority="high">高</button>
++          <button class="chip chip-medium" data-priority="medium">中</button>
++          <button class="chip chip-low"    data-priority="low">低</button>
++        </div>
++      </div>
++
++      <div id="deadline-section">
++        <p class="modal-title">期限</p>
++        <div class="modal-row" id="deadline-group">
++          <button class="chip"           data-deadline="none">なし</button>
++          <button class="chip"           data-deadline="soon">すぐ</button>
++          <button class="chip"           data-deadline="week">今週</button>
++          <button class="chip"           data-deadline="month">今月</button>
++          <!-- input をチップの上に重ねてユーザーが直接タップする形にする -->
++          <span class="chip-date-wrap">
++            <button class="chip chip-date" data-deadline="date">カレンダー</button>
++            <input type="date" id="deadline-date">
++          </span>
++        </div>
++      </div>
++
+       <div class="modal-actions">
+         <button id="modal-cancel">キャンセル</button>
+         <button id="modal-ok" class="btn-primary">追加</button>
+@@ -72,7 +121,19 @@ <h1>Todo</h1>
+     </div>
+   </div>
+ 
+-  <script src="/test/js/sw-register.js"></script>
+-  <script type="module" src="/test/js/app.js"></script>
++  <!-- Comment modal -->
++  <div id="comment-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="コメント">
++    <div class="modal-card">
++      <p class="modal-title">コメント</p>
++      <textarea id="comment-text" class="edit-textarea" rows="5" maxlength="500" placeholder="コメントを入力..."></textarea>
++      <div class="modal-actions">
++        <button id="comment-cancel">キャンセル</button>
++        <button id="comment-ok" class="btn-primary">保存</button>
++      </div>
++    </div>
++  </div>
++
++  <script src="/01_ToDoApp/js/sw-register.js"></script>
++  <script type="module" src="/01_ToDoApp/js/app.js"></script>
+ </body>
+ </html>
+diff --git a/js/app.js b/js/app.js
+index fe71fbd..a1bc672 100644
+--- a/js/app.js
++++ b/js/app.js
+@@ -1,10 +1,28 @@
+ import { store } from './store.js';
+ import { ui }    from './ui.js';
+ 
+-let currentFilter = 'all';
++let currentFilter     = 'personal';
++let currentPriorities = ['high', 'medium', 'low'];
+ 
+ function refresh() {
+-  ui.render(store.getFiltered(currentFilter));
++  const all = store.getFiltered(currentFilter);
++  let filtered;
++  if (currentFilter === 'shopping') {
++    filtered = all;
++  } else if (currentFilter === 'all') {
++    filtered = all.filter(t => t.category === 'shopping' || currentPriorities.includes(t.priority));
++  } else {
++    filtered = all.filter(t => currentPriorities.includes(t.priority));
++  }
++  ui.render(filtered, store.getPendingCount());
++}
++
++function updateHeaderDate() {
++  const el = document.getElementById('header-date');
++  if (!el) return;
++  const d    = new Date();
++  const days = ['日', '月', '火', '水', '木', '金', '土'];
++  el.textContent = `${d.getMonth() + 1}月${d.getDate()}日（${days[d.getDay()]}）`;
+ }
+ 
+ document.addEventListener('DOMContentLoaded', () => {
+@@ -12,25 +30,57 @@ document.addEventListener('DOMContentLoaded', () => {
+     ui.showBanner('プライベートモードのためデータは保存されません');
+   }
+ 
++  updateHeaderDate();
++  ui.setFilter(currentFilter);
+   refresh();
+ 
+   ui.bindEvents({
+-    onAdd({ text, priority, category }) {
+-      store.add({ text, priority, category });
++    onAdd({ text, priority, category, deadline }) {
++      store.add({ text, priority, category, deadline });
+       refresh();
+     },
+     onToggle(id) {
+       store.toggle(id);
+-      refresh();
++      const todo = store.getAll().find(t => t.id === id);
++      if (todo) ui.updateItem(todo, store.getPendingCount());
+     },
+     onRemove(id) {
+       store.remove(id);
+       refresh();
+     },
++    onOrganize() {
++      store.organizeCompleted();
++      refresh();
++    },
++    onEdit(id) {
++      const todo = store.getAll().find(t => t.id === id);
++      if (!todo) return;
++      ui.openModal({ mode: 'edit', ...todo }, ({ text, priority, category, deadline }) => {
++        store.update(id, { text, priority, category, deadline });
++        refresh();
++      });
++    },
+     onFilterChange(filter) {
+       currentFilter = filter;
+       ui.setFilter(filter);
+       refresh();
+     },
++    onClearHistory() {
++      store.clearCompleted();
++      refresh();
++    },
++    onPriorityFilterChange(priorities) {
++      currentPriorities = priorities;
++      refresh();
++    },
++    onLongPress(id) {
++      const todo = store.getAll().find(t => t.id === id);
++      if (!todo) return;
++      ui.openCommentModal(todo, text => {
++        store.setComment(id, text);
++        const updated = store.getAll().find(t => t.id === id);
++        if (updated) ui.updateItem(updated, store.getPendingCount());
++      });
++    },
+   });
+ });
+diff --git a/js/store.js b/js/store.js
+index 6f36d90..2d67997 100644
+--- a/js/store.js
++++ b/js/store.js
+@@ -1,6 +1,6 @@
+-const STORAGE_KEY = 'todo-app-v1';
++const STORAGE_KEY = 'todo-app-v2';
+ 
+-let _mem = null; // fallback when localStorage is unavailable
++let _mem = null;
+ 
+ function isAvailable() {
+   try {
+@@ -24,14 +24,11 @@ function load() {
+ }
+ 
+ function persist(todos) {
+-  if (!available) {
+-    _mem = todos;
+-    return;
+-  }
++  if (!available) { _mem = todos; return; }
+   try {
+     localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
+   } catch {
+-    _mem = todos; // storage full — keep in memory
++    _mem = todos;
+   }
+ }
+ 
+@@ -41,31 +38,70 @@ function makeId() {
+     : Date.now().toString(36) + Math.random().toString(36).slice(2);
+ }
+ 
++// 'soon'→3日後, 'week'→7日後, 'month'→30日後 の実日付(YYYY-MM-DD)を返す
++function computeSortDate(deadline, baseTs) {
++  const offsets = { soon: 3, days3: 3, week: 7, month: 30, today: 3, later: 30 };
++  const days = offsets[deadline];
++  if (days == null) return null;
++  return new Date(baseTs + days * 86400000).toISOString().slice(0, 10);
++}
++
+ export const store = {
+   isStorageAvailable: () => available,
+ 
+   getAll() { return load(); },
+ 
+-  add({ text, priority = 'medium', category = 'other' }) {
++  add({ text, priority = 'medium', category = 'personal', deadline = null }) {
+     const todos = load();
++    const createdAt = Date.now();
+     const todo = {
+       id: makeId(),
+       text,
+       completed: false,
++      pendingComplete: false,
+       priority,
+       category,
+-      createdAt: Date.now(),
++      deadline,
++      deadlineSortDate: computeSortDate(deadline, createdAt),
++      createdAt,
+       completedAt: null,
++      comment: null,
+     };
+     todos.push(todo);
+     persist(todos);
+     return todo;
+   },
+ 
++  update(id, changes) {
++    const todos = load().map(t => {
++      if (t.id !== id) return t;
++      const merged = { ...t, ...changes };
++      if ('deadline' in changes) {
++        merged.deadlineSortDate = computeSortDate(changes.deadline, t.createdAt);
++      }
++      return merged;
++    });
++    persist(todos);
++    return todos;
++  },
++
+   toggle(id) {
++    const todos = load().map(t => {
++      if (t.id !== id) return t;
++      if (t.completed) {
++        return { ...t, completed: false, pendingComplete: false, completedAt: null };
++      }
++      return { ...t, pendingComplete: !t.pendingComplete };
++    });
++    persist(todos);
++    return todos;
++  },
++
++  organizeCompleted() {
++    const now = Date.now();
+     const todos = load().map(t =>
+-      t.id === id
+-        ? { ...t, completed: !t.completed, completedAt: !t.completed ? Date.now() : null }
++      t.pendingComplete
++        ? { ...t, completed: true, pendingComplete: false, completedAt: now }
+         : t
+     );
+     persist(todos);
+@@ -80,7 +116,26 @@ export const store = {
+ 
+   getFiltered(filter) {
+     const all = load();
+-    if (filter === 'all') return all;
+-    return all.filter(t => t.category === filter);
++    if (filter === 'all')       return all.filter(t => !t.completed);
++    if (filter === 'completed') return all.filter(t =>  t.completed);
++    if (filter === 'shopping')  return all.filter(t => !t.completed && t.category === 'shopping');
++    return all.filter(t => !t.completed && t.category === filter);
++  },
++
++  getPendingCount() {
++    return load().filter(t => t.pendingComplete && !t.completed).length;
++  },
++
++  setComment(id, text) {
++    const todos = load().map(t =>
++      t.id === id ? { ...t, comment: text || null } : t
++    );
++    persist(todos);
++  },
++
++  clearCompleted() {
++    const todos = load().filter(t => !t.completed);
++    persist(todos);
++    return todos;
+   },
+ };
+diff --git a/js/sw-register.js b/js/sw-register.js
+index af7dd2c..0f72c55 100644
+--- a/js/sw-register.js
++++ b/js/sw-register.js
+@@ -1,6 +1,10 @@
+ if ('serviceWorker' in navigator) {
+   window.addEventListener('load', () => {
+-    navigator.serviceWorker.register('/test/sw.js', { scope: '/test/' })
+-      .catch(err => console.warn('Service Worker registration failed:', err));
++    navigator.serviceWorker.register('/01_ToDoApp/sw.js', {
++      scope: '/01_ToDoApp/',
++      updateViaCache: 'none',   // sw.js 自体はHTTPキャッシュを使わず毎回サーバーから取得
++    })
++    .then(reg => reg.update())  // 起動のたびに更新チェックを強制
++    .catch(err => console.warn('Service Worker registration failed:', err));
+   });
+ }
+diff --git a/js/ui.js b/js/ui.js
+index 1bc3ac5..da06b03 100644
+--- a/js/ui.js
++++ b/js/ui.js
+@@ -1,39 +1,238 @@
+-const CATEGORY_LABEL = { work: '仕事', personal: '個人', urgent: '緊急', other: 'その他' };
+-const CHECK_ICON = { done: '✓', todo: '○' };
++const CATEGORY_LABEL = { work: '仕事', personal: '個人', shopping: '買い物' };
+ 
+ let _filter = 'all';
++let _revealedItem = null;
+ 
+-export const ui = {
+-  render(todos) {
+-    const list = document.getElementById('todo-list');
+-    const emptyMsg = document.getElementById('empty-msg');
+-
+-    // Sort: active first (by createdAt desc), completed last (by completedAt desc)
+-    const active = todos.filter(t => !t.completed).sort((a, b) => b.createdAt - a.createdAt);
+-    const done   = todos.filter(t =>  t.completed).sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+-    const sorted = [...active, ...done];
+-
+-    list.innerHTML = sorted.map(t => `
+-      <li class="todo-item priority-${t.priority} ${t.completed ? 'completed' : ''}" data-id="${t.id}">
+-        <button class="check-btn" aria-label="${t.completed ? '未完了に戻す' : '完了にする'}">
+-          ${t.completed ? CHECK_ICON.done : CHECK_ICON.todo}
++function dismissReveal() {
++  if (_revealedItem) {
++    _revealedItem.classList.remove('reveal-delete');
++    _revealedItem = null;
++  }
++}
++
++const DL_COMPAT = { today: 'soon', later: 'month' };
++
++function deadlineScore(todo) {
++  const dl = todo.deadline;
++  const d  = DL_COMPAT[dl] ?? dl;
++  // ラベル系 (すぐ/今週/今月) は deadlineSortDate(実日付) で比較する
++  if (d === 'soon' || d === 'days3' || d === 'week' || d === 'month') {
++    const sd = todo.deadlineSortDate;
++    if (sd) {
++      return (new Date(sd + 'T00:00:00') - new Date()) / 86400000;
++    }
++    // 古いタスク向けフォールバック
++    if (d === 'soon' || d === 'days3') return 0;
++    if (d === 'week')  return 7;
++    if (d === 'month') return 30;
++  }
++  if (d && d !== 'none') {
++    return (new Date(d + 'T00:00:00') - new Date()) / 86400000;
++  }
++  return Infinity;
++}
++
++// ラベル系(soon/week/month)で deadlineSortDate がある場合、残日数から表示ラベルを動的に決定する
++// 残3日未満→すぐ、残7日未満→今週まで、それ以上→今月まで
++function _labelFromDaysLeft(daysLeft) {
++  if (daysLeft < 3) return '<span class="todo-deadline">すぐ</span>';
++  if (daysLeft < 7) return '<span class="todo-deadline">今週まで</span>';
++  return '<span class="todo-deadline">今月まで</span>';
++}
++
++function deadlineHtml(todo) {
++  const dl = todo.deadline;
++  const d  = DL_COMPAT[dl] ?? dl;
++  if (!d || d === 'none') return '';
++  if (!todo.completed && !todo.pendingComplete && deadlineScore(todo) < 0) {
++    return '<span class="todo-deadline overdue">☠ 期限切れ</span>';
++  }
++  if ((d === 'soon' || d === 'days3' || d === 'week' || d === 'month') && todo.deadlineSortDate) {
++    const daysLeft = (new Date(todo.deadlineSortDate + 'T00:00:00') - new Date()) / 86400000;
++    return _labelFromDaysLeft(daysLeft);
++  }
++  if (d === 'soon' || d === 'days3') return '<span class="todo-deadline">すぐ</span>';
++  if (d === 'week')  return '<span class="todo-deadline">今週まで</span>';
++  if (d === 'month') return '<span class="todo-deadline">今月まで</span>';
++  const date = new Date(d + 'T00:00:00');
++  return `<span class="todo-deadline">${date.getMonth() + 1}/${date.getDate()}まで</span>`;
++}
++
++function isDueSoon(todo) {
++  const dl = todo.deadline;
++  if (!dl || dl === 'none') return false;
++  const d = DL_COMPAT[dl] ?? dl;
++  if ((d === 'soon' || d === 'days3' || d === 'week' || d === 'month') && todo.deadlineSortDate) {
++    const daysLeft = (new Date(todo.deadlineSortDate + 'T00:00:00') - new Date()) / 86400000;
++    return daysLeft < 3;
++  }
++  if (d === 'soon' || d === 'days3' || d === 'today') return true;
++  if (d === 'week' || d === 'month' || d === 'later') return false;
++  const days = (new Date(dl + 'T00:00:00') - new Date()) / 86400000;
++  return days <= 3;
++}
++
++function escHtml(str) {
++  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
++            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
++}
++
++function formatDate(ts) {
++  const d = new Date(ts);
++  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
++}
++
++function renderItems(todos, showCompletedDate = false) {
++  return todos.map(t => {
++    const isDone     = t.completed || t.pendingComplete;
++    const stateClass = t.completed ? ' completed' : (t.pendingComplete ? ' pending-complete' : '');
++    const overdue    = !isDone && deadlineScore(t) < 0 && t.deadline && t.deadline !== 'none';
++    const dueSoon    = !overdue && isDueSoon(t) && !isDone;
++    const metaSecondary = showCompletedDate && t.completedAt
++      ? `<span class="completed-date">完了: ${formatDate(t.completedAt)}</span>`
++      : deadlineHtml(t);
++    const commentDot = t.comment ? '<span class="comment-dot" aria-label="コメントあり"></span>' : '';
++    return `
++      <li class="todo-item priority-${t.priority} category-${t.category}${stateClass}${dueSoon ? ' due-soon' : ''}${overdue ? ' overdue' : ''}" data-id="${t.id}">
++        <button class="check-btn" aria-label="${isDone ? '未完了に戻す' : '完了にする'}">
++          ${isDone ? '✓' : '○'}
+         </button>
+         <span class="todo-text">${escHtml(t.text)}</span>
+-        <span class="todo-category">${CATEGORY_LABEL[t.category] ?? t.category}</span>
+-        <button class="delete-btn" aria-label="削除">✕</button>
++        <div class="todo-meta">
++          <div class="todo-cat-row">
++            ${commentDot}
++            <span class="todo-category">${escHtml(CATEGORY_LABEL[t.category] ?? t.category)}</span>
++          </div>
++          ${metaSecondary}
++        </div>
+         <div class="delete-overlay">削除</div>
+       </li>
+-    `).join('');
++    `;
++  }).join('');
++}
++
++function sortTodos(todos) {
++  function byDeadline(a, b) {
++    const sa = deadlineScore(a), sb = deadlineScore(b);
++    if (sa !== sb) return sa - sb;
++    return b.createdAt - a.createdAt; // 期限が同じ(無期限含む)は新しい順
++  }
++  const active  = todos.filter(t => !t.completed && !t.pendingComplete).sort(byDeadline);
++  const pending = todos.filter(t => !t.completed &&  t.pendingComplete).sort(byDeadline);
++  const done    = todos.filter(t =>  t.completed)
++                       .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
++  return [...active, ...pending, ...done];
++}
++
++export const ui = {
++  render(todos, pendingCount = 0) {
++    const list            = document.getElementById('todo-list');
++    const todoHeader      = document.getElementById('todo-section-header');
++    const shoppingSection = document.getElementById('shopping-section');
++    const shoppingList    = document.getElementById('shopping-list');
++    const emptyMsg        = document.getElementById('empty-msg');
++    const organizeBtn     = document.getElementById('btn-organize');
++    const historyControls = document.getElementById('history-controls');
++
++    historyControls?.classList.toggle('hidden', _filter !== 'completed');
++
++    if (_filter === 'all') {
++      // すべてタブ: 通常タスクと買い物タスクを別エリアに表示
++      const regular  = sortTodos(todos.filter(t => t.category !== 'shopping'));
++      const shopping = sortTodos(todos.filter(t => t.category === 'shopping'));
++
++      todoHeader?.classList.toggle('hidden', regular.length === 0);
++      list.innerHTML = renderItems(regular);
++      if (shopping.length > 0) {
++        shoppingSection.classList.remove('hidden');
++        shoppingList.innerHTML = renderItems(shopping);
++      } else {
++        shoppingSection.classList.add('hidden');
++      }
++      emptyMsg.classList.toggle('hidden', regular.length > 0 || shopping.length > 0);
++    } else {
++      todoHeader?.classList.add('hidden');
++      shoppingSection.classList.add('hidden');
++      const sorted = sortTodos(todos);
++      list.innerHTML = renderItems(sorted, _filter === 'completed');
++      emptyMsg.classList.toggle('hidden', sorted.length > 0);
++    }
++
++    if (organizeBtn) {
++      organizeBtn.textContent = pendingCount > 0 ? `整理 (${pendingCount})` : '整理';
++      organizeBtn.disabled    = pendingCount === 0;
++    }
++  },
++
++  updateItem(todo, pendingCount) {
++    const el = document.querySelector(`.todo-item[data-id="${todo.id}"]`);
++    if (!el) return;
++
++    const isDone  = todo.completed || todo.pendingComplete;
++    const overdue = !isDone && deadlineScore(todo) < 0 && todo.deadline && todo.deadline !== 'none';
++    const dueSoon = !overdue && isDueSoon(todo) && !isDone;
++
++    el.classList.remove('completed', 'pending-complete', 'due-soon', 'overdue');
++    if (todo.completed)       el.classList.add('completed');
++    if (todo.pendingComplete) el.classList.add('pending-complete');
++    if (dueSoon)              el.classList.add('due-soon');
++    if (overdue)              el.classList.add('overdue');
++
++    const checkBtn = el.querySelector('.check-btn');
++    checkBtn.setAttribute('aria-label', isDone ? '未完了に戻す' : '完了にする');
++    checkBtn.textContent = isDone ? '✓' : '○';
++
++    const todoMeta = el.querySelector('.todo-meta');
++    if (todoMeta) {
++      const existing = todoMeta.querySelector('.todo-deadline, .completed-date');
++      const newHtml  = deadlineHtml(todo);
++      if (existing) {
++        if (newHtml) existing.outerHTML = newHtml;
++        else         existing.remove();
++      } else if (newHtml) {
++        todoMeta.insertAdjacentHTML('beforeend', newHtml);
++      }
++      const catRow = todoMeta.querySelector('.todo-cat-row');
++      const existingDot = catRow?.querySelector('.comment-dot');
++      if (todo.comment && !existingDot) {
++        catRow?.insertAdjacentHTML('afterbegin', '<span class="comment-dot" aria-label="コメントあり"></span>');
++      } else if (!todo.comment && existingDot) {
++        existingDot.remove();
++      }
++    }
++
++    const organizeBtn = document.getElementById('btn-organize');
++    if (organizeBtn) {
++      organizeBtn.textContent = pendingCount > 0 ? `整理 (${pendingCount})` : '整理';
++      organizeBtn.disabled    = pendingCount === 0;
++    }
++  },
+ 
+-    emptyMsg.classList.toggle('hidden', sorted.length > 0);
++  openCommentModal(todo, onSave) {
++    const modal    = document.getElementById('comment-modal');
++    const textarea = document.getElementById('comment-text');
++    textarea.value = todo.comment || '';
++    modal.classList.remove('hidden');
++    textarea.focus();
++
++    const close = () => modal.classList.add('hidden');
++    document.getElementById('comment-cancel').onclick = close;
++    modal.onclick = e => { if (e.target === modal) close(); };
++    document.getElementById('comment-ok').onclick = () => {
++      onSave(textarea.value.trim());
++      close();
++    };
+   },
+ 
+   setFilter(filter) {
+     _filter = filter;
+     document.querySelectorAll('.tab').forEach(btn => {
+-      btn.classList.toggle('active', btn.dataset.filter === filter);
+-      btn.setAttribute('aria-selected', btn.dataset.filter === filter ? 'true' : 'false');
++      const active = btn.dataset.filter === filter;
++      btn.classList.toggle('active', active);
++      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+     });
++    const pfRow = document.querySelector('.priority-filters');
++    if (pfRow) pfRow.classList.toggle('hidden', filter === 'shopping');
+   },
+ 
+   showBanner(msg) {
+@@ -50,115 +249,296 @@ export const ui = {
+     document.getElementById('new-todo').value = '';
+   },
+ 
+-  bindEvents({ onAdd, onToggle, onRemove, onFilterChange }) {
+-    // Filter tabs
++  bindEvents({ onAdd, onToggle, onRemove, onOrganize, onEdit, onFilterChange, onClearHistory, onPriorityFilterChange, onLongPress }) {
+     document.querySelector('.filter-tabs').addEventListener('click', e => {
+       const btn = e.target.closest('.tab');
+       if (btn) onFilterChange(btn.dataset.filter);
+     });
+ 
+-    // Todo list: event delegation
+-    document.getElementById('todo-list').addEventListener('click', e => {
++    document.querySelector('.priority-filters').addEventListener('click', e => {
++      const chip = e.target.closest('.pf-chip');
++      if (!chip) return;
++      chip.classList.toggle('active');
++      const selected = [...document.querySelectorAll('.pf-chip.active')].map(c => c.dataset.priority);
++      onPriorityFilterChange(selected);
++    });
++
++    document.getElementById('btn-organize').addEventListener('click', onOrganize);
++
++    document.getElementById('btn-clear-history').addEventListener('click', () => {
++      if (confirm('完了済みのタスクをすべて削除しますか？')) onClearHistory();
++    });
++
++    function handleListClick(e) {
+       const item = e.target.closest('.todo-item');
+       if (!item) return;
+       const id = item.dataset.id;
+-      if (e.target.closest('.check-btn'))  onToggle(id);
+-      if (e.target.closest('.delete-btn')) onRemove(id);
+-    });
++      if (e.target.closest('.delete-overlay')) {
++        dismissReveal();
++        onRemove(id);
++        return;
++      }
++      if (_revealedItem) { dismissReveal(); return; }
++      if (e.target.closest('.check-btn')) { onToggle(id); return; }
++      if (_filter === 'completed') return;
++      onEdit(id);
++    }
++    document.getElementById('todo-list').addEventListener('click', handleListClick);
++    document.getElementById('shopping-list').addEventListener('click', handleListClick);
+ 
+-    // Add button & Enter key
++    // + button: always open modal
+     document.getElementById('btn-add').addEventListener('click', () => {
+       const text = ui.getInputValue();
+-      if (text) ui.openModal(text, onAdd);
++      if (!text) return;
++      const defaultCategory = ['personal', 'work', 'shopping'].includes(_filter) ? _filter : 'personal';
++      ui.openModal({ mode: 'add', text, category: defaultCategory }, onAdd);
+     });
+ 
++    // Enter key: quick-add directly without modal
+     document.getElementById('new-todo').addEventListener('keydown', e => {
+-      if (e.key === 'Enter') {
+-        const text = ui.getInputValue();
+-        if (text) ui.openModal(text, onAdd);
+-      }
++      if (e.key !== 'Enter') return;
++      const text = ui.getInputValue();
++      if (!text) return;
++      const category = ['personal', 'work', 'shopping'].includes(_filter) ? _filter : 'personal';
++      onAdd({ text, priority: 'medium', category, deadline: null });
++      ui.clearInput();
+     });
+ 
+-    // Swipe-to-delete
+-    setupSwipe(onRemove);
++    setupSwipe('todo-list',     onRemove);
++    setupSwipe('shopping-list', onRemove);
++    setupLongPress('todo-list',     onLongPress);
++    setupLongPress('shopping-list', onLongPress);
+   },
+ 
+-  openModal(text, onAdd) {
+-    const modal = document.getElementById('modal');
++  openModal(
++    { mode = 'add', text = '', priority = 'medium', category = 'personal', deadline = null },
++    onConfirm
++  ) {
++    const modal       = document.getElementById('modal');
++    const textRow     = document.getElementById('modal-text-row');
++    const editText    = document.getElementById('edit-text');
++    const okBtn       = document.getElementById('modal-ok');
++    const dlDateInput = document.getElementById('deadline-date');
++    const priSection  = document.getElementById('priority-section');
++    const dlSection   = document.getElementById('deadline-section');
++
+     modal.classList.remove('hidden');
+ 
+-    // Reset selections
+-    document.querySelectorAll('#priority-group .chip').forEach(c => c.classList.remove('active'));
++    if (mode === 'edit') {
++      textRow.classList.remove('hidden');
++      editText.value = text;
++      okBtn.textContent = '保存';
++    } else {
++      textRow.classList.add('hidden');
++      okBtn.textContent = '追加';
++    }
++
++    // Category
+     document.querySelectorAll('#category-group .chip').forEach(c => c.classList.remove('active'));
+-    document.querySelector('[data-priority="high"]').classList.add('active');
+-    document.querySelector('[data-category="work"]').classList.add('active');
++    document.querySelector(`[data-category="${category}"]`)?.classList.add('active');
+ 
+-    const close = () => modal.classList.add('hidden');
++    // 買い物選択時は重要度・期限を非活性表示（非表示にはしない）
++    const isShop = category === 'shopping';
++    priSection.classList.toggle('section-disabled', isShop);
++    dlSection.classList.toggle('section-disabled', isShop);
++
++    // Priority
++    document.querySelectorAll('#priority-group .chip').forEach(c => c.classList.remove('active'));
++    document.querySelector(`#priority-group [data-priority="${priority}"]`)?.classList.add('active');
++
++    // Deadline
++    const calChip = document.querySelector('[data-deadline="date"]');
++    if (calChip) calChip.textContent = 'カレンダー'; // ラベルをリセット
++    document.querySelectorAll('#deadline-group .chip').forEach(c => c.classList.remove('active'));
++    dlDateInput.value = '';
++    const dlNorm  = DL_COMPAT[deadline] ?? deadline;
++    const dlModal = dlNorm === 'days3' ? 'soon' : dlNorm;
++    if (!dlModal || dlModal === 'none') {
++      document.querySelector('[data-deadline="none"]')?.classList.add('active');
++    } else if (['soon', 'week', 'month'].includes(dlModal)) {
++      document.querySelector(`[data-deadline="${dlModal}"]`)?.classList.add('active');
++    } else {
++      calChip?.classList.add('active');
++      dlDateInput.value = deadline;
++      if (deadline && calChip) {
++        const [, m, d] = deadline.split('-');
++        calChip.textContent = `${parseInt(m, 10)}/${parseInt(d, 10)}`;
++      }
++    }
+ 
++    // 日付選択後にチップラベルを更新
++    dlDateInput.onchange = () => {
++      if (!calChip) return;
++      if (dlDateInput.value) {
++        const [, m, d] = dlDateInput.value.split('-');
++        calChip.textContent = `${parseInt(m, 10)}/${parseInt(d, 10)}`;
++        document.querySelectorAll('#deadline-group .chip').forEach(c => c.classList.remove('active'));
++        calChip.classList.add('active');
++      } else {
++        calChip.textContent = 'カレンダー';
++      }
++    };
++
++    const close = () => modal.classList.add('hidden');
+     document.getElementById('modal-cancel').onclick = close;
+     modal.onclick = e => { if (e.target === modal) close(); };
+ 
+-    // Chip toggles
+     document.getElementById('priority-group').onclick = e => {
+       const chip = e.target.closest('.chip');
+       if (!chip) return;
+       document.querySelectorAll('#priority-group .chip').forEach(c => c.classList.remove('active'));
+       chip.classList.add('active');
+     };
++
+     document.getElementById('category-group').onclick = e => {
+       const chip = e.target.closest('.chip');
+       if (!chip) return;
+       document.querySelectorAll('#category-group .chip').forEach(c => c.classList.remove('active'));
+       chip.classList.add('active');
++      const shop = chip.dataset.category === 'shopping';
++      priSection.classList.toggle('section-disabled', shop);
++      dlSection.classList.toggle('section-disabled', shop);
++    };
++
++    // カレンダー以外のチップ選択: 通常の chip 切り替え + カレンダーラベルリセット
++    document.getElementById('deadline-group').onclick = e => {
++      const chip = e.target.closest('.chip');
++      if (!chip || chip.dataset.deadline === 'date') return; // date は input が直接処理
++      document.querySelectorAll('#deadline-group .chip').forEach(c => c.classList.remove('active'));
++      chip.classList.add('active');
++      dlDateInput.value = '';
++      if (calChip) calChip.textContent = 'カレンダー';
++    };
++
++    // カレンダーチップ上の input を直タップ → ネイティブピッカーが開く
++    dlDateInput.onclick = () => {
++      document.querySelectorAll('#deadline-group .chip').forEach(c => c.classList.remove('active'));
++      if (calChip) calChip.classList.add('active');
+     };
+ 
+     document.getElementById('modal-ok').onclick = () => {
++      const finalText = mode === 'edit' ? editText.value.trim() : text;
++      if (!finalText) return;
++
+       const priority = document.querySelector('#priority-group .chip.active')?.dataset.priority ?? 'medium';
+-      const category = document.querySelector('#category-group .chip.active')?.dataset.category ?? 'other';
+-      onAdd({ text, priority, category });
+-      ui.clearInput();
++      const category = document.querySelector('#category-group .chip.active')?.dataset.category ?? 'personal';
++      const dlChip   = document.querySelector('#deadline-group .chip.active')?.dataset.deadline ?? 'none';
++      let deadline = null;
++      if (['soon', 'week', 'month'].includes(dlChip)) {
++        deadline = dlChip;
++      } else if (dlChip === 'date') {
++        deadline = dlDateInput.value || null;
++      }
++
++      onConfirm({ text: finalText, priority, category, deadline });
++      if (mode === 'add') ui.clearInput();
+       close();
+     };
+   },
+ };
+ 
+-function escHtml(str) {
+-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+-            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+-}
+-
+-function setupSwipe(onRemove) {
+-  const list = document.getElementById('todo-list');
+-  let startX = 0, startY = 0, activeItem = null;
++function setupSwipe(listId, onRemove) {
++  const list = document.getElementById(listId);
++  if (!list) return;
++  let startX = 0, startY = 0, activeItem = null, gesture = null;
+ 
+   list.addEventListener('touchstart', e => {
+     const item = e.target.closest('.todo-item');
+-    if (!item) return;
++    if (_revealedItem && item === _revealedItem && e.target.closest('.delete-overlay')) return;
++    dismissReveal();
++    if (!item || e.target.closest('.check-btn')) return;
+     startX = e.touches[0].clientX;
+     startY = e.touches[0].clientY;
+     activeItem = item;
++    gesture = null;
+   }, { passive: true });
+ 
+   list.addEventListener('touchmove', e => {
+     if (!activeItem) return;
+     const dx = e.touches[0].clientX - startX;
+     const dy = e.touches[0].clientY - startY;
+-    if (Math.abs(dy) > Math.abs(dx)) { activeItem = null; return; } // vertical scroll
+-    if (dx < -50) activeItem.classList.add('reveal-delete');
+-    else activeItem.classList.remove('reveal-delete');
++    if (Math.abs(dy) > Math.abs(dx)) { activeItem = null; return; }
++    gesture = 'swipe';
++    if (dx < -50) {
++      activeItem.classList.add('reveal-delete');
++    } else {
++      activeItem.classList.remove('reveal-delete');
++      if (_revealedItem === activeItem) _revealedItem = null;
++    }
+   }, { passive: true });
+ 
+   list.addEventListener('touchend', e => {
+-    if (!activeItem) return;
+-    const dx = e.changedTouches[0].clientX - startX;
+-    if (dx < -120) {
+-      const id = activeItem.dataset.id;
+-      activeItem.style.opacity = '0';
+-      activeItem.style.transition = 'opacity 0.2s';
+-      setTimeout(() => onRemove(id), 200);
+-    } else {
++    if (!activeItem) { activeItem = null; gesture = null; return; }
++    if (gesture === 'swipe') {
++      const dx = e.changedTouches[0].clientX - startX;
++      if (dx < -50) {
++        _revealedItem = activeItem;
++      } else {
++        activeItem.classList.remove('reveal-delete');
++        if (_revealedItem === activeItem) _revealedItem = null;
++      }
++    }
++    activeItem = null;
++    gesture = null;
++  });
++
++  list.addEventListener('touchcancel', () => {
++    if (activeItem) {
+       activeItem.classList.remove('reveal-delete');
++      if (_revealedItem === activeItem) _revealedItem = null;
+     }
+     activeItem = null;
++    gesture = null;
+   });
+ }
++
++function setupLongPress(listId, onLongPress) {
++  const list = document.getElementById(listId);
++  if (!list) return;
++  let timer = null, startX = 0, startY = 0, longPressed = false;
++
++  function start(x, y, id) {
++    longPressed = false;
++    startX = x; startY = y;
++    timer = setTimeout(() => {
++      longPressed = true;
++      timer = null;
++      window.getSelection()?.removeAllRanges();
++      onLongPress(id);
++    }, 250);
++  }
++  function cancel() { clearTimeout(timer); timer = null; }
++
++  list.addEventListener('touchstart', e => {
++    const item = e.target.closest('.todo-item');
++    if (!item || e.target.closest('.check-btn')) return;
++    start(e.touches[0].clientX, e.touches[0].clientY, item.dataset.id);
++  }, { passive: true });
++  list.addEventListener('touchmove', e => {
++    if (!timer) return;
++    const dx = Math.abs(e.touches[0].clientX - startX);
++    const dy = Math.abs(e.touches[0].clientY - startY);
++    if (dx > 8 || dy > 8) cancel();
++  }, { passive: true });
++  list.addEventListener('touchend', e => {
++    cancel();
++    if (longPressed) {
++      e.preventDefault(); // 長押し後の合成クリックを抑制してモーダルへの誤爆を防ぐ
++      longPressed = false;
++    }
++  }, { passive: false });
++  list.addEventListener('touchcancel', cancel, { passive: true });
++
++  list.addEventListener('mousedown', e => {
++    const item = e.target.closest('.todo-item');
++    if (!item || e.target.closest('.check-btn')) return;
++    start(e.clientX, e.clientY, item.dataset.id);
++  });
++  list.addEventListener('mouseup',    cancel);
++  list.addEventListener('mouseleave', cancel);
++
++  // 長押し発火後のクリックイベントを抑制
++  list.addEventListener('click', e => {
++    if (longPressed) { e.stopImmediatePropagation(); longPressed = false; }
++  }, true);
++}
+diff --git a/manifest.json b/manifest.json
+index 693f365..c0b83cb 100644
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,22 +1,27 @@
+ {
+   "name": "Todo",
+   "short_name": "Todo",
+-  "description": "シンプルなTodo管理アプリ",
+-  "start_url": "/test/",
+-  "scope": "/test/",
++  "description": "シンプルなタスク管理アプリ",
++  "start_url": "/01_ToDoApp/",
++  "scope": "/01_ToDoApp/",
+   "display": "standalone",
+   "orientation": "portrait",
+-  "background_color": "#ffffff",
++  "background_color": "#007AFF",
+   "theme_color": "#007AFF",
+   "lang": "ja",
+   "icons": [
+     {
+-      "src": "/test/icons/icon-192.png",
++      "src": "/01_ToDoApp/icons/icon.svg",
++      "sizes": "any",
++      "type": "image/svg+xml"
++    },
++    {
++      "src": "/01_ToDoApp/icons/icon-192.png",
+       "sizes": "192x192",
+       "type": "image/png"
+     },
+     {
+-      "src": "/test/icons/icon-512.png",
++      "src": "/01_ToDoApp/icons/icon-512.png",
+       "sizes": "512x512",
+       "type": "image/png",
+       "purpose": "any maskable"
+diff --git a/sw.js b/sw.js
+index 1a662a9..3983438 100644
+--- a/sw.js
++++ b/sw.js
+@@ -1,16 +1,16 @@
+-const CACHE = 'todo-v1';
++const CACHE = 'todo-v17';
+ const ASSETS = [
+-  '/test/',
+-  '/test/index.html',
+-  '/test/manifest.json',
+-  '/test/css/app.css',
+-  '/test/js/app.js',
+-  '/test/js/store.js',
+-  '/test/js/ui.js',
+-  '/test/js/sw-register.js',
+-  '/test/icons/apple-touch-icon.png',
+-  '/test/icons/icon-192.png',
+-  '/test/icons/icon-512.png',
++  '/01_ToDoApp/',
++  '/01_ToDoApp/index.html',
++  '/01_ToDoApp/manifest.json',
++  '/01_ToDoApp/css/app.css',
++  '/01_ToDoApp/js/app.js',
++  '/01_ToDoApp/js/store.js',
++  '/01_ToDoApp/js/ui.js',
++  '/01_ToDoApp/js/sw-register.js',
++  '/01_ToDoApp/icons/apple-touch-icon.png',
++  '/01_ToDoApp/icons/icon-192.png',
++  '/01_ToDoApp/icons/icon-512.png',
+ ];
+ 
+ self.addEventListener('install', e => {
+@@ -41,7 +41,7 @@ self.addEventListener('fetch', e => {
+         return res;
+       }).catch(() => {
+         // Offline fallback for navigation requests
+-        if (e.request.mode === 'navigate') return caches.match('/test/index.html');
++        if (e.request.mode === 'navigate') return caches.match('/01_ToDoApp/index.html');
+       });
+     })
+   );

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-claude-code-pr61695",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 61695,
+    "headSha": "b9563a8cfa2425d49075b11a50ae7e1aeec2447c",
+    "baseSha": "39e853e4074d90f27afdfb7ea601e0fc378bd0c5",
+    "title": "[docs] Add DISABLE_1M_CONTEXT workaround for Sonnet 4.6 usage-credits false positive (#61692)",
+    "body": "## Summary\n\nDocuments the `CLAUDE_CODE_DISABLE_1M_CONTEXT` environment variable workaround for users hitting a false \"Usage credits required for 1M context\" error on Sonnet 4.6.\n\nCloses #61692\n\n## Problem\n\nSonnet 4.6 is incorrectly blocked by `API Error: Usage credits required for 1M context` on Pro plan. The error should only apply to Opus with extended 1M context. The API's plan-tier check is treating Sonnet 4.6 as a 1M-context model for Pro users who don't have usage credits.\n\nThis affects both CLI (v2.1.147) and VSCode extension users. See also #61089 and #60707.\n\n## Workaround\n\n`CLAUDE_CODE_DISABLE_1M_CONTEXT=1` forces standard 200K context, bypassing the usage-credits check entirely. This env var was added in v2.1.49 (CHANGELOG line 2106) but is not widely documented.\n\n## The Permanent Fix\n\nThe API's model-to-plan-tier mapping for 1M context needs correction:\n- Pro plan: Sonnet 4.6 uses standard 200K context (no usage credits needed)\n- Max/Team/Enterprise: Sonnet 4.6 can use 1M context (usage credits apply)\n",
+    "author": "giruuuuj",
+    "headRef": "fix/sonnet-4-6-usage-credits-61692",
+    "repository": "anthropics/claude-code"
+  },
+  "diffRef": {
+    "repository": "anthropics/claude-code",
+    "headSha": "b9563a8cfa2425d49075b11a50ae7e1aeec2447c",
+    "baseSha": "39e853e4074d90f27afdfb7ea601e0fc378bd0c5"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-claude-code-pr61695.diff",
+  "vendoredAt": "2026-05-24T03:15:46.595Z",
+  "collectedAt": "2026-05-24T03:15:46.595Z"
+}

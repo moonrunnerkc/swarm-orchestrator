@@ -1,0 +1,65 @@
+diff --git a/.replit b/.replit
+index a635c84..8a59ffd 100644
+--- a/.replit
++++ b/.replit
+@@ -34,7 +34,7 @@ externalPort = 3000
+ [userenv]
+ 
+ [userenv.shared]
+-VITE_CLERK_PUBLISHABLE_KEY = "pk_test_dGVuZGVyLWhpcHBvLTYyLmNsZXJrLmFjY291bnRzLmRldiQ"
++VITE_CLERK_PUBLISHABLE_KEY = "pk_test_cHJvbW90ZWQtZWxlcGhhbnQtODcuY2xlcmsuYWNjb3VudHMuZGV2JA"
+ 
+ [nix]
+ channel = "stable-25_05"
+diff --git a/artifacts/api-server/src/app.ts b/artifacts/api-server/src/app.ts
+index e8a6b86..c428889 100644
+--- a/artifacts/api-server/src/app.ts
++++ b/artifacts/api-server/src/app.ts
+@@ -2,7 +2,6 @@ import express, { type Express, type Request, type Response, type NextFunction }
+ import cors from "cors";
+ import pinoHttp from "pino-http";
+ import { clerkMiddleware, requireAuth } from "@clerk/express";
+-import { publishableKeyFromHost } from "@clerk/shared/keys";
+ import {
+   CLERK_PROXY_PATH,
+   clerkProxyMiddleware,
+@@ -42,12 +41,9 @@ app.use(express.json());
+ app.use(express.urlencoded({ extended: true }));
+ 
+ app.use(
+-  clerkMiddleware((req) => ({
+-    publishableKey: publishableKeyFromHost(
+-      getClerkProxyHost(req) ?? "",
+-      process.env.CLERK_PUBLISHABLE_KEY,
+-    ),
+-  })),
++  clerkMiddleware({
++    publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
++  }),
+ );
+ 
+ app.use(healthRouter);
+diff --git a/artifacts/cos-pwa/src/App.tsx b/artifacts/cos-pwa/src/App.tsx
+index 631e326..863295b 100644
+--- a/artifacts/cos-pwa/src/App.tsx
++++ b/artifacts/cos-pwa/src/App.tsx
+@@ -2,7 +2,6 @@ import { useEffect } from "react";
+ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+ import { ClerkProvider, SignIn, SignUp, Show } from "@clerk/react";
+-import { publishableKeyFromHost } from "@clerk/react/internal";
+ import { shadcn } from "@clerk/themes";
+ import { Toaster } from "sonner";
+ import AppShell from "@/components/AppShell";
+@@ -25,10 +24,7 @@ const queryClient = new QueryClient({
+   },
+ });
+ 
+-const clerkPubKey = publishableKeyFromHost(
+-  window.location.hostname,
+-  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
+-);
++const clerkPubKey = "pk_test_cHJvbW90ZWQtZWxlcGhhbnQtODcuY2xlcmsuYWNjb3VudHMuZGV2JA";
+ 
+ if (!clerkPubKey) {
+   throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY");

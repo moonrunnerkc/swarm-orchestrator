@@ -1,0 +1,19 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.twilio.segment.md b/src/main/resources/doc/io.kestra.plugin.twilio.segment.md
+new file mode 100644
+index 0000000..1fd5dfc
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.twilio.segment.md
+@@ -0,0 +1,13 @@
++# How to use the Segment plugin
++
++Trigger and monitor Segment Reverse ETL syncs from Kestra flows.
++
++## Authentication
++
++Set `token` (required) to a Segment API bearer token with Reverse ETL scopes. Optionally override `uri` (default `https://api.segmentapis.com`) for custom API endpoints. Store secrets in [secrets](https://kestra.io/docs/concepts/secret) and apply connection properties globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
++
++## Tasks
++
++`reverseetl.Sync` triggers a Reverse ETL sync — set `sourceId`, `modelId`, and `subscriptionId` (all required). By default `wait` is `false` (fire-and-forget); set `wait: true` to poll until the sync completes, with `maxDuration` (default 1 hour) and `pollInterval` (default 5 seconds) to control polling. Set `errorOnFailing: true` to fail the task if the sync reports an error (default `false`). The output includes `syncId`, `created`, and `status`.
++
++`reverseetl.Status` checks the status of an existing sync — set `modelId` and `syncId` (both required). The output includes the full `status` payload.

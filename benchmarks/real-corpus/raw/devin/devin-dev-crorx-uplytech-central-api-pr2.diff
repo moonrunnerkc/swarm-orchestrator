@@ -1,0 +1,1399 @@
+diff --git a/.github/CODE_OF_CONDUCT.md b/.github/CODE_OF_CONDUCT.md
+new file mode 100644
+index 0000000..eeeb893
+--- /dev/null
++++ b/.github/CODE_OF_CONDUCT.md
+@@ -0,0 +1,31 @@
++# Code of Conduct
++
++## Our Pledge
++
++We as members, contributors, and leaders pledge to make participation in our community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation.
++
++## Our Standards
++
++Examples of behavior that contributes to a positive environment:
++
++- Using welcoming and inclusive language
++- Being respectful of differing viewpoints and experiences
++- Gracefully accepting constructive criticism
++- Focusing on what is best for the community
++- Showing empathy towards other community members
++
++Examples of unacceptable behavior:
++
++- The use of sexualized language or imagery and unwelcome sexual attention
++- Trolling, insulting or derogatory comments, and personal or political attacks
++- Public or private harassment
++- Publishing others' private information without explicit permission
++- Other conduct which could reasonably be considered inappropriate
++
++## Enforcement
++
++Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the project team at security@uplytech.com. All complaints will be reviewed and investigated promptly and fairly.
++
++## Attribution
++
++This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org/), version 2.1.
+diff --git a/.github/CONTRIBUTING.md b/.github/CONTRIBUTING.md
+new file mode 100644
+index 0000000..524f468
+--- /dev/null
++++ b/.github/CONTRIBUTING.md
+@@ -0,0 +1,68 @@
++# Contributing to UplyTech Central API
++
++Thank you for your interest in contributing to the UplyTech Central API!
++
++## Development Setup
++
++1. Fork and clone the repository
++2. Install dependencies: `npm install`
++3. Copy `.env.example` to `.env` and configure
++4. Generate Prisma client: `npx prisma generate`
++5. Run migrations: `npx prisma migrate dev`
++6. Start dev server: `npm run dev`
++
++## Branch Naming
++
++- `feature/` - New features
++- `fix/` - Bug fixes
++- `refactor/` - Code refactoring
++- `docs/` - Documentation updates
++- `chore/` - Maintenance tasks
++
++## Commit Messages
++
++Follow [Conventional Commits](https://www.conventionalcommits.org/):
++
++```
++feat: add user avatar upload endpoint
++fix: resolve economy transfer race condition
++docs: update API reference for payments module
++refactor: simplify permission check logic
++chore: update dependencies
++```
++
++## Code Style
++
++- TypeScript strict mode - no `any` types without justification
++- Follow existing patterns: Service → Controller → Router
++- All imports at the top of files
++- Use Prisma types and enums, not raw strings
++- Every service method should emit relevant events via `eventBus`
++- Every write operation should create an audit entry
++
++## Adding a New Module
++
++1. Create the directory: `src/modules/{module-name}/`
++2. Create three files:
++   - `service/{module-name}.service.ts` - Business logic
++   - `controller/{module-name}.controller.ts` - Request handling
++   - `router/{module-name}.router.ts` - Route definitions
++3. Add the Prisma model to `prisma/schema.prisma`
++4. Register the router in `src/app.ts`
++5. Run `npx prisma generate` and `npx prisma migrate dev`
++
++## Pull Request Process
++
++1. Create a feature branch from `main`
++2. Make your changes
++3. Ensure `npx tsc --noEmit` passes with 0 errors
++4. Ensure `npm run lint` passes with 0 errors
++5. Write a clear PR description
++6. Request review
++
++## Reporting Issues
++
++Use GitHub Issues with the provided templates:
++- **Bug Report** - For bugs and unexpected behavior
++- **Feature Request** - For new features and improvements
++- **Security Report** - For security vulnerabilities (use responsible disclosure)
+diff --git a/.github/FUNDING.yml b/.github/FUNDING.yml
+new file mode 100644
+index 0000000..d79ffeb
+--- /dev/null
++++ b/.github/FUNDING.yml
+@@ -0,0 +1 @@
++github: dev-crorx
+diff --git a/.github/ISSUE_TEMPLATE/bug_report.md b/.github/ISSUE_TEMPLATE/bug_report.md
+new file mode 100644
+index 0000000..f3ec692
+--- /dev/null
++++ b/.github/ISSUE_TEMPLATE/bug_report.md
+@@ -0,0 +1,58 @@
++---
++name: Bug Report
++about: Report a bug in the UplyTech Central API
++title: "[BUG] "
++labels: bug
++assignees: ''
++---
++
++## Bug Description
++
++<!-- A clear description of the bug -->
++
++## Steps to Reproduce
++
++1.
++2.
++3.
++
++## Expected Behavior
++
++<!-- What should happen -->
++
++## Actual Behavior
++
++<!-- What actually happens -->
++
++## Environment
++
++- **API Version**: 
++- **Node.js Version**: 
++- **OS**: 
++- **Docker**: Yes / No
++
++## Request Details
++
++- **Endpoint**: `GET /api/v1/...`
++- **Headers**: 
++- **Body**: 
++
++```json
++
++```
++
++## Response
++
++```json
++
++```
++
++## Logs
++
++```
++
++```
++
++## Additional Context
++
++<!-- Screenshots, related issues, etc. -->
+diff --git a/.github/ISSUE_TEMPLATE/config.yml b/.github/ISSUE_TEMPLATE/config.yml
+new file mode 100644
+index 0000000..fbbcd6d
+--- /dev/null
++++ b/.github/ISSUE_TEMPLATE/config.yml
+@@ -0,0 +1,5 @@
++blank_issues_enabled: true
++contact_links:
++  - name: Security Vulnerability (Critical)
++    url: mailto:security@uplytech.com
++    about: For critical security vulnerabilities, please email us directly instead of opening a public issue.
+diff --git a/.github/ISSUE_TEMPLATE/feature_request.md b/.github/ISSUE_TEMPLATE/feature_request.md
+new file mode 100644
+index 0000000..929ea29
+--- /dev/null
++++ b/.github/ISSUE_TEMPLATE/feature_request.md
+@@ -0,0 +1,45 @@
++---
++name: Feature Request
++about: Suggest a new feature for the UplyTech Central API
++title: "[FEATURE] "
++labels: enhancement
++assignees: ''
++---
++
++## Feature Description
++
++<!-- A clear description of the feature -->
++
++## Use Case
++
++<!-- Why is this feature needed? Which UplyTech product will use it? -->
++
++## Proposed API Design
++
++<!-- Suggested endpoints, request/response format -->
++
++```
++POST /api/v1/...
++```
++
++**Request:**
++```json
++{
++
++}
++```
++
++**Response:**
++```json
++{
++
++}
++```
++
++## Module
++
++<!-- Which existing module does this belong to, or is it a new module? -->
++
++## Additional Context
++
++<!-- Mockups, references, related features -->
+diff --git a/.github/ISSUE_TEMPLATE/security_report.md b/.github/ISSUE_TEMPLATE/security_report.md
+new file mode 100644
+index 0000000..1e57e0e
+--- /dev/null
++++ b/.github/ISSUE_TEMPLATE/security_report.md
+@@ -0,0 +1,40 @@
++---
++name: Security Report
++about: Report a security vulnerability (for non-critical issues only - use email for critical)
++title: "[SECURITY] "
++labels: security
++assignees: ''
++---
++
++> **For critical security vulnerabilities, please email security@uplytech.com instead of opening a public issue.**
++
++## Vulnerability Type
++
++- [ ] Authentication bypass
++- [ ] Authorization issue
++- [ ] Injection (SQL, XSS, etc.)
++- [ ] Information disclosure
++- [ ] Rate limiting bypass
++- [ ] Other
++
++## Description
++
++<!-- Describe the vulnerability -->
++
++## Affected Endpoint / Module
++
++<!-- Which endpoint or module is affected? -->
++
++## Steps to Reproduce
++
++1.
++2.
++3.
++
++## Impact
++
++<!-- What could an attacker do with this? -->
++
++## Suggested Fix
++
++<!-- Optional: How would you fix this? -->
+diff --git a/.github/SECURITY.md b/.github/SECURITY.md
+new file mode 100644
+index 0000000..1c070ff
+--- /dev/null
++++ b/.github/SECURITY.md
+@@ -0,0 +1,50 @@
++# Security Policy
++
++## Supported Versions
++
++| Version | Supported          |
++| ------- | ------------------ |
++| 1.x     | Yes                |
++
++## Reporting a Vulnerability
++
++**Do NOT open a public GitHub issue for security vulnerabilities.**
++
++Instead, please report security vulnerabilities via:
++
++1. **Email**: security@uplytech.com
++2. **GitHub Security Advisories**: Use the "Report a vulnerability" button on the Security tab
++
++### What to include
++
++- Type of vulnerability (XSS, SQL injection, authentication bypass, etc.)
++- Steps to reproduce
++- Affected endpoints or modules
++- Potential impact
++- Suggested fix (if any)
++
++### Response Timeline
++
++- **Acknowledgment**: Within 48 hours
++- **Initial Assessment**: Within 5 business days
++- **Fix & Release**: Depends on severity
++  - Critical: Within 24 hours
++  - High: Within 7 days
++  - Medium: Within 30 days
++  - Low: Next scheduled release
++
++## Security Best Practices
++
++This API implements:
++
++- Argon2 password hashing
++- JWT with short-lived access tokens and refresh token rotation
++- Rate limiting on all endpoints
++- Helmet security headers
++- CORS with explicit origin allowlisting
++- Input validation via Zod on all endpoints
++- SQL injection prevention via Prisma ORM
++- XSS prevention via output encoding
++- CSRF protection
++- Full audit logging
++- API key scoping and expiration
+diff --git a/.github/dependabot.yml b/.github/dependabot.yml
+new file mode 100644
+index 0000000..b4d521a
+--- /dev/null
++++ b/.github/dependabot.yml
+@@ -0,0 +1,40 @@
++version: 2
++updates:
++  - package-ecosystem: "npm"
++    directory: "/"
++    schedule:
++      interval: "weekly"
++    open-pull-requests-limit: 10
++    labels:
++      - "dependencies"
++    groups:
++      production-dependencies:
++        patterns:
++          - "*"
++        exclude-patterns:
++          - "@types/*"
++          - "eslint*"
++          - "typescript"
++          - "prettier"
++          - "jest"
++          - "ts-*"
++      dev-dependencies:
++        dependency-type: "development"
++        patterns:
++          - "*"
++
++  - package-ecosystem: "docker"
++    directory: "/"
++    schedule:
++      interval: "weekly"
++    labels:
++      - "dependencies"
++      - "docker"
++
++  - package-ecosystem: "github-actions"
++    directory: "/"
++    schedule:
++      interval: "weekly"
++    labels:
++      - "dependencies"
++      - "ci"
+diff --git a/.github/pull_request_template.md b/.github/pull_request_template.md
+new file mode 100644
+index 0000000..bad9e48
+--- /dev/null
++++ b/.github/pull_request_template.md
+@@ -0,0 +1,34 @@
++## Description
++
++<!-- Describe your changes -->
++
++## Type of Change
++
++- [ ] Bug fix
++- [ ] New feature
++- [ ] Breaking change
++- [ ] Documentation update
++- [ ] Refactoring
++- [ ] Dependencies update
++
++## Module(s) Affected
++
++<!-- List the modules this PR touches -->
++
++## Checklist
++
++- [ ] `npx tsc --noEmit` passes with 0 errors
++- [ ] `npm run lint` passes with 0 errors
++- [ ] Prisma schema updated (if applicable)
++- [ ] Prisma client regenerated (if schema changed)
++- [ ] Audit logging added for write operations
++- [ ] Events emitted for relevant state changes
++- [ ] New endpoints documented
++
++## Testing
++
++<!-- How was this tested? -->
++
++## Screenshots (if applicable)
++
++<!-- Add screenshots for UI-related changes -->
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+new file mode 100644
+index 0000000..cff47d3
+--- /dev/null
++++ b/.github/workflows/ci.yml
+@@ -0,0 +1,125 @@
++name: CI
++
++on:
++  push:
++    branches: [main]
++  pull_request:
++    branches: [main]
++
++jobs:
++  lint-and-typecheck:
++    name: Lint & Type Check
++    runs-on: ubuntu-latest
++
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++
++      - name: Setup Node.js
++        uses: actions/setup-node@v4
++        with:
++          node-version: '20'
++          cache: 'npm'
++
++      - name: Install dependencies
++        run: npm ci
++
++      - name: Generate Prisma client
++        run: npx prisma generate
++
++      - name: Lint
++        run: npm run lint
++
++      - name: Type check
++        run: npx tsc --noEmit
++
++  build:
++    name: Build
++    runs-on: ubuntu-latest
++    needs: lint-and-typecheck
++
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++
++      - name: Setup Node.js
++        uses: actions/setup-node@v4
++        with:
++          node-version: '20'
++          cache: 'npm'
++
++      - name: Install dependencies
++        run: npm ci
++
++      - name: Generate Prisma client
++        run: npx prisma generate
++
++      - name: Build
++        run: npm run build
++
++  test:
++    name: Test
++    runs-on: ubuntu-latest
++    needs: lint-and-typecheck
++
++    services:
++      mysql:
++        image: mysql:8.0
++        env:
++          MYSQL_ROOT_PASSWORD: testpassword
++          MYSQL_DATABASE: uplytech_test
++        ports:
++          - 3306:3306
++        options: >-
++          --health-cmd="mysqladmin ping -h localhost"
++          --health-interval=10s
++          --health-timeout=5s
++          --health-retries=5
++
++      redis:
++        image: redis:7-alpine
++        ports:
++          - 6379:6379
++        options: >-
++          --health-cmd="redis-cli ping"
++          --health-interval=10s
++          --health-timeout=5s
++          --health-retries=5
++
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++
++      - name: Setup Node.js
++        uses: actions/setup-node@v4
++        with:
++          node-version: '20'
++          cache: 'npm'
++
++      - name: Install dependencies
++        run: npm ci
++
++      - name: Generate Prisma client
++        run: npx prisma generate
++
++      - name: Run tests
++        run: npm test
++        env:
++          DATABASE_URL: mysql://root:testpassword@localhost:3306/uplytech_test
++          REDIS_URL: redis://localhost:6379
++          JWT_SECRET: test-jwt-secret
++          JWT_REFRESH_SECRET: test-jwt-refresh-secret
++          NODE_ENV: test
++
++  docker:
++    name: Docker Build
++    runs-on: ubuntu-latest
++    needs: [build, test]
++    if: github.ref == 'refs/heads/main'
++
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++
++      - name: Build Docker image
++        run: docker build -t uplytech-central-api .
+diff --git a/.github/workflows/docker-publish.yml b/.github/workflows/docker-publish.yml
+new file mode 100644
+index 0000000..c13faa4
+--- /dev/null
++++ b/.github/workflows/docker-publish.yml
+@@ -0,0 +1,48 @@
++name: Docker Publish
++
++on:
++  release:
++    types: [published]
++  workflow_dispatch:
++
++env:
++  REGISTRY: ghcr.io
++  IMAGE_NAME: ${{ github.repository }}
++
++jobs:
++  build-and-push:
++    name: Build & Push Docker Image
++    runs-on: ubuntu-latest
++    permissions:
++      contents: read
++      packages: write
++
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++
++      - name: Log in to Container Registry
++        uses: docker/login-action@v3
++        with:
++          registry: ${{ env.REGISTRY }}
++          username: ${{ github.actor }}
++          password: ${{ secrets.GITHUB_TOKEN }}
++
++      - name: Extract metadata
++        id: meta
++        uses: docker/metadata-action@v5
++        with:
++          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
++          tags: |
++            type=semver,pattern={{version}}
++            type=semver,pattern={{major}}.{{minor}}
++            type=sha
++            type=raw,value=latest,enable={{is_default_branch}}
++
++      - name: Build and push
++        uses: docker/build-push-action@v5
++        with:
++          context: .
++          push: true
++          tags: ${{ steps.meta.outputs.tags }}
++          labels: ${{ steps.meta.outputs.labels }}
+diff --git a/README.md b/README.md
+index 7788574..ddac78b 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1,624 @@
+ # UplyTech Central API
++
++**Enterprise-grade unified API platform** that connects and manages all UplyTech products and services.
++
++All requests from the Website, Software, EcoSys Discord Bot, Browser Home Page, GameStatsFetcher, FlashTrix, Radio, SawStats Discord Bot, and UplyOS are routed through this central API.
++
++---
++
++## Table of Contents
++
++- [Architecture](#architecture)
++- [Tech Stack](#tech-stack)
++- [Features](#features)
++- [Modules](#modules)
++- [Getting Started](#getting-started)
++- [Configuration](#configuration)
++- [Docker Deployment](#docker-deployment)
++- [API Reference](#api-reference)
++- [OAuth Providers](#oauth-providers)
++- [WebSocket](#websocket)
++- [Economy System](#economy-system)
++- [AI Brain](#ai-brain)
++- [Project Structure](#project-structure)
++- [Scripts](#scripts)
++- [Contributing](#contributing)
++- [License](#license)
++
++---
++
++## Architecture
++
++```
++                    +-----------+
++                    |  Traefik  |  (Reverse Proxy / TLS / Rate Limiting)
++                    +-----+-----+
++                          |
++                    +-----v-----+
++                    | Express   |  (Node.js / TypeScript)
++                    | REST API  |
++                    +-----+-----+
++                          |
++          +---------------+---------------+
++          |               |               |
++    +-----v-----+  +-----v-----+  +------v-----+
++    |   MySQL   |  |   Redis   |  |  WebSocket |
++    |  (Prisma) |  |  (Cache)  |  |    (ws)    |
++    +-----+-----+  +-----------+  +------------+
++          |
++    +-----v-----+
++    | 90 Models |
++    | 52 Modules|
++    +-----------+
++```
++
++Every module follows the **Service → Controller → Router** pattern with full separation of concerns. The system is fully event-driven using `EventEmitter2` for cross-module communication.
++
++---
++
++## Tech Stack
++
++| Component          | Technology                                    |
++| ------------------ | --------------------------------------------- |
++| **Runtime**        | Node.js + TypeScript (strict mode)            |
++| **Framework**      | Express.js                                    |
++| **Database**       | MySQL 8.0                                     |
++| **ORM**            | Prisma 5                                      |
++| **Cache**          | Redis 7                                       |
++| **Auth**           | JWT + OAuth2 + Passkeys (WebAuthn) + TOTP 2FA |
++| **Payments**       | Stripe                                        |
++| **Email**          | Nodemailer (SMTP)                             |
++| **Validation**     | Zod                                           |
++| **WebSocket**      | ws                                            |
++| **Logging**        | Winston                                       |
++| **Security**       | Helmet, CORS, Argon2, Rate Limiting, CSRF     |
++| **Deployment**     | Docker + Docker Compose + Traefik             |
++| **Event System**   | EventEmitter2                                 |
++| **NLP**            | natural (for AI Brain)                        |
++
++---
++
++## Features
++
++### Authentication & Security
++- JWT access + refresh tokens with automatic rotation
++- OAuth2 with **13 providers**: Google, GitHub, Discord, Twitter/X, Facebook, Apple, Microsoft, Twitch, Spotify, LinkedIn, GitLab, Slack, Steam
++- Passkey / WebAuthn support
++- TOTP-based two-factor authentication
++- API key management with scoped permissions
++- Argon2 password hashing
++- Rate limiting (configurable per-route)
++- Helmet security headers
++- CORS with configurable origins
++- CSRF protection
++- XSS / SQL injection prevention
++- Full audit logging of all sensitive operations
++
++### Real-Time
++- WebSocket server for live events
++- All REST endpoints mirrored as real-time events
++- Chat rooms with typing indicators and read receipts
++- Live notification delivery
++
++### Economy System
++- Virtual currency management (deposits, withdrawals, transfers)
++- Daily bonuses, rewards, and shop purchases
++- Transaction history with filtering
++- Currency leaderboards
++- Designed for Discord bots and game integrations
++- Not connected to real money (separate from Stripe payments)
++
++### AI Brain
++- Self-learning system with no third-party LLMs
++- Pattern matching and fuzzy search
++- Persistent memory and knowledge base
++- Trainable via conversation and explicit training data
++- Personality system
++
++### Streaming
++- Multi-platform streaming (Twitch, YouTube, Kick, TikTok)
++- OBS integration via API
++- Stream session management
++- Account linking per platform
++
++### Financial System
++- Stripe payment processing with webhook handling
++- Invoice generation with automatic numbering
++- Tax calculation and record keeping
++- Financial reports and accounting entries
++- Revenue tracking and statistics
++
++---
++
++## Modules
++
++The API consists of **52 fully implemented modules**, each with its own Service, Controller, and Router:
++
++| Module            | Description                                                    |
++| ----------------- | -------------------------------------------------------------- |
++| **auth**          | JWT, OAuth (13 providers), Passkeys, 2FA, API keys, sessions  |
++| **users**         | Profiles, search, ban/suspend, avatar, status, account delete  |
++| **roles**         | Role CRUD, assign/remove users, system roles, priority         |
++| **permissions**   | Resource/action-based permissions, bulk assign, permission check|
++| **teams**         | Team management, members, roles (Owner/Admin/Mod/Member)       |
++| **groups**        | Group management, public/private, join/leave/kick              |
++| **apartments**    | Apartment management with resident tracking                    |
++| **areas**         | Area/zone management                                           |
++| **blog**          | Posts with categories, featured posts, publish/draft/archive   |
++| **comments**      | Nested comments on any resource type                           |
++| **reactions**     | Emoji reactions on any resource type                           |
++| **forum**         | Categories, posts, replies with author tracking                |
++| **wiki**          | Spaces, pages, revision history, revert functionality          |
++| **docs**          | Documentation projects and pages                               |
++| **tickets**       | Support/bug/security tickets with messages, assign, escalate   |
++| **chat**          | Rooms, messages, members, typing indicators, encryption        |
++| **friends**       | Friend requests (send/accept/reject), friend list, blocking    |
++| **notifications** | In-app notifications, mark read, bulk send, unread count       |
++| **alerts**        | System-wide alerts with severity levels                        |
++| **broadcasts**    | Broadcast messages to all or targeted users                    |
++| **email**         | Incoming/outgoing email, templates, read tracking              |
++| **products**      | Product catalog with categories, pricing, stock management     |
++| **licenses**      | License key generation, validation, activation, revocation     |
++| **subscriptions** | Subscription plans and user subscription management            |
++| **payments**      | Stripe integration, payment intents, refunds, webhooks         |
++| **invoices**      | Invoice generation, status tracking, payment linking           |
++| **tax**           | Tax rate management and tax record keeping                     |
++| **finance**       | Financial reports and revenue analysis                         |
++| **accounting**    | Double-entry accounting entries                                |
++| **donations**     | Donation tracking and management                               |
++| **economy**       | Virtual currency, wallets, transfers, daily bonuses, shops     |
++| **games**         | Game registry with stats, rankings, player tracking            |
++| **tournaments**   | Tournament brackets, registration, match reporting             |
++| **devices**       | Device registration, heartbeat, status monitoring              |
++| **analytics**     | Event tracking, dashboards, top events analysis                |
++| **metrics**       | System metrics recording and aggregation                       |
++| **logs**          | Structured log querying and filtering                          |
++| **audit**         | Comprehensive audit trail for all actions                      |
++| **scans**         | Content scanning for malicious content                         |
++| **storage**       | File/folder management, sharing, cloud storage                 |
++| **hosting**       | Docker-based hosting provisioning, start/stop/restart          |
++| **streaming**     | Multi-platform live streaming, OBS config                      |
++| **downloads**     | Download tracking and management                               |
++| **releases**      | Software release management with assets                        |
++| **changelog**     | Version changelog entries                                      |
++| **features**      | Feature flags and voting                                       |
++| **archive**       | Content archiving                                              |
++| **services**      | Service registry and ownership                                 |
++| **ip**            | IP address management and tracking                             |
++| **api-management**| API endpoint registry and documentation                        |
++| **whitelists**    | IP/user/domain whitelist management                            |
++| **brain**         | Self-learning AI with memory, training, knowledge base         |
++
++---
++
++## Getting Started
++
++### Prerequisites
++
++- **Node.js** >= 18.x
++- **MySQL** 8.0+
++- **Redis** 7+
++- **npm** >= 9.x
++
++### Installation
++
++```bash
++# Clone the repository
++git clone https://github.com/dev-crorx/uplytech-central-api.git
++cd uplytech-central-api
++
++# Install dependencies
++npm install
++
++# Copy environment file
++cp .env.example .env
++# Edit .env with your configuration
++
++# Generate Prisma client
++npx prisma generate
++
++# Run database migrations
++npx prisma migrate dev
++
++# Start development server
++npm run dev
++```
++
++The API will be available at `http://localhost:3000`.
++
++### Health Check
++
++```bash
++curl http://localhost:3000/health
++```
++
++---
++
++## Configuration
++
++All configuration is managed through environment variables. See [`.env.example`](.env.example) for all available options.
++
++### Required Variables
++
++| Variable           | Description                        |
++| ------------------ | ---------------------------------- |
++| `DATABASE_URL`     | MySQL connection string            |
++| `REDIS_URL`        | Redis connection string            |
++| `JWT_SECRET`       | Secret for JWT access tokens       |
++| `JWT_REFRESH_SECRET` | Secret for JWT refresh tokens    |
++
++### OAuth Configuration
++
++Each OAuth provider requires its own client ID, secret, and callback URL. Configure them in `.env`:
++
++```env
++# Google
++GOOGLE_CLIENT_ID=...
++GOOGLE_CLIENT_SECRET=...
++GOOGLE_CALLBACK_URL=https://api.yourdomain.com/api/v1/auth/google/callback
++
++# GitHub
++GITHUB_CLIENT_ID=...
++GITHUB_CLIENT_SECRET=...
++GITHUB_CALLBACK_URL=https://api.yourdomain.com/api/v1/auth/github/callback
++
++# Discord, Twitter, Facebook, Apple, Microsoft, Twitch,
++# Spotify, LinkedIn, GitLab, Slack, Steam
++# (same pattern for each provider)
++```
++
++### Stripe Configuration
++
++```env
++STRIPE_SECRET_KEY=sk_...
++STRIPE_WEBHOOK_SECRET=whsec_...
++STRIPE_PUBLISHABLE_KEY=pk_...
++```
++
++### Streaming Platforms
++
++```env
++TWITCH_CLIENT_ID=...
++TWITCH_CLIENT_SECRET=...
++YOUTUBE_API_KEY=...
++KICK_API_KEY=...
++```
++
++---
++
++## Docker Deployment
++
++The project includes a production-ready Docker Compose setup with Traefik as reverse proxy.
++
++```bash
++# Start all services
++docker compose up -d
++
++# View logs
++docker compose logs -f api
++
++# Stop all services
++docker compose down
++```
++
++### Services
++
++| Service   | Port  | Description                          |
++| --------- | ----- | ------------------------------------ |
++| **api**   | 3000  | UplyTech Central API                 |
++| **mysql** | 3306  | MySQL 8.0 database                   |
++| **redis** | 6379  | Redis cache                          |
++| **traefik** | 80/443/8080 | Reverse proxy with auto TLS  |
++
++### Traefik Integration
++
++The API is pre-configured with Traefik labels for:
++- Automatic HTTPS via Let's Encrypt
++- Rate limiting (100 req/s average, 50 burst)
++- HTTP → HTTPS redirect
++- Domain routing (`api.uplytech.com`)
++
++---
++
++## API Reference
++
++All endpoints are prefixed with `/api/v1`.
++
++### Authentication
++
++```
++POST   /api/v1/auth/register         - Register new user
++POST   /api/v1/auth/login            - Login with email/password
++POST   /api/v1/auth/refresh          - Refresh access token
++POST   /api/v1/auth/logout           - Logout (invalidate session)
++GET    /api/v1/auth/:provider        - OAuth login (google, github, discord, etc.)
++GET    /api/v1/auth/:provider/callback - OAuth callback
++POST   /api/v1/auth/passkey/register - Register passkey
++POST   /api/v1/auth/passkey/login    - Login with passkey
++POST   /api/v1/auth/2fa/enable       - Enable TOTP 2FA
++POST   /api/v1/auth/2fa/verify       - Verify TOTP code
++POST   /api/v1/auth/api-keys         - Create API key
++```
++
++### Users
++
++```
++GET    /api/v1/users                 - List users (paginated, filterable)
++GET    /api/v1/users/me              - Get current user profile
++PUT    /api/v1/users/me              - Update profile
++GET    /api/v1/users/search          - Search users
++GET    /api/v1/users/online          - Get online users
++GET    /api/v1/users/stats           - Get user statistics
++GET    /api/v1/users/:id             - Get user by ID
++POST   /api/v1/users/:id/ban        - Ban user
++POST   /api/v1/users/:id/unban      - Unban user
++POST   /api/v1/users/:id/suspend    - Suspend user
++```
++
++### Economy (Discord Bot / Game Integration)
++
++```
++GET    /api/v1/economy/account       - Get wallet/account
++POST   /api/v1/economy/deposit       - Deposit currency
++POST   /api/v1/economy/withdraw      - Withdraw currency
++POST   /api/v1/economy/transfer      - Transfer between users
++POST   /api/v1/economy/reward        - Reward a user
++POST   /api/v1/economy/deduct        - Deduct from a user
++POST   /api/v1/economy/daily-bonus   - Claim daily bonus
++POST   /api/v1/economy/shop/purchase - Purchase from shop
++GET    /api/v1/economy/transactions  - Transaction history
++GET    /api/v1/economy/currencies    - Available currencies
++GET    /api/v1/economy/leaderboard   - Currency leaderboard
++```
++
++### Payments (Stripe)
++
++```
++GET    /api/v1/payments              - List payments
++GET    /api/v1/payments/my           - My payments
++GET    /api/v1/payments/revenue      - Revenue statistics
++POST   /api/v1/payments/intent       - Create payment intent
++POST   /api/v1/payments/webhook      - Stripe webhook
++GET    /api/v1/payments/:id          - Get payment details
++POST   /api/v1/payments/:id/refund   - Refund payment
++```
++
++### All Module Endpoints
++
++Every module follows the same RESTful pattern:
++
++```
++GET    /api/v1/{module}              - List (paginated)
++GET    /api/v1/{module}/:id          - Get by ID
++POST   /api/v1/{module}              - Create
++PUT    /api/v1/{module}/:id          - Update
++DELETE /api/v1/{module}/:id          - Delete
++```
++
++Additional domain-specific endpoints vary by module (see individual router files).
++
++### Pagination
++
++All list endpoints support pagination:
++
++```
++?page=1&limit=20&sortBy=createdAt&sortOrder=desc
++```
++
++### Response Format
++
++```json
++{
++  "success": true,
++  "data": { ... },
++  "pagination": {
++    "page": 1,
++    "limit": 20,
++    "total": 150,
++    "totalPages": 8
++  }
++}
++```
++
++### Error Format
++
++```json
++{
++  "success": false,
++  "error": {
++    "code": "NOT_FOUND",
++    "message": "Resource not found"
++  }
++}
++```
++
++---
++
++## OAuth Providers
++
++The API supports **13 OAuth providers** for authentication and account linking:
++
++| Provider      | Login | Account Linking |
++| ------------- | ----- | --------------- |
++| Google        | Yes   | Yes             |
++| GitHub        | Yes   | Yes             |
++| Discord       | Yes   | Yes             |
++| Twitter / X   | Yes   | Yes             |
++| Facebook      | Yes   | Yes             |
++| Apple         | Yes   | Yes             |
++| Microsoft     | Yes   | Yes             |
++| Twitch        | Yes   | Yes             |
++| Spotify       | Yes   | Yes             |
++| LinkedIn      | Yes   | Yes             |
++| GitLab        | Yes   | Yes             |
++| Slack         | Yes   | Yes             |
++| Steam         | Yes   | Yes             |
++
++---
++
++## WebSocket
++
++Connect to the WebSocket server at `ws://localhost:3000/ws`.
++
++### Authentication
++
++Send a JWT token after connecting:
++
++```json
++{ "type": "auth", "token": "your-jwt-token" }
++```
++
++### Events
++
++All REST operations emit real-time events. Subscribe to channels:
++
++```json
++{ "type": "subscribe", "channel": "notifications" }
++```
++
++Event categories:
++- `users.*` - User events (status changes, profile updates)
++- `chat.*` - Chat events (new messages, typing)
++- `notifications.*` - New notifications
++- `economy.*` - Economy transactions
++- `tickets.*` - Ticket updates
++- `tournaments.*` - Tournament events
++
++---
++
++## Economy System
++
++The economy system provides a complete virtual currency engine designed for Discord bots, games, and other integrations.
++
++### Features
++- Multiple currency support
++- Wallet management (deposit, withdraw, transfer)
++- Transaction history with full audit trail
++- Daily bonus system
++- Shop purchases
++- Leaderboards
++- Reward/deduct system for bot commands
++
++### Discord Bot Integration Example
++
++```typescript
++// Fetch user balance
++const res = await fetch('https://api.uplytech.com/api/v1/economy/account?userId=USER_ID', {
++  headers: { 'Authorization': 'Bearer API_KEY' }
++});
++
++// Give daily bonus
++await fetch('https://api.uplytech.com/api/v1/economy/daily-bonus', {
++  method: 'POST',
++  headers: { 'Authorization': 'Bearer API_KEY', 'Content-Type': 'application/json' },
++  body: JSON.stringify({ userId: 'USER_ID' })
++});
++
++// Transfer between users
++await fetch('https://api.uplytech.com/api/v1/economy/transfer', {
++  method: 'POST',
++  headers: { 'Authorization': 'Bearer API_KEY', 'Content-Type': 'application/json' },
++  body: JSON.stringify({ fromUserId: 'USER_A', toUserId: 'USER_B', amount: 100, currency: 'UPLY_COIN' })
++});
++```
++
++---
++
++## AI Brain
++
++The integrated AI brain is a self-learning system that uses **no third-party LLMs or external AI services**.
++
++### Capabilities
++- Natural language understanding via pattern matching
++- Fuzzy search for knowledge retrieval
++- Persistent memory across conversations
++- Trainable through conversation and explicit data
++- Personality configuration
++- Knowledge base management
++
++### Endpoints
++
++```
++POST   /api/v1/brain/chat            - Chat with the AI
++POST   /api/v1/brain/train           - Train with new data
++GET    /api/v1/brain/knowledge       - Browse knowledge base
++POST   /api/v1/brain/knowledge       - Add knowledge entry
++GET    /api/v1/brain/conversations   - Conversation history
++PUT    /api/v1/brain/personality     - Configure personality
++GET    /api/v1/brain/stats           - Brain statistics
++```
++
++---
++
++## Project Structure
++
++```
++uplytech-central-api/
++├── prisma/
++│   └── schema.prisma          # Database schema (90 models)
++├── src/
++│   ├── app.ts                 # Express app setup
++│   ├── server.ts              # Server entry point
++│   ├── core/
++│   │   ├── config/            # Environment configuration
++│   │   ├── database/          # Prisma client
++│   │   ├── errors/            # Custom error classes
++│   │   ├── events/            # EventEmitter2 event bus
++│   │   ├── logger/            # Winston logger
++│   │   ├── middleware/        # Auth, audit, rate limit, validation
++│   │   ├── security/          # Encryption, hashing utilities
++│   │   ├── types/             # Shared TypeScript types
++│   │   ├── utils/             # Pagination, helpers
++│   │   └── websocket/         # WebSocket server
++│   └── modules/
++│       ├── auth/              # Authentication (JWT, OAuth, Passkeys, 2FA)
++│       │   ├── controller/
++│       │   ├── service/
++│       │   ├── router/
++│       │   └── oauth/         # OAuth provider configurations
++│       ├── users/
++│       │   ├── controller/
++│       │   ├── service/
++│       │   └── router/
++│       ├── economy/           # Virtual economy system
++│       ├── payments/          # Stripe payments
++│       ├── brain/             # AI brain
++│       ├── streaming/         # Multi-platform streaming
++│       └── ... (48 more modules)
++├── docker-compose.yml         # Production Docker setup
++├── Dockerfile                 # Multi-stage Docker build
++├── .env.example               # Environment variables template
++├── tsconfig.json              # TypeScript configuration
++├── .eslintrc.json             # ESLint configuration
++└── package.json
++```
++
++---
++
++## Scripts
++
++```bash
++npm run dev              # Start development server with hot reload
++npm run build            # Compile TypeScript to JavaScript
++npm start                # Start production server
++npm run lint             # Run ESLint
++npm run lint:fix          # Auto-fix ESLint issues
++npm run format           # Format code with Prettier
++npm run prisma:generate  # Generate Prisma client
++npm run prisma:migrate   # Run database migrations
++npm run prisma:studio    # Open Prisma Studio (DB GUI)
++npm test                 # Run tests
++npm run test:coverage    # Run tests with coverage
++```
++
++---
++
++## Contributing
++
++See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for guidelines.
++
++---
++
++## License
++
++Proprietary - UplyTech. All rights reserved.
+diff --git a/package-lock.json b/package-lock.json
+index 44f5fc1..4e6c887 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -48,9 +48,13 @@
+         "@types/node": "^22.9.0",
+         "@types/nodemailer": "^6.4.16",
+         "@types/passport": "^1.0.17",
++        "@types/passport-discord": "^0.1.15",
++        "@types/passport-facebook": "^3.0.4",
+         "@types/passport-github2": "^1.2.9",
+         "@types/passport-google-oauth20": "^2.0.16",
+         "@types/passport-local": "^1.0.38",
++        "@types/passport-spotify": "^2.0.4",
++        "@types/passport-twitter": "^1.0.40",
+         "@types/uuid": "^10.0.0",
+         "@types/ws": "^8.5.13",
+         "@typescript-eslint/eslint-plugin": "^8.14.0",
+@@ -1784,6 +1788,30 @@
+         "@types/express": "*"
+       }
+     },
++    "node_modules/@types/passport-discord": {
++      "version": "0.1.15",
++      "resolved": "https://registry.npmjs.org/@types/passport-discord/-/passport-discord-0.1.15.tgz",
++      "integrity": "sha512-F5ryPS2vaSNoIz9IajuQjWx3gf0W2YhCJjX7eMQapzAZyl64WGPZEAmBlnpYDtJWMHXMPpJ8ixT4xl0Uk3/k1w==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@types/express": "*",
++        "@types/passport": "*",
++        "@types/passport-oauth2": "*"
++      }
++    },
++    "node_modules/@types/passport-facebook": {
++      "version": "3.0.4",
++      "resolved": "https://registry.npmjs.org/@types/passport-facebook/-/passport-facebook-3.0.4.tgz",
++      "integrity": "sha512-dZ7/758O0b7s2EyRUZJ24X93k8Nncm5UXLQPYg9bBJNE5ZwvD314QfDFYl0i4DlIPLcYGWkJ5Et0DXt6DAk71A==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@types/express": "*",
++        "@types/passport": "*",
++        "@types/passport-oauth2": "*"
++      }
++    },
+     "node_modules/@types/passport-github2": {
+       "version": "1.2.9",
+       "resolved": "https://registry.npmjs.org/@types/passport-github2/-/passport-github2-1.2.9.tgz",
+@@ -1832,6 +1860,16 @@
+         "@types/passport": "*"
+       }
+     },
++    "node_modules/@types/passport-spotify": {
++      "version": "2.0.4",
++      "resolved": "https://registry.npmjs.org/@types/passport-spotify/-/passport-spotify-2.0.4.tgz",
++      "integrity": "sha512-w6S27w9xHzht8S1m9NoPS/p6soWNM1UJXlbH7BK1JpyQ6N0FwNTSHp0DSwdwr9CA9blJ9dTnDrn/QHcjU3sNSw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@types/express": "*"
++      }
++    },
+     "node_modules/@types/passport-strategy": {
+       "version": "0.2.38",
+       "resolved": "https://registry.npmjs.org/@types/passport-strategy/-/passport-strategy-0.2.38.tgz",
+@@ -1843,6 +1881,17 @@
+         "@types/passport": "*"
+       }
+     },
++    "node_modules/@types/passport-twitter": {
++      "version": "1.0.40",
++      "resolved": "https://registry.npmjs.org/@types/passport-twitter/-/passport-twitter-1.0.40.tgz",
++      "integrity": "sha512-5Yxm+P/x6XEYvANANmjkVnRpMlRpORODZYYplBKH+BFTHQ8kGt3FgMm6eMgIzrGA4WvZo6TKH4IvYug+31mX4w==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@types/express": "*",
++        "@types/passport": "*"
++      }
++    },
+     "node_modules/@types/qs": {
+       "version": "6.15.1",
+       "resolved": "https://registry.npmjs.org/@types/qs/-/qs-6.15.1.tgz",
+diff --git a/package.json b/package.json
+index c9ac8a9..3624595 100644
+--- a/package.json
++++ b/package.json
+@@ -22,13 +22,18 @@
+     "compression": "^1.7.4",
+     "cookie-parser": "^1.4.6",
+     "cors": "^2.8.5",
++    "cron": "^3.1.7",
+     "dotenv": "^16.4.5",
++    "eventemitter2": "^6.4.9",
+     "express": "^4.21.1",
+     "express-rate-limit": "^7.4.1",
+     "helmet": "^8.0.0",
+     "ioredis": "^5.4.1",
+     "jsonwebtoken": "^9.0.2",
++    "mime-types": "^2.1.35",
+     "multer": "^1.4.5-lts.1",
++    "nanoid": "^3.3.7",
++    "natural": "^8.0.1",
+     "nodemailer": "^6.9.16",
+     "passport": "^0.7.0",
+     "passport-github2": "^0.1.12",
+@@ -38,37 +43,36 @@
+     "uuid": "^10.0.0",
+     "winston": "^3.17.0",
+     "ws": "^8.18.0",
+-    "zod": "^3.23.8",
+-    "eventemitter2": "^6.4.9",
+-    "cron": "^3.1.7",
+-    "mime-types": "^2.1.35",
+-    "nanoid": "^3.3.7",
+-    "natural": "^8.0.1"
++    "zod": "^3.23.8"
+   },
+   "devDependencies": {
+     "@types/compression": "^1.7.5",
+     "@types/cookie-parser": "^1.4.7",
+     "@types/cors": "^2.8.17",
+     "@types/express": "^5.0.0",
++    "@types/jest": "^29.5.14",
+     "@types/jsonwebtoken": "^9.0.7",
++    "@types/mime-types": "^2.1.4",
+     "@types/multer": "^1.4.12",
+     "@types/node": "^22.9.0",
+     "@types/nodemailer": "^6.4.16",
+     "@types/passport": "^1.0.17",
++    "@types/passport-discord": "^0.1.15",
++    "@types/passport-facebook": "^3.0.4",
+     "@types/passport-github2": "^1.2.9",
+     "@types/passport-google-oauth20": "^2.0.16",
+     "@types/passport-local": "^1.0.38",
++    "@types/passport-spotify": "^2.0.4",
++    "@types/passport-twitter": "^1.0.40",
+     "@types/uuid": "^10.0.0",
+     "@types/ws": "^8.5.13",
+-    "@types/mime-types": "^2.1.4",
+-    "@types/jest": "^29.5.14",
+     "@typescript-eslint/eslint-plugin": "^8.14.0",
+     "@typescript-eslint/parser": "^8.14.0",
+     "eslint": "^8.57.1",
+     "jest": "^29.7.0",
+-    "ts-jest": "^29.2.5",
+     "prettier": "^3.3.3",
+     "prisma": "^5.22.0",
++    "ts-jest": "^29.2.5",
+     "ts-node": "^10.9.2",
+     "ts-node-dev": "^2.0.0",
+     "typescript": "^5.6.3"

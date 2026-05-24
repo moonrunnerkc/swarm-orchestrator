@@ -1,0 +1,26 @@
+{
+  "id": "devin-venerakom02-droid-begonia-pr16",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 16,
+    "headSha": "d8b40795ce5a5be3d591deddfce430c755a7258b",
+    "baseSha": "16125d10678faccfa66a657c9496eed5527811e3",
+    "title": "feat: ESLint конфиг + GitHub Actions для автоисправления линтинга",
+    "body": "## Summary\n\nДобавлены три вещи:\n\n1. **`eslint.config.mjs`** — конфиг ESLint для проекта (ранее отсутствовал, `npm run lint` не работал)\n2. **`.github/workflows/lint-fix.yml`** — GitHub Actions workflow, который при каждом PR:\n   - Запускает `eslint --fix`\n   - Если есть автоисправимые ошибки — коммитит и пушит их обратно в PR\n3. **Исправление ошибки в `app/cart/page.tsx`** — убран `setState` внутри `useEffect` (ошибка `react-hooks/set-state-in-effect`), убран неиспользуемый импорт `useEffect`\n\nРезультат `npm run lint`: 0 ошибок, 11 предупреждений (все — `@next/next/no-img-element`, не критичные).\n`npm run build`: успешно.\n\n## Review & Testing Checklist for Human\n\n- [ ] Проверить что форма предзаказа (`/cart?product=Эскарго`) работает корректно — поле товара должно быть предзаполнено из URL\n- [ ] Смержить PR и убедиться что GitHub Actions workflow появился во вкладке Actions\n- [ ] Создать тестовый PR с ошибкой линтинга и проверить что workflow автоматически исправляет её\n\n### Notes\n\n- 11 предупреждений о `<img>` vs `<Image />` — оставлены как есть, это не ошибки и могут быть осознанным выбором (реальные фото сортов)\n- Workflow использует `GITHUB_TOKEN` — дополнительных секретов не требуется\n\nLink to Devin session: https://app.devin.ai/sessions/8a1bd79c6eda4fa6a74097dd9c8867cb\nRequested by: @venerakom02-droid\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/venerakom02-droid/begonia/pull/16\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779590867-lint-autofix",
+    "repository": "venerakom02-droid/begonia"
+  },
+  "diffRef": {
+    "repository": "venerakom02-droid/begonia",
+    "headSha": "d8b40795ce5a5be3d591deddfce430c755a7258b",
+    "baseSha": "16125d10678faccfa66a657c9496eed5527811e3"
+  },
+  "vendoredDiffPath": "devin/devin-venerakom02-droid-begonia-pr16.diff",
+  "vendoredAt": "2026-05-24T03:04:03.675Z",
+  "collectedAt": "2026-05-24T03:04:03.675Z"
+}

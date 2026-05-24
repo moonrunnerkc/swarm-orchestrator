@@ -1,0 +1,200 @@
+diff --git a/docs/pending-tasks.md b/docs/pending-tasks.md
+index 1f0be84..570658d 100644
+--- a/docs/pending-tasks.md
++++ b/docs/pending-tasks.md
+@@ -386,6 +386,16 @@ https://nomaderia.com/
+ - Integrado en Index.tsx entre GearPreview y SocialProof
+ - Si no hay posts publicados, la sección no se renderiza
+ 
++### ✅ Skeleton Loaders: Layout-Matched Card & Detail Skeletons (Mayo 2026)
++- [x] **`src/components/LoadingSkeletons.tsx`** — Nuevos componentes skeleton con formas que coinciden pixel-a-pixel con el contenido real (sin layout shift):
++  - `DestinationCardGridSkeleton` — imagen `h-56 sm:h-52`, línea de país, fila footer (reloj · dólar · "Ver Guía")
++  - `BlogCardGridSkeleton` — imagen `h-44`, fila badge + reading time + autor, fecha y "Leer más"
++  - `DestinationDetailSkeleton` mejorado — hero `h-[50vh] md:h-[60vh]`, fila de 4 tabs navegables, bloques de cuerpo, placeholder de acordeón FAQ, sidebar `h-64`
++  - `CardGridSkeleton` genérico conservado por compatibilidad con otros usos
++- [x] **`src/components/landing/DestinationsCatalog.tsx`** — Usa `DestinationCardGridSkeleton` en lugar del genérico
++- [x] **`src/pages/BlogListing.tsx`** — Usa `BlogCardGridSkeleton` (count=6) en lugar del genérico (count=3); `DestinationDetail.tsx` ya usaba `DestinationDetailSkeleton`
++- [x] `tsc --noEmit` — 0 errores; `npm run build` — build exitoso
++
+ ### ✅ SocialProof: Conteos Reales vía `usePublicStats` (Mayo 2026)
+ - [x] **Nuevo hook `src/hooks/use-public-stats.ts`** — consultas `head: true` / `count: "exact"` con `Promise.all` para 4 tablas: `destinations` (is_published=true), `blog_posts` (is_published=true), `quiz_responses` (total), `newsletter_subscribers` (total). `staleTime: 30 min`. Errores lanzados silenciosamente (retorna `undefined`, la UI no renderiza).
+ - [x] **`SocialProof.tsx` actualizado** — importa `usePublicStats`; reemplaza los números inventados (350+, 12) con conteos en vivo. Cada tarjeta sólo se renderiza si su conteo es > 0. La tarjeta TAP (certificación real, sin número) siempre se muestra. Mientras se carga, el componente retorna `null` para evitar un parpadeo con ceros.
+diff --git a/src/components/LoadingSkeletons.tsx b/src/components/LoadingSkeletons.tsx
+index 247f6f3..03d27d5 100644
+--- a/src/components/LoadingSkeletons.tsx
++++ b/src/components/LoadingSkeletons.tsx
+@@ -2,27 +2,41 @@ import { Skeleton } from "@/components/ui/skeleton";
+ 
+ export const DestinationDetailSkeleton = () => (
+   <div className="animate-in fade-in duration-500">
+-    {/* Hero skeleton */}
+-    <div className="h-[50vh] relative">
++    {/* Hero skeleton — matches h-[50vh] md:h-[60vh] */}
++    <div className="h-[50vh] md:h-[60vh] relative">
+       <Skeleton className="absolute inset-0 rounded-none" />
+     </div>
+-    {/* Content skeleton */}
++    {/* Content skeleton — matches flex-1 main + lg:w-80 sidebar layout */}
+     <div className="container mx-auto px-4 py-12 flex flex-col lg:flex-row gap-8">
+-      <div className="flex-1 space-y-4">
+-        <Skeleton className="h-10 w-48" />
+-        <div className="flex gap-2">
+-          <Skeleton className="h-8 w-24" />
+-          <Skeleton className="h-8 w-24" />
+-          <Skeleton className="h-8 w-24" />
++      <div className="flex-1 min-w-0 space-y-6">
++        {/* Tabs nav row — matches TabsList with 4 triggers */}
++        <div className="flex gap-1 flex-wrap">
++          <Skeleton className="h-9 w-28" />
++          <Skeleton className="h-9 w-32" />
++          <Skeleton className="h-9 w-24" />
++          <Skeleton className="h-9 w-24" />
++        </div>
++        {/* Body text blocks */}
++        <div className="space-y-3">
++          <Skeleton className="h-5 w-full" />
++          <Skeleton className="h-5 w-5/6" />
++          <Skeleton className="h-5 w-4/6" />
++          <Skeleton className="h-5 w-full" />
++          <Skeleton className="h-5 w-3/4" />
++          <Skeleton className="h-5 w-full" />
++          <Skeleton className="h-5 w-5/6" />
++        </div>
++        {/* FAQ accordion placeholder */}
++        <div className="space-y-3 pt-2">
++          <Skeleton className="h-7 w-48" />
++          <Skeleton className="h-12 w-full rounded-lg" />
++          <Skeleton className="h-12 w-full rounded-lg" />
++          <Skeleton className="h-12 w-full rounded-lg" />
+         </div>
+-        <Skeleton className="h-6 w-full" />
+-        <Skeleton className="h-6 w-5/6" />
+-        <Skeleton className="h-6 w-4/6" />
+-        <Skeleton className="h-6 w-full" />
+-        <Skeleton className="h-6 w-3/4" />
+       </div>
++      {/* Sidebar — matches lg:w-80 Card */}
+       <div className="w-full lg:w-80 shrink-0">
+-        <Skeleton className="h-48 w-full rounded-xl" />
++        <Skeleton className="h-64 w-full rounded-xl" />
+       </div>
+     </div>
+   </div>
+@@ -44,6 +58,7 @@ export const GearArticleDetailSkeleton = () => (
+   </div>
+ );
+ 
++/** Generic card grid — kept for backwards compat */
+ export const CardGridSkeleton = ({ count = 6 }: { count?: number }) => (
+   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+     {Array.from({ length: count }).map((_, i) => (
+@@ -59,3 +74,65 @@ export const CardGridSkeleton = ({ count = 6 }: { count?: number }) => (
+     ))}
+   </div>
+ );
++
++/**
++ * Destination card skeleton — mirrors DestCard layout in DestinationsCatalog:
++ *   image h-56 sm:h-52 · p-4 sm:p-5 · title · country · description · footer row
++ */
++export const DestinationCardGridSkeleton = ({ count = 6 }: { count?: number }) => (
++  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
++    {Array.from({ length: count }).map((_, i) => (
++      <div key={i} className="bg-card rounded-xl overflow-hidden shadow-lg">
++        {/* Image area — h-56 on mobile, h-52 on sm+ */}
++        <Skeleton className="h-56 sm:h-52 w-full rounded-none" />
++        <div className="p-4 sm:p-5 space-y-2">
++          {/* Title — font-serif text-lg */}
++          <Skeleton className="h-6 w-3/4" />
++          {/* Country line — text-sm */}
++          <Skeleton className="h-4 w-1/3" />
++          {/* Description lines — text-sm line-clamp-2 */}
++          <Skeleton className="h-4 w-full" />
++          <Skeleton className="h-4 w-5/6" />
++          {/* Footer row: clock · dollar · "Ver Guía →" */}
++          <div className="flex items-center justify-between pt-1">
++            <Skeleton className="h-4 w-14" />
++            <Skeleton className="h-4 w-14" />
++            <Skeleton className="h-4 w-16" />
++          </div>
++        </div>
++      </div>
++    ))}
++  </div>
++);
++
++/**
++ * Blog card skeleton — mirrors blog card layout in BlogListing:
++ *   image h-44 · p-5 · badge row · title · description · date · "Leer más"
++ */
++export const BlogCardGridSkeleton = ({ count = 6 }: { count?: number }) => (
++  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
++    {Array.from({ length: count }).map((_, i) => (
++      <div key={i} className="bg-card rounded-xl overflow-hidden shadow-lg">
++        {/* Image area — h-44 */}
++        <Skeleton className="h-44 w-full rounded-none" />
++        <div className="p-5 space-y-2">
++          {/* Badge + reading time + author row */}
++          <div className="flex items-center gap-2">
++            <Skeleton className="h-5 w-20 rounded-full" />
++            <Skeleton className="h-4 w-12" />
++            <Skeleton className="h-4 w-16" />
++          </div>
++          {/* Title — font-serif text-lg */}
++          <Skeleton className="h-6 w-3/4" />
++          {/* Description lines — text-sm line-clamp-2 */}
++          <Skeleton className="h-4 w-full" />
++          <Skeleton className="h-4 w-5/6" />
++          {/* Date — text-xs */}
++          <Skeleton className="h-3 w-28 mt-1" />
++          {/* "Leer más →" */}
++          <Skeleton className="h-4 w-16 mt-1" />
++        </div>
++      </div>
++    ))}
++  </div>
++);
+diff --git a/src/components/landing/DestinationsCatalog.tsx b/src/components/landing/DestinationsCatalog.tsx
+index 3c0160f..a94534f 100644
+--- a/src/components/landing/DestinationsCatalog.tsx
++++ b/src/components/landing/DestinationsCatalog.tsx
+@@ -4,7 +4,7 @@ import { MapPin, Clock, DollarSign } from "lucide-react";
+ import { Badge } from "@/components/ui/badge";
+ import { Button } from "@/components/ui/button";
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+-import { CardGridSkeleton } from "@/components/LoadingSkeletons";
++import { DestinationCardGridSkeleton } from "@/components/LoadingSkeletons";
+ import { useDestinations } from "@/hooks/use-destinations";
+ 
+ const difficultyColor: Record<string, string> = {
+@@ -82,7 +82,7 @@ const DestinationsCatalog = ({ limit }: DestinationsCatalogProps) => {
+     return (
+       <section id="destinos" className="py-16 sm:py-20 bg-background">
+         <div className="container mx-auto px-5">
+-          <CardGridSkeleton count={6} />
++          <DestinationCardGridSkeleton count={6} />
+         </div>
+       </section>
+     );
+diff --git a/src/pages/BlogListing.tsx b/src/pages/BlogListing.tsx
+index 0b943d5..bb5f65b 100644
+--- a/src/pages/BlogListing.tsx
++++ b/src/pages/BlogListing.tsx
+@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+ import Navbar from "@/components/landing/Navbar";
+ import Footer from "@/components/landing/Footer";
+-import { CardGridSkeleton } from "@/components/LoadingSkeletons";
++import { BlogCardGridSkeleton } from "@/components/LoadingSkeletons";
+ import { useCanonical, usePageMeta, SITE_URL } from "@/hooks/use-seo";
+ import { useBlogPosts } from "@/hooks/use-blog-posts";
+ import FeaturedBlogPost from "@/components/blog/FeaturedBlogPost";
+@@ -66,7 +66,7 @@ const BlogListing = () => {
+             <FeaturedBlogPost post={posts[0]} />
+           )}
+ 
+-          {isLoading && <CardGridSkeleton count={3} />}
++          {isLoading && <BlogCardGridSkeleton count={6} />}
+ 
+           {error && (
+             <p className="text-center text-muted-foreground py-8">

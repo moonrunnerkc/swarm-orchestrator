@@ -1,0 +1,163 @@
+diff --git a/artifacts/api-server/src/app.ts b/artifacts/api-server/src/app.ts
+index 9600479..cceee5c 100644
+--- a/artifacts/api-server/src/app.ts
++++ b/artifacts/api-server/src/app.ts
+@@ -35,8 +35,17 @@ app.use(
+ 
+ app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
+ 
+-app.use(cors({ credentials: true, origin: true }));
+-app.use(express.json());
++const ALLOWED_ORIGINS = process.env.CORS_ORIGINS
++  ? process.env.CORS_ORIGINS.split(",").map((o) => o.trim())
++  : undefined;
++
++app.use(
++  cors({
++    credentials: true,
++    origin: ALLOWED_ORIGINS ?? true,
++  }),
++);
++app.use(express.json({ limit: "1mb" }));
+ app.use(express.urlencoded({ extended: true }));
+ 
+ // On Replit, publishableKeyFromHost derives a key tied to the managed Clerk
+diff --git a/artifacts/api-server/src/index.ts b/artifacts/api-server/src/index.ts
+index 1c253ec..dbfc907 100644
+--- a/artifacts/api-server/src/index.ts
++++ b/artifacts/api-server/src/index.ts
+@@ -22,6 +22,10 @@ CREATE TABLE IF NOT EXISTS sessions (
+   assists TEXT NOT NULL DEFAULT '',
+   rating INTEGER NOT NULL DEFAULT 0,
+   notes TEXT NOT NULL DEFAULT '',
++  penalty TEXT NOT NULL DEFAULT '',
++  is_public BOOLEAN NOT NULL DEFAULT FALSE,
++  shared_at TIMESTAMP,
++  laps JSONB,
+   is_pb BOOLEAN NOT NULL DEFAULT FALSE,
+   created_at TIMESTAMP NOT NULL DEFAULT NOW()
+ );
+diff --git a/artifacts/api-server/src/routes/community.ts b/artifacts/api-server/src/routes/community.ts
+index ac36d36..7692e73 100644
+--- a/artifacts/api-server/src/routes/community.ts
++++ b/artifacts/api-server/src/routes/community.ts
+@@ -4,6 +4,10 @@ import { db, setupsTable, setupRatingsTable, sessionsTable } from "@workspace/db
+ import { requireAuth, type AuthRequest } from "../middlewares/requireAuth";
+ import { getAuth } from "@clerk/express";
+ 
++function escapeLike(s: string): string {
++  return s.replace(/%/g, "\\%").replace(/_/g, "\\_");
++}
++
+ const router = Router();
+ 
+ async function getDisplayNames(userIds: string[]): Promise<Record<string, string>> {
+@@ -91,7 +95,7 @@ router.get("/community/setups", async (req, res) => {
+         and(
+           eq(setupsTable.isPublic, true),
+           trackId ? eq(setupsTable.trackId, trackId) : undefined,
+-          car ? sql`lower(${setupsTable.car}) like ${"%" + car.toLowerCase() + "%"}` : undefined,
++          car ? sql`lower(${setupsTable.car}) like ${"%" + escapeLike(car.toLowerCase()) + "%"}` : undefined,
+           tag ? eq(setupsTable.tag, tag) : undefined,
+         ),
+       )
+@@ -158,7 +162,7 @@ router.post("/community/setups/:id/rate", requireAuth, async (req, res) => {
+   const id = req.params.id as string;
+   const { stars } = req.body as { stars?: unknown };
+ 
+-  if (typeof stars !== "number" || stars < 1 || stars > 5) {
++  if (typeof stars !== "number" || !Number.isInteger(stars) || stars < 1 || stars > 5) {
+     res.status(400).json({ error: "stars must be 1–5" });
+     return;
+   }
+@@ -252,6 +256,10 @@ router.post("/community/setups/:id/import", requireAuth, async (req, res) => {
+       .from(setupsTable)
+       .where(and(eq(setupsTable.id, newId), eq(setupsTable.userId, userId)));
+ 
++    if (!saved) {
++      res.status(500).json({ error: "Failed to retrieve imported setup" });
++      return;
++    }
+     res.status(201).json({
+       id: saved.id,
+       label: saved.label,
+@@ -282,7 +290,6 @@ router.post("/community/setups/:id/import", requireAuth, async (req, res) => {
+ });
+ 
+ router.get("/community/sessions", async (req, res) => {
+-  const { getAuth } = await import("@clerk/express");
+   const { userId: currentUserId } = getAuth(req);
+ 
+   try {
+diff --git a/artifacts/api-server/src/routes/hardware.ts b/artifacts/api-server/src/routes/hardware.ts
+index 3369ef7..e5457d0 100644
+--- a/artifacts/api-server/src/routes/hardware.ts
++++ b/artifacts/api-server/src/routes/hardware.ts
+@@ -78,6 +78,10 @@ router.post("/hardware", requireAuth, async (req, res) => {
+         ),
+       );
+ 
++    if (!saved) {
++      res.status(500).json({ error: "Failed to retrieve created hardware profile" });
++      return;
++    }
+     res.status(201).json({
+       id: saved.id,
+       label: saved.label,
+diff --git a/artifacts/api-server/src/routes/sessions.ts b/artifacts/api-server/src/routes/sessions.ts
+index dcfffa9..f2dbb83 100644
+--- a/artifacts/api-server/src/routes/sessions.ts
++++ b/artifacts/api-server/src/routes/sessions.ts
+@@ -172,6 +172,10 @@ router.post("/sessions", requireAuth, async (req, res) => {
+       .from(sessionsTable)
+       .where(and(eq(sessionsTable.id, data.id as string), eq(sessionsTable.userId, userId)));
+ 
++    if (!saved) {
++      res.status(500).json({ error: "Failed to retrieve created session" });
++      return;
++    }
+     res.status(201).json(serializeSession(saved));
+   } catch (err) {
+     req.log.error({ err }, "Failed to create session");
+diff --git a/artifacts/api-server/src/routes/setups.ts b/artifacts/api-server/src/routes/setups.ts
+index 3df7b8f..697e9de 100644
+--- a/artifacts/api-server/src/routes/setups.ts
++++ b/artifacts/api-server/src/routes/setups.ts
+@@ -84,6 +84,10 @@ router.post("/setups", requireAuth, async (req, res) => {
+       .from(setupsTable)
+       .where(and(eq(setupsTable.id, data.id as string), eq(setupsTable.userId, userId)));
+ 
++    if (!saved) {
++      res.status(500).json({ error: "Failed to retrieve created setup" });
++      return;
++    }
+     res.status(201).json(serializeSetup(saved));
+   } catch (err) {
+     req.log.error({ err }, "Failed to create setup");
+diff --git a/artifacts/api-server/src/routes/trackNotes.ts b/artifacts/api-server/src/routes/trackNotes.ts
+index 5b9726c..afc6a30 100644
+--- a/artifacts/api-server/src/routes/trackNotes.ts
++++ b/artifacts/api-server/src/routes/trackNotes.ts
+@@ -89,6 +89,10 @@ router.put("/track-notes/:trackId", requireAuth, async (req, res) => {
+         )
+       );
+ 
++    if (!saved) {
++      res.status(500).json({ error: "Failed to retrieve track notes" });
++      return;
++    }
+     res.json({
+       id: saved.id,
+       trackId: saved.trackId,
+diff --git a/artifacts/sim-racing-mobile/app/(home)/log-session.tsx b/artifacts/sim-racing-mobile/app/(home)/log-session.tsx
+index f8a391f..9ed5a50 100644
+--- a/artifacts/sim-racing-mobile/app/(home)/log-session.tsx
++++ b/artifacts/sim-racing-mobile/app/(home)/log-session.tsx
+@@ -182,6 +182,7 @@ export default function LogSessionScreen() {
+         assists,
+         rating,
+         notes: notes.trim(),
++        penalty: "",
+       },
+     });
+   };

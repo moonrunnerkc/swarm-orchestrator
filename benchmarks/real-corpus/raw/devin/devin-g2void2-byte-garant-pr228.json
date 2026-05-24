@@ -1,0 +1,26 @@
+{
+  "id": "devin-g2void2-byte-garant-pr228",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 228,
+    "headSha": "a3b5a08a63101a4249265e409a91fab64e8182ec",
+    "baseSha": "c38386dc4a54107b566b789b9112ddd366d5933c",
+    "title": "feat(admin): UserPicker autocomplete in 'Новый отзыв' sheet (P2)",
+    "body": "## Summary\n\n`ReviewCreateSheet` (under `AdminUserDetailPage` → вкладка «Отзывы» → «Добавить отзыв») used to ask the admin to type the author's `@username` freehand and then resolved it via a secondary `GET /api/admin/users?q=…` lookup at submit time — surfacing «Автор не найден» on the slightest typo.\n\nThe `Контрагент` picker on `/deals/new` (`frontend/src/components/domain/UserPicker.tsx`) already shows live suggestions as the operator types, returns the full `UserCardDto` on tap, and renders a «selected» card with online-dot + rating once a row is picked. This PR reuses it in the admin review sheet:\n\n- **`UserPicker.tsx`**: aditive `onPick?: (user: UserCardDto | null) => void` prop, fired\n  - on row pick (with the picked `UserCardDto`),\n  - on `clearSelection()` of the selected card,\n  - and on every text edit that wipes a previous pick.\n\n  `CreateDealPage` (the other consumer) does not pass this prop, so its existing behaviour is unchanged.\n\n- **`UserContentSections.tsx › ReviewCreateSheet`**: drops the freehand `Input` + `api.get('api/admin/users')` lookup and stores the picked `UserCardDto` in state. Submit refuses with «Выберите автора» if nothing was tapped; otherwise it sends `author.id` directly — no fallback resolution.\n\n- **`UserContentSections.test.tsx` (new)**: covers the «Новый отзыв» path with vi-mocked `useAdminCreateReview`/`useUsers`:\n  - sheet renders the picker (not the legacy «Автор (@username)» input),\n  - typing without picking blocks submit and toasts «Выберите автора»,\n  - pick → submit calls `useAdminCreateReview.mutateAsync` with `{author_id, target_id, rating, text}` and no other side effect.\n\nLocal `npm run lint`, `npm run typecheck`, `npx vitest run` (498 tests) all green.\n\n## Review & Testing Checklist for Human\n\n- [ ] Open `/admin/users/<id>` → вкладка «Отзывы» → «Добавить отзыв», ensure the «Автор» field shows the dropdown after typing `@`-prefix or username substring.\n- [ ] Pick a user from the dropdown, confirm the «selected» card appears (avatar + rating + ✕ to swap), then submit → review created with correct `author_id`.\n- [ ] Sanity-check `/deals/new` (`CreateDealPage`) still works — same component, no API drift expected, but worth one click.\n\n### Notes\n\n`UserPicker` itself has no test file in this repo (it's covered indirectly through `CreateDealPage.test.tsx` and `SearchPage.test.tsx`). I considered adding a focused `UserPicker.test.tsx` for the new `onPick` plumbing, but the three new `ReviewsSection` tests already exercise pick / submit / no-pick branches end-to-end, so I kept the change scoped.\n\n\nLink to Devin session: https://app.devin.ai/sessions/18a86fe3f3364c29a771ba31944c295d\nRequested by: @g2void2-byte",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779574091-review-create-userpicker",
+    "repository": "g2void2-byte/garant"
+  },
+  "diffRef": {
+    "repository": "g2void2-byte/garant",
+    "headSha": "a3b5a08a63101a4249265e409a91fab64e8182ec",
+    "baseSha": "c38386dc4a54107b566b789b9112ddd366d5933c"
+  },
+  "vendoredDiffPath": "devin/devin-g2void2-byte-garant-pr228.diff",
+  "vendoredAt": "2026-05-24T03:05:10.438Z",
+  "collectedAt": "2026-05-24T03:05:10.438Z"
+}

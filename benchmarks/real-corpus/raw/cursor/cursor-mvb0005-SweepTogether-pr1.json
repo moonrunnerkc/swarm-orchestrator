@@ -1,0 +1,26 @@
+{
+  "id": "cursor-mvb0005-SweepTogether-pr1",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "3754413f724cc3c0a68bbe57b7b27952173292d0",
+    "baseSha": "20e9a2b5e3b90cedc524058db4023a4475efec36",
+    "title": "refactor(frontend): canvas renderer and game shell rewrite",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Summary\n\nRewrites the main game frontend around a dedicated **Canvas 2D renderer** instead of the previous mix of DOM board components and renderer logic embedded in React.\n\n## What changed\n\n### Architecture\n- **`BoardRenderer`** (`frontend/src/renderer/`) — owns all canvas drawing: covered/revealed cells, grid lines, chunk borders, mines/flags (vector shapes, not emoji)\n- **`useChunkStore`** — socket chunk subscribe/unsubscribe + delta merging (extracted from `ChunkLoader`)\n- **`GameView` / `GameCanvas` / `GameHud`** — thin React shell: HUD overlay, input handling, rAF paint loop\n- **`chunkWire.ts`** — wire-format → `Chunk` conversion shared by the store\n\n### UX improvements\n- **Smooth pixel panning** (fractional viewport center) instead of snapping one cell per drag step\n- **HUD** with connection status, center/zoom/cell coords, lockout banner\n- Board stays visible while chunks load (banner instead of full-screen blocker)\n- **Stable chunk subscription keys** — visible chunks subscribe immediately; buffer region debounced; single subscription effect (fixes duplicate subscribe pattern)\n\n### Removed\n- Legacy `Board`, `Cell`, `BoardSVG`, `ChunkLoader`, `CanvasBoard`, debug `SingleChunkPage` route\n- Old CSS / `.bak` JS files\n\n## How to test\n\n```bash\ndocker-compose up --build\n# open http://localhost:8080\n```\n\n- Pan (drag), zoom (wheel), WASD/arrow keys\n- Click reveal, right-click flag, double-click chord\n- Pan across chunk boundaries and confirm tiles render without duplicate subscription spam in network logs\n\n## Notes\n\n- `CHUNK_SIZE` (32) and socket protocol unchanged — backend compatibility preserved.\n- `style.css` is no longer imported; styling lives in `frontend/src/styles/game.css`.\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-a82b9500-36cb-4e81-be9a-fac4fccc66f4\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-a82b9500-36cb-4e81-be9a-fac4fccc66f4\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "mvb0005",
+    "headRef": "cursor/frontend-renderer-rewrite-66f4",
+    "repository": "mvb0005/SweepTogether"
+  },
+  "diffRef": {
+    "repository": "mvb0005/SweepTogether",
+    "headSha": "3754413f724cc3c0a68bbe57b7b27952173292d0",
+    "baseSha": "20e9a2b5e3b90cedc524058db4023a4475efec36"
+  },
+  "vendoredDiffPath": "cursor/cursor-mvb0005-SweepTogether-pr1.diff",
+  "vendoredAt": "2026-05-24T03:11:28.593Z",
+  "collectedAt": "2026-05-24T03:11:28.593Z"
+}

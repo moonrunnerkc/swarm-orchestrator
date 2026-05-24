@@ -1,0 +1,617 @@
+diff --git a/.changeset/fix-codex-cli-gpt55-structured-output.md b/.changeset/fix-codex-cli-gpt55-structured-output.md
+new file mode 100644
+index 0000000000..1fe5946d11
+--- /dev/null
++++ b/.changeset/fix-codex-cli-gpt55-structured-output.md
+@@ -0,0 +1,5 @@
++---
++"task-master-ai": patch
++---
++
++Fix Codex CLI structured object generation by normalizing JSON schemas for strict OpenAI structured outputs, and add GPT-5.5 to the Codex CLI model catalog.
+diff --git a/package-lock.json b/package-lock.json
+index a4a1aab6cf..bcf4436d01 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -36,7 +36,7 @@
+ 				"@types/turndown": "^5.0.6",
+ 				"ai": "^5.0.51",
+ 				"ai-sdk-provider-claude-code": "^2.2.4",
+-				"ai-sdk-provider-codex-cli": "^0.7.0",
++				"ai-sdk-provider-codex-cli": "^0.7.3",
+ 				"ai-sdk-provider-gemini-cli": "^1.4.0",
+ 				"ajv": "^8.17.1",
+ 				"ajv-formats": "^3.0.1",
+@@ -8744,19 +8744,6 @@
+ 				"node": ">= 8"
+ 			}
+ 		},
+-		"node_modules/@openai/codex": {
+-			"version": "0.60.1",
+-			"resolved": "https://registry.npmjs.org/@openai/codex/-/codex-0.60.1.tgz",
+-			"integrity": "sha512-qKLPldoUdBviRBltPxYYqbpOmTpFcIgy3Hbehrcda7kMY7OcdruU3HaTfERXwOXXOl853v8s8hBBpOALLqUCgQ==",
+-			"license": "Apache-2.0",
+-			"optional": true,
+-			"bin": {
+-				"codex": "bin/codex.js"
+-			},
+-			"engines": {
+-				"node": ">=16"
+-			}
+-		},
+ 		"node_modules/@openapi-contrib/openapi-schema-to-json-schema": {
+ 			"version": "3.2.0",
+ 			"resolved": "https://registry.npmjs.org/@openapi-contrib/openapi-schema-to-json-schema/-/openapi-schema-to-json-schema-3.2.0.tgz",
+@@ -13143,9 +13130,9 @@
+ 			"license": "MIT"
+ 		},
+ 		"node_modules/@standard-schema/spec": {
+-			"version": "1.0.0",
+-			"resolved": "https://registry.npmjs.org/@standard-schema/spec/-/spec-1.0.0.tgz",
+-			"integrity": "sha512-m2bOd0f2RT9k8QJx1JN85cZYyH1RqFBdlwtkSlf4tBDYLCiiZnv1fIIwacK6cqwXavOydf0NPToMQgpKq+dVlA==",
++			"version": "1.1.0",
++			"resolved": "https://registry.npmjs.org/@standard-schema/spec/-/spec-1.1.0.tgz",
++			"integrity": "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==",
+ 			"license": "MIT"
+ 		},
+ 		"node_modules/@stoplight/better-ajv-errors": {
+@@ -15387,9 +15374,9 @@
+ 			}
+ 		},
+ 		"node_modules/ai-sdk-provider-codex-cli": {
+-			"version": "0.7.0",
+-			"resolved": "https://registry.npmjs.org/ai-sdk-provider-codex-cli/-/ai-sdk-provider-codex-cli-0.7.0.tgz",
+-			"integrity": "sha512-00ftsOWFsYjQBdiw+vyVeO+3D7R2e111KSAj0M7jVyFLnyuzTJuDpPwhnoOVmAGLLUorz62MOkSRZWroWOZ8Ew==",
++			"version": "0.7.3",
++			"resolved": "https://registry.npmjs.org/ai-sdk-provider-codex-cli/-/ai-sdk-provider-codex-cli-0.7.3.tgz",
++			"integrity": "sha512-Zn1BGMYC/VMB//Gsxt6xQxvLkw41+sDZwIQbUlzQ3q1MQOMqr6IbGge48qRljmC10dfapkBa+9NwB24Utmv3pQ==",
+ 			"license": "MIT",
+ 			"dependencies": {
+ 				"@ai-sdk/provider": "2.0.0",
+@@ -15424,6 +15411,19 @@
+ 				"zod": "^3.25.76 || ^4"
+ 			}
+ 		},
++		"node_modules/ai-sdk-provider-codex-cli/node_modules/@openai/codex": {
++			"version": "0.60.1",
++			"resolved": "https://registry.npmjs.org/@openai/codex/-/codex-0.60.1.tgz",
++			"integrity": "sha512-qKLPldoUdBviRBltPxYYqbpOmTpFcIgy3Hbehrcda7kMY7OcdruU3HaTfERXwOXXOl853v8s8hBBpOALLqUCgQ==",
++			"license": "Apache-2.0",
++			"optional": true,
++			"bin": {
++				"codex": "bin/codex.js"
++			},
++			"engines": {
++				"node": ">=16"
++			}
++		},
+ 		"node_modules/ai-sdk-provider-gemini-cli": {
+ 			"version": "1.4.0",
+ 			"resolved": "https://registry.npmjs.org/ai-sdk-provider-gemini-cli/-/ai-sdk-provider-gemini-cli-1.4.0.tgz",
+@@ -19932,9 +19932,9 @@
+ 			}
+ 		},
+ 		"node_modules/eventsource-parser": {
+-			"version": "3.0.6",
+-			"resolved": "https://registry.npmjs.org/eventsource-parser/-/eventsource-parser-3.0.6.tgz",
+-			"integrity": "sha512-Vo1ab+QXPzZ4tCa8SwIHJFaSzy4R6SHf7BY79rFBDf0idraZWAkYrDjDj8uWaSm3S2TK+hJ7/t1CEmZ7jXw+pg==",
++			"version": "3.0.8",
++			"resolved": "https://registry.npmjs.org/eventsource-parser/-/eventsource-parser-3.0.8.tgz",
++			"integrity": "sha512-70QWGkr4snxr0OXLRWsFLeRBIRPuQOvt4s8QYjmUlmlkyTZkRqS7EDVRZtzU3TiyDbXSzaOeF0XUKy8PchzukQ==",
+ 			"license": "MIT",
+ 			"engines": {
+ 				"node": ">=18.0.0"
+diff --git a/package.json b/package.json
+index 1029a732d4..f6b3350717 100644
+--- a/package.json
++++ b/package.json
+@@ -13,7 +13,11 @@
+ 		"provenance": true,
+ 		"access": "public"
+ 	},
+-	"workspaces": ["apps/*", "packages/*", "."],
++	"workspaces": [
++		"apps/*",
++		"packages/*",
++		"."
++	],
+ 	"scripts": {
+ 		"build": "npm run build:build-config && cross-env NODE_ENV=production tsdown",
+ 		"dev": "tsdown --watch",
+@@ -83,7 +87,7 @@
+ 		"@types/turndown": "^5.0.6",
+ 		"ai": "^5.0.51",
+ 		"ai-sdk-provider-claude-code": "^2.2.4",
+-		"ai-sdk-provider-codex-cli": "^0.7.0",
++		"ai-sdk-provider-codex-cli": "^0.7.3",
+ 		"ai-sdk-provider-gemini-cli": "^1.4.0",
+ 		"ajv": "^8.17.1",
+ 		"ajv-formats": "^3.0.1",
+diff --git a/scripts/modules/supported-models.json b/scripts/modules/supported-models.json
+index 0065194aa0..bc587c5306 100644
+--- a/scripts/modules/supported-models.json
++++ b/scripts/modules/supported-models.json
+@@ -129,6 +129,19 @@
+ 		}
+ 	],
+ 	"codex-cli": [
++		{
++			"id": "gpt-5.5",
++			"name": "GPT-5.5",
++			"swe_score": 0.82,
++			"cost_per_1m_tokens": {
++				"input": 0,
++				"output": 0
++			},
++			"allowed_roles": ["main", "fallback", "research"],
++			"max_tokens": 128000,
++			"reasoning_efforts": ["none", "low", "medium", "high", "xhigh"],
++			"supported": true
++		},
+ 		{
+ 			"id": "gpt-5.2-codex",
+ 			"name": "GPT-5.2 Codex",
+diff --git a/src/ai-providers/base-provider.js b/src/ai-providers/base-provider.js
+index 3b5cad5c29..5ee069dbf9 100644
+--- a/src/ai-providers/base-provider.js
++++ b/src/ai-providers/base-provider.js
+@@ -54,13 +54,13 @@ const isIntegerType = (type) => {
+ 	return type === 'integer';
+ };
+ 
+-const sanitizeIntegerConstraints = (schema) => {
++const normalizeSchemaForStructuredOutputs = (schema) => {
+ 	if (!schema || typeof schema !== 'object') {
+ 		return schema;
+ 	}
+ 
+ 	if (Array.isArray(schema)) {
+-		return schema.map(sanitizeIntegerConstraints);
++		return schema.map(normalizeSchemaForStructuredOutputs);
+ 	}
+ 
+ 	const next = { ...schema };
+@@ -75,13 +75,13 @@ const sanitizeIntegerConstraints = (schema) => {
+ 
+ 	for (const key of SCHEMA_OBJECT_KEYS) {
+ 		if (next[key]) {
+-			next[key] = sanitizeIntegerConstraints(next[key]);
++			next[key] = normalizeSchemaForStructuredOutputs(next[key]);
+ 		}
+ 	}
+ 
+ 	for (const key of SCHEMA_ARRAY_KEYS) {
+ 		if (Array.isArray(next[key])) {
+-			next[key] = next[key].map(sanitizeIntegerConstraints);
++			next[key] = next[key].map(normalizeSchemaForStructuredOutputs);
+ 		}
+ 	}
+ 
+@@ -89,14 +89,40 @@ const sanitizeIntegerConstraints = (schema) => {
+ 		if (next[key] && typeof next[key] === 'object') {
+ 			const mapped = {};
+ 			for (const [entryKey, entryValue] of Object.entries(next[key])) {
+-				mapped[entryKey] = sanitizeIntegerConstraints(entryValue);
++				mapped[entryKey] = normalizeSchemaForStructuredOutputs(entryValue);
+ 			}
+ 			next[key] = mapped;
+ 		}
+ 	}
+ 
+ 	if (next.items) {
+-		next.items = sanitizeIntegerConstraints(next.items);
++		next.items = Array.isArray(next.items)
++			? next.items.map(normalizeSchemaForStructuredOutputs)
++			: normalizeSchemaForStructuredOutputs(next.items);
++	}
++
++	const propertyKeys =
++		next.properties && typeof next.properties === 'object'
++			? Object.keys(next.properties)
++			: [];
++	const isObjectSchema =
++		next.type === 'object' ||
++		(Array.isArray(next.type) && next.type.includes('object')) ||
++		propertyKeys.length > 0;
++	const hasCombinator = ['oneOf', 'anyOf', 'allOf'].some((key) => key in next);
++
++	if (isObjectSchema) {
++		if (!hasCombinator && !('additionalProperties' in next)) {
++			next.additionalProperties = false;
++		}
++
++		if (
++			!hasCombinator &&
++			propertyKeys.length > 0 &&
++			next.required === undefined
++		) {
++			next.required = propertyKeys;
++		}
+ 	}
+ 
+ 	return next;
+@@ -112,7 +138,9 @@ const buildSafeSchema = (schema) => {
+ 		return baseSchema;
+ 	}
+ 
+-	const sanitizedSchema = sanitizeIntegerConstraints(baseSchema.jsonSchema);
++	const sanitizedSchema = normalizeSchemaForStructuredOutputs(
++		baseSchema.jsonSchema
++	);
+ 
+ 	if (typeof jsonSchemaHelper === 'function') {
+ 		return jsonSchemaHelper(sanitizedSchema, { validate: baseSchema.validate });
+diff --git a/src/ai-providers/codex-cli.js b/src/ai-providers/codex-cli.js
+index fdaa607be4..67a3a55cc2 100644
+--- a/src/ai-providers/codex-cli.js
++++ b/src/ai-providers/codex-cli.js
+@@ -27,6 +27,8 @@ const REASONING_EFFORT_SUPPORT = {
+ 	'gpt-5.1': ['none', 'low', 'medium', 'high'],
+ 	// GPT-5.1 Codex Max supports full range
+ 	'gpt-5.1-codex-max': ['none', 'low', 'medium', 'high', 'xhigh'],
++	// GPT-5.5 supports full range
++	'gpt-5.5': ['none', 'low', 'medium', 'high', 'xhigh'],
+ 	// GPT-5.2 supports full range
+ 	'gpt-5.2': ['none', 'low', 'medium', 'high', 'xhigh'],
+ 	// GPT-5.2 Pro only supports medium and above
+@@ -41,6 +43,26 @@ const DEFAULT_REASONING_EFFORTS = ['none', 'low', 'medium', 'high'];
+ // Ordering for effort levels (lowest to highest)
+ const EFFORT_ORDER = ['none', 'low', 'medium', 'high', 'xhigh'];
+ 
++function getSystemCodexPath() {
++	try {
++		// 'command -v' is POSIX-compliant and available in /bin/sh; prefer it over 'which' which may be missing in minimal containers.
++		const command =
++			process.platform === 'win32' ? 'where codex' : 'command -v codex';
++		const result = execSync(command, {
++			stdio: 'pipe',
++			timeout: 1000,
++			encoding: 'utf8'
++		})
++			.split(/\r?\n/)
++			.map((line) => line.trim())
++			.find(Boolean);
++
++		return result || null;
++	} catch {
++		return null;
++	}
++}
++
+ export class CodexCliProvider extends BaseAIProvider {
+ 	constructor() {
+ 		super();
+@@ -63,6 +85,9 @@ export class CodexCliProvider extends BaseAIProvider {
+ 		// CLI availability check cache
+ 		this._codexCliChecked = false;
+ 		this._codexCliAvailable = null;
++		// System Codex path detection cache
++		this._systemCodexPathChecked = false;
++		this._systemCodexPath = null;
+ 	}
+ 
+ 	/**
+@@ -149,6 +174,15 @@ export class CodexCliProvider extends BaseAIProvider {
+ 		return highestSupported;
+ 	}
+ 
++	_resolveSystemCodexPath() {
++		if (!this._systemCodexPathChecked) {
++			this._systemCodexPath = getSystemCodexPath();
++			this._systemCodexPathChecked = true;
++		}
++
++		return this._systemCodexPath;
++	}
++
+ 	/**
+ 	 * Creates a Codex CLI client instance
+ 	 * @param {object} params
+@@ -168,9 +202,15 @@ export class CodexCliProvider extends BaseAIProvider {
+ 				settings.reasoningEffort
+ 			);
+ 
++			// Prefer an explicitly configured Codex path; otherwise prefer the system
++			// Codex CLI over the provider's optional bundled @openai/codex dependency.
++			// The bundled CLI can lag behind newly released ChatGPT/OAuth models.
++			const codexPath = settings.codexPath || this._resolveSystemCodexPath();
++
+ 			// Inject API key only if explicitly provided; OAuth is the primary path
+ 			const defaultSettings = {
+ 				...settings,
++				...(codexPath ? { codexPath } : {}),
+ 				reasoningEffort: validatedReasoningEffort,
+ 				...(params.apiKey
+ 					? { env: { ...(settings.env || {}), OPENAI_API_KEY: params.apiKey } }
+diff --git a/tests/unit/ai-providers/base-provider-schema.test.js b/tests/unit/ai-providers/base-provider-schema.test.js
+new file mode 100644
+index 0000000000..87ad24c43e
+--- /dev/null
++++ b/tests/unit/ai-providers/base-provider-schema.test.js
+@@ -0,0 +1,180 @@
++import { jest } from '@jest/globals';
++
++const mockGenerateObject = jest.fn();
++const mockJsonSchema = jest.fn((jsonSchema, options) => ({
++	jsonSchema,
++	validate: options?.validate
++}));
++const mockValidate = jest.fn();
++const mockZodSchema = jest.fn(() => ({
++	jsonSchema: {
++		type: 'object',
++		properties: {
++			title: { type: 'string' },
++			metadata: {
++				type: 'object',
++				properties: {
++					priority: { type: 'string' }
++				}
++			},
++			items: {
++				// Some zod-to-json-schema conversions omit type when properties exist.
++				properties: {
++					id: { type: 'integer', minimum: 1 }
++				}
++			}
++		}
++	},
++	validate: mockValidate
++}));
++
++jest.unstable_mockModule('ai', () => ({
++	generateObject: mockGenerateObject,
++	generateText: jest.fn(),
++	streamObject: jest.fn(),
++	streamText: jest.fn(),
++	zodSchema: mockZodSchema,
++	jsonSchema: mockJsonSchema,
++	JSONParseError: class JSONParseError extends Error {},
++	NoObjectGeneratedError: class NoObjectGeneratedError extends Error {
++		static isInstance(error) {
++			return error instanceof NoObjectGeneratedError;
++		}
++	}
++}));
++
++jest.unstable_mockModule('../../../scripts/modules/config-manager.js', () => ({
++	isProxyEnabled: jest.fn(() => false)
++}));
++
++jest.unstable_mockModule('../../../scripts/modules/utils.js', () => ({
++	findProjectRoot: jest.fn(() => '/mock/project'),
++	log: jest.fn()
++}));
++
++jest.unstable_mockModule('../../../src/telemetry/sentry.js', () => ({
++	getAITelemetryConfig: jest.fn(() => null),
++	hashProjectRoot: jest.fn(() => 'mock-project-hash')
++}));
++
++const { BaseAIProvider } = await import(
++	'../../../src/ai-providers/base-provider.js'
++);
++
++class TestProvider extends BaseAIProvider {
++	constructor() {
++		super();
++		this.name = 'Test Provider';
++	}
++
++	validateAuth() {}
++
++	getRequiredApiKeyName() {
++		return 'TEST_API_KEY';
++	}
++
++	getClient() {
++		return (modelId) => ({ modelId });
++	}
++}
++
++describe('BaseAIProvider structured output schema handling', () => {
++	beforeEach(() => {
++		jest.clearAllMocks();
++		mockGenerateObject.mockResolvedValue({
++			object: { title: 'ok' },
++			usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
++		});
++	});
++
++	it('normalizes object schemas for OpenAI strict structured outputs', async () => {
++		const provider = new TestProvider();
++
++		await provider.generateObject({
++			modelId: 'gpt-5.5',
++			messages: [{ role: 'user', content: 'Generate a task' }],
++			schema: { mocked: true },
++			objectName: 'task'
++		});
++
++		expect(mockJsonSchema).toHaveBeenCalledTimes(1);
++		const strictSchema = mockJsonSchema.mock.calls[0][0];
++
++		expect(strictSchema).toMatchObject({
++			type: 'object',
++			additionalProperties: false,
++			required: ['title', 'metadata', 'items'],
++			properties: {
++				metadata: {
++					type: 'object',
++					additionalProperties: false,
++					required: ['priority']
++				},
++				items: {
++					additionalProperties: false,
++					required: ['id'],
++					properties: {
++						id: { type: 'integer' }
++					}
++				}
++			}
++		});
++
++		// Preserve the existing integer-constraint sanitization behavior.
++		expect(strictSchema.properties.items.properties.id.minimum).toBeUndefined();
++	});
++
++	it('preserves caller-defined required fields and normalizes edge-case schemas', async () => {
++		mockZodSchema.mockReturnValueOnce({
++			jsonSchema: {
++				type: ['object', 'null'],
++				required: ['title'],
++				properties: {
++					title: { type: 'string' },
++					metadata: {
++						type: ['object', 'null'],
++						properties: {
++							priority: { type: 'string' }
++						}
++					},
++					steps: {
++						type: 'array',
++						items: [
++							{ type: 'object', properties: { name: { type: 'string' } } },
++							{ type: 'integer', minimum: 1 }
++						]
++					},
++					choice: {
++						type: 'object',
++						properties: { value: { type: 'string' } },
++						oneOf: [{ required: ['value'] }]
++					}
++				}
++			},
++			validate: mockValidate
++		});
++		const provider = new TestProvider();
++
++		await provider.generateObject({
++			modelId: 'gpt-5.5',
++			messages: [{ role: 'user', content: 'Generate a task' }],
++			schema: { mocked: true },
++			objectName: 'task'
++		});
++
++		const strictSchema = mockJsonSchema.mock.calls[0][0];
++		expect(strictSchema.required).toEqual(['title']);
++		expect(strictSchema.properties.metadata).toMatchObject({
++			type: ['object', 'null'],
++			additionalProperties: false,
++			required: ['priority']
++		});
++		expect(strictSchema.properties.steps.items[0]).toMatchObject({
++			additionalProperties: false,
++			required: ['name']
++		});
++		expect(strictSchema.properties.steps.items[1].minimum).toBeUndefined();
++		expect(strictSchema.properties.choice.additionalProperties).toBeUndefined();
++		expect(strictSchema.properties.choice.required).toBeUndefined();
++	});
++});
+diff --git a/tests/unit/ai-providers/codex-cli-supported-models.test.js b/tests/unit/ai-providers/codex-cli-supported-models.test.js
+new file mode 100644
+index 0000000000..2d29738c01
+--- /dev/null
++++ b/tests/unit/ai-providers/codex-cli-supported-models.test.js
+@@ -0,0 +1,20 @@
++import fs from 'fs';
++import path from 'path';
++import { fileURLToPath } from 'url';
++
++const __dirname = path.dirname(fileURLToPath(import.meta.url));
++const supportedModelsPath = path.resolve(
++	__dirname,
++	'../../../scripts/modules/supported-models.json'
++);
++const supportedModels = JSON.parse(
++	fs.readFileSync(supportedModelsPath, 'utf8')
++);
++
++describe('codex-cli supported models catalog', () => {
++	it('includes GPT-5.5 for ChatGPT OAuth Codex CLI users', () => {
++		const codexModels = supportedModels['codex-cli'].map((model) => model.id);
++
++		expect(codexModels).toContain('gpt-5.5');
++	});
++});
+diff --git a/tests/unit/ai-providers/codex-cli.test.js b/tests/unit/ai-providers/codex-cli.test.js
+index 5806299afa..6b766226b6 100644
+--- a/tests/unit/ai-providers/codex-cli.test.js
++++ b/tests/unit/ai-providers/codex-cli.test.js
+@@ -17,6 +17,13 @@ jest.unstable_mockModule('ai-sdk-provider-codex-cli', () => ({
+ 	})
+ }));
+ 
++// Mock child_process for system Codex path detection
++jest.unstable_mockModule('child_process', () => ({
++	execSync: jest.fn(() => '/usr/local/bin/codex\n'),
++	exec: jest.fn(),
++	spawn: jest.fn()
++}));
++
+ // Mock config getters
+ jest.unstable_mockModule('../../../scripts/modules/config-manager.js', () => ({
+ 	getCodexCliSettingsForCommand: jest.fn(() => ({ allowNpx: true })),
+@@ -54,6 +61,7 @@ const { CodexCliProvider } = await import(
+ 	'../../../src/ai-providers/codex-cli.js'
+ );
+ const { createCodexCli } = await import('ai-sdk-provider-codex-cli');
++const { execSync } = await import('child_process');
+ const { getCodexCliSettingsForCommand } = await import(
+ 	'../../../scripts/modules/config-manager.js'
+ );
+@@ -85,11 +93,52 @@ describe('CodexCliProvider', () => {
+ 		const client = await provider.getClient({ commandName: 'parse-prd' });
+ 		expect(client).toBeDefined();
+ 		expect(createCodexCli).toHaveBeenCalledWith({
+-			defaultSettings: expect.objectContaining({ allowNpx: true })
++			defaultSettings: expect.objectContaining({
++				allowNpx: true,
++				codexPath: '/usr/local/bin/codex'
++			})
+ 		});
+ 		expect(getCodexCliSettingsForCommand).toHaveBeenCalledWith('parse-prd');
+ 	});
+ 
++	it('preserves explicitly configured codexPath over system Codex path', async () => {
++		getCodexCliSettingsForCommand.mockReturnValueOnce({
++			allowNpx: true,
++			codexPath: '/custom/bin/codex'
++		});
++
++		await provider.getClient({ commandName: 'parse-prd' });
++
++		expect(createCodexCli).toHaveBeenCalledWith({
++			defaultSettings: expect.objectContaining({
++				allowNpx: true,
++				codexPath: '/custom/bin/codex'
++			})
++		});
++		expect(execSync).not.toHaveBeenCalled();
++	});
++
++	it('omits codexPath when neither config nor system provides one', async () => {
++		execSync.mockImplementationOnce(() => {
++			throw new Error('not found');
++		});
++
++		await provider.getClient({ commandName: 'parse-prd' });
++
++		const call = createCodexCli.mock.calls.at(-1)[0];
++		expect(call.defaultSettings.codexPath).toBeUndefined();
++	});
++
++	it('caches system codexPath lookup across getClient calls', async () => {
++		await provider.getClient({ commandName: 'parse-prd' });
++		await provider.getClient({ commandName: 'expand' });
++
++		expect(execSync).toHaveBeenCalledTimes(1);
++		expect(createCodexCli.mock.calls[1][0].defaultSettings.codexPath).toBe(
++			'/usr/local/bin/codex'
++		);
++	});
++
+ 	it('injects OPENAI_API_KEY only when apiKey provided', async () => {
+ 		const client = await provider.getClient({
+ 			commandName: 'expand',

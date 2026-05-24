@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-dantelrharrell-debug-Nija-pr1804",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 1804,
+    "headSha": "c13ffeb8e6bc6203e79a04870da1cc8c0472a5b3",
+    "baseSha": "39ce575e1fc50778b10a52fd79d0cf588d8b47be",
+    "title": "Add deterministic startup breadcrumb chain to isolate bootstrap dispatch gaps",
+    "body": "The startup path appears continuously alive but may be entering the wrong bootstrap branch, getting role-gated before dispatch, or running a stale/alternate code path. This change adds an ordered diagnostic breadcrumb chain so we can pinpoint exactly where startup orchestration diverges.\n\n- **Startup chain observability**\n  - Added explicit startup breadcrumbs in the intended order:\n    - `DIAG_MAIN_ENTRY`\n    - `DIAG_BOOTSTRAP_BEGIN`\n    - `DIAG_RUNTIME_ROLE`\n    - `DIAG_STARTUP_DISPATCH`\n    - `DIAG_RETRY_WRAPPER_BEFORE`\n    - existing `DIAG_ENTRY`\n    - existing `DIAG_FASTPATH_CHECK`\n    - `DIAG_HEARTBEAT_START`\n  - This makes missing orchestration edges immediately visible from logs without inferring control flow.\n\n- **Dispatch edge visibility**\n  - Split pre-dispatch logging into:\n    - startup dispatch intent (`DIAG_STARTUP_DISPATCH`)\n    - immediate call boundary (`DIAG_RETRY_WRAPPER_BEFORE`)\n  - This cleanly separates “attempt selected” vs “startup function invoked”.\n\n- **Runtime role/gating signal**\n  - Added `DIAG_RUNTIME_ROLE` in `main()` after distributed writer-lock status probe.\n  - Logs derived runtime role plus authority context (`writer_lock_ok`, `strict_required`, holder relationship) to expose role/flag gating at startup.\n\n- **Heartbeat bootstrap boundary**\n  - Added `DIAG_HEARTBEAT_START` immediately before authority heartbeat initialization to identify pre-heartbeat vs post-heartbeat startup failures.\n\n```python\nlogger.info(\"DIAG_STARTUP_DISPATCH: dispatching startup attempt=%d init_done=%s\", _next_attempt, _init_done)\nlogger.info(\"DIAG_RETRY_WRAPPER_BEFORE: about to call _run_bot_startup_and_trading() attempt=%d init_done=%s\", _next_attempt, _init_done)\n_run_bot_startup_and_trading()\n```",
+    "author": "Copilot",
+    "headRef": "copilot/add-startup-chain-breadcrumbs",
+    "repository": "dantelrharrell-debug/Nija"
+  },
+  "diffRef": {
+    "repository": "dantelrharrell-debug/Nija",
+    "headSha": "c13ffeb8e6bc6203e79a04870da1cc8c0472a5b3",
+    "baseSha": "39ce575e1fc50778b10a52fd79d0cf588d8b47be"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-dantelrharrell-debug-Nija-pr1804.diff",
+  "vendoredAt": "2026-05-24T03:06:00.246Z",
+  "collectedAt": "2026-05-24T03:06:00.246Z"
+}

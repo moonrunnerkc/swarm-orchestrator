@@ -1,0 +1,45 @@
+diff --git a/tests/test_dogfood_dispatch_absolute_deliverable.py b/tests/test_dogfood_dispatch_absolute_deliverable.py
+index 97a98ec5..2eb7b7e2 100644
+--- a/tests/test_dogfood_dispatch_absolute_deliverable.py
++++ b/tests/test_dogfood_dispatch_absolute_deliverable.py
+@@ -76,9 +76,9 @@ def _make_config(journal_dir: str) -> BatchConfig:
+ 
+ 
+ def test_deliverable_path_is_absolute_against_repo_root(tmp_path):
+-    """Tier 2 (B45-carry-over fix): rendered prompt emits the
+-    deliverable path as an absolute filesystem path joined from the
+-    supplied repo_root + journal_dir + worker filename."""
++    """Tier 2: rendered prompt emits the deliverable path as an absolute
++    filesystem path joined from the supplied repo_root + journal_dir +
++    worker filename (B45-carry-over fix)."""
+     config = _make_config("docs/journal/test-batch")
+     repo_root = tmp_path / "fake-repo"
+     repo_root.mkdir()
+diff --git a/tests/test_dogfood_dispatch_verdict_scoping_guidance.py b/tests/test_dogfood_dispatch_verdict_scoping_guidance.py
+index e0e6969a..f0177f1c 100644
+--- a/tests/test_dogfood_dispatch_verdict_scoping_guidance.py
++++ b/tests/test_dogfood_dispatch_verdict_scoping_guidance.py
+@@ -66,8 +66,8 @@ def _make_config() -> BatchConfig:
+ 
+ 
+ def test_prompt_contains_verdict_scoping_guidance():
+-    """Tier 2 (B48 W1 fix): the prompt MUST explicitly state that
+-    ``covers:`` and scenario metadata are NOT verdict criteria."""
++    """Tier 2: the prompt MUST explicitly state that ``covers:`` and scenario
++    metadata are NOT verdict criteria (B48 W1 fix)."""
+     cfg = _make_config()
+     prompt = render_worker_prompt(cfg, cfg.workers[0])
+ 
+diff --git a/tests/test_dogfood_fresh_mode.py b/tests/test_dogfood_fresh_mode.py
+index eeeaca9e..601f599f 100644
+--- a/tests/test_dogfood_fresh_mode.py
++++ b/tests/test_dogfood_fresh_mode.py
+@@ -246,7 +246,7 @@ def test_state_mode_round_trips_via_storage(self, tmp_path: Path) -> None:
+         _write_json(run_dir / "summary.json", summary)
+ 
+         loaded = load_run_result_from_storage(run_dir)
+-        assert len(loaded.scenario_results) == 1
++        assert loaded.scenario_results
+         assert loaded.scenario_results[0].state_mode == "fresh"
+ 
+     def test_state_mode_default_on_legacy_output_json(self, tmp_path: Path) -> None:

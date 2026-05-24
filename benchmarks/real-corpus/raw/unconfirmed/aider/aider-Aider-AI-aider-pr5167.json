@@ -1,0 +1,26 @@
+{
+  "id": "aider-Aider-AI-aider-pr5167",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=Aider-AI"
+  },
+  "pr": {
+    "number": 5167,
+    "headSha": "afb538e0fafd1cb4c9b98d70b55ddbb3f318405d",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "Add model settings for GPT-5.4 Mini and GPT-5.4 Nano",
+    "body": "## Summary\n\nAdds entries to \\`aider/resources/model-settings.yml\\` for the GPT-5.4 Mini and GPT-5.4 Nano model variants:\n\n| Model | Source of weak model |\n|---|---|\n| \\`gpt-5.4-mini\\` | \\`gpt-5-nano\\` |\n| \\`gpt-5.4-mini-2026-03-17\\` | \\`gpt-5-nano-2025-08-07\\` |\n| \\`gpt-5.4-nano\\` | \\`gpt-5-nano\\` |\n| \\`gpt-5.4-nano-2026-03-17\\` | \\`gpt-5-nano-2025-08-07\\` |\n\nThese models exist in litellm's pricing JSON (aider's upstream source for model metadata via \\`ModelInfoManager.MODEL_INFO_URL\\`) but were missing the project-side settings. Without them, aider falls back to defaults that don't match the 5.x family conventions (\\`edit_format: diff\\`, repo map enabled, \\`reasoning_effort\\` accepted, no temperature).\n\n## Settings shape\n\nMirrors the existing \\`gpt-5-mini\\` / \\`gpt-5-nano\\` block exactly. Mini entries route to \\`gpt-5-nano\\` for weak/editor model duties; pinned-date variants route to the pinned nano variant.\n\n## Test plan\n\n- YAML validity: \\`python -c \"import yaml; yaml.safe_load(open('aider/resources/model-settings.yml'))\"\\` parses cleanly (361 entries).\n- Diff is purely additive: 28 lines of YAML + 1 line in HISTORY.md under \\`### main branch\\`.",
+    "author": "Cyberfilo",
+    "headRef": "feat/add-gpt-5-4-mini-nano-models",
+    "repository": "Aider-AI/aider"
+  },
+  "diffRef": {
+    "repository": "Aider-AI/aider",
+    "headSha": "afb538e0fafd1cb4c9b98d70b55ddbb3f318405d",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-Aider-AI-aider-pr5167.diff",
+  "vendoredAt": "2026-05-24T03:20:01.876Z",
+  "collectedAt": "2026-05-24T03:20:01.876Z"
+}

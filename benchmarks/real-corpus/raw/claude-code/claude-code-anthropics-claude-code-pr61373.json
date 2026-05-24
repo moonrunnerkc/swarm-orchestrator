@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-claude-code-pr61373",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer+repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 61373,
+    "headSha": "b9997377dc52e7c73fda439a4b726d0487f72e25",
+    "baseSha": "2194e8e0904087b9f2afce41a2ec083cc71c0653",
+    "title": "fix(security-guidance): add exclude_substrings to cut false positives",
+    "body": "## Summary\n\nThe `security-guidance` plugin's content-based rules use plain substring matching, which produces well-known false positives for several common identifier and call shapes:\n\n- `eval(` matches `ast.literal_eval(` (Python stdlib's safe parser) — see #55464\n- `exec(` matches `db.exec(...)`, `stmt.exec(...)`, regex `.exec(/.../)`, doc/code-fence mentions, etc. — see #46720\n- `new Function` matches `new Functionality`, `new FunctionComponent`\n- `pickle` matches `pickled`, `pickle_jar`, and bare `import pickle` / `pickle.dump` (serialization, not deserialization)\n\nThis PR adds an optional `exclude_substrings` field to the SECURITY_PATTERNS schema. A rule matches only if at least one occurrence of its trigger substring is **not** inside any excluded substring, so:\n\n- Files containing only excluded shapes are skipped (no warning)\n- Files containing both an excluded shape and a real risk shape still fire on the real one\n- Rules without `exclude_substrings` behave exactly as before (backward compatible)\n\nSchema follows the design proposed by the issue author in #55464.\n\n## Case matrix\n\n| Content | Trigger | Before | After |\n| --- | --- | --- | --- |\n| `value = ast.literal_eval(raw)` | `eval(` | flagged | not flagged |\n| `result = eval(user_input)` | `eval(` | flagged | **still flagged** |\n| `ast.literal_eval(a); eval(b)` | `eval(` | flagged | **still flagged** (on the real `eval(b)`) |\n| `db.exec(schema)` | `exec(` | flagged | not flagged |\n| `child_process.exec(cmd)` | `exec(` | flagged | **still flagged** |\n| `\\`exec(query)\\`` in markdown | `exec(` | flagged | not flagged |\n| `new Functionality` | `new Function` | flagged | not flagged |\n| `new Function('return ' + x)` | `new Function` | flagged | **still flagged** |\n| `import pickle; pickle.dump(o,f)` | `pickle` | flagged | not flagged |\n| `import pickle; pickle.load(f)` | `pickle` | flagged | **still flagged** |\n\n## Test plan\n\n- [x] `python3 -m unittest plugins/security-guidance/hooks/test_security_reminder_hook.py` — 25 tests, all pass locally\n- [x] Path-based GitHub Actions workflow rule still fires\n- [x] Existing content rules with no exclusions (dangerouslySetInnerHTML, document.write, innerHTML, os.system) unchanged\n\n## Closes / refs\n\n- Closes #55464 (`ast.literal_eval` false positive)\n- Refs #46720 (markdown `exec(` false positive — addressed at the substring level rather than via a file-extension allowlist, so source-file false positives are also covered)\n- Alternative to #47514, which scopes substring checks off for doc-like extensions. The two approaches are complementary; happy to defer or combine if a maintainer prefers that route.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "zhang-liz",
+    "headRef": "fix/security-guidance-exclude-substrings",
+    "repository": "anthropics/claude-code"
+  },
+  "diffRef": {
+    "repository": "anthropics/claude-code",
+    "headSha": "b9997377dc52e7c73fda439a4b726d0487f72e25",
+    "baseSha": "2194e8e0904087b9f2afce41a2ec083cc71c0653"
+  },
+  "vendoredDiffPath": "claude-code/claude-code-anthropics-claude-code-pr61373.diff",
+  "vendoredAt": "2026-05-24T03:15:53.964Z",
+  "collectedAt": "2026-05-24T03:15:53.964Z"
+}

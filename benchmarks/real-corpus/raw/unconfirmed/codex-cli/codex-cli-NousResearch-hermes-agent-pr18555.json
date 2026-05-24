@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-NousResearch-hermes-agent-pr18555",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "commit=codex-cli-footer"
+  },
+  "pr": {
+    "number": 18555,
+    "headSha": "e434463716723803e72f6448b83368daaa5ac20f",
+    "baseSha": "da6019820a916ff7b6b89fa0fba2cccf700554d6",
+    "title": "fix(auth): allow Codex CLI auth reuse",
+    "body": "https://github.com/NousResearch/hermes-agent/pull/6874 is great, however it replaces the previous auth with one that requires either an API key or an Oauth login.  That Oauth login requires device-key support - which is disabled by my admin.\r\n\r\nThis MR enables the old approach as a fall back for those who can't use the new system.\r\n\r\n## Summary\r\n- add an opt-in Codex CLI auth compatibility mode via providers.openai-codex.use_cli_auth or HERMES_CODEX_USE_CLI_AUTH\r\n- read runtime Codex credentials from CODEX_HOME/auth.json / ~/.codex/auth.json when enabled\r\n- write refreshed rotated tokens back to the Codex CLI auth file so the shared session stays usable\r\n- seed the credential pool from the shared Codex CLI auth source in compatibility mode\r\n\r\n## Validation\r\n- scripts/run_tests.sh tests/hermes_cli/test_auth_codex_provider.py\r\n- scripts/run_tests.sh tests/agent/test_credential_pool.py\r\n- venv/bin/python -m py_compile hermes_cli/auth.py agent/credential_pool.py hermes_cli/config.py tests/hermes_cli/test_auth_codex_provider.py\r\n- git diff --check\r\n",
+    "author": "ggascoigne",
+    "headRef": "codex-cli-auth-compat",
+    "repository": "NousResearch/hermes-agent"
+  },
+  "diffRef": {
+    "repository": "NousResearch/hermes-agent",
+    "headSha": "e434463716723803e72f6448b83368daaa5ac20f",
+    "baseSha": "da6019820a916ff7b6b89fa0fba2cccf700554d6"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-NousResearch-hermes-agent-pr18555.diff",
+  "vendoredAt": "2026-05-24T03:13:20.173Z",
+  "collectedAt": "2026-05-24T03:13:20.173Z"
+}

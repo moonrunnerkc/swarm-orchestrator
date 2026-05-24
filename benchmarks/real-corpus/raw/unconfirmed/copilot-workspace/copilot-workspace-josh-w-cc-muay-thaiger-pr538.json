@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-josh-w-cc-muay-thaiger-pr538",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 538,
+    "headSha": "148a327b9c203d81828d778e91007b00c310b2dc",
+    "baseSha": "a7323ee0c643cf5fac8194b90c7334c0254c1d73",
+    "title": "Remove `+` from huge-number scientific notation formatting",
+    "body": "Huge-number display was emitting scientific notation with a `+` exponent (e.g. `1.07e+10`). This updates formatting to emit compact notation without the plus sign (e.g. `1.07e10`) for consistency across large numeric values.\n\n- **Scope**\n  - Update huge-number formatter output in the web client to remove `+` from positive exponents.\n  - Keep existing behavior unchanged for non-huge values and non-integer inputs.\n\n- **Implementation**\n  - `web/utils/formatHugeNumber.js`\n    - String-path formatter now emits `e${exponent}` instead of `e+${exponent}`.\n    - Number-path formatter normalizes `toExponential(2)` output by replacing `e+` with `e`.\n\n- **Test updates**\n  - `web/utils/formatHugeNumber.test.js`\n    - Updated expectations from `1.00e+5` / `1.23e+19` to `1.00e5` / `1.23e19`.\n\n- **Example**\n  ```javascript\n  formatHugeNumber(100000);                 // '1.00e5'\n  formatHugeNumber('10700000000');          // '1.07e10'\n  formatHugeNumber('12345678901234567890'); // '1.23e19'\n  ```\n\n- **<screenshot>**\n  - https://github.com/user-attachments/assets/735c5151-c401-4b9d-bc35-5e5ec421f077",
+    "author": "Copilot",
+    "headRef": "copilot/fix-huge-numbers-formatting",
+    "repository": "josh-w-cc/muay-thaiger"
+  },
+  "diffRef": {
+    "repository": "josh-w-cc/muay-thaiger",
+    "headSha": "148a327b9c203d81828d778e91007b00c310b2dc",
+    "baseSha": "a7323ee0c643cf5fac8194b90c7334c0254c1d73"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-josh-w-cc-muay-thaiger-pr538.diff",
+  "vendoredAt": "2026-05-24T03:05:44.894Z",
+  "collectedAt": "2026-05-24T03:05:44.894Z"
+}

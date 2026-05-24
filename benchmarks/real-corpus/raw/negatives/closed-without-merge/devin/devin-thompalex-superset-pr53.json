@@ -1,0 +1,26 @@
+{
+  "id": "devin-thompalex-superset-pr53",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 53,
+    "headSha": "7b32062beff3f650cdbe243b63e1cb90e0de285c",
+    "baseSha": "831570fb86415e91ee0140ba68468cae885ee52b",
+    "title": "fix(deps): bump Pillow from 10.2.0 to 10.3.0 (closes #49)",
+    "body": "### SUMMARY\n\nBumps [Pillow](https://pypi.org/project/Pillow/) from 10.2.0 to 10.3.0 to remediate **CVE-2024-28219** (GHSA-3f63-hfp8-52jq, severity: HIGH).\n\n**Vulnerability:** Buffer overflow in Pillow's `_imagingcms` C extension (versions < 10.3.0). Processing a maliciously crafted image file can trigger heap corruption, potentially enabling arbitrary code execution. Superset uses Pillow for chart thumbnail image generation — user-controlled image data reaching the thumbnail pipeline is a directly exploitable path.\n\n**Files changed:**\n- `requirements/base.txt` — `pillow==10.2.0` → `pillow==10.3.0`\n- `requirements/development.txt` — `pillow==10.2.0` → `pillow==10.3.0`\n- `pyproject.toml` — `Pillow>=10.2.0, <13` → `Pillow>=10.3.0, <13`\n\n**Test output:** (will be appended after test runs complete)\n\n### BEFORE/AFTER SCREENSHOTS OR ANIMATED GIF\nNot applicable — dependency-only change.\n\n### TESTING INSTRUCTIONS\n1. `pip install -e \".[development]\"` — verify install succeeds\n2. `pytest tests/unit_tests/ -x -q` — verify unit tests pass\n3. `pytest tests/integration_tests/ -x -q` — verify integration tests pass\n\n### ADDITIONAL INFORMATION\n- [x] Has associated issue: Fixes #49\n- [ ] Required feature flags:\n- [ ] Changes UI\n- [ ] Includes DB Migration\n- [ ] Introduces new feature or API\n- [ ] Removes existing feature or API\n\nLink to Devin session: https://app.devin.ai/sessions/b581129cf52c4d37bd331b7bebe2ac8f",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779504347-bump-pillow-10.3.0",
+    "repository": "thompalex/superset"
+  },
+  "diffRef": {
+    "repository": "thompalex/superset",
+    "headSha": "7b32062beff3f650cdbe243b63e1cb90e0de285c",
+    "baseSha": "831570fb86415e91ee0140ba68468cae885ee52b"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/devin/devin-thompalex-superset-pr53.diff",
+  "vendoredAt": "2026-05-24T04:27:52.365Z",
+  "collectedAt": "2026-05-24T04:27:52.365Z"
+}

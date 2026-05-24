@@ -1,0 +1,358 @@
+diff --git a/agents/holding_advisor_agent.py b/agents/holding_advisor_agent.py
+index 67a4858..bc1689e 100644
+--- a/agents/holding_advisor_agent.py
++++ b/agents/holding_advisor_agent.py
+@@ -16,16 +16,18 @@
+ from datetime import datetime, timezone
+ from typing import Any
+ 
+-import yfinance as yf
+-
+ from agents.tw_market_agent import run_one_month_tw_outlook
+ from stock_display_zh import resolve_stock_name_zh
++from utils.yfinance_utils import (
++    is_rate_limit_error,
++    yf_history_with_retry,
++    yf_info_with_retry,
++)
+ 
+ logger = logging.getLogger(__name__)
+ 
+ # 請求間隔（秒），避免 API rate limit
+-# 若仍遇到 rate limit 錯誤，可調整為 1.5 或 2.0
+-REQUEST_DELAY = 1.0
++REQUEST_DELAY = 1.5
+ 
+ QUOTE_PROVIDER_PRIMARY = "Yahoo Finance（yfinance 公開 API）"
+ QUOTE_PROVIDER_CROSS = "Stooq（日線 CSV 公開資料）"
+@@ -344,12 +346,11 @@ def _stooq_last_close(symbol: str) -> tuple[float | None, str | None]:
+         return None, None
+ 
+ 
+-def _yahoo_price_and_bar(ticker: yf.Ticker, hist) -> tuple[float | None, str | None, str | None]:
++def _yahoo_price_and_bar(info: dict, hist) -> tuple[float | None, str | None, str | None]:
+     """
+     優先使用 Yahoo 即時欄位，否則用日線最後收盤。
+     回傳 (價格, K 棒日期字串, currency)
+     """
+-    info = ticker.info or {}
+     cur = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("postMarketPrice")
+     if cur is not None:
+         try:
+@@ -433,15 +434,13 @@ def _analyze_one(
+         "currency": None,
+     }
+     try:
+-        # 添加延遲避免 rate limit
+         time.sleep(REQUEST_DELAY)
+-        
+-        t = yf.Ticker(symbol)
+-        info = t.info or {}
++
++        info = yf_info_with_retry(symbol)
+         row["name"] = resolve_stock_name_zh(symbol, yf_info=info, stored_name=stored_name)
+ 
+-        hist = t.history(period="4mo")
+-        yahoo_ref, y_bar, ccy = _yahoo_price_and_bar(t, hist)
++        hist = yf_history_with_retry(symbol, "4mo")
++        yahoo_ref, y_bar, ccy = _yahoo_price_and_bar(info, hist)
+         row["currency"] = ccy
+         row["quote_bar_date"] = y_bar
+ 
+@@ -539,35 +538,19 @@ def _analyze_one(
+             row["horizon"] = "波段"
+ 
+     except Exception as e:
+-        error_msg = str(e).lower()
+         error_type = type(e).__name__
+-        
+-        # 檢查是否為 rate limit 錯誤
+-        is_rate_limit = (
+-            "429" in error_msg or 
+-            "too many requests" in error_msg or 
+-            "rate limit" in error_msg or
+-            "ratelimit" in error_msg
+-        )
+-        
+-        if is_rate_limit:
++        if is_rate_limit_error(e):
++            # Retry logic in yf_info_with_retry / yf_history_with_retry already
++            # exhausted all attempts before raising; record a clear user message.
+             logger.error(
+-                "[RATE LIMIT] %s: %s (錯誤類型: %s)\n"
+-                "可能來源：\n"
+-                "  1. Yahoo Finance API 請求過於頻繁\n"
+-                "  2. Anthropic API token 額度不足或請求過快\n"
+-                "建議：增加 REQUEST_DELAY 或減少持股數量",
+-                symbol, e, error_type
++                "[RATE LIMIT] %s 已重試仍失敗 (%s): %s", symbol, error_type, e
+             )
+             row["suggestion"] = (
+-                f"API 請求過於頻繁（{symbol}）。\n"
+-                "可能原因：\n"
+-                "1. Yahoo Finance 免費 API 達到請求上限\n"
+-                "2. Anthropic API token 額度不足或請求過快\n"
++                f"Yahoo Finance API 請求超過上限（{symbol}），已自動重試仍失敗。\n"
+                 "建議：等待 5-10 分鐘後重試，或減少一次分析的持股數量。"
+             )
+         else:
+-            logger.warning("holding_advisor %s: %s (錯誤類型: %s)", symbol, e, error_type)
++            logger.warning("holding_advisor %s: %s (%s)", symbol, e, error_type)
+             row["suggestion"] = f"分析失敗：{e}"
+ 
+     _append_tw_market_hints(row, tw_bias=tw_bias, holding_bucket=bucket)
+diff --git a/agents/tw_market_agent.py b/agents/tw_market_agent.py
+index 255ebbd..3bab899 100644
+--- a/agents/tw_market_agent.py
++++ b/agents/tw_market_agent.py
+@@ -10,9 +10,9 @@
+ from typing import Any
+ 
+ import anthropic
+-import yfinance as yf
+ 
+ from config.settings import ANTHROPIC_AUTH_TOKEN, CLAUDE_MODEL
++from utils.yfinance_utils import yf_history_with_retry
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -55,8 +55,7 @@ def build_taiwan_market_snapshot() -> dict[str, Any]:
+     for sym in TW_INDEX_SYMBOLS:
+         row: dict[str, Any] = {"symbol": sym, "ok": False}
+         try:
+-            t = yf.Ticker(sym)
+-            hist = t.history(period="4mo")
++            hist = yf_history_with_retry(sym, "4mo")
+             if hist is None or hist.empty:
+                 indices[sym] = row
+                 continue
+diff --git a/app.py b/app.py
+index d775668..865e8b8 100644
+--- a/app.py
++++ b/app.py
+@@ -4,10 +4,10 @@
+ import json
+ import logging
+ import os
++import time
+ 
+ from dotenv import load_dotenv
+ from flask import Flask, Response, jsonify, make_response, redirect, render_template, request, send_from_directory, stream_with_context
+-import yfinance as yf
+ 
+ from agents.screenshot_agent import ScreenshotAgent
+ from agents.holding_advisor_agent import iter_for_portfolio, run_for_portfolio
+@@ -15,6 +15,11 @@
+ from database import advisor_store
+ from stock_display_zh import resolve_stock_name_zh
+ from utils import notification
++from utils.yfinance_utils import is_rate_limit_error, yf_info_with_retry
++
++# Inter-symbol delay for the prices endpoint (seconds).
++# Keeps requests spread out to avoid Yahoo Finance rate limits.
++_PRICES_REQUEST_DELAY = 0.5
+ 
+ load_dotenv()
+ 
+@@ -189,13 +194,20 @@ def api_portfolio_prices():
+         return err
+     stocks = db.get_portfolio(uid)
+     results = []
+-    for stock in stocks:
++    for idx, stock in enumerate(stocks):
+         symbol = stock["symbol"]
+         entry = dict(stock)
+         stored_nm = str(stock.get("name") or "")
+         override = stock.get("price_override")
++
++        # Spread requests to avoid Yahoo Finance rate limits.
++        # The first symbol is fetched immediately; subsequent ones wait.
++        if idx > 0:
++            time.sleep(_PRICES_REQUEST_DELAY)
++
+         try:
+-            info = yf.Ticker(symbol).info
++            # yf_info_with_retry: retries on 429, uses shared 5-min TTL cache.
++            info = yf_info_with_retry(symbol)
+             price = info.get("currentPrice") or info.get("regularMarketPrice") or 0
+             if override is not None:
+                 try:
+@@ -205,8 +217,7 @@ def api_portfolio_prices():
+             prev = info.get("previousClose") or 0
+             change = round(price - prev, 2) if price and prev else 0
+             pct = round(change / prev * 100, 2) if prev else 0
+-            
+-            # 計算損益率
++
+             avg_price = float(stock.get("avg_price") or 0)
+             pnl_amount = None
+             pnl_pct = None
+@@ -214,7 +225,7 @@ def api_portfolio_prices():
+                 shares = float(stock.get("shares") or 0)
+                 pnl_amount = round((price - avg_price) * shares, 2)
+                 pnl_pct = round((price - avg_price) / avg_price * 100, 2)
+-            
++
+             entry.update({
+                 "current_price": round(float(price), 2),
+                 "change": change,
+@@ -223,7 +234,11 @@ def api_portfolio_prices():
+                 "pnl_pct": pnl_pct,
+                 "name": resolve_stock_name_zh(symbol, yf_info=info or {}, stored_name=stored_nm),
+             })
+-        except Exception:
++        except Exception as exc:
++            if is_rate_limit_error(exc):
++                logger.warning("prices endpoint rate-limit on %s (all retries failed): %s", symbol, exc)
++            else:
++                logger.debug("prices endpoint error on %s: %s", symbol, exc)
+             price = 0.0
+             if override is not None:
+                 try:
+diff --git a/utils/yfinance_utils.py b/utils/yfinance_utils.py
+new file mode 100644
+index 0000000..1df74b9
+--- /dev/null
++++ b/utils/yfinance_utils.py
+@@ -0,0 +1,141 @@
++"""
++Yahoo Finance API helpers:
++  - Rate-limit error detection
++  - Retry with exponential back-off for .info and .history()
++  - Lightweight TTL cache for .info so advisor + prices endpoint share results
++"""
++from __future__ import annotations
++
++import logging
++import time
++from typing import Any
++
++import yfinance as yf
++
++logger = logging.getLogger(__name__)
++
++# ── rate-limit keyword matching ──────────────────────────────────────────────
++_RATE_LIMIT_TOKENS = (
++    "429",
++    "too many requests",
++    "rate limit",
++    "ratelimit",
++    "throttle",
++    "exceeded",
++)
++
++
++def is_rate_limit_error(exc: Exception) -> bool:
++    """Return True when the exception looks like a Yahoo Finance 429 / rate-limit."""
++    msg = str(exc).lower()
++    return any(t in msg for t in _RATE_LIMIT_TOKENS)
++
++
++# ── TTL in-memory cache for Ticker.info ─────────────────────────────────────
++# Keyed by symbol → (expiry_timestamp, info_dict)
++_info_cache: dict[str, tuple[float, dict[str, Any]]] = {}
++
++#: How long (seconds) a cached .info result is considered fresh.
++CACHE_TTL: int = 300  # 5 minutes
++
++
++def _cache_get(symbol: str) -> dict[str, Any] | None:
++    entry = _info_cache.get(symbol.upper())
++    if entry and time.time() < entry[0]:
++        return entry[1]
++    return None
++
++
++def _cache_set(symbol: str, info: dict[str, Any]) -> None:
++    _info_cache[symbol.upper()] = (time.time() + CACHE_TTL, info)
++
++
++def cache_invalidate(symbol: str) -> None:
++    """Remove a cached entry (e.g. after a known stale result)."""
++    _info_cache.pop(symbol.upper(), None)
++
++
++# ── retry helpers ─────────────────────────────────────────────────────────────
++
++def yf_info_with_retry(
++    symbol: str,
++    *,
++    max_retries: int = 3,
++    base_delay: float = 5.0,
++    use_cache: bool = True,
++) -> dict[str, Any]:
++    """
++    Fetch yf.Ticker(symbol).info with:
++      - TTL cache (5 min by default)
++      - Exponential back-off on rate-limit errors (5s, 10s, 20s …)
++
++    Always returns a dict — never raises — so callers can treat missing
++    data gracefully.
++    """
++    if use_cache:
++        cached = _cache_get(symbol)
++        if cached is not None:
++            logger.debug("yf_info cache hit: %s", symbol)
++            return cached
++
++    last_exc: Exception | None = None
++    for attempt in range(max_retries + 1):
++        try:
++            info = yf.Ticker(symbol).info or {}
++            if use_cache and info:
++                _cache_set(symbol, info)
++            return info
++        except Exception as exc:
++            last_exc = exc
++            if is_rate_limit_error(exc):
++                wait = base_delay * (2 ** attempt)
++                logger.warning(
++                    "[yf_info] rate-limit on %s (attempt %d/%d), retrying in %.0fs",
++                    symbol, attempt + 1, max_retries + 1, wait,
++                )
++                time.sleep(wait)
++            else:
++                logger.debug("yf_info %s: %s", symbol, exc)
++                break  # non-rate-limit error — retry won't help
++
++    logger.warning(
++        "yf_info %s failed after %d attempt(s): %s", symbol, max_retries + 1, last_exc
++    )
++    return {}
++
++
++def yf_history_with_retry(
++    symbol: str,
++    period: str = "4mo",
++    *,
++    max_retries: int = 3,
++    base_delay: float = 5.0,
++):
++    """
++    Fetch yf.Ticker(symbol).history(period=period) with exponential back-off.
++
++    Returns the DataFrame on success, or None on total failure — callers
++    should skip technical indicators gracefully when None is returned.
++    """
++    last_exc: Exception | None = None
++    for attempt in range(max_retries + 1):
++        try:
++            hist = yf.Ticker(symbol).history(period=period)
++            return hist
++        except Exception as exc:
++            last_exc = exc
++            if is_rate_limit_error(exc):
++                wait = base_delay * (2 ** attempt)
++                logger.warning(
++                    "[yf_history] rate-limit on %s (attempt %d/%d), retrying in %.0fs",
++                    symbol, attempt + 1, max_retries + 1, wait,
++                )
++                time.sleep(wait)
++            else:
++                logger.debug("yf_history %s: %s", symbol, exc)
++                break
++
++    logger.warning(
++        "yf_history %s failed after %d attempt(s): %s", symbol, max_retries + 1, last_exc
++    )
++    return None

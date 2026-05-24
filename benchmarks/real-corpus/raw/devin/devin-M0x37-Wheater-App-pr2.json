@@ -1,0 +1,26 @@
+{
+  "id": "devin-M0x37-Wheater-App-pr2",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "62dfb380a435007568637639898ebab51373c60a",
+    "baseSha": "e97fd9824168fd446fa3d5edc5ba759d8f8e7ee6",
+    "title": "fix: use API timezone dates instead of UTC for hourly data filtering",
+    "body": "## Summary\n\nFixes a regression introduced in PR #1 where `HourlyRow` and `TimeOfDayGrid` used `new Date().toISOString().split('T')[0]` (UTC date) to filter hourly data, but the Open-Meteo API returns timestamps in the **location's timezone**. \n\nWhen UTC and location timezone dates differ (e.g. Berlin at midnight local time is still \"yesterday\" in UTC), all hourly entries were filtered out, causing every time slot to fall back to index 0 and display incorrect data (all periods showing the same \"02\" time and temperature).\n\n**Fix:** Derive \"today\" from `hourly.time[0].split('T')[0]` — the first entry in the API's hourly array — which is already in the correct location timezone. This ensures the date filter always matches the API's own date format regardless of the browser's timezone.\n\n## Review & Testing Checklist for Human\n- [ ] Open the app while your local time differs from the weather location's timezone (e.g. view Berlin weather from a US timezone, or test around midnight) — verify MORNING/AFTERNOON/EVENING/NIGHT rows in \"NOW\" tab show distinct, correct times (09, 14, 19, 02) instead of all showing the same time\n- [ ] Switch to the \"TODAY\" tab and verify the hourly forecast shows correct times (06, 09, 12, 15, 18, 21, 00) with appropriate temperatures for each hour\n- [ ] Verify the midnight (00) column in \"TODAY\" shows data for tonight's midnight, not this morning's\n\n### Notes\n- Only two files changed: `HourlyRow/index.tsx` and `TimeOfDayGrid/index.tsx`\n- No new lint or type errors introduced\n- The `tomorrowStr` computation is also now derived from the API date instead of UTC\n\nLink to Devin session: https://app.devin.ai/sessions/f6c75d564bc041188d34105902065d9f\nRequested by: @M0x37",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779576302-fix-timezone-date-regression",
+    "repository": "M0x37/Wheater-App"
+  },
+  "diffRef": {
+    "repository": "M0x37/Wheater-App",
+    "headSha": "62dfb380a435007568637639898ebab51373c60a",
+    "baseSha": "e97fd9824168fd446fa3d5edc5ba759d8f8e7ee6"
+  },
+  "vendoredDiffPath": "devin/devin-M0x37-Wheater-App-pr2.diff",
+  "vendoredAt": "2026-05-24T03:04:56.460Z",
+  "collectedAt": "2026-05-24T03:04:56.460Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-cloudsysops-opsly-pr409",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 409,
+    "headSha": "da4c633b64b47abbb67457a5557cf28118adfb75",
+    "baseSha": "ac24454bec9db1b57f999de4151b4e49abbe959d",
+    "title": "Harden HealthWorker tenant restart path with service-aware fallbacks",
+    "body": "HealthWorker was escalating tenant outages (e.g. `jkboterolabs`/`n8n`) after repeated health failures when restart recovery could miss valid restart paths. This change makes restart behavior service-aware and resilient before escalation.\n\n- **Restart strategy update (HealthWorker)**\n  - Replaced single compose restart attempt with ordered, service-aware restart fallbacks.\n  - New attempt order for tenant/service failures:\n    1. `docker restart <service>_<slug>`\n    2. `docker compose --project-name=tenant_<slug> restart <service>`\n    3. `docker compose --project-name=tenant_<slug> restart`\n  - Updated restart invocation to pass `svc` through the recovery path.\n\n- **Deterministic restart-plan construction**\n  - Added `buildTenantRestartAttempts(slug, svc)` to centralize and constrain restart command generation for supported tenant services (`n8n`, `uptime`).\n\n- **Targeted regression coverage**\n  - Added unit tests for:\n    - restart attempt ordering,\n    - success on direct container restart,\n    - fallback to compose restart on direct failure,\n    - escalation path when all restart attempts fail.\n\n```ts\nconst attempts = buildTenantRestartAttempts(slug, svc);\n// n8n example:\n// ['restart', `n8n_${slug}`]\n// ['compose', `--project-name=tenant_${slug}`, 'restart', 'n8n']\n// ['compose', `--project-name=tenant_${slug}`, 'restart']\n```",
+    "author": "Copilot",
+    "headRef": "copilot/fix-tenant-jkboterolabs-reachability",
+    "repository": "cloudsysops/opsly"
+  },
+  "diffRef": {
+    "repository": "cloudsysops/opsly",
+    "headSha": "da4c633b64b47abbb67457a5557cf28118adfb75",
+    "baseSha": "ac24454bec9db1b57f999de4151b4e49abbe959d"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-cloudsysops-opsly-pr409.diff",
+  "vendoredAt": "2026-05-24T03:35:46.891Z",
+  "collectedAt": "2026-05-24T03:35:46.891Z"
+}

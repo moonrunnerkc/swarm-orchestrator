@@ -1,0 +1,260 @@
+diff --git a/backend/supabase/migrations/20260524000003_membership_request_rpc.sql b/backend/supabase/migrations/20260524000003_membership_request_rpc.sql
+new file mode 100644
+index 0000000..fcc310d
+--- /dev/null
++++ b/backend/supabase/migrations/20260524000003_membership_request_rpc.sql
+@@ -0,0 +1,58 @@
++-- Migration: 20260524000003_membership_request_rpc.sql
++-- Adds an RPC function for listing all membership requests in a club.
++
++-- ---------------------------------------------------------------------------
++-- list_club_membership_requests
++-- ---------------------------------------------------------------------------
++-- Returns all memberships for the given club, enriched with the requesting
++-- user's display_name and callsign. Only approved club admins may call this
++-- function.
++
++create or replace function public.list_club_membership_requests(p_club_id uuid)
++returns table (
++  id                uuid,
++  club_id           uuid,
++  user_id           uuid,
++  role              public.membership_role,
++  status            public.membership_status,
++  user_display_name text,
++  user_callsign     text,
++  created_at        timestamptz,
++  updated_at        timestamptz
++)
++language plpgsql
++stable
++security definer
++set search_path = ''
++as $$
++declare
++  v_caller_id uuid;
++begin
++  v_caller_id := (select auth.uid());
++
++  if v_caller_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  if not public.is_club_admin(p_club_id) then
++    raise exception 'Only a club admin may view membership requests';
++  end if;
++
++  return query
++    select
++      m.id,
++      m.club_id,
++      m.user_id,
++      m.role,
++      m.status,
++      u.display_name  as user_display_name,
++      u.callsign      as user_callsign,
++      m.created_at,
++      m.updated_at
++    from public.memberships m
++    join public.users u on u.id = m.user_id
++    where m.club_id = p_club_id
++      and m.user_id != v_caller_id
++    order by m.created_at asc;
++end;
++$$;
+diff --git a/web/src/app/app/clubs/club-detail/club-detail.html b/web/src/app/app/clubs/club-detail/club-detail.html
+index 547c91b..43772aa 100644
+--- a/web/src/app/app/clubs/club-detail/club-detail.html
++++ b/web/src/app/app/clubs/club-detail/club-detail.html
+@@ -202,6 +202,55 @@ <h2>Admin</h2>
+               }
+             </mat-card-content>
+         </mat-card>
++
++        <mat-card class="admin-card">
++            <mat-card-header>
++              <mat-card-title>Membership Requests</mat-card-title>
++            </mat-card-header>
++            <mat-card-content>
++              @if (membershipRequestsError(); as err) {
++                <p role="alert" class="error-message">{{ err }}</p>
++              } @else if (!membershipRequests()?.length) {
++                <p class="app-page__status">No membership requests.</p>
++              } @else {
++                @if (membershipActionError(); as err) {
++                  <p role="alert" class="error-message">{{ err }}</p>
++                }
++                <mat-list>
++                  @for (req of membershipRequests(); track req.id) {
++                    <mat-list-item lines="2">
++                      <div matListItemTitle>
++                        {{ req.user_display_name ?? req.user_callsign ?? req.user_id }}
++                      </div>
++                      <div matListItemLine class="request-status-badge {{ req.status }}">
++                        {{ req.status | titlecase }}
++                      </div>
++                      <div matListItemMeta class="request-actions">
++                        <button
++                          matButton="filled"
++                          [disabled]="actioningMembershipId() === req.id"
++                          (click)="approveMembership(req.id)"
++                        >
++                          @if (actioningMembershipId() === req.id) {
++                            <mat-spinner diameter="16" />
++                          } @else {
++                            Approve
++                          }
++                        </button>
++                        <button
++                          matButton
++                          [disabled]="actioningMembershipId() === req.id"
++                          (click)="denyMembership(req.id)"
++                        >
++                          Deny
++                        </button>
++                      </div>
++                    </mat-list-item>
++                  }
++                </mat-list>
++              }
++            </mat-card-content>
++        </mat-card>
+       </section>
+     }
+ 
+diff --git a/web/src/app/app/clubs/club-detail/club-detail.ts b/web/src/app/app/clubs/club-detail/club-detail.ts
+index d2c42a9..d041936 100644
+--- a/web/src/app/app/clubs/club-detail/club-detail.ts
++++ b/web/src/app/app/clubs/club-detail/club-detail.ts
+@@ -13,6 +13,7 @@ import {
+   ClubReservation,
+   ClubService,
+   Membership,
++  MembershipRequest,
+   Resource,
+   ResourceAccessApproval,
+   ResourceAccessRequest,
+@@ -75,6 +76,13 @@ export class ClubDetailPage implements OnInit {
+   protected readonly actioningApprovalId = signal<string | null>(null);
+   protected readonly approvalActionError = signal<string | null>(null);
+ 
++  /** All membership requests for the club, visible to admins. */
++  protected readonly membershipRequests = signal<MembershipRequest[] | null>(null);
++  protected readonly membershipRequestsError = signal<string | null>(null);
++  /** Which membership ID is being actioned (approve/deny) right now. */
++  protected readonly actioningMembershipId = signal<string | null>(null);
++  protected readonly membershipActionError = signal<string | null>(null);
++
+   protected readonly selectedDateLabel = computed(() => {
+     return this.selectedDate().toLocaleDateString(undefined, {
+       weekday: 'long',
+@@ -130,7 +138,7 @@ export class ClubDetailPage implements OnInit {
+     // Load reservations, user approvals, and (for admins) access requests in parallel.
+     const parallelLoads: Promise<void>[] = [this.loadReservations(), this.loadUserApprovals()];
+     if (isAdminResult.data) {
+-      parallelLoads.push(this.loadAccessRequests());
++      parallelLoads.push(this.loadAccessRequests(), this.loadMembershipRequests());
+     }
+     await Promise.all(parallelLoads);
+   }
+@@ -276,6 +284,29 @@ export class ClubDetailPage implements OnInit {
+     await Promise.all([this.loadAccessRequests(), this.loadUserApprovals()]);
+   }
+ 
++  protected async approveMembership(membershipId: string): Promise<void> {
++    await this.setMembershipRequestStatus(membershipId, 'approved');
++  }
++
++  protected async denyMembership(membershipId: string): Promise<void> {
++    await this.setMembershipRequestStatus(membershipId, 'denied');
++  }
++
++  private async setMembershipRequestStatus(membershipId: string, status: 'approved' | 'denied'): Promise<void> {
++    this.actioningMembershipId.set(membershipId);
++    this.membershipActionError.set(null);
++
++    const { error } = await this.clubService.setMembershipStatus(membershipId, status);
++    this.actioningMembershipId.set(null);
++
++    if (error) {
++      this.membershipActionError.set(error);
++      return;
++    }
++
++    await this.loadMembershipRequests();
++  }
++
+   private async loadReservations(): Promise<void> {
+     const date = this.selectedDate();
+     const from = new Date(date.getFullYear(), date.getMonth(), date.getDate()); // local midnight
+@@ -300,6 +331,12 @@ export class ClubDetailPage implements OnInit {
+     this.accessRequestsError.set(error);
+   }
+ 
++  private async loadMembershipRequests(): Promise<void> {
++    const { data, error } = await this.clubService.listClubMembershipRequests(this.clubId);
++    this.membershipRequests.set(data);
++    this.membershipRequestsError.set(error);
++  }
++
+   private localMidnightToday(): Date {
+     const now = new Date();
+     return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+diff --git a/web/src/app/club.service.ts b/web/src/app/club.service.ts
+index f8a0ce3..667b519 100644
+--- a/web/src/app/club.service.ts
++++ b/web/src/app/club.service.ts
+@@ -46,6 +46,18 @@ export interface ResourceAccessRequest {
+   updated_at: string;
+ }
+ 
++export interface MembershipRequest {
++  id: string;
++  club_id: string;
++  user_id: string;
++  role: 'admin' | 'member';
++  status: 'pending' | 'approved' | 'denied';
++  user_display_name: string | null;
++  user_callsign: string | null;
++  created_at: string;
++  updated_at: string;
++}
++
+ export interface CreateResourceInput {
+   clubId: string;
+   name: string;
+@@ -281,4 +293,34 @@ export class ClubService {
+ 
+     return { data: data as ResourceAccessApproval | null, error: error?.message ?? null };
+   }
++
++  async listClubMembershipRequests(
++    clubId: string,
++  ): Promise<{ data: MembershipRequest[] | null; error: string | null }> {
++    if (!this.supabase) {
++      return { data: null, error: 'Supabase is not configured.' };
++    }
++
++    const { data, error } = await this.supabase.rpc('list_club_membership_requests', {
++      p_club_id: clubId,
++    });
++
++    return { data: data as MembershipRequest[] | null, error: error?.message ?? null };
++  }
++
++  async setMembershipStatus(
++    membershipId: string,
++    status: 'approved' | 'denied',
++  ): Promise<{ data: Membership | null; error: string | null }> {
++    if (!this.supabase) {
++      return { data: null, error: 'Supabase is not configured.' };
++    }
++
++    const { data, error } = await this.supabase.rpc('approve_deny_membership', {
++      p_membership_id: membershipId,
++      p_new_status: status,
++    });
++
++    return { data: data as Membership | null, error: error?.message ?? null };
++  }
+ }

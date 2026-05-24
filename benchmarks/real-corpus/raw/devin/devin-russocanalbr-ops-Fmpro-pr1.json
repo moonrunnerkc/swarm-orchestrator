@@ -1,0 +1,26 @@
+{
+  "id": "devin-russocanalbr-ops-Fmpro-pr1",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "1e6b9cb8c4bb2a67b4c7ef4ab14119c25c975055",
+    "baseSha": "c3976cbff5e0271017bbb207106051535d0cfd67",
+    "title": "Fix Quotex trade entry timing and risk filters",
+    "body": "## Summary\n- Removed hardcoded Quotex/Mistral credentials and moved runtime configuration to environment variables with `.env.example`.\n- Fixed trade execution flow to wait for the configured candle window, send entries `ANTECIPAR_ENTRADA_SEGUNDOS` before close, require a complete order ID, and log the ID through result tracking.\n- Added payout, daily stop win/loss, fixed/percentage/Soros-limited sizing, ATR/wick indecision filters, macro/micro Price Action context, and Mistral prompt context.\n- Replaced the unavailable `pyquotex` PyPI dependency with the pinned GitHub source dependency and documented setup/run steps.\n\n## Review & Testing Checklist for Human\n- [ ] Test on DEMO with valid `.env` credentials and confirm an order is actually accepted with a complete ID shown in logs.\n- [ ] Verify `ANTECIPAR_ENTRADA_SEGUNDOS=5` matches the broker/server timing in your environment; adjust if entries are still late or early.\n- [ ] Confirm payout values from Quotex match expectations before using real money.\n- [ ] Review `STOP_WIN_DIARIO`, `STOP_LOSS_DIARIO`, `VALOR_PADRAO`, and `MODO_ENTRADA` before running unattended.\n\n### Notes\nI could run static/smoke checks locally, but I did not execute live trades because that requires real Quotex credentials/session and financial-risk approval.\n\nLink to Devin session: https://app.devin.ai/sessions/3605201e8d8042ccaaa9d6bac2bd66c7\nRequested by: @russocanalbr-ops",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779585695-fix-trade-entry",
+    "repository": "russocanalbr-ops/Fmpro"
+  },
+  "diffRef": {
+    "repository": "russocanalbr-ops/Fmpro",
+    "headSha": "1e6b9cb8c4bb2a67b4c7ef4ab14119c25c975055",
+    "baseSha": "c3976cbff5e0271017bbb207106051535d0cfd67"
+  },
+  "vendoredDiffPath": "devin/devin-russocanalbr-ops-Fmpro-pr1.diff",
+  "vendoredAt": "2026-05-24T03:04:14.631Z",
+  "collectedAt": "2026-05-24T03:04:14.631Z"
+}

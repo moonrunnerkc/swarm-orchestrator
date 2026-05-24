@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14485",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14485,
+    "headSha": "0aed4da2d3fe73289b0ba0805d617b01512d24ba",
+    "baseSha": "332b6d14e689dc630a558b56f17c90613938fb1e",
+    "title": "test(bdd): assert OpenHands context summary absent from agent prompts",
+    "body": "## Summary\n\n- Adds a failing BDD feature (`openhands_context_isolation.feature`) that documents the contract: nue agent system prompts must not contain OpenHands-specific branding\n- 4 scenarios, all currently **failing**, confirming the gap exists\n- Failure messages point directly to the fix location: `_apply_server_agent_overrides` in `live_status_app_conversation_service.py`\n\n## What the tests check\n\nThe default SDK `system_prompt.j2` (rendered when `system_prompt_filename` is not overridden for non-planning agents) currently contains:\n\n| Phrase | Why it must be absent |\n|--------|----------------------|\n| `\"You are OpenHands agent\"` | OpenHands identity claim |\n| `\"AGENTS.md\"` | OpenHands memory mechanism |\n| `\"openhands@all-hands.dev\"` | OpenHands commit identity |\n| `\"docs.openhands.dev\"` | OpenHands documentation link |\n\n## Root cause\n\n`_apply_server_agent_overrides` only sets `system_prompt_filename` for `AgentType.PLAN` agents. Non-planning agents fall through to the SDK default (`system_prompt.j2`), which carries all of the above content.\n\n## Fix (not in this PR)\n\nOverride `system_prompt_filename` in the `else` branch of `_apply_server_agent_overrides` to point to a nue-specific template.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "GusCayresMindsight",
+    "headRef": "test/openhands-context-isolation",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "0aed4da2d3fe73289b0ba0805d617b01512d24ba",
+    "baseSha": "332b6d14e689dc630a558b56f17c90613938fb1e"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14485.diff",
+  "vendoredAt": "2026-05-24T03:18:47.724Z",
+  "collectedAt": "2026-05-24T03:18:47.724Z"
+}

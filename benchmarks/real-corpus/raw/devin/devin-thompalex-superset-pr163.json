@@ -1,0 +1,26 @@
+{
+  "id": "devin-thompalex-superset-pr163",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 163,
+    "headSha": "55c595417995394bc27a70f7681d8d1efb4ba34d",
+    "baseSha": "cd9c2d1aa2815c50e1cc61f642fc51b1b7820659",
+    "title": "fix(deps): bump cryptography from 46.0.6 to 46.0.7 (closes #154)",
+    "body": "### SUMMARY\n\nBumps `cryptography` from 46.0.6 to 46.0.7 to fix **CVE-2026-39892** ([GHSA-p423-j2cm-9vmq](https://github.com/advisories/GHSA-p423-j2cm-9vmq)) — a medium-severity buffer overflow vulnerability when non-contiguous buffers are passed to APIs.\n\n**Files changed:**\n- `pyproject.toml` — updated lower bound from `>=46.0.6` to `>=46.0.7`\n- `requirements/base.in` — updated lower bound from `>=46.0.6` to `>=46.0.7`\n- `requirements/base.txt` — pinned version updated from `46.0.6` to `46.0.7`\n- `requirements/development.txt` — pinned version updated from `46.0.6` to `46.0.7`\n\n### BEFORE/AFTER SCREENSHOTS OR ANIMATED GIF\nN/A — dependency-only change.\n\n### TESTING INSTRUCTIONS\n1. `pip install -r requirements/base.txt` — verify cryptography 46.0.7 installs\n2. `python -c \"import cryptography; print(cryptography.__version__)\"` — should print `46.0.7`\n3. `pytest tests/unit_tests/ -x -q` — all tests pass\n\n**Unit test output (`pytest tests/unit_tests/ -x -q`):**\n```\n6909 passed, 4 skipped in 392.66s (0:06:32)\n```\n\nOne pre-existing failure (`test_per_tile_spinner_timeout_logs_warning_and_continues`) was confirmed on master — it's a `PlaywrightTimeout` constructor issue unrelated to cryptography.\n\n**Integration tests (`SUPERSET_TESTENV=true pytest tests/integration_tests/ -x -q --timeout=120`):**\n\nDocker services (db, redis) were started via `docker compose -f docker-compose-non-dev.yml up -d db redis`. Database migrations were applied with `superset db upgrade`. Integration tests fail immediately with:\n```\nFAILED tests/integration_tests/access_tests.py::test_get_user_id[alpha-5] - assert None == 5\n1 failed, 1 passed in 0.32s\n```\n\nThis failure was **confirmed pre-existing on master** — the same test fails identically on the `master` branch. The integration test suite requires a fully bootstrapped environment with pre-populated test users (`alpha`, `gamma`, etc.), which is normally set up by CI infrastructure. This is unrelated to the cryptography version bump.\n\nNote: `pip install -e \".[development]\"` fails with a pre-existing `sqlglot` version conflict between `apache-superset` (requires `sqlglot>=30.8.0,<31`) and `apache-superset-core` (requires `sqlglot>=28.10.0,<29`). Dependencies were installed from requirements files directly.\n\n### ADDITIONAL INFORMATION\n- [x] Has associated issue: Fixes #154\n- [ ] Required feature flags:\n- [ ] Changes UI\n- [ ] Includes DB Migration\n- [ ] Introduces new feature or API\n- [ ] Removes existing feature or API\n\nLink to Devin session: https://app.devin.ai/sessions/053269889bd0489bb6a378f96b79c62b",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779572323-bump-cryptography-46.0.7",
+    "repository": "thompalex/superset"
+  },
+  "diffRef": {
+    "repository": "thompalex/superset",
+    "headSha": "55c595417995394bc27a70f7681d8d1efb4ba34d",
+    "baseSha": "cd9c2d1aa2815c50e1cc61f642fc51b1b7820659"
+  },
+  "vendoredDiffPath": "devin/devin-thompalex-superset-pr163.diff",
+  "vendoredAt": "2026-05-24T03:05:18.367Z",
+  "collectedAt": "2026-05-24T03:05:18.367Z"
+}

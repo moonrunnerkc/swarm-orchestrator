@@ -1,0 +1,90 @@
+diff --git a/docs/PORTING.md b/docs/PORTING.md
+index 270de70..cd0c0a3 100644
+--- a/docs/PORTING.md
++++ b/docs/PORTING.md
+@@ -16,6 +16,12 @@ word-highlighter は、Chrome 拡張の外側だけを iOS/Android アプリの
+ - Chrome 拡張では `createChromeStorageAdapter(chrome.storage.local)` を使う。
+ - iOS/Android では同じ `get`、`set`、`remove` を持つアダプタを用意し、
+   各プラットフォームのローカル保存へ接続する。
++- `src/storage.ts` の `storage` は既定では Chrome ストレージを遅延解決する。
++  ネイティブ移植では起動時に `configureStorageAdapter(...)` で
++  プラットフォーム実装を差し替えてから UI から利用する。
++- `StorageAreaAdapter` は Chrome の `{ [key]: value }` 形式に合わせた薄い境界。
++  ネイティブ保存が単一キー読み書き API の場合も、この形へ変換する層だけを
++  プラットフォーム側に置く。
+ - 既存データ互換のため、`word_list` と `premium_status` を含む保存キーと
+   値の形は変えない。
+ 
+@@ -25,5 +31,7 @@ word-highlighter は、Chrome 拡張の外側だけを iOS/Android アプリの
+   ネイティブアプリの画面）に閉じ込める。
+ - UI から保存へアクセスするときは、プラットフォーム保存を直接呼ばず
+   storage アダプタを使う。
++- UI から `src/core.ts` を使うときは、テキスト・語句リスト・色だけを渡し、
++  DOM、Chrome API、ネイティブビューの参照は core に渡さない。
+ - 完全オフラインを維持する。移植時も remote code、外部フォント、外部 CDN、
+   追加 permissions は入れない。
+diff --git a/src/storage.ts b/src/storage.ts
+index e16d390..ee59009 100644
+--- a/src/storage.ts
++++ b/src/storage.ts
+@@ -4,16 +4,23 @@ export interface StorageAdapter {
+   remove: (key: string) => Promise<void>;
+ }
+ 
+-export const WORD_LIST_STORAGE_KEY = 'word_list';
+-export const PREMIUM_STATUS_STORAGE_KEY = 'premium_status';
++export const STORAGE_KEYS = {
++  wordList: 'word_list',
++  premiumStatus: 'premium_status',
++} as const;
+ 
+-interface ChromeStorageArea {
++export type StorageKey = typeof STORAGE_KEYS[keyof typeof STORAGE_KEYS];
++
++export const WORD_LIST_STORAGE_KEY: StorageKey = STORAGE_KEYS.wordList;
++export const PREMIUM_STATUS_STORAGE_KEY: StorageKey = STORAGE_KEYS.premiumStatus;
++
++export interface StorageAreaAdapter {
+   get: (key: string) => Promise<Record<string, unknown>>;
+   set: (items: Record<string, unknown>) => Promise<void>;
+   remove: (key: string) => Promise<void>;
+ }
+ 
+-export function createChromeStorageAdapter(area: ChromeStorageArea): StorageAdapter {
++export function createStorageAdapter(area: StorageAreaAdapter): StorageAdapter {
+   return {
+     get: async <T>(key: string): Promise<T | undefined> => {
+       const result = await area.get(key);
+@@ -28,4 +35,31 @@ export function createChromeStorageAdapter(area: ChromeStorageArea): StorageAdap
+   };
+ }
+ 
+-export const storage: StorageAdapter = createChromeStorageAdapter(chrome.storage.local);
++export function createChromeStorageAdapter(area: StorageAreaAdapter): StorageAdapter {
++  return createStorageAdapter(area);
++}
++
++let configuredStorage: StorageAdapter | undefined;
++
++export function configureStorageAdapter(adapter: StorageAdapter): void {
++  configuredStorage = adapter;
++}
++
++function createDefaultChromeStorageAdapter(): StorageAdapter {
++  if (typeof chrome === 'undefined' || !chrome.storage?.local) {
++    throw new Error('Storage adapter is not configured for this platform.');
++  }
++
++  return createChromeStorageAdapter(chrome.storage.local);
++}
++
++function getStorageAdapter(): StorageAdapter {
++  configuredStorage ??= createDefaultChromeStorageAdapter();
++  return configuredStorage;
++}
++
++export const storage: StorageAdapter = {
++  get: <T>(key: string): Promise<T | undefined> => getStorageAdapter().get<T>(key),
++  set: <T>(key: string, value: T): Promise<void> => getStorageAdapter().set(key, value),
++  remove: (key: string): Promise<void> => getStorageAdapter().remove(key),
++};

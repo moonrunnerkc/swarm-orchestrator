@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openclaw-openclaw-pr84888",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "commit=codex-cli-footer"
+  },
+  "pr": {
+    "number": 84888,
+    "headSha": "4fd12268794e296679670e59014c436cc5cd81e3",
+    "baseSha": "e3b77d6d2c897d8c6f83a921527c5c740504d7d9",
+    "title": "fix(doctor): move Codex CLI assets notice from warnings to info tier (#84859)",
+    "body": "## Summary\n\nFixes #84859\n\nThe `openclaw doctor` output categorized the \"Personal Codex CLI assets were found\" message under **Doctor warnings**, implying action was needed. In practice this message is purely informational and not actionable:\n\n1. It has no discoverable check ID — cannot be suppressed via `--skip <id>`\n2. It does not appear in `doctor --lint --json` findings (already 0 warnings there)\n3. Codex regenerates `~/.codex/config.toml` on every run, so the check perpetually resurfaces for users who independently use Codex CLI alongside OpenClaw\n\n## Changes\n\n### `emit-notes.ts`\n- Add optional `infoNotes` parameter to `emitDoctorNotes`; emitted after warnings under title **\"Doctor info\"**\n\n### `codex-native-assets.ts`\n- Extract private `buildCodexNativeAssetMessages` helper\n- Add `collectCodexNativeAssetInfoNotes` as the canonical export\n- Keep `collectCodexNativeAssetWarnings` as a `@deprecated` backward-compatible alias (same output, no behavior change for existing callers)\n\n### `preview-warnings.ts`\n- Remove Codex assets from `collectDoctorPreviewWarnings`\n- Add `collectDoctorPreviewInfoNotes` for info-tier notices\n\n### `doctor-config-flow.ts`\n- Plumb `infoNotes` through `emitDoctorNotes` in the preview (non-repair) path\n\n## Tests\n\n- `emit-notes.test.ts`: add cases covering `infoNotes` parameter and emission order\n- `codex-native-assets.test.ts`: primary tests now target `collectCodexNativeAssetInfoNotes`; deprecated alias test confirms same output\n\n## Behavior proof\n\nBefore this PR, running `openclaw doctor` with Codex configured + `~/.agents/skills/` present would output:\n\n```\nDoctor warnings\n  - Personal Codex CLI assets were found...\n```\n\nAfter this PR:\n```\nDoctor info\n  - Personal Codex CLI assets were found...\n```\n\nNo functional change to the message content — only the visual/severity tier changes. The `Doctor warnings` section no longer fires for this check alone.",
+    "author": "Bartok9",
+    "headRef": "fix/84859-codex-assets-doctor-info-tier",
+    "repository": "openclaw/openclaw"
+  },
+  "diffRef": {
+    "repository": "openclaw/openclaw",
+    "headSha": "4fd12268794e296679670e59014c436cc5cd81e3",
+    "baseSha": "e3b77d6d2c897d8c6f83a921527c5c740504d7d9"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openclaw-openclaw-pr84888.diff",
+  "vendoredAt": "2026-05-24T03:12:59.267Z",
+  "collectedAt": "2026-05-24T03:12:59.267Z"
+}

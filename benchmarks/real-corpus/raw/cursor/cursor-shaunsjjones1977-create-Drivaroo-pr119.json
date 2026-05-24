@@ -1,0 +1,26 @@
+{
+  "id": "cursor-shaunsjjones1977-create-Drivaroo-pr119",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 119,
+    "headSha": "cc99989ddbe6df0e0148a87b07426cf878e06c2a",
+    "baseSha": "ab8c5e2629ccba87fcedaee13adcb312d53553fb",
+    "title": "Add dealer market intelligence metrics",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Summary\n- Adds a dealer analytics Market intelligence section.\n- Adds cards for Market Position, Pricing Competitiveness, Lead Conversion, Inventory Age, and Demand Trends.\n- Adds a Market summary section with Top Makes, Top Models, Top Locations, Revenue, and Lead Growth.\n- Extends the dealer analytics API listing payload with make, model, suburb and state so top lists can be calculated.\n- Adds a `dealer_leads` Supabase migration with the requested fields.\n- Adds dealer lead indexes for dealer, vehicle and status lookups plus RLS policies for dealer-owned leads.\n- Adds `lead_notes` with `lead_id`, `user_id`, `note`, and `created_at` fields.\n- Adds lead note indexes and RLS policies scoped through the parent dealer lead owner.\n- Includes the `dealer_leads` and `lead_notes` schemas in `RUN_IN_SUPABASE.sql`.\n- Adds `/dealers/crm` as a dealer CRM page using the existing dealer leads API.\n- Adds search, status filters, CRM lead cards, follow-up counts and assignment/insight badges.\n- Converts the dealer CRM into a four-column pipeline: New, Contacted, Booked, and Negotiating.\n- Adds sample CRM pipeline cards for John Smith/Toyota Hilux, Sarah Jones, Michael Brown, and David Lee when no live leads exist.\n- Adds `/dealers/crm/[leadId]` as a focused CRM lead detail route.\n- Makes CRM pipeline cards link to their lead detail view.\n- Adds CRM lead detail sections for Customer Information, Vehicle Interest, Conversation History, Notes, Tasks, and Status.\n- Adds sample lead notes: `Customer wants finance.`, `Returning Saturday.`, and `Interested in tow package.`\n- Extracts sample CRM lead data into a shared helper used by the CRM board and detail route.\n- Extends dealer lead statuses with `booked` and `negotiating`.\n- Links the dealer CRM from the dealer dashboard.\n\n## Testing\n- `npx eslint src/app/dealers/analytics/page.tsx` (passes with existing analytics setState-in-effect warning)\n- `npx eslint src/app/api/dealers/analytics/route.ts src/app/dealers/analytics/page.tsx` (passes with existing analytics setState-in-effect warning)\n- `npx eslint src/app/dealers/crm/page.tsx src/app/dealers/dashboard/page.tsx`\n- `npx eslint src/lib/dealer-crm-sample-leads.ts src/app/dealers/crm/page.tsx 'src/app/dealers/crm/[leadId]/page.tsx'`\n- `npx eslint 'src/app/dealers/crm/[leadId]/page.tsx'`\n- `npx eslint src/lib/dealer-crm-sample-leads.ts 'src/app/dealers/crm/[leadId]/page.tsx'`\n- `git diff --check`\n- `npm run build`\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-c364de09-06f8-4fa3-91e1-cfd366f5d47a\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-c364de09-06f8-4fa3-91e1-cfd366f5d47a\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "shaunsjjones1977-create",
+    "headRef": "cursor/fix-used-cars-desktop-freeze-d47a",
+    "repository": "shaunsjjones1977-create/Drivaroo"
+  },
+  "diffRef": {
+    "repository": "shaunsjjones1977-create/Drivaroo",
+    "headSha": "cc99989ddbe6df0e0148a87b07426cf878e06c2a",
+    "baseSha": "ab8c5e2629ccba87fcedaee13adcb312d53553fb"
+  },
+  "vendoredDiffPath": "cursor/cursor-shaunsjjones1977-create-Drivaroo-pr119.diff",
+  "vendoredAt": "2026-05-24T03:12:10.430Z",
+  "collectedAt": "2026-05-24T03:12:10.430Z"
+}

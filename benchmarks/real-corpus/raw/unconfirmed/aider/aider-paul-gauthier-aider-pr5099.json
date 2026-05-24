@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5099",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5099,
+    "headSha": "5b9ba1511c241a079d33bb1ae6d716bdbcd6fa41",
+    "baseSha": "3ec8ec5a7d695b08a6c24fe6c0c235c8f87df9af",
+    "title": "main: handle NoSuchPathError from git.Repo when path resolution fails",
+    "body": "Fixes #2957.\n\n`get_git_root` only catches `InvalidGitRepositoryError` and `FileNotFoundError`. Windows paths containing `$` (e.g. `F:\\\\$data\\\\python\\\\...` from `mklink /D` directory junctions) reach `git.Repo(search_parent_directories=True)` and fall through with `NoSuchPathError` instead, which escapes the handler and crashes aider on startup. Add `git.NoSuchPathError` to the except tuple so aider just falls through to the no-repo path the same way it already does for invalid-repo / missing-file cases.",
+    "author": "SAY-5",
+    "headRef": "say5/get-git-root-no-such-path-2957",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "5b9ba1511c241a079d33bb1ae6d716bdbcd6fa41",
+    "baseSha": "3ec8ec5a7d695b08a6c24fe6c0c235c8f87df9af"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5099.diff",
+  "vendoredAt": "2026-05-24T03:19:45.802Z",
+  "collectedAt": "2026-05-24T03:19:45.802Z"
+}

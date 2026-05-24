@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14532",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14532,
+    "headSha": "b4ee84953820e1768d58e5b203f1a472d8625a77",
+    "baseSha": "e0bfb874d801bf087427165842d1db88770594ec",
+    "title": "Broaden Jira Data Center automation webhook events",
+    "body": "## Summary\r\n- subscribe auto-enrolled Jira Data Center webhooks to issue/comment lifecycle events, including jira:issue_created\r\n- allow Jira DC webhook validation to identify the workspace from common user, issue, or comment self URLs\r\n- keep resolver job creation scoped to existing @mention and label-trigger events while forwarding broader events to automations\r\n\r\n## Verification\r\n[x] Human tested these changes:\r\n\r\nlive verification passed:\r\n      - Updated an existing automation through the real automation API to listen for source=jira_dc, on=jira:issue_created.\r\n      - Posted a signed jira:issue_created payload through /integration/jira-dc/events.\r\n      - Confirmed logs: Event matched 1/1 automations.\r\n      - Confirmed automation run was created and completed.\r\n      \r\n- env PYTHONPATH=enterprise:. uv run ruff format --check --config enterprise/dev_config/python/ruff.toml enterprise/integrations/jira_dc/jira_dc_manager.py enterprise/tests/unit/integrations/jira_dc/conftest.py enterprise/tests/unit/integrations/jira_dc/test_jira_dc_manager.py enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py\r\n- env PYTHONPATH=enterprise:. uv run ruff check --config enterprise/dev_config/python/ruff.toml enterprise/integrations/jira_dc/jira_dc_manager.py enterprise/tests/unit/integrations/jira_dc/conftest.py enterprise/tests/unit/integrations/jira_dc/test_jira_dc_manager.py enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py\r\n- env PYTHONPATH=enterprise:. uv run --with python-keycloak --with pytest-asyncio --with aiosqlite --with limits --with coredis pytest enterprise/tests/unit/integrations/jira_dc/test_jira_dc_manager.py enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py -q\r\n- R02 OHE live check: patched openhands-integrations with this Jira DC manager, enabled a product-created automation via the automation API with source=jira_dc/on=jira:issue_created/filter=issue.fields.project.key == 'KAN', posted a signed jira:issue_created payload through /integration/jira-dc/events, and confirmed automation logs reported Event matched 1/1 plus a run row was created.\r\n\r\n---\r\n\r\nTo run this PR locally, use the following command:\r\n\r\nGUI with Docker:\r\n```\r\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-b4ee849   docker.openhands.dev/openhands/openhands:b4ee849\r\n```",
+    "author": "ak684",
+    "headRef": "alona/jira-dc-webhook-events",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "b4ee84953820e1768d58e5b203f1a472d8625a77",
+    "baseSha": "e0bfb874d801bf087427165842d1db88770594ec"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14532.diff",
+  "vendoredAt": "2026-05-24T03:17:51.520Z",
+  "collectedAt": "2026-05-24T03:17:51.520Z"
+}

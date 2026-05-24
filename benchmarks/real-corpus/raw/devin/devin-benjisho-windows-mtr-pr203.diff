@@ -1,0 +1,262 @@
+diff --git a/USAGE.md b/USAGE.md
+index c82834d..36a2ee5 100644
+--- a/USAGE.md
++++ b/USAGE.md
+@@ -155,6 +155,9 @@ mtr --api --api-max-requests-per-window 20 --api-rate-limit-window-seconds 30
+ # Tune REST API completed-job retention controls
+ mtr --api --api-max-completed-jobs 512 --api-completed-job-ttl-seconds 1200
+ 
++# Set API probe execution timeout to 2 minutes
++mtr --api --api-probe-timeout-seconds 120
++
+ # Secure remote bind with mTLS
+ mtr --api --api-bind 0.0.0.0:4000 --api-auth mtls
+ 
+@@ -172,6 +175,7 @@ mtr --api --api-bind 0.0.0.0:4000 --api-auth mtls --api-mtls-trusted-ingress 10.
+ - Max request body size: `16 KiB`
+ - Max retained completed jobs: `1024`
+ - Completed job TTL: `15m`
++- Probe execution timeout: `60s`
+ 
+ Authentication enforcement in v1:
+ - Local-only bind: `none-local-only` is acceptable
+diff --git a/docs/API.md b/docs/API.md
+index 6063a8e..401e2ce 100644
+--- a/docs/API.md
++++ b/docs/API.md
+@@ -78,6 +78,16 @@ All REST responses also include:
+ 
+ - `X-Request-ID`: per-request correlation identifier for logs and troubleshooting.
+ 
++## API Probe Execution Timeout
++
++API-launched probes are bounded by a configurable execution timeout (default: **60 seconds**). If a probe does not complete within the timeout, the job transitions to `failed` with an error message containing `"probe timed out after <N>s"`. The concurrency permit is released immediately when the timeout fires.
++
++Configure via CLI flag:
++
++```bash
++mtr --api --api-probe-timeout-seconds 120
++```
++
+ ## Compatibility Notes
+ 
+ - CLI compatibility with Linux `mtr` is a goal, but not every flag is identical.
+diff --git a/docs/ROADMAP.md b/docs/ROADMAP.md
+index 044b1ab..2bf6197 100644
+--- a/docs/ROADMAP.md
++++ b/docs/ROADMAP.md
+@@ -35,6 +35,7 @@ For release-by-release details, see the [changelog](../CHANGELOG.md).
+ | Advanced security hardening (long-running/scheduled fuzzing, advisory cleanup) | 🛣️ Roadmap | H2 2026 |
+ | Cross-platform probe parity/privilege smoke tests | ✅ Released (CI `Probe parity (windows-latest\|ubuntu-latest)` + privilege smoke lanes: `Privilege probe smoke (ubuntu-latest\|windows-latest, non-elevated)`, `Privilege probe smoke (ubuntu-latest, elevated)`, and optional `Privilege probe smoke (windows, elevated self-hosted)`; coverage includes non-elevated failures on Windows/Ubuntu and elevated success on Ubuntu + Windows self-hosted; constraint: elevated Windows lane requires self-hosted runner because GitHub-hosted `windows-latest` cannot be interactively elevated.) | H2 2026 |
+ | GitHub Actions hardening (pin workflow actions by commit SHA) | ✅ Released | v1.2.x |
++| API probe execution timeout and job lifecycle hardening | ✅ Released (bounded execution with configurable `--api-probe-timeout-seconds`, default 60s) | v1.3.x |
+ | CLI/runtime cleanup (unused error variants, banner polish) | 🛣️ Roadmap | H2 2026 |
+ 
+ ## Notes
+diff --git a/src/main.rs b/src/main.rs
+index 7b70c5e..b1f4b7c 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -71,6 +71,10 @@ struct Cli {
+     #[arg(long = "api-completed-job-ttl-seconds", value_name = "SECONDS")]
+     api_completed_job_ttl_seconds: Option<u64>,
+ 
++    /// Maximum execution time in seconds for an API-launched probe (default: 60)
++    #[arg(long = "api-probe-timeout-seconds", value_name = "SECONDS")]
++    api_probe_timeout_seconds: Option<u64>,
++
+     /// Trusted ingress source IP(s) allowed to forward mTLS identity headers (repeatable)
+     #[arg(long = "api-mtls-trusted-ingress", value_name = "IP")]
+     api_mtls_trusted_ingress: Vec<IpAddr>,
+@@ -363,6 +367,10 @@ fn apply_rest_api_cli_overrides(args: &Cli, config: &mut RestApiConfig) -> anyho
+         config.completed_job_ttl = Duration::from_secs(completed_job_ttl_seconds);
+     }
+ 
++    if let Some(probe_timeout_seconds) = args.api_probe_timeout_seconds {
++        config.probe_execution_timeout = Duration::from_secs(probe_timeout_seconds);
++    }
++
+     if !args.api_mtls_trusted_ingress.is_empty() {
+         config.trusted_mtls_ingress_ips = args.api_mtls_trusted_ingress.clone();
+     }
+@@ -794,6 +802,17 @@ mod tests {
+         assert_eq!(config.completed_job_ttl, Duration::from_secs(1200));
+     }
+ 
++    #[test]
++    fn api_mode_applies_probe_timeout_override() {
++        let cli = Cli::try_parse_from(["mtr", "--api", "--api-probe-timeout-seconds", "120"])
++            .expect("flags should parse for probe timeout override validation");
++
++        let mut config = RestApiConfig::default();
++        apply_rest_api_cli_overrides(&cli, &mut config).expect("overrides should apply");
++
++        assert_eq!(config.probe_execution_timeout, Duration::from_secs(120));
++    }
++
+     #[test]
+     fn api_mode_applies_mtls_trusted_ingress_overrides() {
+         let cli = Cli::try_parse_from([
+diff --git a/src/service/rest_api.rs b/src/service/rest_api.rs
+index 17af261..ad63509 100644
+--- a/src/service/rest_api.rs
++++ b/src/service/rest_api.rs
+@@ -35,6 +35,7 @@ pub struct RestApiConfig {
+     pub max_payload_bytes: usize,
+     pub max_completed_jobs: usize,
+     pub completed_job_ttl: Duration,
++    pub probe_execution_timeout: Duration,
+     pub trusted_mtls_ingress_ips: Vec<IpAddr>,
+ }
+ 
+@@ -53,6 +54,7 @@ impl Default for RestApiConfig {
+             max_payload_bytes: 16 * 1024,
+             max_completed_jobs: 1024,
+             completed_job_ttl: Duration::from_secs(15 * 60),
++            probe_execution_timeout: Duration::from_secs(60),
+             trusted_mtls_ingress_ips: vec![
+                 IpAddr::from([127, 0, 0, 1]),
+                 "::1".parse().expect("valid localhost ipv6 literal"),
+@@ -115,6 +117,12 @@ impl RestApiConfig {
+             ));
+         }
+ 
++        if self.probe_execution_timeout.is_zero() {
++            return Err(RestApiValidationError::InvalidOption(
++                "probe_execution_timeout must be greater than zero".to_string(),
++            ));
++        }
++
+         if self.auth_strategy == AuthStrategy::NoneLocalOnly && !self.bind_addr.ip().is_loopback() {
+             return Err(RestApiValidationError::AuthStrategyViolation(
+                 "auth_strategy=none-local-only is only valid for localhost binds".to_string(),
+@@ -694,6 +702,18 @@ mod tests {
+         ));
+     }
+ 
++    #[test]
++    fn zero_probe_execution_timeout_is_rejected() {
++        let config = RestApiConfig {
++            probe_execution_timeout: Duration::ZERO,
++            ..RestApiConfig::default()
++        };
++        assert!(matches!(
++            config.validate_security_defaults(),
++            Err(RestApiValidationError::InvalidOption(_))
++        ));
++    }
++
+     #[test]
+     fn mtls_requires_at_least_one_trusted_ingress_ip() {
+         let config = RestApiConfig {
+diff --git a/src/service/rest_server.rs b/src/service/rest_server.rs
+index 80a0dd2..55d648d 100644
+--- a/src/service/rest_server.rs
++++ b/src/service/rest_server.rs
+@@ -465,15 +465,22 @@ async fn run_probe_job(
+         return;
+     }
+ 
+-    match execute_probe(normalized, state.probe_runner_path.clone()).await {
+-        Ok(result) => {
++    let probe_timeout = state.config.probe_execution_timeout;
++    let probe_result = timeout(
++        probe_timeout,
++        execute_probe(normalized, state.probe_runner_path.clone()),
++    )
++    .await;
++
++    match probe_result {
++        Ok(Ok(result)) => {
+             if let Err(error) =
+                 update_job_status(&state, &id, ProbeJobStatus::Completed, Some(result), None)
+             {
+                 eprintln!("probe {id}: failed to set completed state: {error}");
+             }
+         }
+-        Err(error) => {
++        Ok(Err(error)) => {
+             if let Err(store_error) = update_job_status(
+                 &state,
+                 &id,
+@@ -484,6 +491,15 @@ async fn run_probe_job(
+                 eprintln!("probe {id}: failed to set failed state: {store_error}");
+             }
+         }
++        Err(_elapsed) => {
++            let message = format!("probe timed out after {}s", probe_timeout.as_secs());
++            eprintln!("probe {id}: {message}");
++            if let Err(store_error) =
++                update_job_status(&state, &id, ProbeJobStatus::Failed, None, Some(message))
++            {
++                eprintln!("probe {id}: failed to set timed-out state: {store_error}");
++            }
++        }
+     }
+ 
+     drop(permit);
+diff --git a/tests/rest_server_http_tests.rs b/tests/rest_server_http_tests.rs
+index 3157891..73ad344 100644
+--- a/tests/rest_server_http_tests.rs
++++ b/tests/rest_server_http_tests.rs
+@@ -918,3 +918,60 @@ async fn error_response_does_not_leak_internal_details() {
+ 
+     let _ = shutdown.send(());
+ }
++
++#[tokio::test]
++async fn probe_execution_timeout_marks_job_failed() {
++    let config = RestApiConfig {
++        probe_execution_timeout: Duration::from_millis(1),
++        ..RestApiConfig::default()
++    };
++    let (addr, shutdown) = spawn_server_with_config(config).await;
++    let client = build_http_client();
++
++    let created = create_probe(&client, addr, "127.0.0.1").await;
++    let id = created["data"]["id"]
++        .as_str()
++        .expect("id should be a string");
++
++    let failed = wait_for_probe_status(&client, addr, id, "failed").await;
++    let error = failed["data"]["error"]
++        .as_str()
++        .expect("error text should exist");
++    assert!(
++        error.contains("timed out"),
++        "expected timeout error, got: {error}"
++    );
++
++    let _ = shutdown.send(());
++}
++
++#[tokio::test]
++async fn probe_execution_timeout_releases_concurrency_permit() {
++    let config = RestApiConfig {
++        probe_execution_timeout: Duration::from_millis(1),
++        max_concurrent_probes: 1,
++        ..RestApiConfig::default()
++    };
++    let (addr, shutdown) = spawn_server_with_config(config).await;
++    let client = build_http_client();
++
++    let first = create_probe(&client, addr, "127.0.0.1").await;
++    let first_id = first["data"]["id"].as_str().expect("id should be a string");
++    let _ = wait_for_probe_status(&client, addr, first_id, "failed").await;
++
++    let second = create_probe(&client, addr, "127.0.0.1").await;
++    let second_id = second["data"]["id"]
++        .as_str()
++        .expect("id should be a string");
++    assert_ne!(first_id, second_id, "second probe should be accepted");
++    let second_terminal = wait_for_probe_status(&client, addr, second_id, "failed").await;
++    assert!(
++        second_terminal["data"]["error"]
++            .as_str()
++            .expect("error should exist")
++            .contains("timed out"),
++        "second probe should also time out (not be rejected for concurrency)"
++    );
++
++    let _ = shutdown.send(());
++}

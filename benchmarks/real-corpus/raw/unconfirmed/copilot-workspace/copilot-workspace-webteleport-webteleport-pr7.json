@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-webteleport-webteleport-pr7",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 7,
+    "headSha": "26f9fa87d9e15d8602dfa899347c619762ed55e9",
+    "baseSha": "e3e74bcb509b4c7c41c2f8dbfa16eca7971a31a4",
+    "title": "Simplify `slog.Warn` calls to structured logging across endpoint and transport paths",
+    "body": "This change removes ad-hoc string formatting around warning logs and standardizes `slog.Warn` usage to native structured arguments. The goal is to make warning logs consistent, easier to parse, and less error-prone across endpoint resolution and transport setup codepaths.\n\n- **Scope: endpoint resolution warnings**\n  - Updated warning sites in `endpoint/resolve.go` to avoid `fmt.Sprintf(...)` and log structured fields directly (`error`, `host`).\n\n- **Scope: transport control-channel warnings**\n  - Unified unknown `stm0` command warnings in listener implementations (`transport/{webtransport,websocket,tcp,quic-go,net-quic}/listen.go`) to a common structured shape.\n\n- **Scope: upgrader error warnings**\n  - Replaced `fmt.Errorf(...).Error()` warning calls in `transport/{websocket,webtransport}/up.go` with direct `slog.Warn(\"...\", \"error\", err)` usage.\n\n- **Cleanup**\n  - Removed `fmt` imports that became unused after logging simplification.\n\n```go\n// before\nslog.Warn(fmt.Sprintf(\"dns lookup error: %s: %v\", h, err))\n\n// after\nslog.Warn(\"dns lookup error\", \"host\", h, \"error\", err)\n```",
+    "author": "Copilot",
+    "headRef": "copilot/simplify-slog-warn-usage",
+    "repository": "webteleport/webteleport"
+  },
+  "diffRef": {
+    "repository": "webteleport/webteleport",
+    "headSha": "26f9fa87d9e15d8602dfa899347c619762ed55e9",
+    "baseSha": "e3e74bcb509b4c7c41c2f8dbfa16eca7971a31a4"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-webteleport-webteleport-pr7.diff",
+  "vendoredAt": "2026-05-24T03:06:28.519Z",
+  "collectedAt": "2026-05-24T03:06:28.519Z"
+}

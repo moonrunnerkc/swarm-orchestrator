@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24126",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24126,
+    "headSha": "c9ce60c857972fa97b2dc8d6af256f67353235b5",
+    "baseSha": "7924743c38e9a28795c1533ab5143dceea5ca566",
+    "title": "feat(next-prompt): add suggestion engine [1 of 3]",
+    "body": "## Why\n\nThe next-prompt feature needs a small core-owned suggestion engine before any app-server API or TUI wiring can depend on it. Keeping this layer separate lets reviewers evaluate the prompt construction, suppression rules, and context extraction without schema or UI noise.\n\n## What changed\n\n- Add `codex_core::next_prompt_suggestion` for prompt construction, output filtering, and suppression of weak or unsafe suggestions.\n- Add lightweight loaded-history turn context helpers used by the suggestion engine.\n- Expose the core helper through `CodexThread` without adding app-server protocol or TUI behavior in this PR.\n\n## Testing\n\n- `cargo test -p codex-core next_prompt_suggestion`\n- `CARGO_TARGET_DIR=/private/tmp/codex-next-suggestion-stack-target ./tools/argument-comment-lint/run.py -p codex-core -p codex-app-server-protocol -p codex-app-server -p codex-tui`\n\n## Stack\n\n1. #24126 next-prompt suggestion engine (this PR)\n2. [#24127](https://github.com/openai/codex/pull/24127) next-prompt app-server RPC\n3. [#23976](https://github.com/openai/codex/pull/23976) next-prompt TUI\n",
+    "author": "fcoury-oai",
+    "headRef": "fcoury/next-suggestion-core",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "c9ce60c857972fa97b2dc8d6af256f67353235b5",
+    "baseSha": "7924743c38e9a28795c1533ab5143dceea5ca566"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24126.diff",
+  "vendoredAt": "2026-05-24T03:21:04.861Z",
+  "collectedAt": "2026-05-24T03:21:04.861Z"
+}

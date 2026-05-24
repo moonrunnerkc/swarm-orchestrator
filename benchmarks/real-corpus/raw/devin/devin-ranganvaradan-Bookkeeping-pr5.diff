@@ -1,0 +1,43 @@
+diff --git a/.env.example b/.env.example
+index dadc59b..ee8d4a1 100644
+--- a/.env.example
++++ b/.env.example
+@@ -5,6 +5,9 @@
+ # ============================================================
+ 
+ # --- Database (PostgreSQL 15) ---
++# Local dev uses localhost:5433 (host-mapped port).
++# Inside Docker, the backend connects via container name bt-postgres:5432.
++# docker-compose.yml hardcodes the Docker URL; this value is for local dev only.
+ DB_URL=jdbc:postgresql://localhost:5433/billiontech
+ DB_USERNAME=bt_user
+ DB_PASSWORD=your-db-password
+@@ -13,6 +16,9 @@ DB_PASSWORD=your-db-password
+ JWT_SECRET=your-32-character-minimum-secret-key
+ 
+ # --- Cache / Queue (Redis 7) ---
++# Local dev uses localhost:6380 (host-mapped port).
++# Inside Docker, the backend connects via container name bt-redis:6379.
++# docker-compose.yml hardcodes the Docker URL; this value is for local dev only.
+ REDIS_URL=redis://localhost:6380
+ 
+ # --- Frontend ---
+diff --git a/docker-compose.yml b/docker-compose.yml
+index 7842bb1..167af42 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -43,11 +43,11 @@ services:
+       - "8085:8085"
+     environment:
+       SERVER_PORT: 8085
+-      # Inside Docker network, containers use service names and default ports
+-      DB_URL: jdbc:postgresql://postgres:5432/billiontech
++      # Hardcoded for Docker networking — containers use container names, not localhost
++      DB_URL: jdbc:postgresql://bt-postgres:5432/billiontech
+       DB_USERNAME: bt_user
+       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+-      REDIS_URL: redis://redis:6379
++      REDIS_URL: redis://bt-redis:6379
+       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3010}
+       JWT_SECRET: ${JWT_SECRET:-}
+       QBO_CLIENT_ID: ${QBO_CLIENT_ID:-}

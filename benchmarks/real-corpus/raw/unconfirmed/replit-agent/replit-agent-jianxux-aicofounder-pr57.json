@@ -1,0 +1,26 @@
+{
+  "id": "replit-agent-jianxux-aicofounder-pr57",
+  "agent": {
+    "vendor": "replit-agent",
+    "confidence": "low",
+    "source": "body=replit-agent-footer"
+  },
+  "pr": {
+    "number": 57,
+    "headSha": "1398d94fb3cbf95c47662f2fd60f6d94bc43995f",
+    "baseSha": "983fb32caeaf3c96b76bb97b46de151846976393",
+    "title": "feat: clarify first session flow in landing hero",
+    "body": "## Summary\n- add a compact hero-adjacent \"What happens next\" strip to the landing page\n- make the first session sequence more explicit by showing input, founder output, and next move in one place\n- cover the new hero workflow copy in the landing page test\n\n## What changed\n- introduced a new `heroWorkflowSteps` data set in `src/app/page.tsx`\n- rendered a new three-card workflow strip directly below the hero prompt form and above the existing hero insight/session-output panels\n- used step framing that connects:\n  - the raw founder prompt\n  - the first founder brief artifact\n  - the concrete next validation decision\n- updated `src/app/__tests__/page.test.tsx` to assert the new hero workflow section renders with its key copy\n\n## Why this change\nThe landing page already showed strong proof, session outputs, and a deeper first-session timeline further down the page, but the immediate hero area still left some ambiguity around what happens right after a founder submits a prompt.\n\nThis change tightens that first-run story in the highest-leverage spot on the page. It gives visitors a faster answer to:\n- what do I start with?\n- what will AI Cofounder give me back first?\n- what concrete decision will I leave with?\n\nThat directly addresses a landing-page weakness where the workflow was credible but not fully legible at the point of conversion.\n\n## Competitor/benchmark observations\nThis change was motivated by current public benchmark patterns observed during this run:\n\n- Replit Agent uses an explicit step-based sequence to explain the first-run workflow: natural-language instruction, inspect/edit loop, then launch.\n  - https://replit.com/agent\n- Replit's product-market-fit page makes the loop legible as prototype -> launch -> feedback -> improve, which lowers ambiguity about what comes next.\n  - https://replit.com/product-market-fit\n- Lovable keeps the hero highly input/output-oriented, helping users understand what they type in and what concrete result they get back.\n  - https://lovable.dev/\n- Maze emphasizes output visibility and fast understanding of the resulting artifact, which is especially relevant for research/validation products.\n  - https://maze.co/\n  - https://maze.co/product/\n\nThe implementation here applies that pattern to AI Cofounder without copying competitor language: a small, hero-level workflow strip that clarifies the first session and the next founder move.\n\n## Files changed\n- `src/app/page.tsx`\n- `src/app/__tests__/page.test.tsx`\n\n## Validation\n- `npm test -- src/app/__tests__/page.test.tsx`\n  - passed (8 tests)\n  - note: existing React `act(...)` warnings from `AuthButton` still appear in the test environment, but the suite passed\n- `npm run build`\n  - passed\n\n## Risks / follow-ups\n- this introduces some intentional conceptual overlap with the later \"First session timeline\" section, although the hero strip is shorter and focused on conversion-time clarity rather than the deeper walkthrough\n- if future landing iterations want to reduce density, a follow-up could tighten or streamline the later timeline now that the hero explains the immediate flow earlier",
+    "author": "jianxux",
+    "headRef": "feat/landing-hero-first-session-strip-20260425",
+    "repository": "jianxux/aicofounder"
+  },
+  "diffRef": {
+    "repository": "jianxux/aicofounder",
+    "headSha": "1398d94fb3cbf95c47662f2fd60f6d94bc43995f",
+    "baseSha": "983fb32caeaf3c96b76bb97b46de151846976393"
+  },
+  "vendoredDiffPath": "unconfirmed/replit-agent/replit-agent-jianxux-aicofounder-pr57.diff",
+  "vendoredAt": "2026-05-24T03:14:05.216Z",
+  "collectedAt": "2026-05-24T03:14:05.216Z"
+}

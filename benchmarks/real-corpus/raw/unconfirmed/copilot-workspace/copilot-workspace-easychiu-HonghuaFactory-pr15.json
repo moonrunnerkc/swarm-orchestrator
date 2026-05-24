@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-easychiu-HonghuaFactory-pr15",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 15,
+    "headSha": "ae472e246fd8be9481ff51600a6d2813ddfc4c09",
+    "baseSha": "939305fb21d124d72c10bcaa5c29650f55789fcf",
+    "title": "Add start-screen load entry, improve schedule option separability, and scope Erika lucky event to Erika-only 100%",
+    "body": "初始流程缺少明確的讀檔入口，且日程選項在視覺上不夠分離，使用者難以辨識相鄰打工項目。同時「逆天改命」賭局的 100% 強運需限定為艾莉卡，其餘角色不應保證成功。\n\n- **Start flow: expose load path on initial screen**\n  - Added a **「讀取存檔」** action in `StartScreen`.\n  - Wired it to `SaveLoadPanel` in `loadOnly` mode so users can load/import without entering the main room first.\n  - Extended `SaveLoadPanel` with `loadOnly?: boolean` and hid save/export/delete actions in that mode.\n\n- **Scheduler UX: make options visually distinct**\n  - Updated activity cards in `Scheduler` to improve separability between similar items.\n  - Added per-card type/index badge (e.g. `打工 #1`, `打工 #2`) and increased card visual structure (`min-h`, clearer hierarchy) so adjacent options are easier to distinguish at a glance.\n\n- **Event logic: Erika-only guaranteed lucky outcome**\n  - Updated `casino_event` choice text to reflect conditional success behavior.\n  - Changed effect logic to:\n    - `erica`: 100% success\n    - non-`erica`: normal success chance (35%)\n  - Added explicit `casino_fail` branch and aligned loss handling with event stakes (on failure, gold is forfeited).\n\n```ts\nconst isErica = state.daughter.characterId === 'erica';\nconst successChance = isErica ? 1 : 0.35;\nconst isSuccess = Math.random() < successChance;\n\nif (!isSuccess) {\n  return {\n    nextDialogId: 'casino_fail',\n    rewards: { gold: -state.daughter.gold }\n  };\n}\n```",
+    "author": "Copilot",
+    "headRef": "copilot/add-file-upload-option",
+    "repository": "easychiu/HonghuaFactory"
+  },
+  "diffRef": {
+    "repository": "easychiu/HonghuaFactory",
+    "headSha": "ae472e246fd8be9481ff51600a6d2813ddfc4c09",
+    "baseSha": "939305fb21d124d72c10bcaa5c29650f55789fcf"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-easychiu-HonghuaFactory-pr15.diff",
+  "vendoredAt": "2026-05-24T03:06:16.569Z",
+  "collectedAt": "2026-05-24T03:06:16.569Z"
+}

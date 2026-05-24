@@ -1,0 +1,127 @@
+diff --git a/src/main/java/io/kestra/plugin/redis/list/ListPop.java b/src/main/java/io/kestra/plugin/redis/list/ListPop.java
+index 12539fd..a3db839 100644
+--- a/src/main/java/io/kestra/plugin/redis/list/ListPop.java
++++ b/src/main/java/io/kestra/plugin/redis/list/ListPop.java
+@@ -33,7 +33,7 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Removes and returns an element from the head of a list."
++    title = "Remove and return an element from the head of a list in Redis."
+ )
+ @Plugin(
+     examples = {
+diff --git a/src/main/java/io/kestra/plugin/redis/list/ListPush.java b/src/main/java/io/kestra/plugin/redis/list/ListPush.java
+index a23c537..0dfa47d 100644
+--- a/src/main/java/io/kestra/plugin/redis/list/ListPush.java
++++ b/src/main/java/io/kestra/plugin/redis/list/ListPush.java
+@@ -33,7 +33,7 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Adds a new element to the head of a list."
++    title = "Add a new element to the head of a list in Redis."
+ )
+ @Plugin(
+     examples = {
+diff --git a/src/main/java/io/kestra/plugin/redis/list/RealtimeTrigger.java b/src/main/java/io/kestra/plugin/redis/list/RealtimeTrigger.java
+index 54304ad..ae099a0 100644
+--- a/src/main/java/io/kestra/plugin/redis/list/RealtimeTrigger.java
++++ b/src/main/java/io/kestra/plugin/redis/list/RealtimeTrigger.java
+@@ -28,7 +28,7 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Removes and returns an element from the head of a list in real-time and create one execution per element.",
++    title = "Remove and return an element from the head of a list in real-time in Redis and create one execution per element.",
+     description = "If you would like to consume multiple elements processed within a given time frame and process them in batch, you can use the [io.kestra.plugin.redis.list.Trigger](https://kestra.io/plugins/plugin-redis/triggers/io.kestra.plugin.redis.list.trigger) instead."
+ )
+ @Plugin(
+diff --git a/src/main/java/io/kestra/plugin/redis/list/Trigger.java b/src/main/java/io/kestra/plugin/redis/list/Trigger.java
+index d927130..d247c5d 100644
+--- a/src/main/java/io/kestra/plugin/redis/list/Trigger.java
++++ b/src/main/java/io/kestra/plugin/redis/list/Trigger.java
+@@ -24,7 +24,7 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Removes and returns an element from the head of a list periodically and create one execution per batch.",
++    title = "Remove and return an element from the head of a list periodically in Redis and create one execution per batch.",
+     description = "If you would like to consume each message from a list in real-time and create one execution per message, you can use the [io.kestra.plugin.redis.list.RealtimeTrigger](https://kestra.io/plugins/plugin-redis/triggers/io.kestra.plugin.redis.list.realtimetrigger) instead."
+ )
+ @Plugin(
+diff --git a/src/main/java/io/kestra/plugin/redis/pubsub/Publish.java b/src/main/java/io/kestra/plugin/redis/pubsub/Publish.java
+index 76ce33c..6032b92 100644
+--- a/src/main/java/io/kestra/plugin/redis/pubsub/Publish.java
++++ b/src/main/java/io/kestra/plugin/redis/pubsub/Publish.java
+@@ -32,7 +32,7 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Publish one or multiple values to a channel."
++    title = "Publish one or multiple values to a Redis channel."
+ )
+ @Plugin(
+     examples = {
+diff --git a/src/main/java/io/kestra/plugin/redis/string/Delete.java b/src/main/java/io/kestra/plugin/redis/string/Delete.java
+index 825dd6c..f00d388 100644
+--- a/src/main/java/io/kestra/plugin/redis/string/Delete.java
++++ b/src/main/java/io/kestra/plugin/redis/string/Delete.java
+@@ -20,7 +20,7 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Delete one or more keys in Redis.",
++    title = "Delete one or more Redis items by key.",
+     description = "List one or more keys to delete in a Redis database."
+ )
+ @Plugin(
+diff --git a/src/main/java/io/kestra/plugin/redis/string/Get.java b/src/main/java/io/kestra/plugin/redis/string/Get.java
+index 58d8fa2..843e4cf 100644
+--- a/src/main/java/io/kestra/plugin/redis/string/Get.java
++++ b/src/main/java/io/kestra/plugin/redis/string/Get.java
+@@ -19,7 +19,7 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Get a key and return its value in Redis.",
++    title = "Fetch a Redis item by key and return its value.",
+     description = "Query for a key in a Redis database and return the associated value."
+ )
+ @Plugin(
+diff --git a/src/main/java/io/kestra/plugin/redis/string/Set.java b/src/main/java/io/kestra/plugin/redis/string/Set.java
+index 538b2e0..0fd19a8 100644
+--- a/src/main/java/io/kestra/plugin/redis/string/Set.java
++++ b/src/main/java/io/kestra/plugin/redis/string/Set.java
+@@ -24,7 +24,7 @@
+ @Getter
+ @NoArgsConstructor
+ @Schema(
+-    title = "Set the string value of a key in Redis.",
++    title = "Set a string value for a given Redis key.",
+     description = "Set a string value for a new key or update the current key value with a new one."
+ )
+ @Plugin(
+diff --git a/src/main/resources/doc/io.kestra.plugin.redis.md b/src/main/resources/doc/io.kestra.plugin.redis.md
+new file mode 100644
+index 0000000..846cea0
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.redis.md
+@@ -0,0 +1,17 @@
++# How to use the Redis plugin
++
++Read, write, and react to data in Redis using string operations, list operations, and Pub/Sub messaging.
++
++## Common properties
++
++Set `url` to a Redis URI (e.g. `redis://:password@host:6379/0`) on each task. Use the `rediss://` scheme for SSL connections. Apply `url` globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults) to avoid repeating it, and store credentials in [secrets](https://kestra.io/docs/concepts/secret).
++
++## Tasks
++
++`string.Get` reads a key by `key` name. `string.Set` writes a value to a `key`, with optional expiration and conditional flags (`NX`, `XX`, `keepTTL`) via `options`. `string.Delete` removes one or more keys passed as a `keys` list. All three accept `serdeType: JSON` to serialize and deserialize values as JSON objects rather than raw strings.
++
++`list.ListPush` appends items to a Redis list — pass a `kestra://` file URI or an inline list to `from`. `list.ListPop` reads and removes items; use `maxRecords` or `maxDuration` to bound how many items are consumed per run.
++
++`pubsub.Publish` sends messages to a Redis channel — set `channel` and pass items via `from`.
++
++`list.Trigger` polls a Redis list on a schedule and starts one execution per batch; `list.RealtimeTrigger` starts one execution per item as it arrives. Use `Trigger` for controlled throughput and `RealtimeTrigger` for low-latency processing.

@@ -1,0 +1,543 @@
+diff --git a/config.yaml b/config.yaml
+index 7480fe5..9ce5be1 100644
+--- a/config.yaml
++++ b/config.yaml
+@@ -11,6 +11,10 @@
+ runtime:
+   profile: "prod"  # dev = A3000 6GB laptop | prod = RTX 4090 workstation
+ 
++packs:
++  language: "ja_en"
++  domain: null
++
+ # Domain pack selection and policy routing.
+ domain:
+   pack: null                            # "anime" | "jav" | null
+diff --git a/core/polish/__init__.py b/core/polish/__init__.py
+index 3b9a0d1..410aee4 100644
+--- a/core/polish/__init__.py
++++ b/core/polish/__init__.py
+@@ -21,7 +21,7 @@
+ from __future__ import annotations
+ 
+ from abc import ABC, abstractmethod
+-from typing import Any, Dict
++from typing import Any, Dict, Callable
+ 
+ from core.subtitles import SubtitleCandidate
+ 
+@@ -210,7 +210,7 @@ class LLMPolisher:
+     while maintaining timing and meaning constraints.
+     """
+     
+-    def __init__(self, config: Config):
++    def __init__(self, config: Config, prompt_fn: Optional[Callable[[str], str]] = None):
+         """
+         Initialize the LLM polisher.
+         
+@@ -222,6 +222,7 @@ def __init__(self, config: Config):
+         self.model_name = config.llm_model_name
+         self.style = config.llm_style
+         self.timeout = config.llm_timeout
++        self.prompt_fn = prompt_fn
+         
+         logger.info("Initializing LLM polisher")
+         logger.info(f"  Endpoint: {self.base_url}")
+@@ -287,7 +288,18 @@ def polish_text(
+             Polished English text, or original text_en_raw on failure
+         """
+         style = style or self.style
+-        system_prompt = self.config.get_llm_prompt(style)
++        if self.prompt_fn is not None:
++            try:
++                system_prompt = self.prompt_fn(style)
++            except Exception:
++                logger.warning(
++                    "Pack prompt function failed for style '%s'; falling back to config prompt",
++                    style,
++                    exc_info=True,
++                )
++                system_prompt = self.config.get_llm_prompt(style)
++        else:
++            system_prompt = self.config.get_llm_prompt(style)
+         
+         # Construct user prompt
+         user_prompt = f"""Japanese: {text_ja}
+@@ -722,6 +734,7 @@ def polish_candidate_with_llm(
+     config: Config,
+     ja_candidate: Optional[SubtitleCandidate] = None,
+     style: Optional[str] = None,
++    prompt_fn: Optional[Callable[[str], str]] = None,
+ ) -> SubtitleCandidate:
+     """Convenience wrapper: polish a single MT candidate using the LLM.
+ 
+@@ -733,7 +746,7 @@ def polish_candidate_with_llm(
+             as context to the LLM, reducing hallucination and semantic drift.
+         style: Override configured LLM style.
+     """
+-    polisher = LLMPolisher(config)
++    polisher = LLMPolisher(config, prompt_fn=prompt_fn)
+     return polisher.polish_candidate(candidate, ja_candidate=ja_candidate, style=style)
+ 
+ 
+diff --git a/core/runtime/config.py b/core/runtime/config.py
+index 5345cc1..95edb0e 100644
+--- a/core/runtime/config.py
++++ b/core/runtime/config.py
+@@ -118,6 +118,9 @@ def get_path(self, path_name: str) -> str:
+     @property
+     def domain_pack(self) -> Optional[str]:
+         """Return active domain pack ID from explicit config or policy fallback."""
++        explicit_pack = self.get("packs", "domain", default=None)
++        if explicit_pack in {"anime", "jav"}:
++            return explicit_pack
+         explicit = self.get("domain", "pack", default=None)
+         if explicit in {"anime", "jav"}:
+             return explicit
+diff --git a/core/runtime/orchestrator.py b/core/runtime/orchestrator.py
+index 25f8edf..5bea398 100644
+--- a/core/runtime/orchestrator.py
++++ b/core/runtime/orchestrator.py
+@@ -70,13 +70,11 @@
+     route_generate_review_task,
+ )
+ from packs.language import load_language_routing_hooks
++from packs.language.ja_en.aliases import LANG_ALIASES as _LANG_ALIASES
+ 
+ 
+ logger = logging.getLogger(__name__)
+ 
+-_DEFAULT_LANG_ALIASES = dict(load_language_routing_hooks().lang_aliases)
+-
+-
+ # Audio language probe settings (used when metadata tag is absent or suspect).
+ _PROBE_DURATION_SEC = 30       # seconds of audio to sample
+ _PROBE_JA_THRESHOLD = 0.85    # minimum Whisper confidence to reroute
+@@ -154,7 +152,7 @@ def _lang_matches(
+     if not stream_lang:
+         return False
+     if lang_aliases is None:
+-        lang_aliases = _DEFAULT_LANG_ALIASES
++        lang_aliases = _LANG_ALIASES
+     code = stream_lang.strip().lower()
+     aliases = lang_aliases.get(target, frozenset({target}))
+     if code in aliases:
+@@ -170,7 +168,7 @@ def _first_text_sub(
+     lang_aliases: Dict[str, frozenset[str]] | None = None,
+ ) -> int | None:
+     if lang_aliases is None:
+-        lang_aliases = _DEFAULT_LANG_ALIASES
++        lang_aliases = _LANG_ALIASES
+     for s in media.subtitle_streams:
+         if s.is_bitmap:
+             logger.debug(
+@@ -198,7 +196,7 @@ def _first_bitmap_sub(
+     lang_aliases: Dict[str, frozenset[str]] | None = None,
+ ) -> int | None:
+     if lang_aliases is None:
+-        lang_aliases = _DEFAULT_LANG_ALIASES
++        lang_aliases = _LANG_ALIASES
+     for s in media.subtitle_streams:
+         if not s.is_bitmap:
+             continue
+@@ -214,7 +212,7 @@ def _first_audio_order(
+     lang_aliases: Dict[str, frozenset[str]] | None = None,
+ ) -> int | None:
+     if lang_aliases is None:
+-        lang_aliases = _DEFAULT_LANG_ALIASES
++        lang_aliases = _LANG_ALIASES
+     for order, stream in enumerate(media.audio_streams):
+         raw = stream.language or stream.raw_language
+         if _lang_matches(raw, lang, lang_aliases):
+@@ -236,7 +234,7 @@ def _first_sidecar(
+     lang_aliases: Dict[str, frozenset[str]] | None = None,
+ ) -> SubtitleCandidate | None:
+     if lang_aliases is None:
+-        lang_aliases = _DEFAULT_LANG_ALIASES
++        lang_aliases = _LANG_ALIASES
+     for cand in sidecars:
+         if _lang_matches(cand.language, lang, lang_aliases):
+             return cand
+@@ -1412,7 +1410,14 @@ def run_generate(
+     video_path = media.path
+     prefer_subtitles = cfg.get("generate", "prefer_subtitles", default=True)
+     prefer_audio_language = cfg.get("generate", "prefer_audio_language", default="auto")
+-    active_domain_pack = cfg.domain_pack
++    configured_language_pack = str(cfg.get("packs", "language", default="ja_en")).strip() or "ja_en"
++    configured_domain_pack = cfg.get("packs", "domain", default=None)
++    active_domain_pack = configured_domain_pack if configured_domain_pack in {"anime", "jav"} else cfg.domain_pack
++    style_config = {
++        "max_chars_per_line": cfg.llm_max_chars_per_line,
++        "max_lines_per_segment": cfg.llm_max_lines,
++    }
++    prompt_fn = None
+     privacy_redact_logs = False
+     privacy_redact_reports = False
+     jav_media_id: str | None = None
+@@ -1440,6 +1445,7 @@ def _maybe_redact_report(payload: Dict[str, Any]) -> Dict[str, Any]:
+             prefer_subtitles,
+             prefer_audio_language,
+         )
++        style_config.update(cfg.get_domain_style_config())
+     elif active_domain_pack == "jav":
+         from packs.domain.jav.parser import extract_jav_id
+         from packs.domain.jav.privacy import assert_opt_in
+@@ -1470,6 +1476,8 @@ def _maybe_redact_report(payload: Dict[str, Any]) -> Dict[str, Any]:
+             privacy_redact_reports,
+             jav_media_id or "<unknown>",
+         )
++    llm_max_chars_per_line = int(style_config.get("max_chars_per_line", cfg.llm_max_chars_per_line))
++    llm_max_lines = int(style_config.get("max_lines_per_segment", cfg.llm_max_lines))
+     use_llm_polish = (
+         cfg.get("generate", "use_llm_polish", default=True)
+         and cfg.llm_enabled
+@@ -1495,7 +1503,15 @@ def _should_apply_post_mt_llm(mt_candidate: SubtitleCandidate) -> bool:
+     if inspect_only:
+         logger.info("Inspect-only mode enabled: planning generate flow without execution")
+ 
+-    language_routing = load_language_routing_hooks(source_language="ja", target_language="en")
++    if "_" not in configured_language_pack:
++        raise ValueError(
++            f"Invalid packs.language value '{configured_language_pack}'. Expected '<source>_<target>'."
++        )
++    source_language_pack, target_language_pack = configured_language_pack.split("_", 1)
++    language_routing = load_language_routing_hooks(
++        source_language=source_language_pack,
++        target_language=target_language_pack,
++    )
+     language_pack = language_routing.pack_id
+     translation_source_language = language_routing.source_language
+     translation_target_language = language_routing.target_language
+@@ -1511,6 +1527,10 @@ def _should_apply_post_mt_llm(mt_candidate: SubtitleCandidate) -> bool:
+         translation_target_language,
+         untagged_audio_fallback_source_language,
+     )
++    if language_pack == "ja_en":
++        from packs.language.ja_en.prompts import get_system_prompt
++
++        prompt_fn = get_system_prompt
+ 
+     logger.info("=" * 70)
+     logger.info(f"GENERATE MODE: {_display_name(video_path)}")
+@@ -1934,7 +1954,12 @@ def _should_apply_post_mt_llm(mt_candidate: SubtitleCandidate) -> bool:
+             logger.info(f"Saved pre-polish translation output: {_display_name(raw_srt)}")
+             if _should_apply_post_mt_llm(mt_candidate):
+                 with start_span("llm_polish_sidecar_jp"):
+-                    polished = polish_candidate_with_llm(mt_candidate, cfg, ja_candidate=ja_candidate)
++                    polished = polish_candidate_with_llm(
++                        mt_candidate,
++                        cfg,
++                        ja_candidate=ja_candidate,
++                        prompt_fn=prompt_fn,
++                    )
+                     candidate = enforce_constraints_on_candidate(polished, cfg)
+                 polish_stats = _compare_candidates(mt_candidate, candidate)
+                 _log_polish_stats(polish_stats)
+@@ -1982,7 +2007,12 @@ def _should_apply_post_mt_llm(mt_candidate: SubtitleCandidate) -> bool:
+             logger.info(f"Saved pre-polish translation output: {_display_name(raw_srt)}")
+             if _should_apply_post_mt_llm(mt_candidate):
+                 with start_span("llm_polish_embedded_jp"):
+-                    polished = polish_candidate_with_llm(mt_candidate, cfg, ja_candidate=ja_candidate)
++                    polished = polish_candidate_with_llm(
++                        mt_candidate,
++                        cfg,
++                        ja_candidate=ja_candidate,
++                        prompt_fn=prompt_fn,
++                    )
+                     # polish_candidate_with_llm already appends "_llm"; do not re-tag here.
+                     candidate = enforce_constraints_on_candidate(polished, cfg)
+                 polish_stats = _compare_candidates(mt_candidate, candidate)
+@@ -2031,7 +2061,12 @@ def _should_apply_post_mt_llm(mt_candidate: SubtitleCandidate) -> bool:
+             logger.info(f"Saved pre-polish translation output: {_display_name(raw_srt)}")
+             if _should_apply_post_mt_llm(mt_candidate):
+                 with start_span("llm_polish_bitmap_jp_ocr"):
+-                    polished = polish_candidate_with_llm(mt_candidate, cfg, ja_candidate=ja_candidate)
++                    polished = polish_candidate_with_llm(
++                        mt_candidate,
++                        cfg,
++                        ja_candidate=ja_candidate,
++                        prompt_fn=prompt_fn,
++                    )
+                     candidate = enforce_constraints_on_candidate(polished, cfg)
+                 polish_stats = _compare_candidates(mt_candidate, candidate)
+                 _log_polish_stats(polish_stats)
+@@ -2121,7 +2156,12 @@ def _should_apply_post_mt_llm(mt_candidate: SubtitleCandidate) -> bool:
+             logger.info(f"Saved pre-polish translation output: {_display_name(raw_srt)}")
+             if _should_apply_post_mt_llm(mt_candidate):
+                 with start_span("llm_polish_ja_audio"):
+-                    polished = polish_candidate_with_llm(mt_candidate, cfg, ja_candidate=ja_asr_candidate)
++                    polished = polish_candidate_with_llm(
++                        mt_candidate,
++                        cfg,
++                        ja_candidate=ja_asr_candidate,
++                        prompt_fn=prompt_fn,
++                    )
+                     # polish_candidate_with_llm already appends "_llm"; do not re-tag here.
+                     candidate = enforce_constraints_on_candidate(polished, cfg)
+                 polish_stats = _compare_candidates(mt_candidate, candidate)
+@@ -2260,7 +2300,12 @@ def _should_apply_post_mt_llm(mt_candidate: SubtitleCandidate) -> bool:
+             logger.info(f"Saved pre-polish translation output: {raw_srt.name}")
+             if _should_apply_post_mt_llm(mt_candidate):
+                 with start_span("llm_polish_untagged_audio"):
+-                    polished = polish_candidate_with_llm(mt_candidate, cfg, ja_candidate=ja_asr_candidate)
++                    polished = polish_candidate_with_llm(
++                        mt_candidate,
++                        cfg,
++                        ja_candidate=ja_asr_candidate,
++                        prompt_fn=prompt_fn,
++                    )
+                     # polish_candidate_with_llm already appends "_llm".
+                     candidate = enforce_constraints_on_candidate(polished, cfg)
+                 polish_stats = _compare_candidates(mt_candidate, candidate)
+@@ -2332,8 +2377,8 @@ def _should_apply_post_mt_llm(mt_candidate: SubtitleCandidate) -> bool:
+                 min_duration=cfg.subtitle_min_duration,
+                 max_duration=cfg.subtitle_max_duration,
+                 max_cps=cfg.qc_max_cps,
+-                max_line_chars=cfg.llm_max_chars_per_line,
+-                max_lines=cfg.llm_max_lines,
++                max_line_chars=llm_max_chars_per_line,
++                max_lines=llm_max_lines,
+                 ocr_confidence_warn_below=cfg.get(
+                     "ocr", "confidence_warn_below", default=0.70
+                 ),
+diff --git a/packs/language/ja_en/prompts.py b/packs/language/ja_en/prompts.py
+index b9f8645..57e3a34 100644
+--- a/packs/language/ja_en/prompts.py
++++ b/packs/language/ja_en/prompts.py
+@@ -24,27 +24,39 @@
+ 
+ _SYSTEM_PROMPTS: dict[str, str] = {
+     "natural": (
+-        "You are a professional subtitle editor specialising in Japanese anime "
+-        "and entertainment media. Your task is to improve machine-translated "
+-        "Japanese→English subtitles so they read naturally in English while "
+-        "preserving the speaker's meaning and emotional tone.\n\n"
++        "You are a professional anime subtitle editor. Your task is to improve "
++        "machine-translated English subtitles to sound natural while preserving "
++        "the original meaning.\n\n"
+         "Rules:\n"
+-        "- Use natural, conversational English with contractions where appropriate.\n"
+-        "- Keep each subtitle to 1–2 lines, max 42 characters per line.\n"
+-        "- Do NOT translate character names or proper nouns.\n"
+-        "- Do NOT add or remove content — only improve fluency.\n"
+-        "- Return ONLY the improved subtitle text, nothing else."
++        "1. DO NOT change the meaning or add content not in the original.\n"
++        "2. Keep it to 2 lines maximum, ~42 characters per line.\n"
++        "3. Use natural, conversational English suitable for anime viewers.\n"
++        "4. Preserve character personality and tone, but do not make the line "
++        "more dramatic.\n"
++        "5. Do not infer missing context, add new ideas, or rewrite a simple "
++        "statement into a different action.\n"
++        "6. Use contractions and informal language only when they preserve the "
++        "same meaning.\n"
++        "7. Your output must contain ONLY English text using standard ASCII "
++        "characters and punctuation. Do NOT include Chinese, Japanese, Korean, "
++        "or any other non-Latin characters under any circumstances.\n"
++        "8. ONLY return the improved English subtitle text, nothing else."
+     ),
+     "literal": (
+-        "You are a professional subtitle editor specialising in Japanese anime "
+-        "and reference media. Your task is to improve machine-translated "
+-        "Japanese→English subtitles while staying close to the original phrasing.\n\n"
++        "You are a professional subtitle editor. Your task is to clean up "
++        "machine-translated English subtitles while staying as close to the "
++        "Japanese phrasing as possible.\n\n"
+         "Rules:\n"
+-        "- Preserve Japanese speech patterns where they can be rendered naturally.\n"
+-        "- Retain honorifics (san, kun, chan, senpai) as-is.\n"
+-        "- Keep each subtitle to 1–2 lines, max 42 characters per line.\n"
+-        "- Do NOT add or remove content.\n"
+-        "- Return ONLY the improved subtitle text, nothing else."
++        "1. DO NOT change the meaning or add content not in the original.\n"
++        "2. Keep it to 2 lines maximum, ~42 characters per line.\n"
++        "3. Fix only grammar and awkward phrasing, but preserve Japanese "
++        "sentence structure.\n"
++        "4. Keep honorifics and cultural terms when important.\n"
++        "5. Your output must contain ONLY English text using standard ASCII "
++        "characters and punctuation. Do NOT include Chinese, Japanese, Korean, "
++        "or any other non-Latin characters under any circumstances. Romanize "
++        "honorifics (e.g., \"san\", \"sensei\") instead of using kanji/kana.\n"
++        "6. ONLY return the improved English subtitle text, nothing else."
+     ),
+ }
+ 
+diff --git a/tests/test_config.py b/tests/test_config.py
+index 806b7eb..2eef93a 100644
+--- a/tests/test_config.py
++++ b/tests/test_config.py
+@@ -213,6 +213,11 @@ def test_domain_pack_explicit_selection(self, tmp_path):
+         cfg = Config(str(p))
+         assert cfg.domain_pack == "anime"
+ 
++    def test_domain_pack_prefers_new_packs_domain_key(self, tmp_path):
++        p = write_config(tmp_path, extra={"packs": {"domain": "jav"}, "domain": {"pack": "anime"}})
++        cfg = Config(str(p))
++        assert cfg.domain_pack == "jav"
++
+     def test_domain_pack_explicit_jav_selection(self, tmp_path):
+         p = write_config(tmp_path, extra={"domain": {"pack": "jav", "adult_content_opt_in": True}})
+         cfg = Config(str(p))
+diff --git a/tests/test_llm_polish_drift.py b/tests/test_llm_polish_drift.py
+index 45ea7cd..d77b3de 100644
+--- a/tests/test_llm_polish_drift.py
++++ b/tests/test_llm_polish_drift.py
+@@ -130,6 +130,28 @@ def test_case_insensitive(self):
+         assert _is_stock_phrase_collapse(raw, polished) is True
+ 
+ 
++# ---------------------------------------------------------------------------
++# polish_text — prompt injection
++# ---------------------------------------------------------------------------
++
++class TestPromptInjection:
++    def test_prompt_fn_overrides_config_prompt(self):
++        cfg = _make_config(llm_enabled=True)
++        polisher = LLMPolisher(cfg, prompt_fn=lambda style: f"pack:{style}")
++
++        with patch("core.polish.requests.post") as post:
++            response = MagicMock()
++            response.status_code = 200
++            response.json.return_value = {"response": "Improved text"}
++            post.return_value = response
++
++            result = polisher.polish_text("日本語", "Raw text", style="natural", retry_count=0)
++
++        assert result == "Improved text"
++        assert post.call_args.kwargs["json"]["system"] == "pack:natural"
++        cfg.get_llm_prompt.assert_not_called()
++
++
+ # ---------------------------------------------------------------------------
+ # PolishStats
+ # ---------------------------------------------------------------------------
+diff --git a/tests/test_orchestrator.py b/tests/test_orchestrator.py
+index 4b4718f..5473baf 100644
+--- a/tests/test_orchestrator.py
++++ b/tests/test_orchestrator.py
+@@ -265,6 +265,67 @@ def test_anime_domain_source_preferences_apply_in_inspect_mode():
+     assert meta["strategy"] == "ja_audio_asr_mt", meta
+ 
+ 
++def test_packs_language_config_drives_language_routing_hook_resolution(monkeypatch):
++    calls = []
++
++    def fake_load_language_routing_hooks(source_language: str = "ja", target_language: str = "en"):
++        calls.append((source_language, target_language))
++        return LanguageRoutingHooks(
++            pack_id="en_ja",
++            source_language="ja",
++            target_language="en",
++            lang_aliases={
++                "ja": frozenset({"ja", "jpn", "jp", "ja-jp", "japanese"}),
++                "en": frozenset({"en", "eng", "en-us", "en-gb", "english"}),
++            },
++            untagged_audio_fallback_source_language="ja",
++            translate_candidate=lambda cand, cfg, source_candidate=None: cand,
++        )
++
++    monkeypatch.setattr(orch, "load_language_routing_hooks", fake_load_language_routing_hooks)
++
++    cfg = Config()
++    cfg._config["packs"] = {"language": "en_ja"}
++    media = _media(en_sub=True, en_audio=True, jp_sub=True, jp_audio=True)
++    meta = orch.run_generate(media, cfg, inspect_only=True)
++
++    assert calls == [("en", "ja")]
++    assert meta["language_pack"] == "en_ja"
++
++
++def test_anime_domain_pack_style_config_overrides_qc_defaults_and_injects_prompt_fn(monkeypatch):
++    captured = {}
++
++    def fake_polish_candidate_with_llm(cand: SubtitleCandidate, cfg: Config, **kwargs):
++        captured["prompt_fn"] = kwargs.get("prompt_fn")
++        return cand
++
++    def fake_run_qc(*args, **kwargs):
++        captured["qc_kwargs"] = kwargs
++        return _clean_qc_summary()
++
++    monkeypatch.setattr(orch, "polish_candidate_with_llm", fake_polish_candidate_with_llm)
++    monkeypatch.setattr(orch, "run_qc", fake_run_qc)
++
++    cfg = Config()
++    cfg._config.setdefault("generate", {})
++    cfg._config["generate"]["prefer_subtitles"] = True
++    cfg._config["generate"]["use_llm_polish"] = True
++    cfg._config["llm"]["max_chars_per_line"] = 55
++    cfg._config["llm"]["max_lines"] = 3
++    cfg._config["packs"] = {"language": "ja_en", "domain": "anime"}
++
++    media = _media(en_sub=False, en_audio=False, jp_sub=True, jp_audio=True)
++    meta = orch.run_generate(media, cfg)
++
++    assert meta["strategy"] == "embedded_jp_mt"
++    assert captured["qc_kwargs"]["max_line_chars"] == 42
++    assert captured["qc_kwargs"]["max_lines"] == 2
++    assert callable(captured["prompt_fn"])
++    from packs.language.ja_en.prompts import get_system_prompt
++    assert captured["prompt_fn"]("natural") == get_system_prompt("natural")
++
++
+ def test_jav_domain_requires_explicit_opt_in():
+     from packs.domain.jav.privacy import ContentGateError
+ 
+diff --git a/tests/test_packs_language_ja_en.py b/tests/test_packs_language_ja_en.py
+index 666fcf9..18d8887 100644
+--- a/tests/test_packs_language_ja_en.py
++++ b/tests/test_packs_language_ja_en.py
+@@ -7,6 +7,7 @@
+ from pathlib import Path
+ 
+ import pytest
++import yaml
+ 
+ 
+ # ---------------------------------------------------------------------------
+@@ -94,6 +95,17 @@ def test_natural_and_literal_differ(self):
+         from packs.language.ja_en.prompts import get_system_prompt
+         assert get_system_prompt("natural") != get_system_prompt("literal")
+ 
++    @pytest.mark.parametrize("style", ["natural", "literal"])
++    def test_pack_prompts_match_config_templates(self, style):
++        from packs.language.ja_en.prompts import get_system_prompt
++
++        config = yaml.safe_load((Path(__file__).parent.parent / "config.yaml").read_text(encoding="utf-8"))
++        expected = config["llm"]["prompts"][style].format(
++            max_lines=config["llm"]["max_lines"],
++            max_chars_per_line=config["llm"]["max_chars_per_line"],
++        )
++        assert get_system_prompt(style).strip() == expected.strip()
++
+ 
+ # ---------------------------------------------------------------------------
+ # cjk_filter
+diff --git a/tests/test_source_selection.py b/tests/test_source_selection.py
+index b7d69f0..45e9eef 100644
+--- a/tests/test_source_selection.py
++++ b/tests/test_source_selection.py
+@@ -12,7 +12,9 @@
+ import pytest
+ 
+ from orchestrator import _lang_matches, _first_text_sub, _first_audio_order, _select_untagged_audio_fallback
++import orchestrator as orch
+ from media_inspect import MediaInfo, AudioStream, SubtitleStream
++from packs.language.ja_en.aliases import LANG_ALIASES
+ 
+ 
+ # ---------------------------------------------------------------------------
+@@ -62,6 +64,9 @@ def make_media(
+ # ---------------------------------------------------------------------------
+ 
+ class TestLangMatches:
++    def test_orchestrator_uses_pack_lang_aliases(self):
++        assert orch._LANG_ALIASES is LANG_ALIASES
++
+     @pytest.mark.parametrize("code", ["ja", "jpn", "jp", "ja-jp"])
+     def test_ja_variants_match_ja(self, code):
+         assert _lang_matches(code, "ja") is True
+@@ -344,4 +349,3 @@ def test_mixed_language_mul_tag_treated_as_fallback(self):
+         order, _ = _select_untagged_audio_fallback(media)
+         # Title wins regardless of the 'mul' tag on track 0
+         assert order == 1
+-

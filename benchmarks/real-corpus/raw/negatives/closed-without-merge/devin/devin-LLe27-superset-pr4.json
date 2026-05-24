@@ -1,0 +1,26 @@
+{
+  "id": "devin-LLe27-superset-pr4",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 4,
+    "headSha": "a98f0133d89ca78bc578fd960e5fd595f81efa44",
+    "baseSha": "71f69baf56744a817b10ff682be92d7169efd7ee",
+    "title": "fix(dashboard): exclude null options from Select All count in filters",
+    "body": "### SUMMARY\n\nWhen using dashboard filters with null values, the \"Select All\" button displayed an incorrect count that included null options, even though clicking \"Select All\" intentionally does not select null values. For example, with 2 real values and 1 null value, the button showed \"Select All (3)\" but only selected 2 values.\n\n**Root cause:** In `Select.tsx`, the `bulkSelectCounts.selectable` count and `selectAllEligible` list included null-valued options, but the `handleSelectAll` function skipped them due to a falsy check (`option.value &&`).\n\n**Fix (3 areas in `Select.tsx`):**\n1. Added `option.value != null` guard to `bulkSelectCounts` selectable counting, so null options are excluded from the displayed count\n2. Added the same guard to `selectAllEligible`, keeping the eligible list consistent\n3. Changed `handleSelectAll` from `option.value &&` (truthy check) to `option.value != null` so that valid falsy values like `0` and `\"\"` are still selected correctly\n4. Fixed `selectAllMode` to filter null values from its selectValue count, preventing false activation when a user manually selects a null option after clicking \"Select All\"\n\n### BEFORE/AFTER SCREENSHOTS OR ANIMATED GIF\n\n**Before:** \"Select All (3)\" is shown but only 2 values are actually selected; \"Deselect All (2)\" shows the correct count after selection.\n\n**After:** \"Select All (2)\" correctly reflects the number of values that will be selected (excluding null).\n\n### TESTING INSTRUCTIONS\n\n1. Create a dashboard filter backed by a dataset with a column containing null values\n2. Open the filter dropdown\n3. Verify \"Select All\" count excludes the `<NULL>` option\n4. Click \"Select All\" and verify the correct number of non-null values are selected\n5. Run the Select component tests:\n   ```bash\n   cd superset-frontend\n   NODE_ENV=test npx jest --no-coverage packages/superset-ui-core/src/components/Select/Select.test.tsx\n   ```\n\n### ADDITIONAL INFORMATION\n- [x] Has associated issue: Fixes #3\n- [ ] Required feature flags:\n- [x] Changes UI\n- [ ] Includes DB Migration\n- [ ] Introduces new feature or API\n- [ ] Removes existing feature or API\n\nLink to Devin session: https://app.devin.ai/sessions/13e1e1f326f9438fb41de17a72c4309a\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/lle27/superset/pull/4\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779482563-fix-select-all-null-count",
+    "repository": "LLe27/superset"
+  },
+  "diffRef": {
+    "repository": "LLe27/superset",
+    "headSha": "a98f0133d89ca78bc578fd960e5fd595f81efa44",
+    "baseSha": "71f69baf56744a817b10ff682be92d7169efd7ee"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/devin/devin-LLe27-superset-pr4.diff",
+  "vendoredAt": "2026-05-24T04:28:09.122Z",
+  "collectedAt": "2026-05-24T04:28:09.122Z"
+}

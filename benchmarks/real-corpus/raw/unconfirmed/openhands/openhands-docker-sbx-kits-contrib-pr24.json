@@ -1,0 +1,26 @@
+{
+  "id": "openhands-docker-sbx-kits-contrib-pr24",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "body=openhands-attribution"
+  },
+  "pr": {
+    "number": 24,
+    "headSha": "bcbc8c8d3abaa65c1e79bcefb51765c24bf547d7",
+    "baseSha": "8b5cf7ff4524ebf2bdffbf2aea2f9daedf7b9a5b",
+    "title": "Add aider kit",
+    "body": "## Summary\n\n- Adds a `kind: agent` kit for [Aider](https://aider.chat/), an AI pair programming tool\n- Installs Aider via uv with Python 3.12 at sandbox creation time\n- Wires Anthropic, OpenAI, and Gemini auth through the SBX proxy (`serviceDomains` + `serviceAuth`)\n- Pre-seeds `~/.aider.conf.yml` with sensible defaults (model alias, auto-commits, analytics off)\n\n## Spec choices worth flagging\n\n**`--python 3.12` on the install command**: The base image ships Python 3.13, but aider's `numpy` dependency resolves to a version that only has prebuilt wheels for Python ≤3.12. The base image has no C compiler, so `uv tool install aider-chat` fails trying to build numpy from source. Pinning `--python 3.12` causes uv to download a standalone CPython 3.12 runtime (~28 MB) from `releases.astral.sh` (already covered by `*.astral.sh` in `allowedDomains`) and install aider against it. Confirmed working end-to-end.\n\n**`*.astral.sh` wildcard in `allowedDomains`**: Same rationale as the openhands kit (#22) — the uv install script at `astral.sh` redirects binary and Python runtime downloads to `releases.astral.sh`. Without the wildcard, those fetches get a 403 from the proxy. `serviceDomains` stays narrow (only the three LLM API endpoints) to avoid TLS interception on install-time CDN traffic.\n\n**`--with pip` on the install command**: Aider uses pip internally for some operations. Without this flag, `uv tool install` omits pip from the isolated environment and aider fails at runtime.\n\n**No `aiFilename`/`memory:`**: Aider doesn't have a single canonical \"memory file\" analogous to `CLAUDE.md` or `AGENTS.md`. Users pass project conventions via `--read <file>` or `.aider.conf.yml`. The README covers this.\n\n## Test plan\n\n- [x] `sbx kit validate ./aider/` — passes\n- [x] `sbx run --kit ./aider/ aider` — sandbox created successfully\n- [x] Manual install verified: `aider 0.86.2` installed and `--version` returns correctly\n- [x] `sbx policy log` — no blocked domains during install; `*.astral.sh`, `pypi.org`, `files.pythonhosted.org` all resolve as `forward-bypass`\n- [ ] TCK (`go test`) — CI will run this; requires Docker, not available in this environment\n\n## Origin\n\nDesigned and tested locally against a Docker SBX sandbox. Followed the amp kit pattern for auth wiring.",
+    "author": "ealeyner",
+    "headRef": "add-aider-kit",
+    "repository": "docker/sbx-kits-contrib"
+  },
+  "diffRef": {
+    "repository": "docker/sbx-kits-contrib",
+    "headSha": "bcbc8c8d3abaa65c1e79bcefb51765c24bf547d7",
+    "baseSha": "8b5cf7ff4524ebf2bdffbf2aea2f9daedf7b9a5b"
+  },
+  "vendoredDiffPath": "unconfirmed/openhands/openhands-docker-sbx-kits-contrib-pr24.diff",
+  "vendoredAt": "2026-05-24T03:10:08.354Z",
+  "collectedAt": "2026-05-24T03:10:08.354Z"
+}

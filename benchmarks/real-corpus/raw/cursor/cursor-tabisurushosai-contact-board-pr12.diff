@@ -1,0 +1,137 @@
+diff --git a/docs/PORTING.md b/docs/PORTING.md
+index c5afb29..56bb4c9 100644
+--- a/docs/PORTING.md
++++ b/docs/PORTING.md
+@@ -15,19 +15,27 @@ for future iOS or Android app shells.
+ ## Persist through `src/storage`
+ 
+ - UI code should depend on the `BoardStorage` interface from
+-  `src/storage/boardStorage.ts`.
++  `src/storage/types.ts`.
+ - Platform implementations should adapt their own storage API to
+-  `KeyValueStorageAdapter`, then pass it to `createBoardStorage`.
++  `KeyValueStorage`, then pass it to `createBoardStorage`.
++- `KeyValueStorage.getItem` must return `undefined` for missing keys so
++  `createBoardStorage` can initialize the same default state on every
++  platform.
+ - Keep the storage key (`contactBoardState`) and sanitized
+   `ContactBoardState` shape unchanged so existing local data continues to load.
+ - Chrome-specific code belongs in `src/storage/chromeStorageAdapter.ts`.
+   Future iOS or Android adapters should live beside it instead of entering
+   `src/core`.
++- Native adapters for iOS or Android should only translate between the native
++  local persistence API and `KeyValueStorage`; validation and defaulting should
++  stay in `createBoardStorage`.
+ 
+ ## Keep UI shell portable
+ 
+ - Keep platform setup at the application edge (`src/main.ts` for Chrome).
+ - Pass localization and storage dependencies into `createContactBoardApp`.
++- Keep Chrome i18n, native localization, and platform bootstrapping outside
++  `src/core`; inject localized strings through the existing message resolver.
+ - Avoid adding remote code, external CDNs, external fonts, or network calls; the
+   app should remain fully offline.
+ - Do not add permissions or host permissions when porting the shared logic.
+diff --git a/src/app/contactBoardApp.ts b/src/app/contactBoardApp.ts
+index 0182e3e..7b23fbe 100644
+--- a/src/app/contactBoardApp.ts
++++ b/src/app/contactBoardApp.ts
+@@ -7,7 +7,7 @@ import {
+ } from "../core/contactBoard";
+ import { getPremiumStatus, STRIPE_PAYMENT_LINK } from "../core/premium";
+ import type { ContactBoardState, ContactEntry } from "../core/types";
+-import type { BoardStorage } from "../storage/boardStorage";
++import type { BoardStorage } from "../storage/types";
+ 
+ export type MessageResolver = (key: string, fallback: string, substitutions?: string | string[]) => string;
+ 
+diff --git a/src/storage/boardStorage.ts b/src/storage/boardStorage.ts
+index 72f1087..0e6a2e6 100644
+--- a/src/storage/boardStorage.ts
++++ b/src/storage/boardStorage.ts
+@@ -1,26 +1,17 @@
+ import { createEmptyBoardState, sanitizeBoardState } from "../core/contactBoard";
+ import type { ContactBoardState } from "../core/types";
++import type { BoardStorage, KeyValueStorage } from "./types";
+ 
+ export const BOARD_STATE_KEY = "contactBoardState";
+ 
+-export interface BoardStorage {
+-  load(): Promise<ContactBoardState>;
+-  save(state: ContactBoardState): Promise<void>;
+-}
+-
+-export interface KeyValueStorageAdapter {
+-  get(key: string): Promise<unknown>;
+-  set(key: string, value: unknown): Promise<void>;
+-}
+-
+-export function createBoardStorage(adapter: KeyValueStorageAdapter, now = Date.now): BoardStorage {
++export function createBoardStorage(adapter: KeyValueStorage, now = Date.now): BoardStorage {
+   return {
+     async load(): Promise<ContactBoardState> {
+-      const stored = await adapter.get(BOARD_STATE_KEY);
++      const stored = await adapter.getItem(BOARD_STATE_KEY);
+ 
+       if (stored === undefined) {
+         const initialState = createEmptyBoardState(now());
+-        await adapter.set(BOARD_STATE_KEY, initialState);
++        await adapter.setItem(BOARD_STATE_KEY, initialState);
+         return initialState;
+       }
+ 
+@@ -29,7 +20,7 @@ export function createBoardStorage(adapter: KeyValueStorageAdapter, now = Date.n
+ 
+     async save(state: ContactBoardState): Promise<void> {
+       const safeState = sanitizeBoardState(state, now());
+-      await adapter.set(BOARD_STATE_KEY, safeState);
++      await adapter.setItem(BOARD_STATE_KEY, safeState);
+     }
+   };
+ }
+diff --git a/src/storage/chromeStorageAdapter.ts b/src/storage/chromeStorageAdapter.ts
+index 5064146..d455c8b 100644
+--- a/src/storage/chromeStorageAdapter.ts
++++ b/src/storage/chromeStorageAdapter.ts
+@@ -1,5 +1,5 @@
+ import { createBoardStorage } from "./boardStorage";
+-import type { BoardStorage, KeyValueStorageAdapter } from "./boardStorage";
++import type { BoardStorage, KeyValueStorage } from "./types";
+ 
+ type ChromeStorageArea = Pick<typeof chrome.storage.local, "get" | "set">;
+ 
+@@ -7,14 +7,14 @@ export function createChromeBoardStorage(now = Date.now): BoardStorage {
+   return createBoardStorage(createChromeKeyValueStorage(chrome.storage.local), now);
+ }
+ 
+-export function createChromeKeyValueStorage(area: ChromeStorageArea): KeyValueStorageAdapter {
++export function createChromeKeyValueStorage(area: ChromeStorageArea): KeyValueStorage {
+   return {
+-    async get(key: string): Promise<unknown> {
++    async getItem(key: string): Promise<unknown> {
+       const result = await area.get(key);
+       return result[key];
+     },
+ 
+-    async set(key: string, value: unknown): Promise<void> {
++    async setItem(key: string, value: unknown): Promise<void> {
+       await area.set({ [key]: value });
+     }
+   };
+diff --git a/src/storage/types.ts b/src/storage/types.ts
+new file mode 100644
+index 0000000..8c4d3e0
+--- /dev/null
++++ b/src/storage/types.ts
+@@ -0,0 +1,11 @@
++import type { ContactBoardState } from "../core/types";
++
++export interface BoardStorage {
++  load(): Promise<ContactBoardState>;
++  save(state: ContactBoardState): Promise<void>;
++}
++
++export interface KeyValueStorage {
++  getItem(key: string): Promise<unknown>;
++  setItem(key: string, value: unknown): Promise<void>;
++}

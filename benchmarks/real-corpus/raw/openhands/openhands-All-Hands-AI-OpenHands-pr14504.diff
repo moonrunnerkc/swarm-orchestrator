@@ -1,0 +1,252 @@
+diff --git a/enterprise/integrations/resolver_context.py b/enterprise/integrations/resolver_context.py
+index 22b79de03005..807bb41c00c0 100644
+--- a/enterprise/integrations/resolver_context.py
++++ b/enterprise/integrations/resolver_context.py
+@@ -26,6 +26,9 @@ def __init__(
+     async def get_user_id(self) -> str | None:
+         return await self.saas_user_auth.get_user_id()
+ 
++    async def get_user_email(self) -> str | None:
++        return await self.saas_user_auth.get_user_email()
++
+     async def get_user_info(self) -> UserInfo:
+         user_settings = await self.saas_user_auth.get_user_settings()
+         user_id = await self.saas_user_auth.get_user_id()
+diff --git a/openhands/app_server/app_conversation/live_status_app_conversation_service.py b/openhands/app_server/app_conversation/live_status_app_conversation_service.py
+index 3ab7909a1ef5..cba931885423 100644
+--- a/openhands/app_server/app_conversation/live_status_app_conversation_service.py
++++ b/openhands/app_server/app_conversation/live_status_app_conversation_service.py
+@@ -243,6 +243,11 @@ async def _start_app_conversation(
+     ) -> AsyncGenerator[AppConversationStartTask, None]:
+         # Create and yield the start task
+         user_id = await self.user_context.get_user_id()
++        # Prefer the user's email as the Laminar trace user id so traces are
++        # immediately attributable in the Laminar UI instead of showing only
++        # a pseudo-anonymous internal id. Falls back to ``user_id`` when no
++        # email is available (e.g. OSS mode).
++        laminar_user_id = await self.user_context.get_user_email() or user_id
+ 
+         # Validate and inherit from parent conversation if provided
+         if request.parent_conversation_id:
+@@ -334,14 +339,14 @@ async def _start_app_conversation(
+             # traces with the authenticated user. The currently pinned
+             # ``openhands-sdk`` release does not yet expose ``user_id`` on
+             # ``StartConversationRequest`` (added in software-agent-sdk#3242),
+-            # so passing ``user_id=user.id`` to ``create_request(...)`` is
+-            # silently dropped by pydantic. The agent-server reads the field
+-            # directly from the request body, so injecting it here works
+-            # regardless of whether the local SDK model knows about it.
+-            # Remove this once OpenHands pins to an SDK release that exposes
+-            # ``user_id`` on ``StartConversationRequest``.
+-            if user_id:
+-                body_json['user_id'] = user_id
++            # so passing it to ``create_request(...)`` is silently dropped by
++            # pydantic. The agent-server reads the field directly from the
++            # request body, so injecting it here works regardless of whether
++            # the local SDK model knows about it. Remove this once OpenHands
++            # pins to an SDK release that exposes ``user_id`` on
++            # ``StartConversationRequest``.
++            if laminar_user_id:
++                body_json['user_id'] = laminar_user_id
+             headers = (
+                 {'X-Session-API-Key': sandbox.session_api_key}
+                 if sandbox.session_api_key
+@@ -1411,12 +1416,16 @@ async def _build_start_conversation_request_for_user(
+         # Pass agent explicitly — it has server-only overrides (system
+         # prompts, LLM metadata, skills) applied after create_agent().
+         # ``user_id`` is forwarded so the agent-server can attach it to
+-        # observability spans (see software-agent-sdk#3242). It is dropped
+-        # silently by pydantic on SDK versions that don't yet expose the
+-        # field; the start-conversation POST also injects it directly into
+-        # the JSON body as a forward-compatible fallback.
++        # observability spans (see software-agent-sdk#3242). We prefer the
++        # user's email so Laminar traces are immediately attributable, and
++        # fall back to the internal user id when no email is available.
++        # The kwarg is dropped silently by pydantic on SDK versions that
++        # don't yet expose the field; the start-conversation POST also
++        # injects it directly into the JSON body as a forward-compatible
++        # fallback.
++        laminar_user_id = await self.user_context.get_user_email() or user.id
+         request = conv_settings.create_request(
+-            StartConversationRequest, agent=agent, user_id=user.id
++            StartConversationRequest, agent=agent, user_id=laminar_user_id
+         )
+ 
+         # --- skills (require remote workspace) ------------------------------
+@@ -1556,9 +1565,12 @@ async def _build_acp_start_conversation_request(
+             }
+         )
+         # ``user_id`` is forwarded for observability; see the LLM path above
+-        # for behavior on SDK versions that don't yet expose the field.
++        # for behavior on SDK versions that don't yet expose the field. We
++        # prefer email over the internal id so Laminar traces are immediately
++        # attributable, falling back to ``user.id`` when no email is available.
++        laminar_user_id = await self.user_context.get_user_email() or user.id
+         return conv_settings.create_request(
+-            StartConversationRequest, agent=acp_agent, user_id=user.id
++            StartConversationRequest, agent=acp_agent, user_id=laminar_user_id
+         )
+ 
+     async def _process_pending_messages(
+diff --git a/openhands/app_server/user/auth_user_context.py b/openhands/app_server/user/auth_user_context.py
+index ec5960c2f52d..2936b09a9c6f 100644
+--- a/openhands/app_server/user/auth_user_context.py
++++ b/openhands/app_server/user/auth_user_context.py
+@@ -36,6 +36,9 @@ async def get_user_id(self) -> str | None:
+         user_id = await self.user_auth.get_user_id()
+         return user_id
+ 
++    async def get_user_email(self) -> str | None:
++        return await self.user_auth.get_user_email()
++
+     async def get_user_info(self) -> UserInfo:
+         user_info = self._user_info
+         if user_info is None:
+diff --git a/openhands/app_server/user/specifiy_user_context.py b/openhands/app_server/user/specifiy_user_context.py
+index e275f99adcff..af36e3940ac8 100644
+--- a/openhands/app_server/user/specifiy_user_context.py
++++ b/openhands/app_server/user/specifiy_user_context.py
+@@ -19,6 +19,9 @@ class SpecifyUserContext(UserContext):
+     async def get_user_id(self) -> str | None:
+         return self.user_id
+ 
++    async def get_user_email(self) -> str | None:
++        return None
++
+     async def get_user_info(self) -> UserInfo:
+         raise NotImplementedError()
+ 
+diff --git a/openhands/app_server/user/user_context.py b/openhands/app_server/user/user_context.py
+index 82c4e4cb711b..55c2fd84f442 100644
+--- a/openhands/app_server/user/user_context.py
++++ b/openhands/app_server/user/user_context.py
+@@ -19,6 +19,20 @@ class UserContext(ABC):
+     async def get_user_id(self) -> str | None:
+         """Get the user id"""
+ 
++    @abstractmethod
++    async def get_user_email(self) -> str | None:
++        """Get the email for the current user, if available.
++
++        Returns the user's email address for attribution in observability
++        traces (e.g. Laminar). In SaaS/enterprise mode this is typically
++        the Keycloak email; in OSS mode or for admin-scoped contexts this
++        returns ``None`` so callers can fall back to the internal user id.
++
++        Note: this value is considered PII and may be forwarded to
++        third-party observability services. Treat it accordingly when
++        adding new callers.
++        """
++
+     @abstractmethod
+     async def get_user_info(self) -> UserInfo:
+         """Get the user info."""
+diff --git a/tests/unit/app_server/test_user_context_email.py b/tests/unit/app_server/test_user_context_email.py
+new file mode 100644
+index 000000000000..1d0586de7423
+--- /dev/null
++++ b/tests/unit/app_server/test_user_context_email.py
+@@ -0,0 +1,103 @@
++"""Unit tests for ``UserContext.get_user_email()`` implementations.
++
++These tests cover the change that uses the user's email (when available) as
++the Laminar trace ``user_id`` so traces are immediately attributable in the
++Laminar UI, while still falling back to the internal user id (e.g. in OSS
++mode or for admin-scoped contexts).
++"""
++
++from unittest.mock import AsyncMock
++
++import pytest
++
++from openhands.app_server.user.auth_user_context import AuthUserContext
++from openhands.app_server.user.specifiy_user_context import (
++    ADMIN,
++    SpecifyUserContext,
++)
++
++
++class TestAuthUserContextEmail:
++    """``AuthUserContext.get_user_email()`` delegates to ``UserAuth``."""
++
++    @pytest.mark.asyncio
++    async def test_returns_email_when_user_auth_has_one(self):
++        """SaaS mode: Keycloak-backed UserAuth returns the user's email."""
++        user_auth = AsyncMock()
++        user_auth.get_user_email = AsyncMock(return_value='alice@example.com')
++        ctx = AuthUserContext(user_auth=user_auth)
++
++        email = await ctx.get_user_email()
++
++        assert email == 'alice@example.com'
++        user_auth.get_user_email.assert_awaited_once()
++
++    @pytest.mark.asyncio
++    async def test_returns_none_when_user_auth_has_no_email(self):
++        """OSS mode: DefaultUserAuth returns None and we propagate that."""
++        user_auth = AsyncMock()
++        user_auth.get_user_email = AsyncMock(return_value=None)
++        ctx = AuthUserContext(user_auth=user_auth)
++
++        email = await ctx.get_user_email()
++
++        assert email is None
++        user_auth.get_user_email.assert_awaited_once()
++
++
++class TestSpecifyUserContextEmail:
++    """Admin contexts have no associated end-user email."""
++
++    @pytest.mark.asyncio
++    async def test_returns_none_for_admin_context(self):
++        assert await ADMIN.get_user_email() is None
++
++    @pytest.mark.asyncio
++    async def test_returns_none_for_arbitrary_user_id(self):
++        ctx = SpecifyUserContext(user_id='some-uuid')
++        assert await ctx.get_user_email() is None
++
++
++class TestLaminarUserIdFallback:
++    """The exact ``email or user_id`` expression used at the three callsites
++    inside ``LiveStatusAppConversationService``. We verify the semantics here
++    rather than reach into the large async _start_app_conversation flow.
++    """
++
++    @pytest.mark.asyncio
++    async def test_prefers_email_when_available(self):
++        ctx = AuthUserContext(user_auth=AsyncMock())
++        ctx.user_auth.get_user_email = AsyncMock(return_value='alice@example.com')
++        user_id = 'internal-uuid-123'
++
++        laminar_user_id = await ctx.get_user_email() or user_id
++
++        assert laminar_user_id == 'alice@example.com'
++
++    @pytest.mark.asyncio
++    async def test_falls_back_to_user_id_when_email_is_none(self):
++        ctx = AuthUserContext(user_auth=AsyncMock())
++        ctx.user_auth.get_user_email = AsyncMock(return_value=None)
++        user_id = 'internal-uuid-123'
++
++        laminar_user_id = await ctx.get_user_email() or user_id
++
++        assert laminar_user_id == 'internal-uuid-123'
++
++    @pytest.mark.asyncio
++    async def test_falls_back_to_user_id_when_email_is_empty_string(self):
++        """``or`` also treats '' as falsy, which is the desired behavior:
++        an empty email is not useful as a Laminar trace id."""
++        ctx = AuthUserContext(user_auth=AsyncMock())
++        ctx.user_auth.get_user_email = AsyncMock(return_value='')
++        user_id = 'internal-uuid-123'
++
++        laminar_user_id = await ctx.get_user_email() or user_id
++
++        assert laminar_user_id == 'internal-uuid-123'
++
++    @pytest.mark.asyncio
++    async def test_admin_context_always_falls_back_to_user_id(self):
++        user_id = 'admin-target-user-id'
++        laminar_user_id = await ADMIN.get_user_email() or user_id
++        assert laminar_user_id == 'admin-target-user-id'

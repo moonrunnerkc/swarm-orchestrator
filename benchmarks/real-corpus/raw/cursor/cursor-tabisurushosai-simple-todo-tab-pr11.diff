@@ -1,0 +1,209 @@
+diff --git a/_locales/en/messages.json b/_locales/en/messages.json
+index bf6c730..30a59d4 100644
+--- a/_locales/en/messages.json
++++ b/_locales/en/messages.json
+@@ -15,6 +15,7 @@
+   "emptyTasks": { "message": "No tasks yet. Add one thing to do today." },
+   "allTasksComplete": { "message": "All of today's tasks are complete. Nice work." },
+   "tasksRemainingStatus": { "message": "$ACTIVE$ remaining / $TOTAL$ total" },
++  "taskListLabel": { "message": "Today's task list" },
+   "markTaskComplete": { "message": "Mark complete: $TASK$" },
+   "markTaskIncomplete": { "message": "Mark incomplete: $TASK$" },
+   "focusTaskButton": { "message": "Set as focus task" },
+@@ -31,6 +32,7 @@
+   "upgradeButton": { "message": "Upgrade to Premium" },
+   "themeLabel": { "message": "Background color" },
+   "historyTitle": { "message": "Completion history" },
++  "historyListLabel": { "message": "Completed task history" },
+   "historyEmpty": { "message": "No completion history yet." },
+   "historyItem": { "message": "$DATE$: $TASK$" },
+   "premiumActive": { "message": "Premium active" }
+diff --git a/_locales/ja/messages.json b/_locales/ja/messages.json
+index 2a4eb4b..00e8fe4 100644
+--- a/_locales/ja/messages.json
++++ b/_locales/ja/messages.json
+@@ -15,6 +15,7 @@
+   "emptyTasks": { "message": "まだタスクはありません。今日やることを1つ追加しましょう。" },
+   "allTasksComplete": { "message": "今日のタスクはすべて完了しました。お疲れさまです。" },
+   "tasksRemainingStatus": { "message": "未完了 $ACTIVE$件 / 全 $TOTAL$件" },
++  "taskListLabel": { "message": "今日のタスクリスト" },
+   "markTaskComplete": { "message": "完了にする: $TASK$" },
+   "markTaskIncomplete": { "message": "未完了に戻す: $TASK$" },
+   "focusTaskButton": { "message": "集中タスクにする" },
+@@ -31,6 +32,7 @@
+   "upgradeButton": { "message": "プレミアムにアップグレード" },
+   "themeLabel": { "message": "背景色" },
+   "historyTitle": { "message": "完了履歴" },
++  "historyListLabel": { "message": "完了したタスクの履歴" },
+   "historyEmpty": { "message": "完了履歴はまだありません。" },
+   "historyItem": { "message": "$DATE$: $TASK$" },
+   "premiumActive": { "message": "プレミアム利用中" }
+diff --git a/newtab.html b/newtab.html
+index a1c5de3..969c728 100644
+--- a/newtab.html
++++ b/newtab.html
+@@ -26,7 +26,7 @@ <h1 id="title" class="app-title">今日のやること</h1>
+             <div id="empty-state" class="empty-state" hidden>
+                 <div id="empty-state-title" class="empty-state-title">まだ何もありません</div>
+                 <p id="empty-state-description" class="empty-state-description">今日やることを短く書くと、このタブがシンプルなチェックリストになります。</p>
+-                <button id="empty-state-action" class="empty-state-action" type="button">入力欄に移動</button>
++                <button id="empty-state-action" class="empty-state-action" type="button" aria-controls="task-input">入力欄に移動</button>
+             </div>
+ 
+             <div id="task-status" class="status-message" role="status" aria-live="polite">読み込み中...</div>
+diff --git a/src/newtab.css b/src/newtab.css
+index 238755f..1d6c243 100644
+--- a/src/newtab.css
++++ b/src/newtab.css
+@@ -5,7 +5,7 @@
+     --surface-muted: #f8fafc;
+     --text: #0f172a;
+     --text-muted: #475569;
+-    --border: #d7dee8;
++    --border: #64748b;
+     --border-soft: #e6ebf2;
+     --primary: #1d4ed8;
+     --primary-hover: #1e40af;
+@@ -17,6 +17,7 @@
+     --warning-bg: #fff7d6;
+     --warning-text: #713f12;
+     --focus-ring: #1d4ed8;
++    --focus-ring-shadow: rgba(29, 78, 216, 0.24);
+ }
+ 
+ * {
+@@ -44,6 +45,12 @@ input {
+     font: inherit;
+ }
+ 
++button,
++input,
++a {
++    touch-action: manipulation;
++}
++
+ button:focus-visible,
+ input:focus-visible,
+ a:focus-visible,
+@@ -51,6 +58,7 @@ a:focus-visible,
+ .task-checkbox-target:focus-within {
+     outline: 3px solid var(--focus-ring);
+     outline-offset: 2px;
++    box-shadow: 0 0 0 5px var(--focus-ring-shadow);
+ }
+ 
+ .visually-hidden {
+@@ -188,11 +196,11 @@ a:focus-visible,
+ }
+ 
+ .empty-state-action {
+-    min-height: 44px;
+-    padding: 0 14px;
++    min-height: 48px;
++    padding: 0 16px;
+     color: var(--primary);
+     background: #eff6ff;
+-    border: 1px solid #bfdbfe;
++    border: 1px solid currentColor;
+     border-radius: 10px;
+     cursor: pointer;
+     font-weight: 700;
+@@ -200,7 +208,6 @@ a:focus-visible,
+ 
+ .empty-state-action:hover {
+     color: var(--primary-hover);
+-    border-color: #93c5fd;
+     background: var(--primary-soft);
+ }
+ 
+@@ -309,7 +316,7 @@ a:focus-visible,
+ }
+ 
+ .task-item--completed .task-text {
+-    color: #64748b;
++    color: var(--text-muted);
+     text-decoration: line-through;
+ }
+ 
+@@ -333,9 +340,9 @@ a:focus-visible,
+ }
+ 
+ .focus-button--active {
+-    color: #92400e;
++    color: #78350f;
+     background: #fef3c7;
+-    border-color: #f59e0b;
++    border-color: currentColor;
+ }
+ 
+ .task-action-button {
+@@ -348,7 +355,7 @@ a:focus-visible,
+ 
+ .task-action-button:hover:not(:disabled) {
+     color: var(--primary);
+-    border-color: #93c5fd;
++    border-color: var(--primary);
+     background: #eff6ff;
+ }
+ 
+@@ -359,16 +366,16 @@ a:focus-visible,
+ }
+ 
+ .delete-button {
++    min-width: 64px;
+     padding: 0 14px;
+     color: var(--danger);
+-    border: 1px solid #fecaca;
++    border: 1px solid currentColor;
+     font-size: 14px;
+     font-weight: 700;
+ }
+ 
+ .delete-button:hover {
+     background: var(--danger-soft);
+-    border-color: #fca5a5;
+ }
+ 
+ .section-divider {
+@@ -394,7 +401,7 @@ a:focus-visible,
+ 
+ .upgrade-link {
+     display: flex;
+-    min-height: 44px;
++    min-height: 48px;
+     align-items: center;
+     justify-content: center;
+     margin-top: 10px;
+@@ -427,7 +434,7 @@ a:focus-visible,
+ 
+ #theme-color {
+     width: 48px;
+-    height: 44px;
++    height: 48px;
+     padding: 0;
+     border: 1px solid var(--border);
+     border-radius: 8px;
+@@ -476,4 +483,9 @@ a:focus-visible,
+     .task-text {
+         flex-basis: calc(100% - 60px);
+     }
++
++    .task-action-button,
++    .delete-button {
++        min-height: 52px;
++    }
+ }
+diff --git a/src/newtab.ts b/src/newtab.ts
+index 70dcaa6..36376c3 100644
+--- a/src/newtab.ts
++++ b/src/newtab.ts
+@@ -106,7 +106,9 @@ function setupI18n() {
+     setLocalizedText(upgradeLink, 'upgradeButton');
+     setLocalizedText(themeLabel, 'themeLabel');
+     themeColorInput.setAttribute('aria-label', chrome.i18n.getMessage('themeLabel'));
++    taskList.setAttribute('aria-label', chrome.i18n.getMessage('taskListLabel'));
+     setLocalizedText(historyTitle, 'historyTitle');
++    historyList.setAttribute('aria-label', chrome.i18n.getMessage('historyListLabel'));
+     setLocalizedText(premiumStatus, 'premiumActive');
+     setTaskStatusMessage(chrome.i18n.getMessage('loadingTasks'), 'loading');
+     taskList.setAttribute('aria-busy', 'true');

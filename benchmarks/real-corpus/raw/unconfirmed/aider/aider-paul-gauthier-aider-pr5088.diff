@@ -1,0 +1,230 @@
+diff --git a/aider/args.py b/aider/args.py
+index 5b3fdf07faf..6719b0de3b9 100644
+--- a/aider/args.py
++++ b/aider/args.py
+@@ -178,8 +178,8 @@ def get_parser(default_config_files, git_root):
+     group.add_argument(
+         "--auto-accept-architect",
+         action=argparse.BooleanOptionalAction,
+-        default=True,
+-        help="Enable/disable automatic acceptance of architect changes (default: True)",
++        default=False,
++        help="Enable/disable automatic acceptance of architect changes (default: False)",
+     )
+     group.add_argument(
+         "--weak-model",
+@@ -439,14 +439,14 @@ def get_parser(default_config_files, git_root):
+     group.add_argument(
+         "--auto-commits",
+         action=argparse.BooleanOptionalAction,
+-        default=True,
+-        help="Enable/disable auto commit of LLM changes (default: True)",
++        default=False,
++        help="Enable/disable auto commit of LLM changes (default: False)",
+     )
+     group.add_argument(
+         "--dirty-commits",
+         action=argparse.BooleanOptionalAction,
+-        default=True,
+-        help="Enable/disable commits when repo is found dirty (default: True)",
++        default=False,
++        help="Enable/disable commits when repo is found dirty (default: False)",
+     )
+     group.add_argument(
+         "--attribute-author",
+@@ -542,8 +542,8 @@ def get_parser(default_config_files, git_root):
+     group.add_argument(
+         "--auto-lint",
+         action=argparse.BooleanOptionalAction,
+-        default=True,
+-        help="Enable/disable automatic linting after changes (default: True)",
++        default=False,
++        help="Enable/disable automatic linting after changes (default: False)",
+     )
+     group.add_argument(
+         "--test-cmd",
+@@ -806,8 +806,8 @@ def get_parser(default_config_files, git_root):
+     group.add_argument(
+         "--suggest-shell-commands",
+         action=argparse.BooleanOptionalAction,
+-        default=True,
+-        help="Enable/disable suggesting shell commands (default: True)",
++        default=False,
++        help="Enable/disable suggesting shell commands (default: False)",
+     )
+     group.add_argument(
+         "--fancy-input",
+diff --git a/aider/coders/base_coder.py b/aider/coders/base_coder.py
+index 56613782b02..0cf14a1197a 100755
+--- a/aider/coders/base_coder.py
++++ b/aider/coders/base_coder.py
+@@ -114,7 +114,7 @@ class Coder:
+     add_cache_headers = False
+     cache_warming_thread = None
+     num_cache_warming_pings = 0
+-    suggest_shell_commands = True
++    suggest_shell_commands = False
+     detect_urls = True
+     ignore_mentions = None
+     chat_language = None
+@@ -2204,7 +2204,7 @@ def allowed_to_edit(self, path):
+             return
+ 
+         if not Path(full_path).exists():
+-            if not self.io.confirm_ask("Create new file?", subject=path):
++            if not self.io.confirm_ask("Create new file?", subject=path, explicit_yes_required=True):
+                 self.io.tool_output(f"Skipping edits to {path}")
+                 return
+ 
+@@ -2226,6 +2226,7 @@ def allowed_to_edit(self, path):
+         if not self.io.confirm_ask(
+             "Allow edits to file that has not been added to the chat?",
+             subject=path,
++            explicit_yes_required=True,
+         ):
+             self.io.tool_output(f"Skipping edits to {path}")
+             return
+diff --git a/aider/commands.py b/aider/commands.py
+index 3881403c5c1..e2974aaafde 100644
+--- a/aider/commands.py
++++ b/aider/commands.py
+@@ -1,6 +1,7 @@
+ import glob
+ import os
+ import re
++import shlex
+ import subprocess
+ import sys
+ import tempfile
+@@ -968,16 +969,16 @@ def cmd_git(self, args):
+         "Run a git command (output excluded from chat)"
+         combined_output = None
+         try:
+-            args = "git " + args
++            cmd = ["git"] + shlex.split(args)
+             env = dict(subprocess.os.environ)
+             env["GIT_EDITOR"] = "true"
+             result = subprocess.run(
+-                args,
++                cmd,
+                 stdout=subprocess.PIPE,
+                 stderr=subprocess.STDOUT,
+                 text=True,
+                 env=env,
+-                shell=True,
++                shell=False,
+                 encoding=self.io.encoding,
+                 errors="replace",
+             )
+@@ -1012,6 +1013,13 @@ def cmd_test(self, args):
+ 
+     def cmd_run(self, args, add_on_nonzero_exit=False):
+         "Run a shell command and optionally add the output to the chat (alias: !)"
++        if not self.io.confirm_ask(
++            "Run shell command?",
++            subject=args,
++            explicit_yes_required=True,
++        ):
++            return
++
+         exit_status, combined_output = run_cmd(
+             args, verbose=self.verbose, error_print=self.io.tool_error, cwd=self.coder.root
+         )
+diff --git a/aider/editor.py b/aider/editor.py
+index a7cf741349b..31042744296 100644
+--- a/aider/editor.py
++++ b/aider/editor.py
+@@ -10,6 +10,7 @@
+ 
+ import os
+ import platform
++import shlex
+ import subprocess
+ import tempfile
+ 
+@@ -131,7 +132,7 @@ def pipe_editor(input_data="", suffix=None, editor=None):
+     command_str = discover_editor(editor)
+     command_str += " " + filepath
+ 
+-    subprocess.call(command_str, shell=True)
++    subprocess.call(shlex.split(command_str), shell=False)
+     with open(filepath, "r") as f:
+         output_data = f.read()
+     try:
+diff --git a/tests/basic/test_commands.py b/tests/basic/test_commands.py
+index 406e928ebf2..100804b2dc7 100644
+--- a/tests/basic/test_commands.py
++++ b/tests/basic/test_commands.py
+@@ -1115,8 +1115,8 @@ def test_cmd_test_unbound_local_error(self):
+             coder = Coder.create(self.GPT35, None, io)
+             commands = Commands(io, coder)
+ 
+-            # Mock the io.prompt_ask method to simulate user input
+-            io.prompt_ask = lambda *args, **kwargs: "y"
++            # Mock confirm_ask to approve the shell command
++            io.confirm_ask = lambda *args, **kwargs: True
+ 
+             # Test the cmd_run method with a command that should not raise an error
+             commands.cmd_run("exit 1", add_on_nonzero_exit=True)
+@@ -1132,6 +1132,9 @@ def test_cmd_test_returns_output_on_failure(self):
+             coder = Coder.create(self.GPT35, None, io)
+             commands = Commands(io, coder)
+ 
++            # Mock confirm_ask to approve the shell command
++            io.confirm_ask = lambda *args, **kwargs: True
++
+             # Define a command that prints to stderr and exits with non-zero status
+             test_cmd = "echo 'error output' >&2 && exit 1"
+             expected_output_fragment = "error output"
+diff --git a/tests/basic/test_editblock.py b/tests/basic/test_editblock.py
+index e93edb7c32f..882d7e4d34e 100644
+--- a/tests/basic/test_editblock.py
++++ b/tests/basic/test_editblock.py
+@@ -332,8 +332,10 @@ def test_create_new_file_with_other_file_in_chat(self):
+             files = [file1]
+ 
+             # Initialize the Coder object with the mocked IO and mocked repo
++            io = InputOutput(yes=True)
++            io.confirm_ask = lambda *args, **kwargs: True
+             coder = Coder.create(
+-                self.GPT35, "diff", use_git=False, io=InputOutput(yes=True), fnames=files
++                self.GPT35, "diff", use_git=False, io=io, fnames=files
+             )
+ 
+             def mock_send(*args, **kwargs):
+diff --git a/tests/basic/test_main.py b/tests/basic/test_main.py
+index c8966a53671..c847e3c7b37 100644
+--- a/tests/basic/test_main.py
++++ b/tests/basic/test_main.py
+@@ -276,8 +276,8 @@ def test_main_args(self):
+         with patch("aider.coders.Coder.create") as MockCoder:
+             main([], input=DummyInput())
+             _, kwargs = MockCoder.call_args
+-            assert kwargs["dirty_commits"] is True
+-            assert kwargs["auto_commits"] is True
++            assert kwargs["dirty_commits"] is False
++            assert kwargs["auto_commits"] is False
+ 
+         with patch("aider.coders.Coder.create") as MockCoder:
+             main(["--no-dirty-commits"], input=DummyInput())
+@@ -740,7 +740,7 @@ def test_suggest_shell_commands_default(self):
+                 output=DummyOutput(),
+                 return_coder=True,
+             )
+-            self.assertTrue(coder.suggest_shell_commands)
++            self.assertFalse(coder.suggest_shell_commands)
+ 
+     def test_suggest_shell_commands_disabled(self):
+         with GitTemporaryDirectory():
+diff --git a/tests/basic/test_wholefile.py b/tests/basic/test_wholefile.py
+index deb192ec7e4..9ca58063de1 100644
+--- a/tests/basic/test_wholefile.py
++++ b/tests/basic/test_wholefile.py
+@@ -160,6 +160,7 @@ def test_update_files_not_in_chat(self):
+ 
+         # Initialize WholeFileCoder with the temporary directory
+         io = InputOutput(yes=True)
++        io.confirm_ask = lambda *args, **kwargs: True
+         coder = WholeFileCoder(main_model=self.GPT35, io=io)
+ 
+         # Set the partial response content with the updated content

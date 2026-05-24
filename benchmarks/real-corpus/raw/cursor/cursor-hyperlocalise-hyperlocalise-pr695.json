@@ -1,0 +1,26 @@
+{
+  "id": "cursor-hyperlocalise-hyperlocalise-pr695",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 695,
+    "headSha": "5a98ad9ab3576666f3fc3084143c932b2d96885e",
+    "baseSha": "2060f91c82fccc692d9a9e339778466a819d14a7",
+    "title": "feat(tms): add opt-in agent automation settings (HL-382)",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Summary\n\nAdds opt-in TMS agent automation settings at organization, project, and provider credential scope. Resolves effective settings with safe defaults and wires low-risk automated actions into the existing agent run pipeline.\n\n## Changes\n\n- New `tms_agent_automation_settings` table and migration `0020_cuddly_spectrum.sql`\n- Settings model with defaults:\n  - `autoRunQaOnSyncedJobs`: false\n  - `autoDraftTranslations`: disabled, empty locales\n  - `writeBack.requireManualApproval`: true\n  - `writeBack.autoWriteBackEnabled`: false\n- REST API under `/orgs/:slug/tms-agent-automation` for org, project, and provider scopes\n- Job sync triggers optional auto QA and auto-draft translation agent runs for newly synced jobs\n- Proposal review can optionally enqueue auto write-back when explicitly enabled in settings\n- Unit tests for default-safe behavior and validation rules\n\n## Acceptance criteria\n\n- [x] Automation settings stored per organization / project / provider\n- [x] Manual approval remains default for provider write-back\n- [x] Auto write-back disabled unless explicitly enabled\n- [x] Tests cover default-safe behavior\n\nCloses HL-382\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\nLinear Issue: [HL-382](https://linear.app/hyperlocalise/issue/HL-382/add-automation-rules-for-low-risk-tms-agent-actions)\n\n<div><a href=\"https://cursor.com/agents/bc-414b3a28-4a6b-4895-ac75-1267fb0e7d6f\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-414b3a28-4a6b-4895-ac75-1267fb0e7d6f\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "cungminh2710",
+    "headRef": "cursor/tms-agent-automation-rules-7d6f",
+    "repository": "hyperlocalise/hyperlocalise"
+  },
+  "diffRef": {
+    "repository": "hyperlocalise/hyperlocalise",
+    "headSha": "5a98ad9ab3576666f3fc3084143c932b2d96885e",
+    "baseSha": "2060f91c82fccc692d9a9e339778466a819d14a7"
+  },
+  "vendoredDiffPath": "cursor/cursor-hyperlocalise-hyperlocalise-pr695.diff",
+  "vendoredAt": "2026-05-24T03:11:26.542Z",
+  "collectedAt": "2026-05-24T03:11:26.542Z"
+}

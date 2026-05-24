@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-AmmarHamdi-PST-Viewer-pr5",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 5,
+    "headSha": "4cee89b7820e5fb7721bb8297962569e945f8b42",
+    "baseSha": "6919eed08d00c70584abb9191c4e1dd5dc40311f",
+    "title": "Sort emails newest-first by default with sortable email list and polished card UI",
+    "body": "Email list had no sort order and plain divider-separated rows with no visual hierarchy for unread state or sender identity.\n\n## Sorting\n- `PSTRepository.loadMessages()` now sorts by `getMessageDeliveryTime()` descending (nulls last) as the default\n- `EmailListActivity` gains an overflow sort menu with four options: **Newest first** (default), **Oldest first**, **Sender A–Z**, **Subject A–Z**\n- Sort and search compose: re-sorting respects the active query filter via a unified `applyFilterAndSort()` path\n\n## Email list item redesign\n- Each row is now a `MaterialCardView` (8dp horizontal margin, 4dp vertical margin, 1dp elevation, 8dp radius)\n- **Unread indicator**: 4dp blue left stripe, visible only on unread messages (replaces alpha/typeface-only approach)\n- **Sender avatar**: 40×40dp oval with sender's first initial (`bg_avatar.xml`), replacing the blank left edge\n- Unread emails bold both sender and subject; read emails use normal weight throughout\n\n```xml\n<com.google.android.material.card.MaterialCardView\n    app:cardCornerRadius=\"8dp\"\n    app:cardElevation=\"1dp\" ...>\n  <View android:id=\"@+id/viewUnreadIndicator\"\n        android:layout_width=\"4dp\"\n        android:background=\"@color/primary\"\n        android:visibility=\"gone\" />\n  <TextView android:id=\"@+id/tvAvatar\"\n            android:background=\"@drawable/bg_avatar\" ... />\n  <!-- sender / subject / preview / attachment rows -->\n</com.google.android.material.card.MaterialCardView>\n```\n\n- Removed `DividerItemDecoration`; card margins provide visual separation",
+    "author": "Copilot",
+    "headRef": "copilot/improve-look-and-feel",
+    "repository": "AmmarHamdi/PST-Viewer"
+  },
+  "diffRef": {
+    "repository": "AmmarHamdi/PST-Viewer",
+    "headSha": "4cee89b7820e5fb7721bb8297962569e945f8b42",
+    "baseSha": "6919eed08d00c70584abb9191c4e1dd5dc40311f"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-AmmarHamdi-PST-Viewer-pr5.diff",
+  "vendoredAt": "2026-05-24T03:05:50.631Z",
+  "collectedAt": "2026-05-24T03:05:50.631Z"
+}

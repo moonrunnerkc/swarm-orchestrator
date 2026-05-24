@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24164",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24164,
+    "headSha": "f6440bee71dbf7c3a707140614a8fe8a420245ba",
+    "baseSha": "ed47f1ab1eba595df81e7ce62568b83328d9c42a",
+    "title": "fix(remote-control): cap reconnect backoff",
+    "body": "## Why\n\nRemote-control websocket reconnects currently use the shared exponential backoff helper without a local ceiling, so a long failure streak can stretch retries out indefinitely and leave the runtime behavior hard to inspect from logs.\n\n## What Changed\n\nCap the remote-control reconnect delay at 30 seconds, then reset the reconnect attempt counter once that capped delay is emitted so the next failure starts from the initial jittered delay again.\n\nThe reconnect failure log now records the attempt number, chosen delay, and whether the cap triggered a reset, with a separate info log when the backoff counter is reset after the cap.\n\n## Verification\n\n`just test -p codex-app-server-transport`\n\nRelated issue: N/A\n",
+    "author": "apanasenko-oai",
+    "headRef": "codex/cap-remote-control-reconnect-backoff",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "f6440bee71dbf7c3a707140614a8fe8a420245ba",
+    "baseSha": "ed47f1ab1eba595df81e7ce62568b83328d9c42a"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24164.diff",
+  "vendoredAt": "2026-05-24T03:20:45.458Z",
+  "collectedAt": "2026-05-24T03:20:45.458Z"
+}

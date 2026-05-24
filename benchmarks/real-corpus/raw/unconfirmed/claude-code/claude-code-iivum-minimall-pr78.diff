@@ -1,0 +1,27 @@
+diff --git a/pom.xml b/pom.xml
+index 61fdb8c..7715c6a 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -131,7 +131,7 @@
+             <plugin>
+                 <groupId>org.jacoco</groupId>
+                 <artifactId>jacoco-maven-plugin</artifactId>
+-                <version>0.8.13</version>
++                <version>0.8.14</version>
+                 <executions>
+                     <execution>
+                         <id>prepare-agent</id>
+diff --git a/src/main/java/com/minimall/repository/LiveLikeRepository.java b/src/main/java/com/minimall/repository/LiveLikeRepository.java
+index 7ff5e51..043a53b 100644
+--- a/src/main/java/com/minimall/repository/LiveLikeRepository.java
++++ b/src/main/java/com/minimall/repository/LiveLikeRepository.java
+@@ -9,7 +9,7 @@
+ public interface LiveLikeRepository extends JpaRepository<LiveLike, String> {
+     Optional<LiveLike> findByLiveRoomIdAndUserId(String liveRoomId, String userId);
+ 
+-    @Modifying
++    @Modifying(clearAutomatically = true)
+     @Query("DELETE FROM LiveLike l WHERE l.liveRoomId = :liveRoomId AND l.userId = :userId")
+     void deleteByLiveRoomIdAndUserId(String liveRoomId, String userId);
+ }
+\ No newline at end of file

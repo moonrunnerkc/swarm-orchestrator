@@ -1,0 +1,1169 @@
+diff --git a/src/app/api/dealers/analytics/route.ts b/src/app/api/dealers/analytics/route.ts
+index 723c782..ad41762 100644
+--- a/src/app/api/dealers/analytics/route.ts
++++ b/src/app/api/dealers/analytics/route.ts
+@@ -16,8 +16,12 @@ type DealerVehicleRow = {
+   created_at: string | null;
+   featured: boolean | null;
+   featured_until: string | null;
++  make?: string | null;
++  model?: string | null;
+   price: number | null;
++  state?: string | null;
+   status: string | null;
++  suburb?: string | null;
+ };
+ 
+ type SubscriptionRevenueRow = {
+@@ -39,8 +43,12 @@ const dealerVehicleColumns = [
+   "created_at",
+   "featured",
+   "featured_until",
++  "make",
++  "model",
+   "price",
++  "state",
+   "status",
++  "suburb",
+ ] as const;
+ 
+ type CountByVehicleRow = {
+@@ -67,9 +75,13 @@ function zeroMetrics(vehicle: DealerVehicleRow) {
+     featured: Boolean(vehicle.featured),
+     featuredUntil: vehicle.featured_until,
+     leads: 0,
++    make: vehicle.make ?? null,
++    model: vehicle.model ?? null,
+     price: vehicle.price,
+     saves: 0,
++    state: vehicle.state ?? null,
+     status: vehicle.status ?? "active",
++    suburb: vehicle.suburb ?? null,
+     title: vehicle.title ?? "Untitled listing",
+     views: 0,
+   };
+diff --git a/src/app/dealers/analytics/page.tsx b/src/app/dealers/analytics/page.tsx
+index 0b0a8ae..d700c22 100644
+--- a/src/app/dealers/analytics/page.tsx
++++ b/src/app/dealers/analytics/page.tsx
+@@ -9,9 +9,13 @@ type DealerAnalyticsListing = {
+   featured: boolean;
+   featuredUntil: string | null;
+   leads: number;
++  make: string | null;
++  model: string | null;
+   price: number | null;
+   saves: number;
++  state: string | null;
+   status: string;
++  suburb: string | null;
+   title: string;
+   views: number;
+ };
+@@ -185,6 +189,217 @@ function BusinessKpiCard({
+   );
+ }
+ 
++function MarketIntelligencePanel({
++  inventoryAge,
++  leadConversion,
++  listings,
++  saveRate,
++}: {
++  inventoryAge: number;
++  leadConversion: number;
++  listings: DealerAnalyticsListing[];
++  saveRate: number;
++}) {
++  const activeListings = listings.filter(
++    (listing) => listing.status === "active" || listing.status === "on_hold",
++  );
++  const averagePrice =
++    activeListings.length > 0
++      ? Math.round(
++          activeListings.reduce((sum, listing) => sum + (listing.price ?? 0), 0) /
++            activeListings.length,
++        )
++      : 0;
++  const highDemandCount = activeListings.filter(
++    (listing) => listing.views >= 30 || listing.leads > 0 || listing.saves >= 3,
++  ).length;
++  const agedStockCount = activeListings.filter(
++    (listing) => listingAgeDays(listing) >= 45,
++  ).length;
++  const pricingCompetitive =
++    activeListings.length === 0
++      ? "No active stock"
++      : agedStockCount > activeListings.length / 2
++        ? "Review pricing"
++        : "Competitive";
++  const marketPosition =
++    leadConversion >= 2 || saveRate >= 5
++      ? "Strong buyer interest"
++      : activeListings.length > 0
++        ? "Building demand"
++        : "Add stock";
++  const demandTrend =
++    highDemandCount > 0
++      ? `${highDemandCount.toLocaleString("en-AU")} high-interest listing${highDemandCount === 1 ? "" : "s"}`
++      : "No demand signal yet";
++  const cards = [
++    {
++      label: "Market Position",
++      value: marketPosition,
++      helper: "Based on current views, saves and enquiries.",
++    },
++    {
++      label: "Pricing Competitiveness",
++      value: pricingCompetitive,
++      helper: averagePrice
++        ? `Average active listing price ${new Intl.NumberFormat("en-AU", {
++            currency: "AUD",
++            maximumFractionDigits: 0,
++            style: "currency",
++          }).format(averagePrice)}.`
++        : "Add active stock to compare pricing.",
++    },
++    {
++      label: "Lead Conversion",
++      value: formatPercent(leadConversion),
++      helper: "Buyer enquiries divided by vehicle detail views.",
++    },
++    {
++      label: "Inventory Age",
++      value: `${inventoryAge.toLocaleString("en-AU")} days`,
++      helper: "Average age of active and on-hold listings.",
++    },
++    {
++      label: "Demand Trends",
++      value: demandTrend,
++      helper: "Listings with stronger views, saves or enquiry signals.",
++    },
++  ];
++
++  return (
++    <section className="mb-8 rounded-[1.5rem] border border-white/10 bg-[#15161a] p-5 shadow-xl shadow-black/20">
++      <div className="mb-5">
++        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#d4af37]">
++          Market intelligence
++        </p>
++        <h2 className="mt-2 text-xl font-bold text-white">
++          Position, pricing and demand signals
++        </h2>
++      </div>
++      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
++        {cards.map((card) => (
++          <div
++            key={card.label}
++            className="rounded-2xl border border-white/10 bg-black/20 p-4"
++          >
++            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/35">
++              {card.label}
++            </p>
++            <p className="mt-3 text-xl font-black text-[#d4af37]">
++              {card.value}
++            </p>
++            <p className="mt-2 text-xs leading-5 text-white/45">{card.helper}</p>
++          </div>
++        ))}
++      </div>
++    </section>
++  );
++}
++
++function countTopValues(values: Array<string | null | undefined>) {
++  const counts = new Map<string, number>();
++
++  for (const value of values) {
++    const trimmed = value?.trim();
++    if (!trimmed) {
++      continue;
++    }
++    counts.set(trimmed, (counts.get(trimmed) ?? 0) + 1);
++  }
++
++  return [...counts.entries()]
++    .sort((first, second) => second[1] - first[1] || first[0].localeCompare(second[0]))
++    .slice(0, 5);
++}
++
++function TopValueList({
++  emptyText,
++  items,
++}: {
++  emptyText: string;
++  items: Array<[string, number]>;
++}) {
++  if (items.length === 0) {
++    return <p className="mt-3 text-sm text-white/45">{emptyText}</p>;
++  }
++
++  return (
++    <div className="mt-4 space-y-2">
++      {items.map(([label, count]) => (
++        <div
++          key={label}
++          className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3"
++        >
++          <span className="truncate text-sm font-semibold text-white">{label}</span>
++          <span className="rounded-full bg-[#d4af37] px-3 py-1 text-xs font-black text-black">
++            {count.toLocaleString("en-AU")}
++          </span>
++        </div>
++      ))}
++    </div>
++  );
++}
++
++function TopMarketSummaryPanel({
++  leadConversion,
++  listings,
++  subscriptionRevenueCents,
++  totalLeads,
++}: {
++  leadConversion: number;
++  listings: DealerAnalyticsListing[];
++  subscriptionRevenueCents: number;
++  totalLeads: number;
++}) {
++  const topMakes = countTopValues(listings.map((listing) => listing.make));
++  const topModels = countTopValues(listings.map((listing) => listing.model));
++  const topLocations = countTopValues(
++    listings.map((listing) =>
++      [listing.suburb, listing.state].filter(Boolean).join(", "),
++    ),
++  );
++
++  return (
++    <section className="mb-8 rounded-[1.5rem] border border-white/10 bg-[#15161a] p-5 shadow-xl shadow-black/20">
++      <div className="mb-5">
++        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#d4af37]">
++          Market summary
++        </p>
++        <h2 className="mt-2 text-xl font-bold text-white">
++          Top makes, models, locations and growth
++        </h2>
++      </div>
++      <div className="grid gap-5 lg:grid-cols-3">
++        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
++          <h3 className="font-bold text-white">Top Makes</h3>
++          <TopValueList items={topMakes} emptyText="No makes tracked yet." />
++        </div>
++        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
++          <h3 className="font-bold text-white">Top Models</h3>
++          <TopValueList items={topModels} emptyText="No models tracked yet." />
++        </div>
++        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
++          <h3 className="font-bold text-white">Top Locations</h3>
++          <TopValueList
++            items={topLocations}
++            emptyText="No listing locations tracked yet."
++          />
++        </div>
++        <BusinessKpiCard
++          label="Revenue"
++          value={formatCurrencyCents(subscriptionRevenueCents)}
++          helper="Current active subscription revenue tracked by Drivaroo."
++        />
++        <BusinessKpiCard
++          label="Lead Growth"
++          value={totalLeads > 0 ? `+${totalLeads.toLocaleString("en-AU")}` : "0"}
++          helper={`Lead conversion is ${formatPercent(leadConversion)} from listing views.`}
++        />
++      </div>
++    </section>
++  );
++}
++
+ function PredictiveInsightsPanel({
+   listings,
+   totals,
+@@ -1050,6 +1265,21 @@ export default function DealerAnalyticsPage() {
+               />
+             </div>
+ 
++            <MarketIntelligencePanel
++              inventoryAge={inventoryAge}
++              leadConversion={enquiryRate}
++              listings={listings}
++              saveRate={saveRate}
++            />
++            <TopMarketSummaryPanel
++              leadConversion={enquiryRate}
++              listings={listings}
++              subscriptionRevenueCents={
++                subscriptionMetrics.monthlyRecurringRevenueCents
++              }
++              totalLeads={totals.leads}
++            />
++
+             <div className="mb-8 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+               <FunnelChart
+                 leads={totals.leads}
+diff --git a/src/app/dealers/crm/[leadId]/page.tsx b/src/app/dealers/crm/[leadId]/page.tsx
+new file mode 100644
+index 0000000..ad80994
+--- /dev/null
++++ b/src/app/dealers/crm/[leadId]/page.tsx
+@@ -0,0 +1,179 @@
++"use client";
++
++import Link from "next/link";
++import { useParams } from "next/navigation";
++import {
++  inferDealerCrmPipelineStatus,
++  sampleDealerCrmLeads,
++} from "@/lib/dealer-crm-sample-leads";
++
++function formatMoney(value: number | null) {
++  return value ? `$${value.toLocaleString("en-AU")}` : "POA";
++}
++
++const sampleTasks = [
++  "Call customer within business hours",
++  "Confirm inspection or test-drive availability",
++  "Send finance and trade-in options if requested",
++];
++
++export default function DealerCrmLeadPage() {
++  const params = useParams<{ leadId: string }>();
++  const leadId = decodeURIComponent(params.leadId ?? "");
++  const lead = sampleDealerCrmLeads.find((item) => item.id === leadId);
++
++  if (!lead) {
++    return (
++      <main className="min-h-screen bg-[#0d0d0f] px-6 py-16 text-white">
++        <div className="mx-auto max-w-3xl rounded-[2rem] border border-white/10 bg-[#15161a] p-8 text-center">
++          <h1 className="text-3xl font-black">Lead not found</h1>
++          <p className="mt-3 text-white/55">
++            Live lead detail loading can be connected once dealer_leads API
++            records are available.
++          </p>
++          <Link
++            href="/dealers/crm"
++            className="mt-6 inline-flex rounded-xl bg-[#d4af37] px-5 py-3 text-sm font-bold text-black hover:bg-[#e6c65c]"
++          >
++            Back to CRM
++          </Link>
++        </div>
++      </main>
++    );
++  }
++
++  const pipelineStatus = inferDealerCrmPipelineStatus(lead);
++
++  return (
++    <main className="min-h-screen bg-[#0d0d0f] px-6 py-16 text-white">
++      <div className="mx-auto max-w-5xl">
++        <section className="mb-8 rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_85%_20%,rgba(212,175,55,0.18),transparent_30%),#15161a] p-8 shadow-2xl shadow-black/30">
++          <p className="mb-3 text-sm font-semibold uppercase tracking-[0.3em] text-[#d4af37]">
++            Dealer CRM lead
++          </p>
++          <h1 className="text-4xl font-black text-white">{lead.buyer.name}</h1>
++          <p className="mt-3 text-white/55">
++            {lead.enquiryType} · {pipelineStatus.toUpperCase()} · Assigned to{" "}
++            {lead.assignedTo}
++          </p>
++          <div className="mt-6 flex flex-wrap gap-3">
++            <Link
++              href="/dealers/crm"
++              className="rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-white hover:border-[#d4af37]/50 hover:text-[#d4af37]"
++            >
++              Back to CRM
++            </Link>
++            {lead.vehicle.id ? (
++              <Link
++                href={`/cars/${lead.vehicle.id}`}
++                className="rounded-xl bg-[#d4af37] px-4 py-2 text-sm font-bold text-black hover:bg-[#e6c65c]"
++              >
++                View vehicle
++              </Link>
++            ) : null}
++          </div>
++        </section>
++
++        <div className="grid gap-6 lg:grid-cols-[1fr_0.8fr]">
++          <section className="rounded-[2rem] border border-white/10 bg-[#15161a] p-6 shadow-xl shadow-black/20">
++            <h2 className="text-2xl font-bold">Conversation History</h2>
++            <p className="mt-4 whitespace-pre-wrap rounded-2xl border border-white/10 bg-black/25 p-4 leading-7 text-white/65">
++              {lead.message || "No message provided."}
++            </p>
++            <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-4">
++              <h3 className="font-bold text-white">Notes</h3>
++              {lead.notes?.length ? (
++                <ul className="mt-3 space-y-2 text-sm text-white/60">
++                  {lead.notes.map((note) => (
++                    <li key={note} className="rounded-xl bg-white/[0.03] p-3">
++                      {note}
++                    </li>
++                  ))}
++                </ul>
++              ) : (
++                <p className="mt-2 text-sm leading-6 text-white/55">
++                  {lead.insights.length > 0
++                    ? lead.insights.join(". ")
++                    : "No internal notes yet. Add follow-up notes once live CRM editing is connected."}
++                </p>
++              )}
++            </div>
++            <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-4">
++              <h3 className="font-bold text-white">Tasks</h3>
++              <ul className="mt-3 space-y-2 text-sm text-white/60">
++                {sampleTasks.map((task) => (
++                  <li key={task} className="flex gap-2">
++                    <span className="text-[#d4af37]">□</span>
++                    <span>{task}</span>
++                  </li>
++                ))}
++              </ul>
++            </div>
++            {lead.insights.length > 0 ? (
++              <div className="mt-4 flex flex-wrap gap-2">
++                {lead.insights.map((insight) => (
++                  <span
++                    key={insight}
++                    className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-100"
++                  >
++                    {insight}
++                  </span>
++                ))}
++              </div>
++            ) : null}
++          </section>
++
++          <aside className="space-y-6">
++            <section className="rounded-[2rem] border border-white/10 bg-[#15161a] p-6 shadow-xl shadow-black/20">
++            <h2 className="text-2xl font-bold">Customer Information</h2>
++            <dl className="mt-4 space-y-3 text-sm text-white/65">
++              <div>
++                <dt className="text-white/40">Name</dt>
++                <dd className="font-semibold text-white">{lead.buyer.name}</dd>
++              </div>
++              <div>
++                <dt className="text-white/40">Email</dt>
++                <dd>{lead.buyer.email || "Not provided"}</dd>
++              </div>
++              <div>
++                <dt className="text-white/40">Phone</dt>
++                <dd>{lead.buyer.phone || "Not provided"}</dd>
++              </div>
++            </dl>
++            </section>
++
++            <section className="rounded-[2rem] border border-white/10 bg-[#15161a] p-6 shadow-xl shadow-black/20">
++              <h2 className="text-2xl font-bold">Vehicle Interest</h2>
++              <dl className="mt-4 space-y-3 text-sm text-white/65">
++                <div>
++                  <dt className="text-white/40">Vehicle</dt>
++                  <dd className="font-semibold text-white">{lead.vehicle.title}</dd>
++                </div>
++                <div>
++                  <dt className="text-white/40">Price</dt>
++                  <dd className="font-semibold text-[#d4af37]">
++                    {formatMoney(lead.vehicle.price)}
++                  </dd>
++                </div>
++                <div>
++                  <dt className="text-white/40">Interest type</dt>
++                  <dd>{lead.enquiryType}</dd>
++                </div>
++              </dl>
++            </section>
++
++            <section className="rounded-[2rem] border border-white/10 bg-[#15161a] p-6 shadow-xl shadow-black/20">
++              <h2 className="text-2xl font-bold">Status</h2>
++              <p className="mt-4 rounded-2xl border border-[#d4af37]/30 bg-[#d4af37]/10 p-4 text-lg font-black uppercase tracking-[0.16em] text-[#f4d77c]">
++                {pipelineStatus}
++              </p>
++              <p className="mt-3 text-sm text-white/45">
++                Assigned to {lead.assignedTo}
++              </p>
++            </section>
++          </aside>
++        </div>
++      </div>
++    </main>
++  );
++}
+diff --git a/src/app/dealers/crm/page.tsx b/src/app/dealers/crm/page.tsx
+new file mode 100644
+index 0000000..3a7f88d
+--- /dev/null
++++ b/src/app/dealers/crm/page.tsx
+@@ -0,0 +1,253 @@
++"use client";
++
++import Link from "next/link";
++import { useEffect, useMemo, useState } from "react";
++import {
++  dealerCrmPipelineColumns,
++  inferDealerCrmPipelineStatus,
++  sampleDealerCrmLeads,
++  type DealerCrmLead,
++} from "@/lib/dealer-crm-sample-leads";
++
++type CrmResponse = {
++  error?: string;
++  leads?: DealerCrmLead[];
++  totals?: {
++    leads: number;
++    vehicles: number;
++  };
++};
++
++const emptyLeads: DealerCrmLead[] = [];
++
++function formatMoney(value: number | null) {
++  return value ? `$${value.toLocaleString("en-AU")}` : "POA";
++}
++
++export default function DealerCrmPage() {
++  const [data, setData] = useState<CrmResponse | null>(null);
++  const [isLoading, setIsLoading] = useState(true);
++  const [statusFilter, setStatusFilter] = useState("all");
++  const [search, setSearch] = useState("");
++
++  useEffect(() => {
++    const controller = new AbortController();
++
++    async function loadCrm() {
++      try {
++        const response = await fetch("/api/dealers/leads", {
++          signal: controller.signal,
++        });
++        const json = (await response.json().catch(() => null)) as CrmResponse | null;
++        setData(
++          response.ok
++            ? json
++            : {
++                error: json?.error ?? "Could not load CRM leads.",
++              },
++        );
++      } catch (error) {
++        if (error instanceof DOMException && error.name === "AbortError") {
++          return;
++        }
++        setData({ error: "Could not load CRM leads." });
++      } finally {
++        if (!controller.signal.aborted) {
++          setIsLoading(false);
++        }
++      }
++    }
++
++    loadCrm();
++
++    return () => controller.abort();
++  }, []);
++
++  const liveLeads = data?.leads ?? emptyLeads;
++  const leads = liveLeads.length > 0 ? liveLeads : sampleDealerCrmLeads;
++  const filteredLeads = useMemo(() => {
++    const query = search.trim().toLowerCase();
++
++    return leads.filter((lead) => {
++      const matchesStatus =
++        statusFilter === "all" ||
++        (statusFilter === "follow-up"
++          ? lead.insights.includes("Lead requires follow-up")
++          : lead.enquiryType.toLowerCase().includes(statusFilter));
++      const matchesSearch =
++        !query ||
++        [
++          lead.buyer.name,
++          lead.buyer.email,
++          lead.buyer.phone,
++          lead.vehicle.title,
++          lead.message,
++          lead.assignedTo,
++          lead.enquiryType,
++        ]
++          .join(" ")
++          .toLowerCase()
++          .includes(query);
++
++      return matchesStatus && matchesSearch;
++    });
++  }, [leads, search, statusFilter]);
++
++  return (
++    <main className="min-h-screen bg-[#0d0d0f] px-6 py-16 text-white">
++      <div className="mx-auto max-w-6xl">
++        <section className="mb-8 rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_85%_20%,rgba(212,175,55,0.18),transparent_30%),#15161a] p-8 shadow-2xl shadow-black/30">
++          <p className="mb-3 text-sm font-semibold uppercase tracking-[0.3em] text-[#d4af37]">
++            Dealer CRM
++          </p>
++          <h1 className="text-4xl font-black text-white sm:text-5xl">
++            Manage buyer leads and follow-up.
++          </h1>
++          <p className="mt-4 max-w-3xl text-white/55">
++            Track enquiries, assigned specialists, follow-up flags and vehicle
++            context from one dealer CRM view.
++          </p>
++          <div className="mt-6 flex flex-wrap gap-3">
++            <Link
++              href="/dealers/dashboard"
++              className="rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-white hover:border-[#d4af37]/50 hover:text-[#d4af37]"
++            >
++              Dealer dashboard
++            </Link>
++            <Link
++              href="/dealers/leads"
++              className="rounded-xl bg-[#d4af37] px-4 py-2 text-sm font-bold text-black hover:bg-[#e6c65c]"
++            >
++              Lead inbox
++            </Link>
++          </div>
++        </section>
++
++        {isLoading ? (
++          <div className="rounded-[2rem] border border-white/10 bg-[#15161a] p-8 text-center text-white/55">
++            Loading CRM...
++          </div>
++        ) : data?.error ? (
++          <div className="rounded-[2rem] border border-[#d4af37]/30 bg-[#d4af37]/10 p-8 text-[#f4d77c]">
++            {data.error}
++          </div>
++        ) : (
++          <>
++            <div className="mb-6 grid gap-4 md:grid-cols-3">
++              <div className="rounded-2xl border border-white/10 bg-[#15161a] p-5">
++                <p className="text-xs uppercase tracking-[0.2em] text-white/35">
++                  Leads
++                </p>
++                <p className="mt-2 text-3xl font-black text-[#d4af37]">
++                  {(data?.totals?.leads ?? leads.length).toLocaleString("en-AU")}
++                </p>
++              </div>
++              <div className="rounded-2xl border border-white/10 bg-[#15161a] p-5">
++                <p className="text-xs uppercase tracking-[0.2em] text-white/35">
++                  Vehicles
++                </p>
++                <p className="mt-2 text-3xl font-black text-[#d4af37]">
++                  {(data?.totals?.vehicles ?? 0).toLocaleString("en-AU")}
++                </p>
++              </div>
++              <div className="rounded-2xl border border-white/10 bg-[#15161a] p-5">
++                <p className="text-xs uppercase tracking-[0.2em] text-white/35">
++                  Follow-up
++                </p>
++                <p className="mt-2 text-3xl font-black text-[#d4af37]">
++                  {leads
++                    .filter((lead) => lead.insights.includes("Lead requires follow-up"))
++                    .length.toLocaleString("en-AU")}
++                </p>
++              </div>
++            </div>
++
++            <div className="mb-6 grid gap-3 md:grid-cols-[1fr_14rem]">
++              <input
++                type="search"
++                value={search}
++                onChange={(event) => setSearch(event.target.value)}
++                placeholder="Search buyer, vehicle, phone, email or note"
++                className="rounded-2xl border border-white/10 bg-black/30 p-4 text-white outline-none placeholder:text-white/35 focus:border-[#d4af37]/60"
++              />
++              <select
++                value={statusFilter}
++                onChange={(event) => setStatusFilter(event.target.value)}
++                className="rounded-2xl border border-white/10 bg-black/30 p-4 text-white outline-none focus:border-[#d4af37]/60"
++              >
++                <option value="all">All leads</option>
++                <option value="4wd">4WD enquiries</option>
++                <option value="follow-up">Needs follow-up</option>
++                <option value="general">General enquiries</option>
++              </select>
++            </div>
++
++            {liveLeads.length === 0 ? (
++              <p className="mb-4 rounded-2xl border border-[#d4af37]/30 bg-[#d4af37]/10 p-4 text-sm text-[#f4d77c]">
++                Showing sample CRM pipeline cards until live dealer leads arrive.
++              </p>
++            ) : null}
++
++            <div className="grid gap-4 xl:grid-cols-4">
++              {dealerCrmPipelineColumns.map((column) => {
++                const columnLeads = filteredLeads.filter(
++                  (lead) => inferDealerCrmPipelineStatus(lead) === column.status,
++                );
++
++                return (
++                  <section
++                    key={column.status}
++                    className="rounded-[1.5rem] border border-white/10 bg-[#15161a] p-4 shadow-xl shadow-black/20"
++                  >
++                    <h2 className="border-b border-white/10 pb-3 text-sm font-black tracking-[0.22em] text-[#d4af37]">
++                      {column.label}
++                    </h2>
++                    <div className="mt-4 space-y-3">
++                      {columnLeads.map((lead) => (
++                        <Link
++                          key={lead.id}
++                          href={`/dealers/crm/${encodeURIComponent(lead.id)}`}
++                          className="rounded-2xl border border-white/10 bg-black/25 p-4"
++                        >
++                          <p className="text-lg font-bold text-white">
++                            {lead.buyer.name}
++                          </p>
++                          <p className="mt-1 text-sm font-semibold text-[#f4d77c]">
++                            {lead.vehicle.title}
++                          </p>
++                          <p className="mt-1 text-xs text-white/45">
++                            {formatMoney(lead.vehicle.price)}
++                          </p>
++                          <p className="mt-3 line-clamp-3 text-sm leading-6 text-white/55">
++                            {lead.message || "No message provided."}
++                          </p>
++                          {lead.insights.length > 0 ? (
++                            <div className="mt-3 flex flex-wrap gap-2">
++                              {lead.insights.map((insight) => (
++                                <span
++                                  key={insight}
++                                  className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-100"
++                                >
++                                  {insight}
++                                </span>
++                              ))}
++                            </div>
++                          ) : null}
++                        </Link>
++                      ))}
++                      {columnLeads.length === 0 ? (
++                        <p className="rounded-2xl border border-dashed border-white/15 p-4 text-center text-sm text-white/35">
++                          No leads
++                        </p>
++                      ) : null}
++                    </div>
++                  </section>
++                );
++              })}
++            </div>
++          </>
++        )}
++      </div>
++    </main>
++  );
++}
+diff --git a/src/app/dealers/dashboard/page.tsx b/src/app/dealers/dashboard/page.tsx
+index fde683c..70e09c6 100644
+--- a/src/app/dealers/dashboard/page.tsx
++++ b/src/app/dealers/dashboard/page.tsx
+@@ -164,6 +164,12 @@ export default function DealerDashboardPage() {
+             >
+               Dealer leads
+             </Link>
++            <Link
++              href="/dealers/crm"
++              className="flex min-h-12 items-center justify-center rounded-xl border border-[#d4af37]/45 bg-[#d4af37]/5 px-4 py-3 text-center text-sm font-bold text-[#f4d77c] transition hover:bg-[#d4af37]/10 active:translate-y-px"
++            >
++              Dealer CRM
++            </Link>
+             <Link
+               href="/dealers/finance-leads"
+               className="flex min-h-12 items-center justify-center rounded-xl border border-white/15 bg-white/[0.02] px-4 py-3 text-center text-sm font-bold text-white transition hover:border-[#d4af37]/50 hover:text-[#d4af37] active:translate-y-px"
+diff --git a/src/lib/dealer-crm-sample-leads.ts b/src/lib/dealer-crm-sample-leads.ts
+new file mode 100644
+index 0000000..4f38f1d
+--- /dev/null
++++ b/src/lib/dealer-crm-sample-leads.ts
+@@ -0,0 +1,99 @@
++export type DealerCrmPipelineStatus = "booked" | "contacted" | "negotiating" | "new";
++
++export type DealerCrmLead = {
++  assignedTo: string;
++  buyer: {
++    email: string;
++    name: string;
++    phone: string;
++  };
++  createdAt: string | null;
++  enquiryType: string;
++  id: string;
++  insights: string[];
++  message: string;
++  notes?: string[];
++  pipelineStatus?: DealerCrmPipelineStatus;
++  vehicle: {
++    id: string;
++    price: number | null;
++    title: string;
++  };
++};
++
++export const dealerCrmPipelineColumns = [
++  { label: "NEW", status: "new" },
++  { label: "CONTACTED", status: "contacted" },
++  { label: "BOOKED", status: "booked" },
++  { label: "NEGOTIATING", status: "negotiating" },
++] as const;
++
++export const sampleDealerCrmLeads: DealerCrmLead[] = [
++  {
++    assignedTo: "Sales Team",
++    buyer: { email: "", name: "John Smith", phone: "" },
++    createdAt: null,
++    enquiryType: "General Enquiry",
++    id: "sample-john-smith",
++    insights: [],
++    message: "Interested in the Toyota Hilux.",
++    notes: [
++      "Customer wants finance.",
++      "Returning Saturday.",
++      "Interested in tow package.",
++    ],
++    pipelineStatus: "new",
++    vehicle: { id: "sample-toyota-hilux-sr5", price: 34500, title: "Toyota Hilux" },
++  },
++  {
++    assignedTo: "Sales Team",
++    buyer: { email: "", name: "Sarah Jones", phone: "" },
++    createdAt: null,
++    enquiryType: "General Enquiry",
++    id: "sample-sarah-jones",
++    insights: ["Lead requires follow-up"],
++    message: "Followed up on finance and inspection questions.",
++    pipelineStatus: "contacted",
++    vehicle: { id: "", price: null, title: "Vehicle enquiry" },
++  },
++  {
++    assignedTo: "Sales Team",
++    buyer: { email: "", name: "Michael Brown", phone: "" },
++    createdAt: null,
++    enquiryType: "General Enquiry",
++    id: "sample-michael-brown",
++    insights: ["Customer likely to purchase"],
++    message: "Inspection booked.",
++    pipelineStatus: "booked",
++    vehicle: { id: "", price: null, title: "Vehicle enquiry" },
++  },
++  {
++    assignedTo: "Sales Team",
++    buyer: { email: "", name: "David Lee", phone: "" },
++    createdAt: null,
++    enquiryType: "General Enquiry",
++    id: "sample-david-lee",
++    insights: [],
++    message: "Negotiating final price.",
++    pipelineStatus: "negotiating",
++    vehicle: { id: "", price: null, title: "Vehicle enquiry" },
++  },
++];
++
++export function inferDealerCrmPipelineStatus(
++  lead: DealerCrmLead,
++): DealerCrmPipelineStatus {
++  if (lead.pipelineStatus) {
++    return lead.pipelineStatus;
++  }
++
++  if (lead.insights.includes("Customer likely to purchase")) {
++    return "negotiating";
++  }
++
++  if (lead.insights.includes("Lead requires follow-up")) {
++    return "contacted";
++  }
++
++  return "new";
++}
+diff --git a/supabase/RUN_IN_SUPABASE.sql b/supabase/RUN_IN_SUPABASE.sql
+index d492c17..300fb04 100644
+--- a/supabase/RUN_IN_SUPABASE.sql
++++ b/supabase/RUN_IN_SUPABASE.sql
+@@ -140,6 +140,148 @@ create table if not exists public.leads (
+ create index if not exists idx_leads_vehicle
+   on public.leads(vehicle_id);
+ 
++create table if not exists public.dealer_leads (
++  id uuid primary key default gen_random_uuid(),
++  dealer_id uuid not null,
++  vehicle_id uuid references public.vehicles(id) on delete set null,
++  buyer_name text,
++  buyer_email text,
++  buyer_phone text,
++  message text,
++  status text default 'new',
++  created_at timestamptz default now()
++);
++
++alter table public.dealer_leads
++  add column if not exists dealer_id uuid;
++
++alter table public.dealer_leads
++  add column if not exists vehicle_id uuid references public.vehicles(id) on delete set null;
++
++alter table public.dealer_leads
++  add column if not exists buyer_name text;
++
++alter table public.dealer_leads
++  add column if not exists buyer_email text;
++
++alter table public.dealer_leads
++  add column if not exists buyer_phone text;
++
++alter table public.dealer_leads
++  add column if not exists message text;
++
++alter table public.dealer_leads
++  add column if not exists status text default 'new';
++
++alter table public.dealer_leads
++  add column if not exists created_at timestamptz default now();
++
++alter table public.dealer_leads
++  alter column dealer_id set not null;
++
++alter table public.dealer_leads
++  drop constraint if exists dealer_leads_status_check;
++
++alter table public.dealer_leads
++  add constraint dealer_leads_status_check
++  check (status in ('new', 'contacted', 'booked', 'negotiating', 'qualified', 'won', 'lost', 'archived'));
++
++create index if not exists dealer_leads_dealer_id_idx
++  on public.dealer_leads(dealer_id, created_at desc);
++
++create index if not exists dealer_leads_vehicle_id_idx
++  on public.dealer_leads(vehicle_id);
++
++create index if not exists dealer_leads_status_idx
++  on public.dealer_leads(status);
++
++alter table public.dealer_leads enable row level security;
++
++drop policy if exists "Dealers can view own dealer_leads"
++  on public.dealer_leads;
++create policy "Dealers can view own dealer_leads"
++  on public.dealer_leads
++  for select
++  to authenticated
++  using (auth.uid() = dealer_id);
++
++drop policy if exists "Dealers can manage own dealer_leads"
++  on public.dealer_leads;
++create policy "Dealers can manage own dealer_leads"
++  on public.dealer_leads
++  for all
++  to authenticated
++  using (auth.uid() = dealer_id)
++  with check (auth.uid() = dealer_id);
++
++create table if not exists public.lead_notes (
++  id uuid primary key default gen_random_uuid(),
++  lead_id uuid references public.dealer_leads(id) on delete cascade,
++  user_id uuid,
++  note text,
++  created_at timestamptz default now()
++);
++
++alter table public.lead_notes
++  add column if not exists lead_id uuid references public.dealer_leads(id) on delete cascade;
++
++alter table public.lead_notes
++  add column if not exists user_id uuid;
++
++alter table public.lead_notes
++  add column if not exists note text;
++
++alter table public.lead_notes
++  add column if not exists created_at timestamptz default now();
++
++create index if not exists lead_notes_lead_id_idx
++  on public.lead_notes(lead_id, created_at desc);
++
++create index if not exists lead_notes_user_id_idx
++  on public.lead_notes(user_id);
++
++alter table public.lead_notes enable row level security;
++
++drop policy if exists "Dealers can view own lead_notes"
++  on public.lead_notes;
++create policy "Dealers can view own lead_notes"
++  on public.lead_notes
++  for select
++  to authenticated
++  using (
++    exists (
++      select 1
++      from public.dealer_leads
++      where dealer_leads.id = lead_notes.lead_id
++        and dealer_leads.dealer_id = auth.uid()
++    )
++  );
++
++drop policy if exists "Dealers can manage own lead_notes"
++  on public.lead_notes;
++create policy "Dealers can manage own lead_notes"
++  on public.lead_notes
++  for all
++  to authenticated
++  using (
++    user_id = auth.uid()
++    or exists (
++      select 1
++      from public.dealer_leads
++      where dealer_leads.id = lead_notes.lead_id
++        and dealer_leads.dealer_id = auth.uid()
++    )
++  )
++  with check (
++    user_id = auth.uid()
++    and exists (
++      select 1
++      from public.dealer_leads
++      where dealer_leads.id = lead_notes.lead_id
++        and dealer_leads.dealer_id = auth.uid()
++    )
++  );
++
+ create table if not exists public.payments (
+   id uuid primary key default gen_random_uuid(),
+   user_id uuid references auth.users(id) on delete set null,
+diff --git a/supabase/dealer-leads.sql b/supabase/dealer-leads.sql
+new file mode 100644
+index 0000000..9eea6ce
+--- /dev/null
++++ b/supabase/dealer-leads.sql
+@@ -0,0 +1,142 @@
++-- Dealer-owned lead inbox table.
++create table if not exists public.dealer_leads (
++  id uuid primary key default gen_random_uuid(),
++  dealer_id uuid not null,
++  vehicle_id uuid references public.vehicles(id) on delete set null,
++  buyer_name text,
++  buyer_email text,
++  buyer_phone text,
++  message text,
++  status text default 'new',
++  created_at timestamptz default now()
++);
++
++alter table public.dealer_leads
++  add column if not exists dealer_id uuid;
++
++alter table public.dealer_leads
++  add column if not exists vehicle_id uuid references public.vehicles(id) on delete set null;
++
++alter table public.dealer_leads
++  add column if not exists buyer_name text;
++
++alter table public.dealer_leads
++  add column if not exists buyer_email text;
++
++alter table public.dealer_leads
++  add column if not exists buyer_phone text;
++
++alter table public.dealer_leads
++  add column if not exists message text;
++
++alter table public.dealer_leads
++  add column if not exists status text default 'new';
++
++alter table public.dealer_leads
++  add column if not exists created_at timestamptz default now();
++
++alter table public.dealer_leads
++  alter column dealer_id set not null;
++
++alter table public.dealer_leads
++  drop constraint if exists dealer_leads_status_check;
++
++alter table public.dealer_leads
++  add constraint dealer_leads_status_check
++  check (status in ('new', 'contacted', 'booked', 'negotiating', 'qualified', 'won', 'lost', 'archived'));
++
++create index if not exists dealer_leads_dealer_id_idx
++  on public.dealer_leads(dealer_id, created_at desc);
++
++create index if not exists dealer_leads_vehicle_id_idx
++  on public.dealer_leads(vehicle_id);
++
++create index if not exists dealer_leads_status_idx
++  on public.dealer_leads(status);
++
++alter table public.dealer_leads enable row level security;
++
++drop policy if exists "Dealers can view own dealer_leads"
++  on public.dealer_leads;
++create policy "Dealers can view own dealer_leads"
++  on public.dealer_leads
++  for select
++  to authenticated
++  using (auth.uid() = dealer_id);
++
++drop policy if exists "Dealers can manage own dealer_leads"
++  on public.dealer_leads;
++create policy "Dealers can manage own dealer_leads"
++  on public.dealer_leads
++  for all
++  to authenticated
++  using (auth.uid() = dealer_id)
++  with check (auth.uid() = dealer_id);
++
++create table if not exists public.lead_notes (
++  id uuid primary key default gen_random_uuid(),
++  lead_id uuid references public.dealer_leads(id) on delete cascade,
++  user_id uuid,
++  note text,
++  created_at timestamptz default now()
++);
++
++alter table public.lead_notes
++  add column if not exists lead_id uuid references public.dealer_leads(id) on delete cascade;
++
++alter table public.lead_notes
++  add column if not exists user_id uuid;
++
++alter table public.lead_notes
++  add column if not exists note text;
++
++alter table public.lead_notes
++  add column if not exists created_at timestamptz default now();
++
++create index if not exists lead_notes_lead_id_idx
++  on public.lead_notes(lead_id, created_at desc);
++
++create index if not exists lead_notes_user_id_idx
++  on public.lead_notes(user_id);
++
++alter table public.lead_notes enable row level security;
++
++drop policy if exists "Dealers can view own lead_notes"
++  on public.lead_notes;
++create policy "Dealers can view own lead_notes"
++  on public.lead_notes
++  for select
++  to authenticated
++  using (
++    exists (
++      select 1
++      from public.dealer_leads
++      where dealer_leads.id = lead_notes.lead_id
++        and dealer_leads.dealer_id = auth.uid()
++    )
++  );
++
++drop policy if exists "Dealers can manage own lead_notes"
++  on public.lead_notes;
++create policy "Dealers can manage own lead_notes"
++  on public.lead_notes
++  for all
++  to authenticated
++  using (
++    user_id = auth.uid()
++    or exists (
++      select 1
++      from public.dealer_leads
++      where dealer_leads.id = lead_notes.lead_id
++        and dealer_leads.dealer_id = auth.uid()
++    )
++  )
++  with check (
++    user_id = auth.uid()
++    and exists (
++      select 1
++      from public.dealer_leads
++      where dealer_leads.id = lead_notes.lead_id
++        and dealer_leads.dealer_id = auth.uid()
++    )
++  );

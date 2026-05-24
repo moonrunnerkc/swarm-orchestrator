@@ -1,0 +1,26 @@
+{
+  "id": "cursor-achase1982-afk-Alpha-Terminal-pr497",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 497,
+    "headSha": "543c84889d0c1341665fa4ee7deb4bb711f18a3a",
+    "baseSha": "620e6634c850f2b2f28988e633afa93493588387",
+    "title": "Movers: deterministic catalyst, lazy cached read, plain catalyst labels",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Summary\n\nReworks Movers catalyst so the **60s poll never calls the LLM or web search**. Catalyst **type** and **summary** are deterministic from FMP headlines. The **read** (plus posture and confidence) is fetched **on demand** when a row expands, with DB caching and optional web-search fallback.\n\nAlso simplifies catalyst type UI: **plain uppercase white text** (no tinted fill, border, or per-type colors).\n\n## Backend\n\n### Poll path (no LLM / no web)\n- Keyword classifier in `@workspace/movers-types` (`MOVERS_CATALYST_KEYWORD_GROUPS`, tunable)\n- Types: GOV, ANALYST, CONTRACT, EARNINGS, MA, SECTOR, NONE\n- Summary = most recent FMP headline title; `newsKey` = hash of driving news\n\n### Feed (`GET /api/movers`)\n- Situations include `catalystType`, `catalyst` (summary), `newsKey` only — **no read/posture/confidence**\n\n### Lazy read (`GET /api/movers/read?id={situationId}`)\n- Cache hit on `movers_catalyst_cache` by `news_key`\n- Miss: FMP news context + Tavily/Serper fallback if news is thin → LLM JSON (`read`, `posture`, `confidence`) — **context only, no tool search in LLM**\n- Prunes cache entries older than 7 days on write\n- Migration `0036_movers_catalyst_cache.sql` + boot `ensureMoversCatalystCacheTable`\n\n## Frontend\n\n- **Catalyst type**: plain white uppercase labels (collapsed + expanded)\n- **Collapsed row**: ticker, price, % change, catalyst label, posture (`—` until read loads)\n- **Expand**: fetches `/api/movers/read`, loading state in read area, session cache for re-expand\n- **Movers settings**: Claude, Gemini, OpenAI only (no xAI)\n\n## Verify\n\n- `pnpm --filter @workspace/api-server typecheck`\n- `pnpm --filter @workspace/alpha-terminal typecheck`\n- `pnpm --filter @workspace/api-server test -- src/lib/movers`\n- Poll produces type + headline without LLM; expand twice on same row → second call uses cache\n\n## Deploy\n\n- Redeploy **api-server** (migration `0036`, `FMP_API_KEY`, LLM keys, optional `TAVILY_API_KEY` for thin-news fallback)\n- Redeploy **alpha-terminal**\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-fbf7fcfa-5db5-402b-b521-e7abb8bd8bb7\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-fbf7fcfa-5db5-402b-b521-e7abb8bd8bb7\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "achase1982-afk",
+    "headRef": "cursor/movers-deterministic-catalyst-8bb7",
+    "repository": "achase1982-afk/Alpha-Terminal"
+  },
+  "diffRef": {
+    "repository": "achase1982-afk/Alpha-Terminal",
+    "headSha": "543c84889d0c1341665fa4ee7deb4bb711f18a3a",
+    "baseSha": "620e6634c850f2b2f28988e633afa93493588387"
+  },
+  "vendoredDiffPath": "cursor/cursor-achase1982-afk-Alpha-Terminal-pr497.diff",
+  "vendoredAt": "2026-05-24T03:12:32.347Z",
+  "collectedAt": "2026-05-24T03:12:32.347Z"
+}

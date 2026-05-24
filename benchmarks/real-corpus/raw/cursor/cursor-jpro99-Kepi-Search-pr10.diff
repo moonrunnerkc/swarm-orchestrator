@@ -1,0 +1,36 @@
+diff --git a/src/app/travel-assistant/page.tsx b/src/app/travel-assistant/page.tsx
+index ca09f71..d4ada2c 100644
+--- a/src/app/travel-assistant/page.tsx
++++ b/src/app/travel-assistant/page.tsx
+@@ -4463,6 +4463,19 @@ export default function TravelAssistantPage() {
+     openDrawer("review", reviewQueue[0].id);
+   }, [openDrawer, reviewQueue, setToast]);
+ 
++  const handleOpenConsumerReviewQueue = useCallback(
++    (event?: { preventDefault?: () => void; stopPropagation?: () => void }): void => {
++      event?.preventDefault?.();
++      event?.stopPropagation?.();
++      if (reviewQueue.length === 0) {
++        setToast("Review queue is already clear.");
++        return;
++      }
++      openDrawer("review", reviewQueue[0].id);
++    },
++    [openDrawer, reviewQueue, setToast],
++  );
++
+   const navigateToConsumerTab = useCallback((nextTab: ConsumerTab): void => {
+     setConsumerTab(nextTab);
+     const params = new URLSearchParams(window.location.search);
+@@ -4975,7 +4988,10 @@ export default function TravelAssistantPage() {
+               {reviewQueue.length > 0 ? (
+                 <button
+                   type="button"
+-                  onClick={() => openDrawer("review", reviewQueue[0].id)}
++                  onClick={() => handleOpenConsumerReviewQueue()}
++                  onTouchEnd={(event) => {
++                    handleOpenConsumerReviewQueue(event);
++                  }}
+                   className="w-full rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-left text-sm text-amber-900 shadow-sm transition hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-100 dark:hover:bg-amber-500/20"
+                 >
+                   {reviewQueue.length} reservation{reviewQueue.length === 1 ? "" : "s"} are waiting in your review queue — tap to review now

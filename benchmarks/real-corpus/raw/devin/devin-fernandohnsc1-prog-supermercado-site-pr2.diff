@@ -1,0 +1,4071 @@
+diff --git a/next.config.ts b/next.config.ts
+index f4e308f..320e0d1 100644
+--- a/next.config.ts
++++ b/next.config.ts
+@@ -1,7 +1,14 @@
+ import type { NextConfig } from 'next'
+ 
+ const nextConfig: NextConfig = {
+-  experimental: {},
++  images: {
++    remotePatterns: [
++      {
++        protocol: 'https',
++        hostname: 'res.cloudinary.com',
++      },
++    ],
++  },
+ }
+ 
+-export default nextConfig
+\ No newline at end of file
++export default nextConfig
+diff --git a/package-lock.json b/package-lock.json
+index f257366..f112835 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -15,6 +15,8 @@
+         "cloudinary": "^2.10.0",
+         "clsx": "^2.1.1",
+         "date-fns": "^4.3.0",
++        "embla-carousel-autoplay": "^8.6.0",
++        "embla-carousel-react": "^8.6.0",
+         "jsonwebtoken": "^9.0.3",
+         "lucide-react": "^1.16.0",
+         "next": "16.2.6",
+@@ -3184,6 +3186,43 @@
+       "dev": true,
+       "license": "ISC"
+     },
++    "node_modules/embla-carousel": {
++      "version": "8.6.0",
++      "resolved": "https://registry.npmjs.org/embla-carousel/-/embla-carousel-8.6.0.tgz",
++      "integrity": "sha512-SjWyZBHJPbqxHOzckOfo8lHisEaJWmwd23XppYFYVh10bU66/Pn5tkVkbkCMZVdbUE5eTCI2nD8OyIP4Z+uwkA==",
++      "license": "MIT"
++    },
++    "node_modules/embla-carousel-autoplay": {
++      "version": "8.6.0",
++      "resolved": "https://registry.npmjs.org/embla-carousel-autoplay/-/embla-carousel-autoplay-8.6.0.tgz",
++      "integrity": "sha512-OBu5G3nwaSXkZCo1A6LTaFMZ8EpkYbwIaH+bPqdBnDGQ2fh4+NbzjXjs2SktoPNKCtflfVMc75njaDHOYXcrsA==",
++      "license": "MIT",
++      "peerDependencies": {
++        "embla-carousel": "8.6.0"
++      }
++    },
++    "node_modules/embla-carousel-react": {
++      "version": "8.6.0",
++      "resolved": "https://registry.npmjs.org/embla-carousel-react/-/embla-carousel-react-8.6.0.tgz",
++      "integrity": "sha512-0/PjqU7geVmo6F734pmPqpyHqiM99olvyecY7zdweCw+6tKEXnrE90pBiBbMMU8s5tICemzpQ3hi5EpxzGW+JA==",
++      "license": "MIT",
++      "dependencies": {
++        "embla-carousel": "8.6.0",
++        "embla-carousel-reactive-utils": "8.6.0"
++      },
++      "peerDependencies": {
++        "react": "^16.8.0 || ^17.0.1 || ^18.0.0 || ^19.0.0 || ^19.0.0-rc"
++      }
++    },
++    "node_modules/embla-carousel-reactive-utils": {
++      "version": "8.6.0",
++      "resolved": "https://registry.npmjs.org/embla-carousel-reactive-utils/-/embla-carousel-reactive-utils-8.6.0.tgz",
++      "integrity": "sha512-fMVUDUEx0/uIEDM0Mz3dHznDhfX+znCCDCeIophYb1QGVM7YThSWX+wz11zlYwWFOr74b4QLGg0hrGPJeG2s4A==",
++      "license": "MIT",
++      "peerDependencies": {
++        "embla-carousel": "8.6.0"
++      }
++    },
+     "node_modules/emoji-regex": {
+       "version": "9.2.2",
+       "resolved": "https://registry.npmjs.org/emoji-regex/-/emoji-regex-9.2.2.tgz",
+diff --git a/package.json b/package.json
+index 947e1d5..3f88341 100644
+--- a/package.json
++++ b/package.json
+@@ -16,6 +16,8 @@
+     "cloudinary": "^2.10.0",
+     "clsx": "^2.1.1",
+     "date-fns": "^4.3.0",
++    "embla-carousel-autoplay": "^8.6.0",
++    "embla-carousel-react": "^8.6.0",
+     "jsonwebtoken": "^9.0.3",
+     "lucide-react": "^1.16.0",
+     "next": "16.2.6",
+diff --git a/src/app/admin/categorias/page.tsx b/src/app/admin/categorias/page.tsx
+new file mode 100644
+index 0000000..785865f
+--- /dev/null
++++ b/src/app/admin/categorias/page.tsx
+@@ -0,0 +1,139 @@
++'use client'
++
++import { useEffect, useState } from 'react'
++
++interface Categoria {
++  id: string
++  nome: string
++  icone: string
++  cor: string
++  ordem: number
++  ativo: boolean
++}
++
++export default function CategoriasPage() {
++  const [categorias, setCategorias] = useState<Categoria[]>([])
++  const [carregando, setCarregando] = useState(true)
++  const [nome, setNome] = useState('')
++  const [icone, setIcone] = useState('')
++  const [cor, setCor] = useState('#F97316')
++  const [salvando, setSalvando] = useState(false)
++
++  async function carregar() {
++    const res = await fetch('/api/categorias-encartes')
++    const data = await res.json()
++    setCategorias(data)
++    setCarregando(false)
++  }
++
++  useEffect(() => {
++    let active = true
++    fetch('/api/categorias-encartes')
++      .then((r) => r.json())
++      .then((data) => { if (active) { setCategorias(data); setCarregando(false) } })
++    return () => { active = false }
++  }, [])
++
++  async function handleCriar(e: React.FormEvent) {
++    e.preventDefault()
++    if (!nome) return
++    setSalvando(true)
++    await fetch('/api/categorias-encartes', {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({ nome, icone: icone || '📁', cor }),
++    })
++    setNome('')
++    setIcone('')
++    setCor('#F97316')
++    setSalvando(false)
++    carregar()
++  }
++
++  return (
++    <div>
++      <div className="mb-8">
++        <h1 className="text-2xl font-bold text-gray-800">Categorias de Encartes</h1>
++        <p className="text-gray-500 text-sm mt-1">Gerencie as categorias dos encartes</p>
++      </div>
++
++      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
++        {/* Formulário */}
++        <div className="bg-white border border-orange-100 rounded-2xl p-6">
++          <h2 className="text-gray-800 font-semibold mb-4">Nova categoria</h2>
++          <form onSubmit={handleCriar} className="space-y-4">
++            <div>
++              <label className="block text-sm text-gray-600 mb-1.5">Nome</label>
++              <input
++                type="text"
++                value={nome}
++                onChange={(e) => setNome(e.target.value)}
++                placeholder="Ex: Black Friday"
++                className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition"
++              />
++            </div>
++            <div className="grid grid-cols-2 gap-4">
++              <div>
++                <label className="block text-sm text-gray-600 mb-1.5">Ícone (emoji)</label>
++                <input
++                  type="text"
++                  value={icone}
++                  onChange={(e) => setIcone(e.target.value)}
++                  placeholder="🎄"
++                  className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition"
++                />
++              </div>
++              <div>
++                <label className="block text-sm text-gray-600 mb-1.5">Cor</label>
++                <input
++                  type="color"
++                  value={cor}
++                  onChange={(e) => setCor(e.target.value)}
++                  className="w-full h-12 rounded-xl border border-gray-300 cursor-pointer"
++                />
++              </div>
++            </div>
++            <button
++              type="submit"
++              disabled={salvando || !nome}
++              className="w-full bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 text-white font-semibold rounded-xl py-3 text-sm transition shadow-md"
++            >
++              {salvando ? 'Salvando...' : 'Criar categoria'}
++            </button>
++          </form>
++        </div>
++
++        {/* Lista */}
++        <div className="bg-white border border-orange-100 rounded-2xl p-6">
++          <h2 className="text-gray-800 font-semibold mb-4">Categorias existentes</h2>
++          {carregando ? (
++            <p className="text-gray-500 text-sm">Carregando...</p>
++          ) : categorias.length === 0 ? (
++            <p className="text-gray-500 text-sm">Nenhuma categoria cadastrada.</p>
++          ) : (
++            <div className="space-y-2">
++              {categorias.map((cat) => (
++                <div
++                  key={cat.id}
++                  className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-orange-50 transition"
++                >
++                  <span
++                    className="w-8 h-8 rounded-lg flex items-center justify-center text-sm"
++                    style={{ backgroundColor: cat.cor + '22', color: cat.cor }}
++                  >
++                    {cat.icone}
++                  </span>
++                  <span className="text-gray-800 font-medium text-sm flex-1">{cat.nome}</span>
++                  <span
++                    className="w-4 h-4 rounded-full border"
++                    style={{ backgroundColor: cat.cor }}
++                  />
++                </div>
++              ))}
++            </div>
++          )}
++        </div>
++      </div>
++    </div>
++  )
++}
+diff --git a/src/app/admin/dashboard/page.tsx b/src/app/admin/dashboard/page.tsx
+index 1419a0d..6876ad3 100644
+--- a/src/app/admin/dashboard/page.tsx
++++ b/src/app/admin/dashboard/page.tsx
+@@ -2,102 +2,117 @@ import Link from 'next/link'
+ import { supabaseAdmin } from '@/lib/supabase'
+ 
+ async function getDados() {
+-  const [encartes, temas, sorteios] = await Promise.all([
++  const [encartes, temas, sorteios, produtos] = await Promise.all([
+     supabaseAdmin.from('encartes').select('id', { count: 'exact' }),
+     supabaseAdmin.from('temas').select('id', { count: 'exact' }),
+     supabaseAdmin.from('sorteios').select('id', { count: 'exact' }),
++    supabaseAdmin.from('produtos').select('id', { count: 'exact' }),
+   ])
+ 
+   return {
+     totalEncartes: encartes.count ?? 0,
+     totalTemas: temas.count ?? 0,
+     totalSorteios: sorteios.count ?? 0,
++    totalProdutos: produtos.count ?? 0,
+   }
+ }
+ 
+ export default async function DashboardPage() {
+-  const { totalEncartes, totalTemas, totalSorteios } = await getDados()
++  const { totalEncartes, totalTemas, totalSorteios, totalProdutos } = await getDados()
+ 
+   const cards = [
+     {
+       label: 'Encartes ativos',
+       valor: totalEncartes,
+       icon: '🗞️',
+-      cor: 'bg-blue-600',
++      cor: 'bg-orange-500',
+       href: '/admin/encartes',
+     },
+     {
+       label: 'Temas cadastrados',
+       valor: totalTemas,
+       icon: '🎨',
+-      cor: 'bg-purple-600',
++      cor: 'bg-orange-600',
+       href: '/admin/temas',
+     },
+     {
+       label: 'Sorteios',
+       valor: totalSorteios,
+       icon: '🎰',
+-      cor: 'bg-green-600',
++      cor: 'bg-orange-700',
+       href: '/admin/sorteios',
+     },
++    {
++      label: 'Produtos',
++      valor: totalProdutos,
++      icon: '📦',
++      cor: 'bg-orange-800',
++      href: '/admin/produtos',
++    },
+   ]
+ 
+   return (
+     <div>
+       {/* Cabeçalho */}
+       <div className="mb-8">
+-        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+-        <p className="text-gray-400 text-sm mt-1">
+-          Bem-vindo ao painel administrativo
++        <h1 className="text-2xl font-bold text-gray-800">Dashboard</h1>
++        <p className="text-gray-500 text-sm mt-1">
++          Bem-vindo ao painel administrativo do Certo Atacado
+         </p>
+       </div>
+ 
+       {/* Cards de resumo */}
+-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
++      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+         {cards.map((card) => (
+           <Link
+             key={card.label}
+             href={card.href}
+-            className="bg-gray-900 border border-gray-800 rounded-2xl p-6 hover:border-gray-600 transition group"
++            className="bg-white border border-orange-100 rounded-2xl p-6 hover:shadow-lg hover:border-orange-300 transition group"
+           >
+             <div className="flex items-center justify-between mb-4">
+-              <div className={`w-12 h-12 ${card.cor} rounded-xl flex items-center justify-center text-2xl`}>
++              <div className={`w-12 h-12 ${card.cor} rounded-xl flex items-center justify-center text-2xl shadow-md`}>
+                 {card.icon}
+               </div>
+-              <span className="text-gray-600 text-xs group-hover:text-gray-400 transition">
++              <span className="text-gray-400 text-xs group-hover:text-orange-500 transition">
+                 Ver todos →
+               </span>
+             </div>
+-            <p className="text-3xl font-bold text-white">{card.valor}</p>
+-            <p className="text-gray-400 text-sm mt-1">{card.label}</p>
++            <p className="text-3xl font-bold text-gray-800">{card.valor}</p>
++            <p className="text-gray-500 text-sm mt-1">{card.label}</p>
+           </Link>
+         ))}
+       </div>
+ 
+       {/* Ações rápidas */}
+-      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+-        <h2 className="text-white font-semibold mb-4">Ações rápidas</h2>
+-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
++      <div className="bg-white border border-orange-100 rounded-2xl p-6">
++        <h2 className="text-gray-800 font-semibold mb-4">Ações rápidas</h2>
++        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+           <Link
+-            href="/admin/encartes"
+-            className="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 rounded-xl px-4 py-3 text-sm text-gray-300 hover:text-white transition"
++            href="/admin/encartes/novo"
++            className="flex items-center gap-3 bg-orange-50 hover:bg-orange-100 rounded-xl px-4 py-3 text-sm text-orange-700 hover:text-orange-800 transition border border-orange-200"
+           >
+             <span>➕</span> Novo encarte
+           </Link>
+           <Link
+             href="/admin/temas"
+-            className="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 rounded-xl px-4 py-3 text-sm text-gray-300 hover:text-white transition"
++            className="flex items-center gap-3 bg-orange-50 hover:bg-orange-100 rounded-xl px-4 py-3 text-sm text-orange-700 hover:text-orange-800 transition border border-orange-200"
+           >
+             <span>🎨</span> Mudar tema do site
+           </Link>
+           <Link
+-            href="/admin/sorteios"
+-            className="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 rounded-xl px-4 py-3 text-sm text-gray-300 hover:text-white transition"
++            href="/admin/sorteios/novo"
++            className="flex items-center gap-3 bg-orange-50 hover:bg-orange-100 rounded-xl px-4 py-3 text-sm text-orange-700 hover:text-orange-800 transition border border-orange-200"
+           >
+             <span>🎰</span> Novo sorteio
+           </Link>
++          <Link
++            href="/admin/produtos/novo"
++            className="flex items-center gap-3 bg-orange-50 hover:bg-orange-100 rounded-xl px-4 py-3 text-sm text-orange-700 hover:text-orange-800 transition border border-orange-200"
++          >
++            <span>📦</span> Novo produto
++          </Link>
+         </div>
+       </div>
+     </div>
+   )
+-}
+\ No newline at end of file
++}
+diff --git a/src/app/admin/encartes/novo/page.tsx b/src/app/admin/encartes/novo/page.tsx
+index 3301ca6..02d0f38 100644
+--- a/src/app/admin/encartes/novo/page.tsx
++++ b/src/app/admin/encartes/novo/page.tsx
+@@ -38,7 +38,7 @@ export default function NovoEncartePage() {
+       .then(setCategorias)
+   }, [])
+ 
+-  async function uploadImagem(img: ImagemPreview, index: number) {
++  const uploadImagem = useCallback(async (img: ImagemPreview, index: number) => {
+     const formData = new FormData()
+     formData.append('files', img.file)
+ 
+@@ -67,9 +67,9 @@ export default function NovoEncartePage() {
+         )
+       )
+     }
+-  }
++  }, [])
+ 
+-  function adicionarArquivos(files: FileList | null) {
++  const adicionarArquivos = useCallback((files: FileList | null) => {
+     if (!files) return
+     const novas: ImagemPreview[] = Array.from(files).map((file) => ({
+       file,
+@@ -81,7 +81,7 @@ export default function NovoEncartePage() {
+       novas.forEach((img, i) => uploadImagem(img, prev.length + i))
+       return atualizadas
+     })
+-  }
++  }, [uploadImagem])
+ 
+   function removerImagem(index: number) {
+     setImagens((prev) => prev.filter((_, i) => i !== index))
+@@ -91,7 +91,7 @@ export default function NovoEncartePage() {
+     e.preventDefault()
+     setArrastando(false)
+     adicionarArquivos(e.dataTransfer.files)
+-  }, [])
++  }, [adicionarArquivos])
+ 
+   async function handleSalvar() {
+     if (!titulo || !dataInicio || !dataFim) {
+@@ -139,44 +139,42 @@ export default function NovoEncartePage() {
+   return (
+     <div className="max-w-3xl">
+       <div className="mb-8">
+-        <h1 className="text-2xl font-bold text-white">Novo encarte</h1>
+-        <p className="text-gray-400 text-sm mt-1">Preencha os dados e faça upload das imagens</p>
++        <h1 className="text-2xl font-bold text-gray-800">Novo encarte</h1>
++        <p className="text-gray-500 text-sm mt-1">Preencha os dados e faça upload das imagens</p>
+       </div>
+ 
+       <div className="space-y-6">
+-
+-        {/* Título */}
+-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
+-          <h2 className="text-white font-semibold">Informações</h2>
++        <div className="bg-white border border-orange-100 rounded-2xl p-6 space-y-4">
++          <h2 className="text-gray-800 font-semibold">Informações</h2>
+ 
+           <div>
+-            <label className="block text-sm text-gray-300 mb-1.5">Título</label>
++            <label className="block text-sm text-gray-600 mb-1.5">Título</label>
+             <input
+               type="text"
+               value={titulo}
+               onChange={(e) => setTitulo(e.target.value)}
+               placeholder="Ex: Promoção da Semana - 23/05"
+-              className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 transition"
++              className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition"
+             />
+           </div>
+ 
+           <div>
+-            <label className="block text-sm text-gray-300 mb-1.5">Descrição (opcional)</label>
++            <label className="block text-sm text-gray-600 mb-1.5">Descrição (opcional)</label>
+             <textarea
+               value={descricao}
+               onChange={(e) => setDescricao(e.target.value)}
+               placeholder="Descrição curta do encarte..."
+               rows={2}
+-              className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 transition resize-none"
++              className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition resize-none"
+             />
+           </div>
+ 
+           <div>
+-            <label className="block text-sm text-gray-300 mb-1.5">Categoria</label>
++            <label className="block text-sm text-gray-600 mb-1.5">Categoria</label>
+             <select
+               value={categoriaId}
+               onChange={(e) => setCategoriaId(e.target.value)}
+-              className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 transition"
++              className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition"
+             >
+               <option value="">Sem categoria</option>
+               {categorias.map((cat) => (
+@@ -189,45 +187,44 @@ export default function NovoEncartePage() {
+ 
+           <div className="grid grid-cols-2 gap-4">
+             <div>
+-              <label className="block text-sm text-gray-300 mb-1.5">Data de início</label>
++              <label className="block text-sm text-gray-600 mb-1.5">Data de início</label>
+               <input
+                 type="date"
+                 value={dataInicio}
+                 onChange={(e) => setDataInicio(e.target.value)}
+-                className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 transition"
++                className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition"
+               />
+             </div>
+             <div>
+-              <label className="block text-sm text-gray-300 mb-1.5">Data de fim</label>
++              <label className="block text-sm text-gray-600 mb-1.5">Data de fim</label>
+               <input
+                 type="date"
+                 value={dataFim}
+                 onChange={(e) => setDataFim(e.target.value)}
+-                className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 transition"
++                className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition"
+               />
+             </div>
+           </div>
+         </div>
+ 
+         {/* Upload de imagens */}
+-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+-          <h2 className="text-white font-semibold mb-4">Imagens do encarte</h2>
++        <div className="bg-white border border-orange-100 rounded-2xl p-6">
++          <h2 className="text-gray-800 font-semibold mb-4">Imagens do encarte</h2>
+ 
+-          {/* Área de drop */}
+           <div
+             onDragOver={(e) => { e.preventDefault(); setArrastando(true) }}
+             onDragLeave={() => setArrastando(false)}
+             onDrop={onDrop}
+             className={`border-2 border-dashed rounded-xl p-8 text-center transition cursor-pointer ${
+-              arrastando ? 'border-orange-500 bg-orange-950/20' : 'border-gray-700 hover:border-gray-500'
++              arrastando ? 'border-orange-500 bg-orange-50' : 'border-gray-300 hover:border-orange-300'
+             }`}
+             onClick={() => document.getElementById('file-input')?.click()}
+           >
+             <p className="text-4xl mb-2">🖼️</p>
+-            <p className="text-gray-300 text-sm font-medium">
++            <p className="text-gray-600 text-sm font-medium">
+               Arraste as imagens aqui ou clique para selecionar
+             </p>
+-            <p className="text-gray-500 text-xs mt-1">PNG, JPG, WEBP — sem limite de quantidade</p>
++            <p className="text-gray-400 text-xs mt-1">PNG, JPG, WEBP — sem limite de quantidade</p>
+             <input
+               id="file-input"
+               type="file"
+@@ -238,7 +235,6 @@ export default function NovoEncartePage() {
+             />
+           </div>
+ 
+-          {/* Preview das imagens */}
+           {imagens.length > 0 && (
+             <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mt-4">
+               {imagens.map((img, index) => (
+@@ -247,67 +243,58 @@ export default function NovoEncartePage() {
+                     src={img.preview}
+                     alt=""
+                     className={`w-full aspect-square object-cover rounded-xl border ${
+-                      img.erro ? 'border-orange-500' : 'border-gray-700'
++                      img.erro ? 'border-red-400' : 'border-orange-100'
+                     }`}
+                   />
+ 
+-                  {/* Overlay de carregando */}
+                   {img.uploading && (
+                     <div className="absolute inset-0 bg-black/60 rounded-xl flex items-center justify-center">
+                       <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"/>
+                     </div>
+                   )}
+ 
+-                  {/* Overlay de erro */}
+                   {img.erro && (
+-                    <div className="absolute inset-0 bg-orange-950/80 rounded-xl flex items-center justify-center">
+-                      <p className="text-orange-400 text-xs text-center px-2">Erro no upload</p>
++                    <div className="absolute inset-0 bg-red-100/80 rounded-xl flex items-center justify-center">
++                      <p className="text-red-600 text-xs text-center px-2">Erro no upload</p>
+                     </div>
+                   )}
+ 
+-                  {/* Sucesso */}
+                   {img.url && !img.uploading && (
+                     <div className="absolute top-1.5 left-1.5 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                       <span className="text-white text-xs">✓</span>
+                     </div>
+                   )}
+ 
+-                  {/* Botão remover */}
+                   <button
+                     onClick={() => removerImagem(index)}
+-                    className="absolute top-1.5 right-1.5 w-6 h-6 bg-orange-600 rounded-full text-white text-xs opacity-0 group-hover:opacity-100 transition flex items-center justify-center"
++                    className="absolute top-1.5 right-1.5 w-6 h-6 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition"
+                   >
+                     ✕
+                   </button>
+-
+-                  {/* Número da ordem */}
+-                  <div className="absolute bottom-1.5 right-1.5 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
+-                    {index + 1}
+-                  </div>
+                 </div>
+               ))}
+             </div>
+           )}
+         </div>
+ 
+-        {/* Erro e botão salvar */}
++        {/* Erro e botão */}
+         {erro && (
+-          <div className="bg-orange-950 border border-orange-800 text-orange-400 text-sm rounded-xl px-4 py-3">
+-            ⚠️ {erro}
++          <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">
++            {erro}
+           </div>
+         )}
+ 
+-        <div className="flex gap-3">
++        <div className="flex gap-4">
+           <button
+-            onClick={() => router.back()}
+-            className="px-6 py-3 rounded-xl bg-gray-800 text-gray-300 hover:bg-gray-700 text-sm transition"
++            onClick={() => router.push('/admin/encartes')}
++            className="px-6 py-3 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-50 transition text-sm font-medium"
+           >
+             Cancelar
+           </button>
+           <button
+             onClick={handleSalvar}
+             disabled={salvando}
+-            className="flex-1 bg-orange-600 hover:bg-orange-500 disabled:bg-orange-900 text-white font-semibold rounded-xl py-3 text-sm transition"
++            className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 text-white font-semibold rounded-xl py-3 text-sm transition shadow-md"
+           >
+             {salvando ? 'Salvando...' : 'Salvar encarte'}
+           </button>
+@@ -315,4 +302,4 @@ export default function NovoEncartePage() {
+       </div>
+     </div>
+   )
+-}
+\ No newline at end of file
++}
+diff --git a/src/app/admin/encartes/page.tsx b/src/app/admin/encartes/page.tsx
+index 97f9581..d435111 100644
+--- a/src/app/admin/encartes/page.tsx
++++ b/src/app/admin/encartes/page.tsx
+@@ -46,7 +46,13 @@ export default function EncartesPage() {
+     carregar()
+   }
+ 
+-  useEffect(() => { carregar() }, [])
++  useEffect(() => {
++    let active = true
++    fetch('/api/encartes')
++      .then((r) => r.json())
++      .then((data) => { if (active) { setEncartes(data); setCarregando(false) } })
++    return () => { active = false }
++  }, [])
+ 
+   function formatarData(data: string) {
+     return new Date(data + 'T00:00:00').toLocaleDateString('pt-BR')
+@@ -58,28 +64,26 @@ export default function EncartesPage() {
+ 
+   return (
+     <div>
+-      {/* Cabeçalho */}
+       <div className="flex items-center justify-between mb-8">
+         <div>
+-          <h1 className="text-2xl font-bold text-white">Encartes</h1>
+-          <p className="text-gray-400 text-sm mt-1">Gerencie os encartes do site</p>
++          <h1 className="text-2xl font-bold text-gray-800">Encartes</h1>
++          <p className="text-gray-500 text-sm mt-1">Gerencie os encartes do site</p>
+         </div>
+         <Link
+           href="/admin/encartes/novo"
+-          className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition"
++          className="bg-orange-600 hover:bg-orange-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition shadow-md"
+         >
+           + Novo encarte
+         </Link>
+       </div>
+ 
+-      {/* Lista */}
+       {carregando ? (
+-        <p className="text-gray-400">Carregando...</p>
++        <p className="text-gray-500">Carregando...</p>
+       ) : encartes.length === 0 ? (
+-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-12 text-center">
++        <div className="bg-white border border-orange-100 rounded-2xl p-12 text-center">
+           <p className="text-4xl mb-3">🗞️</p>
+-          <p className="text-gray-400">Nenhum encarte cadastrado ainda.</p>
+-          <Link href="/admin/encartes/novo" className="text-orange-400 text-sm mt-2 inline-block hover:underline">
++          <p className="text-gray-500">Nenhum encarte cadastrado ainda.</p>
++          <Link href="/admin/encartes/novo" className="text-orange-600 text-sm mt-2 inline-block hover:underline">
+             Criar primeiro encarte
+           </Link>
+         </div>
+@@ -88,10 +92,8 @@ export default function EncartesPage() {
+           {encartes.map((encarte) => {
+             const vencido = estaVencido(encarte.data_fim)
+             return (
+-              <div key={encarte.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
++              <div key={encarte.id} className="bg-white border border-orange-100 rounded-2xl p-6 hover:shadow-md transition">
+                 <div className="flex items-start justify-between gap-4">
+-
+-                  {/* Info */}
+                   <div className="flex-1">
+                     <div className="flex items-center gap-2 mb-2 flex-wrap">
+                       {encarte.categoria && (
+@@ -106,35 +108,34 @@ export default function EncartesPage() {
+                         </span>
+                       )}
+                       {vencido && (
+-                        <span className="text-xs bg-gray-800 text-gray-500 px-2.5 py-1 rounded-full">
++                        <span className="text-xs bg-gray-100 text-gray-500 px-2.5 py-1 rounded-full">
+                           Expirado
+                         </span>
+                       )}
+                       {!encarte.ativo && !vencido && (
+-                        <span className="text-xs bg-yellow-950 text-yellow-500 px-2.5 py-1 rounded-full">
++                        <span className="text-xs bg-yellow-50 text-yellow-600 px-2.5 py-1 rounded-full border border-yellow-200">
+                           Desativado
+                         </span>
+                       )}
+                       {encarte.ativo && !vencido && (
+-                        <span className="text-xs bg-green-950 text-green-500 px-2.5 py-1 rounded-full">
++                        <span className="text-xs bg-green-50 text-green-600 px-2.5 py-1 rounded-full border border-green-200">
+                           Ativo
+                         </span>
+                       )}
+                     </div>
+ 
+-                    <h2 className="text-white font-semibold text-lg">{encarte.titulo}</h2>
++                    <h2 className="text-gray-800 font-semibold text-lg">{encarte.titulo}</h2>
+                     {encarte.descricao && (
+-                      <p className="text-gray-400 text-sm mt-1">{encarte.descricao}</p>
++                      <p className="text-gray-500 text-sm mt-1">{encarte.descricao}</p>
+                     )}
+ 
+-                    <p className="text-gray-500 text-xs mt-2">
+-                      📅 {formatarData(encarte.data_inicio)} até {formatarData(encarte.data_fim)}
++                    <p className="text-gray-400 text-xs mt-2">
++                      {formatarData(encarte.data_inicio)} até {formatarData(encarte.data_fim)}
+                       {' · '}
+-                      🖼️ {encarte.imagens?.length ?? 0} imagem(ns)
++                      {encarte.imagens?.length ?? 0} imagem(ns)
+                     </p>
+                   </div>
+ 
+-                  {/* Preview das imagens */}
+                   {encarte.imagens && encarte.imagens.length > 0 && (
+                     <div className="flex gap-2 flex-shrink-0">
+                       {encarte.imagens.slice(0, 3).map((img) => (
+@@ -142,11 +143,11 @@ export default function EncartesPage() {
+                           key={img.id}
+                           src={img.imagem_url}
+                           alt=""
+-                          className="w-16 h-16 object-cover rounded-lg border border-gray-700"
++                          className="w-16 h-16 object-cover rounded-lg border border-orange-100"
+                         />
+                       ))}
+                       {encarte.imagens.length > 3 && (
+-                        <div className="w-16 h-16 bg-gray-800 rounded-lg border border-gray-700 flex items-center justify-center text-gray-400 text-sm font-medium">
++                        <div className="w-16 h-16 bg-orange-50 rounded-lg border border-orange-100 flex items-center justify-center text-orange-500 text-sm font-medium">
+                           +{encarte.imagens.length - 3}
+                         </div>
+                       )}
+@@ -154,31 +155,23 @@ export default function EncartesPage() {
+                   )}
+                 </div>
+ 
+-                {/* Ações */}
+-                <div className="flex items-center gap-3 mt-4 pt-4 border-t border-gray-800">
++                <div className="flex items-center gap-3 mt-4 pt-4 border-t border-orange-50">
+                   <button
+                     onClick={() => toggleAtivo(encarte.id, encarte.ativo)}
+                     className={`text-sm px-4 py-2 rounded-xl transition font-medium ${
+                       encarte.ativo
+-                        ? 'bg-yellow-950 text-yellow-400 hover:bg-yellow-900'
+-                        : 'bg-green-950 text-green-400 hover:bg-green-900'
++                        ? 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100 border border-yellow-200'
++                        : 'bg-green-50 text-green-600 hover:bg-green-100 border border-green-200'
+                     }`}
+                   >
+-                    {encarte.ativo ? '⏸ Desativar' : '▶ Ativar'}
++                    {encarte.ativo ? 'Desativar' : 'Ativar'}
+                   </button>
+ 
+-                  <Link
+-                    href={`/admin/encartes/${encarte.id}/editar`}
+-                    className="text-sm px-4 py-2 rounded-xl bg-gray-800 text-gray-300 hover:bg-gray-700 transition"
+-                  >
+-                    ✏️ Editar
+-                  </Link>
+-
+                   <button
+                     onClick={() => deletar(encarte.id)}
+-                    className="text-sm px-4 py-2 rounded-xl bg-orange-950 text-orange-400 hover:bg-orange-900 transition ml-auto"
++                    className="text-sm px-4 py-2 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition ml-auto border border-red-200"
+                   >
+-                    🗑 Deletar
++                    Deletar
+                   </button>
+                 </div>
+               </div>
+@@ -188,4 +181,4 @@ export default function EncartesPage() {
+       )}
+     </div>
+   )
+-}
+\ No newline at end of file
++}
+diff --git a/src/app/admin/layout.tsx b/src/app/admin/layout.tsx
+index 171c479..b3ce173 100644
+--- a/src/app/admin/layout.tsx
++++ b/src/app/admin/layout.tsx
+@@ -7,16 +7,18 @@ import { useState } from 'react'
+ const menuItems = [
+   { href: '/admin/dashboard', label: 'Dashboard', icon: '📊' },
+   { href: '/admin/encartes', label: 'Encartes', icon: '🗞️' },
++  { href: '/admin/categorias', label: 'Categorias', icon: '📁' },
+   { href: '/admin/temas', label: 'Temas & Cores', icon: '🎨' },
+   { href: '/admin/sorteios', label: 'Sorteios', icon: '🎰' },
++  { href: '/admin/produtos', label: 'Produtos', icon: '📦' },
+ ]
+ 
+ export default function AdminLayout({ children }: { children: React.ReactNode }) {
+   const pathname = usePathname()
+   const router = useRouter()
+   const [saindo, setSaindo] = useState(false)
++  const [menuAberto, setMenuAberto] = useState(false)
+ 
+-  // Não aplica o layout na página de login
+   if (pathname === '/admin/login') return <>{children}</>
+ 
+   async function handleLogout() {
+@@ -26,20 +28,41 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
+   }
+ 
+   return (
+-    <div className="min-h-screen bg-gray-950 flex">
++    <div className="min-h-screen bg-orange-50 flex">
++
++      {/* Mobile menu button */}
++      <button
++        onClick={() => setMenuAberto(!menuAberto)}
++        className="lg:hidden fixed top-4 left-4 z-50 bg-orange-600 text-white p-2 rounded-xl shadow-lg"
++      >
++        {menuAberto ? '✕' : '☰'}
++      </button>
++
++      {/* Overlay mobile */}
++      {menuAberto && (
++        <div
++          className="lg:hidden fixed inset-0 bg-black/50 z-30"
++          onClick={() => setMenuAberto(false)}
++        />
++      )}
+ 
+       {/* Sidebar */}
+-      <aside className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col fixed h-full">
++      <aside className={`w-64 bg-white border-r border-orange-100 flex flex-col fixed h-full z-40 shadow-lg transition-transform ${
++        menuAberto ? 'translate-x-0' : '-translate-x-full'
++      } lg:translate-x-0`}>
+ 
+         {/* Logo */}
+-        <div className="p-6 border-b border-gray-800">
++        <div className="p-6 border-b border-orange-100 bg-gradient-to-r from-orange-600 to-orange-500">
+           <div className="flex items-center gap-3">
+-            <div className="w-10 h-10 bg-orange-600 rounded-xl flex items-center justify-center text-xl">
+-              🛒
++            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center">
++              <svg width="24" height="24" viewBox="0 0 48 48" fill="none">
++                <circle cx="24" cy="24" r="22" fill="#F97316"/>
++                <path d="M14 24L21 31L34 18" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
++              </svg>
+             </div>
+             <div>
+               <p className="text-white font-bold text-sm leading-tight">Certo Atacado</p>
+-              <p className="text-gray-500 text-xs">Painel Admin</p>
++              <p className="text-orange-200 text-xs">Painel Admin</p>
+             </div>
+           </div>
+         </div>
+@@ -52,10 +75,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
+               <Link
+                 key={item.href}
+                 href={item.href}
++                onClick={() => setMenuAberto(false)}
+                 className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                   ativo
+-                    ? 'bg-orange-600 text-white'
+-                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
++                    ? 'bg-orange-600 text-white shadow-md'
++                    : 'text-gray-600 hover:bg-orange-50 hover:text-orange-700'
+                 }`}
+               >
+                 <span className="text-base">{item.icon}</span>
+@@ -66,11 +90,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
+         </nav>
+ 
+         {/* Botão logout */}
+-        <div className="p-4 border-t border-gray-800">
++        <div className="p-4 border-t border-orange-100">
+           <button
+             onClick={handleLogout}
+             disabled={saindo}
+-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-400 hover:bg-gray-800 hover:text-orange-400 transition-all"
++            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-500 hover:bg-red-50 hover:text-red-600 transition-all"
+           >
+             <span>🚪</span>
+             {saindo ? 'Saindo...' : 'Sair do painel'}
+@@ -79,10 +103,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
+       </aside>
+ 
+       {/* Conteúdo principal */}
+-      <main className="flex-1 ml-64 p-8">
++      <main className="flex-1 lg:ml-64 p-4 lg:p-8 pt-16 lg:pt-8">
+         {children}
+       </main>
+ 
+     </div>
+   )
+-}
+\ No newline at end of file
++}
+diff --git a/src/app/admin/login/page.tsx b/src/app/admin/login/page.tsx
+index 279ba69..d83f98f 100644
+--- a/src/app/admin/login/page.tsx
++++ b/src/app/admin/login/page.tsx
+@@ -38,40 +38,43 @@ export default function LoginPage() {
+   }
+ 
+   return (
+-    <div className="min-h-screen bg-orange-50  flex items-center justify-center px-4">
++    <div className="min-h-screen bg-gradient-to-br from-orange-600 via-orange-500 to-orange-700 flex items-center justify-center px-4">
+       <div className="w-full max-w-md">
+ 
+         {/* Logo / Título */}
+         <div className="text-center mb-8">
+-          <div className="inline-flex items-center justify-center w-16 h-16 bg-orange-600 rounded-2xl mb-4">
+-            <span className="text-3xl">🛒</span>
++          <div className="inline-flex items-center justify-center w-20 h-20 bg-white rounded-2xl mb-4 shadow-lg">
++            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
++              <circle cx="24" cy="24" r="22" fill="#F97316"/>
++              <path d="M14 24L21 31L34 18" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
++            </svg>
+           </div>
+-          <h1 className="text-2xl font-bold text-white">Painel Administrativo</h1>
+-          <p className="text-gray-400 text-sm mt-1">Acesso restrito a administradores</p>
++          <h1 className="text-3xl font-extrabold text-white drop-shadow-lg">Painel Administrativo</h1>
++          <p className="text-orange-100 text-lg font-semibold mt-1">Certo Atacado e Varejo</p>
+         </div>
+ 
+         {/* Card do formulário */}
+-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8">
++        <div className="bg-white rounded-2xl p-8 shadow-2xl">
+           <form onSubmit={handleLogin} className="space-y-5">
+ 
+             {/* Campo email */}
+             <div>
+-              <label className="block text-sm font-medium text-gray-300 mb-1.5">
++              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                 E-mail
+               </label>
+               <input
+                 type="email"
+                 value={email}
+                 onChange={(e) => setEmail(e.target.value)}
+-                placeholder="admin@seusupermercado.com.br"
++                placeholder="admin@certoatacado.com.br"
+                 required
+-                className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition"
++                className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm placeholder-gray-400 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition"
+               />
+             </div>
+ 
+             {/* Campo senha */}
+             <div>
+-              <label className="block text-sm font-medium text-gray-300 mb-1.5">
++              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                 Senha
+               </label>
+               <input
+@@ -80,14 +83,14 @@ export default function LoginPage() {
+                 onChange={(e) => setSenha(e.target.value)}
+                 placeholder="••••••••"
+                 required
+-                className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-4 py-3 text-sm placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition"
++                className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm placeholder-gray-400 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition"
+               />
+             </div>
+ 
+             {/* Mensagem de erro */}
+             {erro && (
+-              <div className="bg-orange-950 border border-orange-800 text-orange-400 text-sm rounded-xl px-4 py-3">
+-                ⚠️ {erro}
++              <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">
++                {erro}
+               </div>
+             )}
+ 
+@@ -95,7 +98,7 @@ export default function LoginPage() {
+             <button
+               type="submit"
+               disabled={carregando}
+-              className="w-full bg-orange-600 hover:bg-orange-300 disabled:bg-orange-900 disabled:cursor-not-allowed text-white font-semibold rounded-xl py-3 text-sm transition"
++              className="w-full bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 disabled:cursor-not-allowed text-white font-semibold rounded-xl py-3 text-sm transition shadow-lg"
+             >
+               {carregando ? 'Entrando...' : 'Entrar no painel'}
+             </button>
+@@ -103,10 +106,10 @@ export default function LoginPage() {
+           </form>
+         </div>
+ 
+-        <p className="text-center text-gray-600 text-xs mt-6">
+-          🔒 Conexão segura — acesso monitorado
++        <p className="text-center text-orange-100 text-xs mt-6">
++          Conexão segura — acesso restrito a administradores
+         </p>
+       </div>
+     </div>
+   )
+-}
+\ No newline at end of file
++}
+diff --git a/src/app/admin/produtos/novo/page.tsx b/src/app/admin/produtos/novo/page.tsx
+new file mode 100644
+index 0000000..c7de935
+--- /dev/null
++++ b/src/app/admin/produtos/novo/page.tsx
+@@ -0,0 +1,184 @@
++'use client'
++
++import { useState, useEffect } from 'react'
++import { useRouter } from 'next/navigation'
++
++interface Categoria {
++  id: string
++  nome: string
++  icone: string
++}
++
++export default function NovoProdutoPage() {
++  const router = useRouter()
++  const [categorias, setCategorias] = useState<Categoria[]>([])
++  const [nome, setNome] = useState('')
++  const [descricao, setDescricao] = useState('')
++  const [precoVarejo, setPrecoVarejo] = useState('')
++  const [precoAtacado, setPrecoAtacado] = useState('')
++  const [unidade, setUnidade] = useState('un')
++  const [categoriaId, setCategoriaId] = useState('')
++  const [destaque, setDestaque] = useState(false)
++  const [imagemUrl, setImagemUrl] = useState('')
++  const [cloudinaryId, setCloudinaryId] = useState('')
++  const [uploadando, setUploadando] = useState(false)
++  const [salvando, setSalvando] = useState(false)
++  const [erro, setErro] = useState('')
++
++  useEffect(() => {
++    fetch('/api/categorias-produtos')
++      .then((r) => r.json())
++      .then(setCategorias)
++  }, [])
++
++  async function handleUpload(files: FileList | null) {
++    if (!files || files.length === 0) return
++    setUploadando(true)
++    const formData = new FormData()
++    formData.append('files', files[0])
++    try {
++      const res = await fetch('/api/upload', { method: 'POST', body: formData })
++      const data = await res.json()
++      if (res.ok && data.imagens?.length > 0) {
++        setImagemUrl(data.imagens[0].url)
++        setCloudinaryId(data.imagens[0].cloudinary_id)
++      }
++    } catch {
++      setErro('Erro no upload')
++    }
++    setUploadando(false)
++  }
++
++  async function handleSalvar() {
++    if (!nome || !precoVarejo) {
++      setErro('Preencha nome e preço de varejo')
++      return
++    }
++    setSalvando(true)
++    setErro('')
++
++    const res = await fetch('/api/produtos', {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({
++        nome, descricao, preco_varejo: parseFloat(precoVarejo),
++        preco_atacado: precoAtacado ? parseFloat(precoAtacado) : null,
++        unidade, categoria_id: categoriaId || null, destaque,
++        imagem_url: imagemUrl || null, cloudinary_id: cloudinaryId || null,
++      }),
++    })
++
++    if (res.ok) {
++      router.push('/admin/produtos')
++    } else {
++      const data = await res.json()
++      setErro(data.erro || 'Erro ao salvar')
++      setSalvando(false)
++    }
++  }
++
++  return (
++    <div className="max-w-3xl">
++      <div className="mb-8">
++        <h1 className="text-2xl font-bold text-gray-800">Novo produto</h1>
++        <p className="text-gray-500 text-sm mt-1">Cadastre um produto para o catálogo</p>
++      </div>
++
++      <div className="space-y-6">
++        <div className="bg-white border border-orange-100 rounded-2xl p-6 space-y-4">
++          <h2 className="text-gray-800 font-semibold">Informações</h2>
++
++          <div>
++            <label className="block text-sm text-gray-600 mb-1.5">Nome</label>
++            <input type="text" value={nome} onChange={(e) => setNome(e.target.value)}
++              placeholder="Ex: Arroz Tio João 5kg" className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition" />
++          </div>
++
++          <div>
++            <label className="block text-sm text-gray-600 mb-1.5">Descrição (opcional)</label>
++            <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)}
++              rows={2} className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition resize-none" />
++          </div>
++
++          <div className="grid grid-cols-3 gap-4">
++            <div>
++              <label className="block text-sm text-gray-600 mb-1.5">Preço varejo (R$)</label>
++              <input type="number" step="0.01" value={precoVarejo} onChange={(e) => setPrecoVarejo(e.target.value)}
++                placeholder="0.00" className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition" />
++            </div>
++            <div>
++              <label className="block text-sm text-gray-600 mb-1.5">Preço atacado (R$)</label>
++              <input type="number" step="0.01" value={precoAtacado} onChange={(e) => setPrecoAtacado(e.target.value)}
++                placeholder="0.00" className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition" />
++            </div>
++            <div>
++              <label className="block text-sm text-gray-600 mb-1.5">Unidade</label>
++              <select value={unidade} onChange={(e) => setUnidade(e.target.value)}
++                className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition">
++                <option value="un">Unidade</option>
++                <option value="kg">Kg</option>
++                <option value="cx">Caixa</option>
++                <option value="fd">Fardo</option>
++                <option value="pct">Pacote</option>
++                <option value="lt">Litro</option>
++              </select>
++            </div>
++          </div>
++
++          <div className="grid grid-cols-2 gap-4">
++            <div>
++              <label className="block text-sm text-gray-600 mb-1.5">Categoria</label>
++              <select value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)}
++                className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition">
++                <option value="">Sem categoria</option>
++                {categorias.map((cat) => (
++                  <option key={cat.id} value={cat.id}>{cat.icone} {cat.nome}</option>
++                ))}
++              </select>
++            </div>
++            <div className="flex items-end">
++              <label className="flex items-center gap-2 cursor-pointer">
++                <input type="checkbox" checked={destaque} onChange={(e) => setDestaque(e.target.checked)}
++                  className="w-5 h-5 rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
++                <span className="text-sm text-gray-600">Produto em destaque</span>
++              </label>
++            </div>
++          </div>
++        </div>
++
++        <div className="bg-white border border-orange-100 rounded-2xl p-6">
++          <h2 className="text-gray-800 font-semibold mb-4">Imagem do produto</h2>
++          {imagemUrl ? (
++            <div className="relative inline-block">
++              <img src={imagemUrl} alt="" className="w-48 h-48 object-cover rounded-xl border border-orange-100" />
++              <button onClick={() => { setImagemUrl(''); setCloudinaryId('') }}
++                className="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full text-xs">✕</button>
++            </div>
++          ) : (
++            <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer hover:border-orange-300 transition"
++              onClick={() => document.getElementById('produto-img')?.click()}>
++              <p className="text-3xl mb-2">📦</p>
++              <p className="text-gray-600 text-sm">{uploadando ? 'Enviando...' : 'Clique para selecionar a imagem'}</p>
++              <input id="produto-img" type="file" accept="image/*" className="hidden" onChange={(e) => handleUpload(e.target.files)} />
++            </div>
++          )}
++        </div>
++
++        {erro && (
++          <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">{erro}</div>
++        )}
++
++        <div className="flex gap-4">
++          <button onClick={() => router.push('/admin/produtos')}
++            className="px-6 py-3 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-50 transition text-sm font-medium">
++            Cancelar
++          </button>
++          <button onClick={handleSalvar} disabled={salvando}
++            className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 text-white font-semibold rounded-xl py-3 text-sm transition shadow-md">
++            {salvando ? 'Salvando...' : 'Criar produto'}
++          </button>
++        </div>
++      </div>
++    </div>
++  )
++}
+diff --git a/src/app/admin/produtos/page.tsx b/src/app/admin/produtos/page.tsx
+new file mode 100644
+index 0000000..213d007
+--- /dev/null
++++ b/src/app/admin/produtos/page.tsx
+@@ -0,0 +1,135 @@
++'use client'
++
++import { useEffect, useState } from 'react'
++import Link from 'next/link'
++
++interface Produto {
++  id: string
++  nome: string
++  descricao: string
++  preco_varejo: number
++  preco_atacado: number
++  unidade: string
++  imagem_url: string
++  destaque: boolean
++  ativo: boolean
++  categoria: { nome: string; icone: string } | null
++}
++
++export default function ProdutosPage() {
++  const [produtos, setProdutos] = useState<Produto[]>([])
++  const [carregando, setCarregando] = useState(true)
++
++  async function carregar() {
++    const res = await fetch('/api/produtos')
++    const data = await res.json()
++    setProdutos(data)
++    setCarregando(false)
++  }
++
++  useEffect(() => {
++    let active = true
++    fetch('/api/produtos')
++      .then((r) => r.json())
++      .then((data) => { if (active) { setProdutos(data); setCarregando(false) } })
++    return () => { active = false }
++  }, [])
++
++  async function toggleAtivo(id: string, ativo: boolean) {
++    await fetch(`/api/produtos/${id}`, {
++      method: 'PATCH',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({ ativo: !ativo }),
++    })
++    carregar()
++  }
++
++  async function toggleDestaque(id: string, destaque: boolean) {
++    await fetch(`/api/produtos/${id}`, {
++      method: 'PATCH',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({ destaque: !destaque }),
++    })
++    carregar()
++  }
++
++  async function deletar(id: string) {
++    if (!confirm('Deletar este produto?')) return
++    await fetch(`/api/produtos/${id}`, { method: 'DELETE' })
++    carregar()
++  }
++
++  return (
++    <div>
++      <div className="flex items-center justify-between mb-8">
++        <div>
++          <h1 className="text-2xl font-bold text-gray-800">Produtos</h1>
++          <p className="text-gray-500 text-sm mt-1">Gerencie os produtos e promoções</p>
++        </div>
++        <Link
++          href="/admin/produtos/novo"
++          className="bg-orange-600 hover:bg-orange-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition shadow-md"
++        >
++          + Novo produto
++        </Link>
++      </div>
++
++      {carregando ? (
++        <p className="text-gray-500">Carregando...</p>
++      ) : produtos.length === 0 ? (
++        <div className="bg-white border border-orange-100 rounded-2xl p-12 text-center">
++          <p className="text-4xl mb-3">📦</p>
++          <p className="text-gray-500">Nenhum produto cadastrado.</p>
++          <Link href="/admin/produtos/novo" className="text-orange-600 text-sm mt-2 inline-block hover:underline">
++            Criar primeiro produto
++          </Link>
++        </div>
++      ) : (
++        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
++          {produtos.map((produto) => (
++            <div key={produto.id} className="bg-white border border-orange-100 rounded-2xl p-4 hover:shadow-md transition">
++              {produto.imagem_url && (
++                <img src={produto.imagem_url} alt={produto.nome} className="w-full h-40 object-cover rounded-xl mb-3 border border-orange-50" />
++              )}
++              <div className="flex items-center gap-2 mb-1">
++                {produto.categoria && (
++                  <span className="text-xs text-gray-500">{produto.categoria.icone} {produto.categoria.nome}</span>
++                )}
++                {produto.destaque && (
++                  <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">Destaque</span>
++                )}
++              </div>
++              <h3 className="text-gray-800 font-semibold">{produto.nome}</h3>
++              <div className="flex items-center gap-3 mt-2">
++                <div>
++                  <p className="text-xs text-gray-400">Varejo</p>
++                  <p className="text-orange-600 font-bold">R$ {Number(produto.preco_varejo).toFixed(2)}</p>
++                </div>
++                {produto.preco_atacado && (
++                  <div>
++                    <p className="text-xs text-gray-400">Atacado</p>
++                    <p className="text-green-600 font-bold">R$ {Number(produto.preco_atacado).toFixed(2)}</p>
++                  </div>
++                )}
++              </div>
++              <div className="flex items-center gap-2 mt-3 pt-3 border-t border-orange-50">
++                <button onClick={() => toggleDestaque(produto.id, produto.destaque)}
++                  className={`text-xs px-3 py-1.5 rounded-lg transition ${produto.destaque ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-500'}`}>
++                  {produto.destaque ? 'Remover destaque' : 'Destacar'}
++                </button>
++                <button onClick={() => toggleAtivo(produto.id, produto.ativo)}
++                  className={`text-xs px-3 py-1.5 rounded-lg transition ${produto.ativo ? 'bg-yellow-50 text-yellow-600' : 'bg-green-50 text-green-600'}`}>
++                  {produto.ativo ? 'Desativar' : 'Ativar'}
++                </button>
++                <button onClick={() => deletar(produto.id)}
++                  className="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-500 transition ml-auto">
++                  Deletar
++                </button>
++              </div>
++            </div>
++          ))}
++        </div>
++      )}
++    </div>
++  )
++}
+diff --git a/src/app/admin/sorteios/[id]/page.tsx b/src/app/admin/sorteios/[id]/page.tsx
+new file mode 100644
+index 0000000..5da0bf9
+--- /dev/null
++++ b/src/app/admin/sorteios/[id]/page.tsx
+@@ -0,0 +1,156 @@
++'use client'
++
++import { useEffect, useState } from 'react'
++import { useParams } from 'next/navigation'
++
++interface Participante {
++  id: string
++  nome: string
++  telefone: string
++  created_at: string
++}
++
++interface Sorteio {
++  id: string
++  titulo: string
++  descricao: string
++  ativo: boolean
++  sorteado: boolean
++  ganhador_id: string | null
++  participantes: Participante[]
++}
++
++interface Ganhador {
++  id: string
++  nome: string
++  whatsapp_link: string
++}
++
++export default function SorteioDetalhePage() {
++  const params = useParams()
++  const id = params.id as string
++  const [sorteio, setSorteio] = useState<Sorteio | null>(null)
++  const [carregando, setCarregando] = useState(true)
++  const [sorteando, setSorteando] = useState(false)
++  const [ganhador, setGanhador] = useState<Ganhador | null>(null)
++
++  async function carregar() {
++    const res = await fetch(`/api/sorteios/${id}`)
++    const data = await res.json()
++    setSorteio(data)
++    setCarregando(false)
++  }
++
++  useEffect(() => {
++    let active = true
++    fetch(`/api/sorteios/${id}`)
++      .then((r) => r.json())
++      .then((data) => { if (active) { setSorteio(data); setCarregando(false) } })
++    return () => { active = false }
++  }, [id])
++
++  async function realizarSorteio() {
++    if (!confirm('Deseja realizar o sorteio agora?')) return
++    setSorteando(true)
++    const res = await fetch(`/api/sorteios/${id}/sortear`, { method: 'POST' })
++    const data = await res.json()
++    if (data.sucesso) {
++      setGanhador(data.ganhador)
++      carregar()
++    } else {
++      alert(data.erro || 'Erro ao sortear')
++    }
++    setSorteando(false)
++  }
++
++  if (carregando) return <p className="text-gray-500">Carregando...</p>
++  if (!sorteio) return <p className="text-gray-500">Sorteio não encontrado.</p>
++
++  const ganhadorParticipante = sorteio.ganhador_id
++    ? sorteio.participantes.find(p => p.id === sorteio.ganhador_id)
++    : null
++
++  return (
++    <div>
++      <div className="mb-8">
++        <h1 className="text-2xl font-bold text-gray-800">{sorteio.titulo}</h1>
++        <p className="text-gray-500 text-sm mt-1">{sorteio.descricao}</p>
++      </div>
++
++      {/* Ganhador */}
++      {(ganhador || ganhadorParticipante) && (
++        <div className="bg-green-50 border border-green-200 rounded-2xl p-6 mb-6">
++          <h2 className="text-green-800 font-bold text-lg mb-2">Ganhador do sorteio!</h2>
++          <p className="text-green-700 text-xl font-semibold">
++            {ganhador?.nome || ganhadorParticipante?.nome}
++          </p>
++          {ganhador?.whatsapp_link && (
++            <a
++              href={ganhador.whatsapp_link}
++              target="_blank"
++              rel="noopener noreferrer"
++              className="inline-block mt-3 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition"
++            >
++              Contatar via WhatsApp
++            </a>
++          )}
++        </div>
++      )}
++
++      {/* Ações */}
++      <div className="flex items-center gap-4 mb-6">
++        {!sorteio.sorteado && sorteio.participantes.length > 0 && (
++          <button
++            onClick={realizarSorteio}
++            disabled={sorteando}
++            className="bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 text-white text-sm font-semibold px-6 py-3 rounded-xl transition shadow-md"
++          >
++            {sorteando ? 'Sorteando...' : 'Realizar sorteio'}
++          </button>
++        )}
++        {sorteio.sorteado && (
++          <button
++            onClick={realizarSorteio}
++            disabled={sorteando}
++            className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-300 text-white text-sm font-semibold px-6 py-3 rounded-xl transition shadow-md"
++          >
++            {sorteando ? 'Sorteando...' : 'Sortear novamente'}
++          </button>
++        )}
++        <span className="text-gray-500 text-sm">
++          {sorteio.participantes.length} participante(s)
++        </span>
++      </div>
++
++      {/* Lista de participantes */}
++      <div className="bg-white border border-orange-100 rounded-2xl p-6">
++        <h2 className="text-gray-800 font-semibold mb-4">Participantes</h2>
++        {sorteio.participantes.length === 0 ? (
++          <p className="text-gray-500 text-sm">Nenhum participante inscrito ainda.</p>
++        ) : (
++          <div className="space-y-2">
++            {sorteio.participantes.map((p, i) => (
++              <div
++                key={p.id}
++                className={`flex items-center gap-3 p-3 rounded-xl border transition ${
++                  p.id === sorteio.ganhador_id ? 'border-green-300 bg-green-50' : 'border-gray-100'
++                }`}
++              >
++                <span className="w-8 h-8 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center text-xs font-bold">
++                  {i + 1}
++                </span>
++                <div className="flex-1">
++                  <p className="text-gray-800 font-medium text-sm">{p.nome}</p>
++                  <p className="text-gray-400 text-xs">{p.telefone}</p>
++                </div>
++                {p.id === sorteio.ganhador_id && (
++                  <span className="text-xs bg-green-600 text-white px-2 py-0.5 rounded-full">Ganhador</span>
++                )}
++              </div>
++            ))}
++          </div>
++        )}
++      </div>
++    </div>
++  )
++}
+diff --git a/src/app/admin/sorteios/novo/page.tsx b/src/app/admin/sorteios/novo/page.tsx
+new file mode 100644
+index 0000000..725031f
+--- /dev/null
++++ b/src/app/admin/sorteios/novo/page.tsx
+@@ -0,0 +1,153 @@
++'use client'
++
++import { useState } from 'react'
++import { useRouter } from 'next/navigation'
++
++export default function NovoSorteioPage() {
++  const router = useRouter()
++  const [titulo, setTitulo] = useState('')
++  const [descricao, setDescricao] = useState('')
++  const [linkCriterio, setLinkCriterio] = useState('')
++  const [descricaoLink, setDescricaoLink] = useState('')
++  const [dataInicio, setDataInicio] = useState('')
++  const [dataFim, setDataFim] = useState('')
++  const [imagemUrl, setImagemUrl] = useState('')
++  const [cloudinaryId, setCloudinaryId] = useState('')
++  const [uploadando, setUploadando] = useState(false)
++  const [salvando, setSalvando] = useState(false)
++  const [erro, setErro] = useState('')
++
++  async function handleUpload(files: FileList | null) {
++    if (!files || files.length === 0) return
++    setUploadando(true)
++    const formData = new FormData()
++    formData.append('files', files[0])
++
++    try {
++      const res = await fetch('/api/upload', { method: 'POST', body: formData })
++      const data = await res.json()
++      if (res.ok && data.imagens?.length > 0) {
++        setImagemUrl(data.imagens[0].url)
++        setCloudinaryId(data.imagens[0].cloudinary_id)
++      }
++    } catch {
++      setErro('Erro no upload da imagem')
++    }
++    setUploadando(false)
++  }
++
++  async function handleSalvar() {
++    if (!titulo || !dataInicio || !dataFim) {
++      setErro('Preencha título e datas')
++      return
++    }
++    setSalvando(true)
++    setErro('')
++
++    const res = await fetch('/api/sorteios', {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({
++        titulo, descricao, imagem_url: imagemUrl || null, cloudinary_id: cloudinaryId || null,
++        link_criterio: linkCriterio || null, descricao_link: descricaoLink || null,
++        data_inicio: dataInicio, data_fim: dataFim,
++      }),
++    })
++
++    if (res.ok) {
++      router.push('/admin/sorteios')
++    } else {
++      const data = await res.json()
++      setErro(data.erro || 'Erro ao salvar')
++      setSalvando(false)
++    }
++  }
++
++  return (
++    <div className="max-w-3xl">
++      <div className="mb-8">
++        <h1 className="text-2xl font-bold text-gray-800">Novo sorteio</h1>
++        <p className="text-gray-500 text-sm mt-1">Configure o sorteio para o site</p>
++      </div>
++
++      <div className="space-y-6">
++        <div className="bg-white border border-orange-100 rounded-2xl p-6 space-y-4">
++          <h2 className="text-gray-800 font-semibold">Informações do sorteio</h2>
++
++          <div>
++            <label className="block text-sm text-gray-600 mb-1.5">Título</label>
++            <input type="text" value={titulo} onChange={(e) => setTitulo(e.target.value)}
++              placeholder="Ex: Sorteio de Natal" className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition" />
++          </div>
++
++          <div>
++            <label className="block text-sm text-gray-600 mb-1.5">Descrição</label>
++            <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)}
++              placeholder="Descrição do prêmio e regras..." rows={3}
++              className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition resize-none" />
++          </div>
++
++          <div className="grid grid-cols-2 gap-4">
++            <div>
++              <label className="block text-sm text-gray-600 mb-1.5">Data de início</label>
++              <input type="datetime-local" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)}
++                className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition" />
++            </div>
++            <div>
++              <label className="block text-sm text-gray-600 mb-1.5">Data de fim</label>
++              <input type="datetime-local" value={dataFim} onChange={(e) => setDataFim(e.target.value)}
++                className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition" />
++            </div>
++          </div>
++        </div>
++
++        <div className="bg-white border border-orange-100 rounded-2xl p-6 space-y-4">
++          <h2 className="text-gray-800 font-semibold">Critério (opcional)</h2>
++          <div>
++            <label className="block text-sm text-gray-600 mb-1.5">Link do critério</label>
++            <input type="url" value={linkCriterio} onChange={(e) => setLinkCriterio(e.target.value)}
++              placeholder="https://instagram.com/certoatacado" className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition" />
++          </div>
++          <div>
++            <label className="block text-sm text-gray-600 mb-1.5">Descrição do critério</label>
++            <input type="text" value={descricaoLink} onChange={(e) => setDescricaoLink(e.target.value)}
++              placeholder="Siga nosso Instagram para participar" className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition" />
++          </div>
++        </div>
++
++        <div className="bg-white border border-orange-100 rounded-2xl p-6 space-y-4">
++          <h2 className="text-gray-800 font-semibold">Imagem do prêmio</h2>
++          {imagemUrl ? (
++            <div className="relative">
++              <img src={imagemUrl} alt="" className="w-full max-w-xs rounded-xl border border-orange-100" />
++              <button onClick={() => { setImagemUrl(''); setCloudinaryId('') }}
++                className="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full text-xs">✕</button>
++            </div>
++          ) : (
++            <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer hover:border-orange-300 transition"
++              onClick={() => document.getElementById('sorteio-img')?.click()}>
++              <p className="text-3xl mb-2">🖼️</p>
++              <p className="text-gray-600 text-sm">{uploadando ? 'Enviando...' : 'Clique para selecionar a imagem do prêmio'}</p>
++              <input id="sorteio-img" type="file" accept="image/*" className="hidden" onChange={(e) => handleUpload(e.target.files)} />
++            </div>
++          )}
++        </div>
++
++        {erro && (
++          <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">{erro}</div>
++        )}
++
++        <div className="flex gap-4">
++          <button onClick={() => router.push('/admin/sorteios')}
++            className="px-6 py-3 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-50 transition text-sm font-medium">
++            Cancelar
++          </button>
++          <button onClick={handleSalvar} disabled={salvando}
++            className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 text-white font-semibold rounded-xl py-3 text-sm transition shadow-md">
++            {salvando ? 'Salvando...' : 'Criar sorteio'}
++          </button>
++        </div>
++      </div>
++    </div>
++  )
++}
+diff --git a/src/app/admin/sorteios/page.tsx b/src/app/admin/sorteios/page.tsx
+new file mode 100644
+index 0000000..5d1211a
+--- /dev/null
++++ b/src/app/admin/sorteios/page.tsx
+@@ -0,0 +1,143 @@
++'use client'
++
++import { useEffect, useState } from 'react'
++import Link from 'next/link'
++
++interface Sorteio {
++  id: string
++  titulo: string
++  descricao: string
++  imagem_url: string
++  data_inicio: string
++  data_fim: string
++  ativo: boolean
++  sorteado: boolean
++  ganhador_id: string | null
++}
++
++export default function SorteiosPage() {
++  const [sorteios, setSorteios] = useState<Sorteio[]>([])
++  const [carregando, setCarregando] = useState(true)
++
++  async function carregar() {
++    const res = await fetch('/api/sorteios')
++    const data = await res.json()
++    setSorteios(data)
++    setCarregando(false)
++  }
++
++  useEffect(() => {
++    let active = true
++    fetch('/api/sorteios')
++      .then((r) => r.json())
++      .then((data) => { if (active) { setSorteios(data); setCarregando(false) } })
++    return () => { active = false }
++  }, [])
++
++  async function toggleAtivo(id: string, ativo: boolean) {
++    await fetch(`/api/sorteios/${id}`, {
++      method: 'PATCH',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({ ativo: !ativo }),
++    })
++    carregar()
++  }
++
++  async function deletar(id: string) {
++    if (!confirm('Deletar este sorteio e todos os participantes?')) return
++    await fetch(`/api/sorteios/${id}`, { method: 'DELETE' })
++    carregar()
++  }
++
++  function formatarData(data: string) {
++    return new Date(data).toLocaleDateString('pt-BR')
++  }
++
++  return (
++    <div>
++      <div className="flex items-center justify-between mb-8">
++        <div>
++          <h1 className="text-2xl font-bold text-gray-800">Sorteios</h1>
++          <p className="text-gray-500 text-sm mt-1">Gerencie os sorteios do site</p>
++        </div>
++        <Link
++          href="/admin/sorteios/novo"
++          className="bg-orange-600 hover:bg-orange-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition shadow-md"
++        >
++          + Novo sorteio
++        </Link>
++      </div>
++
++      {carregando ? (
++        <p className="text-gray-500">Carregando...</p>
++      ) : sorteios.length === 0 ? (
++        <div className="bg-white border border-orange-100 rounded-2xl p-12 text-center">
++          <p className="text-4xl mb-3">🎰</p>
++          <p className="text-gray-500">Nenhum sorteio cadastrado.</p>
++          <Link href="/admin/sorteios/novo" className="text-orange-600 text-sm mt-2 inline-block hover:underline">
++            Criar primeiro sorteio
++          </Link>
++        </div>
++      ) : (
++        <div className="space-y-4">
++          {sorteios.map((sorteio) => (
++            <div key={sorteio.id} className="bg-white border border-orange-100 rounded-2xl p-6 hover:shadow-md transition">
++              <div className="flex items-start justify-between gap-4">
++                <div className="flex-1">
++                  <div className="flex items-center gap-2 mb-2">
++                    {sorteio.sorteado ? (
++                      <span className="text-xs bg-purple-50 text-purple-600 px-2.5 py-1 rounded-full border border-purple-200">
++                        Sorteado
++                      </span>
++                    ) : sorteio.ativo ? (
++                      <span className="text-xs bg-green-50 text-green-600 px-2.5 py-1 rounded-full border border-green-200">
++                        Ativo
++                      </span>
++                    ) : (
++                      <span className="text-xs bg-gray-100 text-gray-500 px-2.5 py-1 rounded-full">
++                        Inativo
++                      </span>
++                    )}
++                  </div>
++                  <h2 className="text-gray-800 font-semibold text-lg">{sorteio.titulo}</h2>
++                  {sorteio.descricao && <p className="text-gray-500 text-sm mt-1">{sorteio.descricao}</p>}
++                  <p className="text-gray-400 text-xs mt-2">
++                    {formatarData(sorteio.data_inicio)} até {formatarData(sorteio.data_fim)}
++                  </p>
++                </div>
++                {sorteio.imagem_url && (
++                  <img src={sorteio.imagem_url} alt="" className="w-20 h-20 object-cover rounded-xl border border-orange-100" />
++                )}
++              </div>
++
++              <div className="flex items-center gap-3 mt-4 pt-4 border-t border-orange-50">
++                <Link
++                  href={`/admin/sorteios/${sorteio.id}`}
++                  className="text-sm px-4 py-2 rounded-xl bg-orange-50 text-orange-600 hover:bg-orange-100 transition border border-orange-200"
++                >
++                  Ver participantes
++                </Link>
++                <button
++                  onClick={() => toggleAtivo(sorteio.id, sorteio.ativo)}
++                  className={`text-sm px-4 py-2 rounded-xl transition font-medium ${
++                    sorteio.ativo
++                      ? 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100 border border-yellow-200'
++                      : 'bg-green-50 text-green-600 hover:bg-green-100 border border-green-200'
++                  }`}
++                >
++                  {sorteio.ativo ? 'Desativar' : 'Ativar'}
++                </button>
++                <button
++                  onClick={() => deletar(sorteio.id)}
++                  className="text-sm px-4 py-2 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition ml-auto border border-red-200"
++                >
++                  Deletar
++                </button>
++              </div>
++            </div>
++          ))}
++        </div>
++      )}
++    </div>
++  )
++}
+diff --git a/src/app/admin/temas/page.tsx b/src/app/admin/temas/page.tsx
+new file mode 100644
+index 0000000..1882d3a
+--- /dev/null
++++ b/src/app/admin/temas/page.tsx
+@@ -0,0 +1,178 @@
++'use client'
++
++import { useEffect, useState } from 'react'
++
++interface Tema {
++  id: string
++  nome: string
++  cor_primaria: string
++  cor_secundaria: string
++  cor_fundo: string
++  cor_texto: string
++  ativo: boolean
++}
++
++export default function TemasPage() {
++  const [temas, setTemas] = useState<Tema[]>([])
++  const [carregando, setCarregando] = useState(true)
++  const [nome, setNome] = useState('')
++  const [corPrimaria, setCorPrimaria] = useState('#F97316')
++  const [corSecundaria, setCorSecundaria] = useState('#EA580C')
++  const [corFundo, setCorFundo] = useState('#FFFFFF')
++  const [corTexto, setCorTexto] = useState('#1F2937')
++  const [salvando, setSalvando] = useState(false)
++
++  async function carregar() {
++    const res = await fetch('/api/temas')
++    const data = await res.json()
++    setTemas(data)
++    setCarregando(false)
++  }
++
++  useEffect(() => {
++    let active = true
++    fetch('/api/temas')
++      .then((r) => r.json())
++      .then((data) => { if (active) { setTemas(data); setCarregando(false) } })
++    return () => { active = false }
++  }, [])
++
++  async function handleCriar(e: React.FormEvent) {
++    e.preventDefault()
++    if (!nome) return
++    setSalvando(true)
++    await fetch('/api/temas', {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({
++        nome,
++        cor_primaria: corPrimaria,
++        cor_secundaria: corSecundaria,
++        cor_fundo: corFundo,
++        cor_texto: corTexto,
++      }),
++    })
++    setNome('')
++    setSalvando(false)
++    carregar()
++  }
++
++  async function ativarTema(id: string) {
++    await fetch('/api/temas', {
++      method: 'PATCH',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({ id, ativo: true }),
++    })
++    carregar()
++  }
++
++  return (
++    <div>
++      <div className="mb-8">
++        <h1 className="text-2xl font-bold text-gray-800">Temas & Cores</h1>
++        <p className="text-gray-500 text-sm mt-1">Personalize a aparência do site público</p>
++      </div>
++
++      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
++        <div className="bg-white border border-orange-100 rounded-2xl p-6">
++          <h2 className="text-gray-800 font-semibold mb-4">Novo tema</h2>
++          <form onSubmit={handleCriar} className="space-y-4">
++            <div>
++              <label className="block text-sm text-gray-600 mb-1.5">Nome do tema</label>
++              <input
++                type="text"
++                value={nome}
++                onChange={(e) => setNome(e.target.value)}
++                placeholder="Ex: Natal 2025"
++                className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition"
++              />
++            </div>
++            <div className="grid grid-cols-2 gap-4">
++              <div>
++                <label className="block text-sm text-gray-600 mb-1.5">Cor primária</label>
++                <div className="flex items-center gap-2">
++                  <input type="color" value={corPrimaria} onChange={(e) => setCorPrimaria(e.target.value)} className="w-10 h-10 rounded-lg border cursor-pointer" />
++                  <span className="text-xs text-gray-500">{corPrimaria}</span>
++                </div>
++              </div>
++              <div>
++                <label className="block text-sm text-gray-600 mb-1.5">Cor secundária</label>
++                <div className="flex items-center gap-2">
++                  <input type="color" value={corSecundaria} onChange={(e) => setCorSecundaria(e.target.value)} className="w-10 h-10 rounded-lg border cursor-pointer" />
++                  <span className="text-xs text-gray-500">{corSecundaria}</span>
++                </div>
++              </div>
++              <div>
++                <label className="block text-sm text-gray-600 mb-1.5">Cor de fundo</label>
++                <div className="flex items-center gap-2">
++                  <input type="color" value={corFundo} onChange={(e) => setCorFundo(e.target.value)} className="w-10 h-10 rounded-lg border cursor-pointer" />
++                  <span className="text-xs text-gray-500">{corFundo}</span>
++                </div>
++              </div>
++              <div>
++                <label className="block text-sm text-gray-600 mb-1.5">Cor do texto</label>
++                <div className="flex items-center gap-2">
++                  <input type="color" value={corTexto} onChange={(e) => setCorTexto(e.target.value)} className="w-10 h-10 rounded-lg border cursor-pointer" />
++                  <span className="text-xs text-gray-500">{corTexto}</span>
++                </div>
++              </div>
++            </div>
++
++            {/* Preview */}
++            <div className="rounded-xl p-4 border" style={{ backgroundColor: corFundo, color: corTexto }}>
++              <p className="text-xs mb-1">Preview:</p>
++              <p className="font-bold" style={{ color: corPrimaria }}>Certo Atacado</p>
++              <p className="text-sm" style={{ color: corSecundaria }}>Lugar certo de comprar barato</p>
++            </div>
++
++            <button
++              type="submit"
++              disabled={salvando || !nome}
++              className="w-full bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 text-white font-semibold rounded-xl py-3 text-sm transition shadow-md"
++            >
++              {salvando ? 'Salvando...' : 'Criar tema'}
++            </button>
++          </form>
++        </div>
++
++        <div className="bg-white border border-orange-100 rounded-2xl p-6">
++          <h2 className="text-gray-800 font-semibold mb-4">Temas cadastrados</h2>
++          {carregando ? (
++            <p className="text-gray-500 text-sm">Carregando...</p>
++          ) : temas.length === 0 ? (
++            <p className="text-gray-500 text-sm">Nenhum tema cadastrado.</p>
++          ) : (
++            <div className="space-y-3">
++              {temas.map((tema) => (
++                <div
++                  key={tema.id}
++                  className={`p-4 rounded-xl border transition ${tema.ativo ? 'border-orange-400 bg-orange-50' : 'border-gray-200 hover:bg-gray-50'}`}
++                >
++                  <div className="flex items-center justify-between mb-2">
++                    <span className="text-gray-800 font-medium text-sm">{tema.nome}</span>
++                    {tema.ativo ? (
++                      <span className="text-xs bg-orange-600 text-white px-2 py-0.5 rounded-full">Ativo</span>
++                    ) : (
++                      <button
++                        onClick={() => ativarTema(tema.id)}
++                        className="text-xs bg-gray-100 text-gray-600 px-3 py-1 rounded-full hover:bg-orange-100 hover:text-orange-600 transition"
++                      >
++                        Ativar
++                      </button>
++                    )}
++                  </div>
++                  <div className="flex gap-2">
++                    <span className="w-6 h-6 rounded-full border" style={{ backgroundColor: tema.cor_primaria }} title="Primária" />
++                    <span className="w-6 h-6 rounded-full border" style={{ backgroundColor: tema.cor_secundaria }} title="Secundária" />
++                    <span className="w-6 h-6 rounded-full border" style={{ backgroundColor: tema.cor_fundo }} title="Fundo" />
++                    <span className="w-6 h-6 rounded-full border" style={{ backgroundColor: tema.cor_texto }} title="Texto" />
++                  </div>
++                </div>
++              ))}
++            </div>
++          )}
++        </div>
++      </div>
++    </div>
++  )
++}
+diff --git a/src/app/api/categorias-produtos/route.ts b/src/app/api/categorias-produtos/route.ts
+new file mode 100644
+index 0000000..9cafc87
+--- /dev/null
++++ b/src/app/api/categorias-produtos/route.ts
+@@ -0,0 +1,26 @@
++import { NextRequest, NextResponse } from 'next/server'
++import { supabaseAdmin } from '@/lib/supabase'
++
++export async function GET() {
++  const { data, error } = await supabaseAdmin
++    .from('categorias_produtos')
++    .select('*')
++    .eq('ativo', true)
++    .order('ordem')
++
++  if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
++  return NextResponse.json(data)
++}
++
++export async function POST(request: NextRequest) {
++  const body = await request.json()
++
++  const { data, error } = await supabaseAdmin
++    .from('categorias_produtos')
++    .insert(body)
++    .select()
++    .single()
++
++  if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
++  return NextResponse.json({ sucesso: true, data })
++}
+diff --git a/src/app/api/encartes/[id]/route.ts b/src/app/api/encartes/[id]/route.ts
+index 1382862..2933432 100644
+--- a/src/app/api/encartes/[id]/route.ts
++++ b/src/app/api/encartes/[id]/route.ts
+@@ -2,14 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
+ import { supabaseAdmin } from '@/lib/supabase'
+ import cloudinary from '@/lib/cloudinary'
+ 
+-// Ativar / desativar / editar
+-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
++export async function PATCH(
++  request: NextRequest,
++  { params }: { params: Promise<{ id: string }> }
++) {
++  const { id } = await params
+   const body = await request.json()
+ 
+   const { data, error } = await supabaseAdmin
+     .from('encartes')
+     .update(body)
+-    .eq('id', params.id)
++    .eq('id', id)
+     .select()
+     .single()
+ 
+@@ -17,27 +20,28 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
+   return NextResponse.json({ sucesso: true, data })
+ }
+ 
+-// Deletar encarte e imagens do Cloudinary
+-export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
+-  // Busca as imagens para deletar do Cloudinary
++export async function DELETE(
++  _: NextRequest,
++  { params }: { params: Promise<{ id: string }> }
++) {
++  const { id } = await params
++
+   const { data: imagens } = await supabaseAdmin
+     .from('encarte_imagens')
+     .select('cloudinary_id')
+-    .eq('encarte_id', params.id)
++    .eq('encarte_id', id)
+ 
+-  // Deleta do Cloudinary
+   if (imagens && imagens.length > 0) {
+     await Promise.all(
+       imagens.map((img) => cloudinary.uploader.destroy(img.cloudinary_id))
+     )
+   }
+ 
+-  // Deleta do banco (ON DELETE CASCADE apaga as imagens automaticamente)
+   const { error } = await supabaseAdmin
+     .from('encartes')
+     .delete()
+-    .eq('id', params.id)
++    .eq('id', id)
+ 
+   if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
+   return NextResponse.json({ sucesso: true })
+-}
+\ No newline at end of file
++}
+diff --git a/src/app/api/encartes/route.ts b/src/app/api/encartes/route.ts
+index 0c8de1c..61bf511 100644
+--- a/src/app/api/encartes/route.ts
++++ b/src/app/api/encartes/route.ts
+@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
+     if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
+ 
+     if (imagens && imagens.length > 0) {
+-      const imagensParaInserir = imagens.map((img: any, index: number) => ({
++      const imagensParaInserir = imagens.map((img: { url: string; cloudinary_id: string }, index: number) => ({
+         encarte_id: encarte.id,
+         imagem_url: img.url,
+         cloudinary_id: img.cloudinary_id,
+diff --git a/src/app/api/produtos/[id]/route.ts b/src/app/api/produtos/[id]/route.ts
+new file mode 100644
+index 0000000..654b49b
+--- /dev/null
++++ b/src/app/api/produtos/[id]/route.ts
+@@ -0,0 +1,35 @@
++import { NextRequest, NextResponse } from 'next/server'
++import { supabaseAdmin } from '@/lib/supabase'
++
++export async function PATCH(
++  request: NextRequest,
++  { params }: { params: Promise<{ id: string }> }
++) {
++  const { id } = await params
++  const body = await request.json()
++
++  const { data, error } = await supabaseAdmin
++    .from('produtos')
++    .update(body)
++    .eq('id', id)
++    .select()
++    .single()
++
++  if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
++  return NextResponse.json({ sucesso: true, data })
++}
++
++export async function DELETE(
++  _: NextRequest,
++  { params }: { params: Promise<{ id: string }> }
++) {
++  const { id } = await params
++
++  const { error } = await supabaseAdmin
++    .from('produtos')
++    .delete()
++    .eq('id', id)
++
++  if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
++  return NextResponse.json({ sucesso: true })
++}
+diff --git a/src/app/api/produtos/route.ts b/src/app/api/produtos/route.ts
+new file mode 100644
+index 0000000..3ca0955
+--- /dev/null
++++ b/src/app/api/produtos/route.ts
+@@ -0,0 +1,25 @@
++import { NextRequest, NextResponse } from 'next/server'
++import { supabaseAdmin } from '@/lib/supabase'
++
++export async function GET() {
++  const { data, error } = await supabaseAdmin
++    .from('produtos')
++    .select(`*, categoria:categorias_produtos(id, nome, icone)`)
++    .order('ordem')
++
++  if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
++  return NextResponse.json(data)
++}
++
++export async function POST(request: NextRequest) {
++  const body = await request.json()
++
++  const { data, error } = await supabaseAdmin
++    .from('produtos')
++    .insert(body)
++    .select()
++    .single()
++
++  if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
++  return NextResponse.json({ sucesso: true, data })
++}
+diff --git a/src/app/api/site/route.ts b/src/app/api/site/route.ts
+new file mode 100644
+index 0000000..4ec0217
+--- /dev/null
++++ b/src/app/api/site/route.ts
+@@ -0,0 +1,46 @@
++import { NextResponse } from 'next/server'
++import { supabaseAdmin } from '@/lib/supabase'
++
++export async function GET() {
++  const now = new Date().toISOString()
++
++  const [encartesRes, sorteiosRes, produtosRes, temaRes, categoriasRes] = await Promise.all([
++    supabaseAdmin
++      .from('encartes')
++      .select(`*, categoria:categorias_encartes(id, nome, icone, cor), imagens:encarte_imagens(id, imagem_url, ordem)`)
++      .eq('ativo', true)
++      .gte('data_fim', now.split('T')[0])
++      .order('ordem'),
++    supabaseAdmin
++      .from('sorteios')
++      .select('*')
++      .eq('ativo', true)
++      .eq('sorteado', false)
++      .gte('data_fim', now)
++      .order('created_at', { ascending: false }),
++    supabaseAdmin
++      .from('produtos')
++      .select(`*, categoria:categorias_produtos(id, nome, icone)`)
++      .eq('ativo', true)
++      .eq('destaque', true)
++      .order('ordem'),
++    supabaseAdmin
++      .from('temas')
++      .select('*')
++      .eq('ativo', true)
++      .single(),
++    supabaseAdmin
++      .from('categorias_encartes')
++      .select('*')
++      .eq('ativo', true)
++      .order('ordem'),
++  ])
++
++  return NextResponse.json({
++    encartes: encartesRes.data ?? [],
++    sorteios: sorteiosRes.data ?? [],
++    produtos: produtosRes.data ?? [],
++    tema: temaRes.data ?? null,
++    categorias: categoriasRes.data ?? [],
++  })
++}
+diff --git a/src/app/api/sorteios/[id]/participar/route.ts b/src/app/api/sorteios/[id]/participar/route.ts
+new file mode 100644
+index 0000000..7900abe
+--- /dev/null
++++ b/src/app/api/sorteios/[id]/participar/route.ts
+@@ -0,0 +1,43 @@
++import { NextRequest, NextResponse } from 'next/server'
++import { supabaseAdmin } from '@/lib/supabase'
++
++export async function POST(
++  request: NextRequest,
++  { params }: { params: Promise<{ id: string }> }
++) {
++  const { id } = await params
++  const { nome, telefone } = await request.json()
++
++  if (!nome || !telefone) {
++    return NextResponse.json({ erro: 'Nome e telefone são obrigatórios' }, { status: 400 })
++  }
++
++  const { data: sorteio } = await supabaseAdmin
++    .from('sorteios')
++    .select('ativo, data_fim, sorteado')
++    .eq('id', id)
++    .single()
++
++  if (!sorteio || !sorteio.ativo || sorteio.sorteado) {
++    return NextResponse.json({ erro: 'Sorteio não disponível' }, { status: 400 })
++  }
++
++  if (new Date(sorteio.data_fim) < new Date()) {
++    return NextResponse.json({ erro: 'Sorteio encerrado' }, { status: 400 })
++  }
++
++  const telefoneLimpo = telefone.replace(/\D/g, '')
++
++  const { error } = await supabaseAdmin
++    .from('sorteio_participantes')
++    .insert({ sorteio_id: id, nome, telefone: telefoneLimpo })
++
++  if (error) {
++    if (error.code === '23505') {
++      return NextResponse.json({ erro: 'Este telefone já está participando deste sorteio' }, { status: 409 })
++    }
++    return NextResponse.json({ erro: error.message }, { status: 500 })
++  }
++
++  return NextResponse.json({ sucesso: true })
++}
+diff --git a/src/app/api/sorteios/[id]/route.ts b/src/app/api/sorteios/[id]/route.ts
+new file mode 100644
+index 0000000..2bafe1a
+--- /dev/null
++++ b/src/app/api/sorteios/[id]/route.ts
+@@ -0,0 +1,58 @@
++import { NextRequest, NextResponse } from 'next/server'
++import { supabaseAdmin } from '@/lib/supabase'
++
++export async function GET(
++  _: NextRequest,
++  { params }: { params: Promise<{ id: string }> }
++) {
++  const { id } = await params
++
++  const { data: sorteio, error } = await supabaseAdmin
++    .from('sorteios')
++    .select('*')
++    .eq('id', id)
++    .single()
++
++  if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
++
++  const { data: participantes } = await supabaseAdmin
++    .from('sorteio_participantes')
++    .select('*')
++    .eq('sorteio_id', id)
++    .order('created_at', { ascending: false })
++
++  return NextResponse.json({ ...sorteio, participantes: participantes ?? [] })
++}
++
++export async function PATCH(
++  request: NextRequest,
++  { params }: { params: Promise<{ id: string }> }
++) {
++  const { id } = await params
++  const body = await request.json()
++
++  const { data, error } = await supabaseAdmin
++    .from('sorteios')
++    .update(body)
++    .eq('id', id)
++    .select()
++    .single()
++
++  if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
++  return NextResponse.json({ sucesso: true, data })
++}
++
++export async function DELETE(
++  _: NextRequest,
++  { params }: { params: Promise<{ id: string }> }
++) {
++  const { id } = await params
++
++  const { error } = await supabaseAdmin
++    .from('sorteios')
++    .delete()
++    .eq('id', id)
++
++  if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
++  return NextResponse.json({ sucesso: true })
++}
+diff --git a/src/app/api/sorteios/[id]/sortear/route.ts b/src/app/api/sorteios/[id]/sortear/route.ts
+new file mode 100644
+index 0000000..4bdf4d7
+--- /dev/null
++++ b/src/app/api/sorteios/[id]/sortear/route.ts
+@@ -0,0 +1,41 @@
++import { NextRequest, NextResponse } from 'next/server'
++import { supabaseAdmin } from '@/lib/supabase'
++
++export async function POST(
++  _: NextRequest,
++  { params }: { params: Promise<{ id: string }> }
++) {
++  const { id } = await params
++
++  const { data: participantes, error: errPart } = await supabaseAdmin
++    .from('sorteio_participantes')
++    .select('*')
++    .eq('sorteio_id', id)
++
++  if (errPart) return NextResponse.json({ erro: errPart.message }, { status: 500 })
++  if (!participantes || participantes.length === 0) {
++    return NextResponse.json({ erro: 'Nenhum participante inscrito' }, { status: 400 })
++  }
++
++  const indice = Math.floor(Math.random() * participantes.length)
++  const ganhador = participantes[indice]
++
++  const { error: errUpdate } = await supabaseAdmin
++    .from('sorteios')
++    .update({ sorteado: true, ganhador_id: ganhador.id })
++    .eq('id', id)
++
++  if (errUpdate) return NextResponse.json({ erro: errUpdate.message }, { status: 500 })
++
++  const telefone = ganhador.telefone.replace(/\D/g, '')
++  const whatsappLink = `https://wa.me/55${telefone}`
++
++  return NextResponse.json({
++    sucesso: true,
++    ganhador: {
++      id: ganhador.id,
++      nome: ganhador.nome,
++      whatsapp_link: whatsappLink,
++    },
++  })
++}
+diff --git a/src/app/api/sorteios/route.ts b/src/app/api/sorteios/route.ts
+new file mode 100644
+index 0000000..2f056b5
+--- /dev/null
++++ b/src/app/api/sorteios/route.ts
+@@ -0,0 +1,26 @@
++import { NextRequest, NextResponse } from 'next/server'
++import { supabaseAdmin } from '@/lib/supabase'
++
++export async function GET() {
++  const { data, error } = await supabaseAdmin
++    .from('sorteios')
++    .select('*')
++    .order('created_at', { ascending: false })
++
++  if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
++  return NextResponse.json(data)
++}
++
++export async function POST(request: NextRequest) {
++  const body = await request.json()
++  const { titulo, descricao, imagem_url, cloudinary_id, link_criterio, descricao_link, data_inicio, data_fim } = body
++
++  const { data, error } = await supabaseAdmin
++    .from('sorteios')
++    .insert({ titulo, descricao, imagem_url, cloudinary_id, link_criterio, descricao_link, data_inicio, data_fim })
++    .select()
++    .single()
++
++  if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
++  return NextResponse.json({ sucesso: true, data })
++}
+diff --git a/src/app/api/temas/route.ts b/src/app/api/temas/route.ts
+new file mode 100644
+index 0000000..110b983
+--- /dev/null
++++ b/src/app/api/temas/route.ts
+@@ -0,0 +1,49 @@
++import { NextRequest, NextResponse } from 'next/server'
++import { supabaseAdmin } from '@/lib/supabase'
++
++export async function GET() {
++  const { data, error } = await supabaseAdmin
++    .from('temas')
++    .select('*')
++    .order('created_at', { ascending: false })
++
++  if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
++  return NextResponse.json(data)
++}
++
++export async function POST(request: NextRequest) {
++  const body = await request.json()
++  const { nome, cor_primaria, cor_secundaria, cor_fundo, cor_texto, ativo } = body
++
++  if (ativo) {
++    await supabaseAdmin.from('temas').update({ ativo: false }).eq('ativo', true)
++  }
++
++  const { data, error } = await supabaseAdmin
++    .from('temas')
++    .insert({ nome, cor_primaria, cor_secundaria, cor_fundo, cor_texto, ativo: ativo ?? false })
++    .select()
++    .single()
++
++  if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
++  return NextResponse.json({ sucesso: true, data })
++}
++
++export async function PATCH(request: NextRequest) {
++  const body = await request.json()
++  const { id, ...campos } = body
++
++  if (campos.ativo) {
++    await supabaseAdmin.from('temas').update({ ativo: false }).eq('ativo', true)
++  }
++
++  const { data, error } = await supabaseAdmin
++    .from('temas')
++    .update(campos)
++    .eq('id', id)
++    .select()
++    .single()
++
++  if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
++  return NextResponse.json({ sucesso: true, data })
++}
+diff --git a/src/app/api/upload/route.ts b/src/app/api/upload/route.ts
+new file mode 100644
+index 0000000..f7ef528
+--- /dev/null
++++ b/src/app/api/upload/route.ts
+@@ -0,0 +1,37 @@
++import { NextRequest, NextResponse } from 'next/server'
++import cloudinary from '@/lib/cloudinary'
++
++export async function POST(request: NextRequest) {
++  try {
++    const formData = await request.formData()
++    const files = formData.getAll('files') as File[]
++
++    if (!files || files.length === 0) {
++      return NextResponse.json({ erro: 'Nenhum arquivo enviado' }, { status: 400 })
++    }
++
++    const uploads = await Promise.all(
++      files.map(async (file, index) => {
++        const bytes = await file.arrayBuffer()
++        const buffer = Buffer.from(bytes)
++        const base64 = `data:${file.type};base64,${buffer.toString('base64')}`
++
++        const result = await cloudinary.uploader.upload(base64, {
++          folder: 'certo-atacado',
++          resource_type: 'image',
++        })
++
++        return {
++          url: result.secure_url,
++          cloudinary_id: result.public_id,
++          ordem: index,
++        }
++      })
++    )
++
++    return NextResponse.json({ sucesso: true, imagens: uploads })
++  } catch (err) {
++    console.error(err)
++    return NextResponse.json({ erro: 'Erro no upload' }, { status: 500 })
++  }
++}
+diff --git a/src/app/fale-conosco/page.tsx b/src/app/fale-conosco/page.tsx
+new file mode 100644
+index 0000000..e656d88
+--- /dev/null
++++ b/src/app/fale-conosco/page.tsx
+@@ -0,0 +1,15 @@
++import SiteHeader from '@/components/SiteHeader'
++import SiteFooter from '@/components/SiteFooter'
++import FaleConoscoSection from '@/components/FaleConoscoSection'
++
++export default function FaleConoscoPage() {
++  return (
++    <div className="flex flex-col min-h-screen">
++      <SiteHeader />
++      <main className="flex-1">
++        <FaleConoscoSection />
++      </main>
++      <SiteFooter />
++    </div>
++  )
++}
+diff --git a/src/app/globals.css b/src/app/globals.css
+index a2dc41e..3826af4 100644
+--- a/src/app/globals.css
++++ b/src/app/globals.css
+@@ -3,11 +3,17 @@
+ :root {
+   --background: #ffffff;
+   --foreground: #171717;
++  --certo-orange: #F97316;
++  --certo-orange-dark: #EA580C;
++  --certo-orange-light: #FB923C;
+ }
+ 
+ @theme inline {
+   --color-background: var(--background);
+   --color-foreground: var(--foreground);
++  --color-certo: var(--certo-orange);
++  --color-certo-dark: var(--certo-orange-dark);
++  --color-certo-light: var(--certo-orange-light);
+   --font-sans: var(--font-geist-sans);
+   --font-mono: var(--font-geist-mono);
+ }
+@@ -24,3 +30,123 @@ body {
+   color: var(--foreground);
+   font-family: Arial, Helvetica, sans-serif;
+ }
++
++html {
++  scroll-behavior: smooth;
++}
++
++@keyframes float {
++  0%, 100% { transform: translateY(0); }
++  50% { transform: translateY(-10px); }
++}
++
++@keyframes fadeIn {
++  from { opacity: 0; transform: translateY(20px); }
++  to { opacity: 1; transform: translateY(0); }
++}
++
++@keyframes slideInLeft {
++  from { opacity: 0; transform: translateX(-40px); }
++  to { opacity: 1; transform: translateX(0); }
++}
++
++@keyframes slideInRight {
++  from { opacity: 0; transform: translateX(40px); }
++  to { opacity: 1; transform: translateX(0); }
++}
++
++@keyframes scaleIn {
++  from { opacity: 0; transform: scale(0.9); }
++  to { opacity: 1; transform: scale(1); }
++}
++
++@keyframes shimmer {
++  0% { background-position: -200% 0; }
++  100% { background-position: 200% 0; }
++}
++
++@keyframes pullFromLeft {
++  0% { opacity: 0; transform: translateX(-100px) scale(0.8); }
++  60% { opacity: 1; transform: translateX(10px) scale(1.02); }
++  80% { transform: translateX(-5px) scale(0.99); }
++  100% { opacity: 1; transform: translateX(0) scale(1); }
++}
++
++@keyframes mascotEntrance {
++  0% { opacity: 0; transform: translateX(120px); }
++  50% { opacity: 1; transform: translateX(-15px); }
++  70% { transform: translateX(8px); }
++  100% { opacity: 1; transform: translateX(0); }
++}
++
++@keyframes ropeWiggle {
++  0%, 100% { transform: scaleX(1) rotate(0deg); }
++  25% { transform: scaleX(1.1) rotate(-2deg); }
++  75% { transform: scaleX(0.9) rotate(2deg); }
++}
++
++.animate-float {
++  animation: float 3s ease-in-out infinite;
++}
++
++.animate-fadeIn {
++  animation: fadeIn 0.6s ease-out forwards;
++}
++
++.animate-slideInLeft {
++  animation: slideInLeft 0.7s ease-out forwards;
++}
++
++.animate-slideInRight {
++  animation: slideInRight 0.7s ease-out forwards;
++}
++
++.animate-scaleIn {
++  animation: scaleIn 0.5s ease-out forwards;
++}
++
++.animate-pullFromLeft {
++  animation: pullFromLeft 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
++}
++
++.animate-mascotEntrance {
++  animation: mascotEntrance 1s cubic-bezier(0.34, 1.56, 0.64, 1) 0.3s both;
++}
++
++.animate-ropeWiggle {
++  animation: ropeWiggle 1.5s ease-in-out infinite 1.3s;
++}
++
++.embla {
++  overflow: hidden;
++}
++
++.embla__container {
++  display: flex;
++}
++
++.embla__slide {
++  flex: 0 0 100%;
++  min-width: 0;
++}
++
++.embla__slide--3 {
++  flex: 0 0 calc(100% / 3);
++}
++
++.embla__slide--2 {
++  flex: 0 0 50%;
++}
++
++@media (max-width: 1024px) {
++  .embla__slide--3 {
++    flex: 0 0 50%;
++  }
++}
++
++@media (max-width: 640px) {
++  .embla__slide--3,
++  .embla__slide--2 {
++    flex: 0 0 85%;
++  }
++}
+diff --git a/src/app/layout.tsx b/src/app/layout.tsx
+index 976eb90..baea844 100644
+--- a/src/app/layout.tsx
++++ b/src/app/layout.tsx
+@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
+ });
+ 
+ export const metadata: Metadata = {
+-  title: "Create Next App",
+-  description: "Generated by create next app",
++  title: "Certo Atacado e Varejo - Lugar certo de comprar barato",
++  description: "Certo Atacado e Varejo - Os melhores preços do atacado e varejo para você e sua família. Confira encartes, promoções, sorteios e muito mais!",
+ };
+ 
+ export default function RootLayout({
+@@ -24,7 +24,7 @@ export default function RootLayout({
+ }>) {
+   return (
+     <html
+-      lang="en"
++      lang="pt-BR"
+       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+     >
+       <body className="min-h-full flex flex-col">{children}</body>
+diff --git a/src/app/nossa-historia/page.tsx b/src/app/nossa-historia/page.tsx
+new file mode 100644
+index 0000000..fb78751
+--- /dev/null
++++ b/src/app/nossa-historia/page.tsx
+@@ -0,0 +1,15 @@
++import SiteHeader from '@/components/SiteHeader'
++import SiteFooter from '@/components/SiteFooter'
++import NossaHistoriaSection from '@/components/NossaHistoriaSection'
++
++export default function NossaHistoriaPage() {
++  return (
++    <div className="flex flex-col min-h-screen">
++      <SiteHeader />
++      <main className="flex-1">
++        <NossaHistoriaSection />
++      </main>
++      <SiteFooter />
++    </div>
++  )
++}
+diff --git a/src/app/page.tsx b/src/app/page.tsx
+index 3f36f7c..0a37f6f 100644
+--- a/src/app/page.tsx
++++ b/src/app/page.tsx
+@@ -1,65 +1,21 @@
+-import Image from "next/image";
++import SiteHeader from '@/components/SiteHeader'
++import SiteFooter from '@/components/SiteFooter'
++import HeroSection from '@/components/HeroSection'
++import EncartesSection from '@/components/EncartesSection'
++import SorteiosSection from '@/components/SorteiosSection'
++import ProdutosSection from '@/components/ProdutosSection'
+ 
+ export default function Home() {
+   return (
+-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
+-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
+-        <Image
+-          className="dark:invert"
+-          src="/next.svg"
+-          alt="Next.js logo"
+-          width={100}
+-          height={20}
+-          priority
+-        />
+-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
+-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
+-            To get started, edit the page.tsx file.
+-          </h1>
+-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
+-            Looking for a starting point or more instructions? Head over to{" "}
+-            <a
+-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+-              className="font-medium text-zinc-950 dark:text-zinc-50"
+-            >
+-              Templates
+-            </a>{" "}
+-            or the{" "}
+-            <a
+-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+-              className="font-medium text-zinc-950 dark:text-zinc-50"
+-            >
+-              Learning
+-            </a>{" "}
+-            center.
+-          </p>
+-        </div>
+-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
+-          <a
+-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
+-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+-            target="_blank"
+-            rel="noopener noreferrer"
+-          >
+-            <Image
+-              className="dark:invert"
+-              src="/vercel.svg"
+-              alt="Vercel logomark"
+-              width={16}
+-              height={16}
+-            />
+-            Deploy Now
+-          </a>
+-          <a
+-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
+-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+-            target="_blank"
+-            rel="noopener noreferrer"
+-          >
+-            Documentation
+-          </a>
+-        </div>
++    <div className="flex flex-col min-h-screen">
++      <SiteHeader />
++      <main className="flex-1">
++        <HeroSection />
++        <EncartesSection />
++        <SorteiosSection />
++        <ProdutosSection />
+       </main>
++      <SiteFooter />
+     </div>
+-  );
++  )
+ }
+diff --git a/src/app/trabalhe-conosco/page.tsx b/src/app/trabalhe-conosco/page.tsx
+new file mode 100644
+index 0000000..681e947
+--- /dev/null
++++ b/src/app/trabalhe-conosco/page.tsx
+@@ -0,0 +1,15 @@
++import SiteHeader from '@/components/SiteHeader'
++import SiteFooter from '@/components/SiteFooter'
++import TrabalheConoscoSection from '@/components/TrabalheConoscoSection'
++
++export default function TrabalheConoscoPage() {
++  return (
++    <div className="flex flex-col min-h-screen">
++      <SiteHeader />
++      <main className="flex-1">
++        <TrabalheConoscoSection />
++      </main>
++      <SiteFooter />
++    </div>
++  )
++}
+diff --git a/src/components/CertoLogo.tsx b/src/components/CertoLogo.tsx
+new file mode 100644
+index 0000000..29f99eb
+--- /dev/null
++++ b/src/components/CertoLogo.tsx
+@@ -0,0 +1,32 @@
++export default function CertoLogo({ size = 'lg', light = false }: { size?: 'sm' | 'md' | 'lg' | 'xl'; light?: boolean }) {
++  const sizes = {
++    sm: { text: 'text-3xl', o: 26, check: 2.5, sub: 'text-xs', slogan: 'text-[10px]' },
++    md: { text: 'text-5xl', o: 40, check: 3, sub: 'text-base', slogan: 'text-xs' },
++    lg: { text: 'text-7xl', o: 56, check: 4, sub: 'text-xl', slogan: 'text-sm' },
++    xl: { text: 'text-8xl md:text-9xl', o: 72, check: 4.5, sub: 'text-2xl md:text-3xl', slogan: 'text-base md:text-lg' },
++  }
++  const s = sizes[size]
++  const textColor = light ? 'text-white' : 'text-gray-800'
++  const subColor = light ? 'text-orange-200' : 'text-orange-600'
++  const sloganColor = light ? 'text-orange-100' : 'text-gray-500'
++
++  return (
++    <div className="flex flex-col items-center select-none">
++      <div className="flex items-baseline">
++        <span className={`${s.text} font-black ${textColor} tracking-tighter drop-shadow-sm`}>Cert</span>
++        <span className="inline-flex items-center justify-center relative" style={{ width: s.o, height: s.o }}>
++          <svg width={s.o} height={s.o} viewBox="0 0 48 48" fill="none">
++            <circle cx="24" cy="24" r="23" fill="#F97316"/>
++            <path d="M14 24L21 31L34 17" stroke="white" strokeWidth={s.check} strokeLinecap="round" strokeLinejoin="round"/>
++          </svg>
++        </span>
++      </div>
++      <span className={`${s.sub} font-bold ${subColor} uppercase tracking-[0.2em] -mt-1`}>
++        Atacado e Varejo
++      </span>
++      <span className={`${s.slogan} ${sloganColor} italic`}>
++        Lugar certo de comprar barato
++      </span>
++    </div>
++  )
++}
+diff --git a/src/components/EncartesSection.tsx b/src/components/EncartesSection.tsx
+new file mode 100644
+index 0000000..f1ddcc3
+--- /dev/null
++++ b/src/components/EncartesSection.tsx
+@@ -0,0 +1,138 @@
++'use client'
++
++import { useEffect, useState, useCallback } from 'react'
++import useEmblaCarousel from 'embla-carousel-react'
++import Autoplay from 'embla-carousel-autoplay'
++import { useScrollReveal } from '@/hooks/useScrollReveal'
++
++interface Imagem {
++  id: string
++  imagem_url: string
++  ordem: number
++}
++
++interface Encarte {
++  id: string
++  titulo: string
++  descricao: string
++  data_fim: string
++  categoria: { nome: string; icone: string; cor: string } | null
++  imagens: Imagem[]
++}
++
++export default function EncartesSection() {
++  const [encartes, setEncartes] = useState<Encarte[]>([])
++  const [imagemAberta, setImagemAberta] = useState<string | null>(null)
++  const { ref: revealRef, visible } = useScrollReveal()
++
++  const [emblaRef, emblaApi] = useEmblaCarousel(
++    { loop: true, align: 'start', slidesToScroll: 1 },
++    [Autoplay({ delay: 4000, stopOnInteraction: true })]
++  )
++
++  const scrollPrev = useCallback(() => emblaApi?.scrollPrev(), [emblaApi])
++  const scrollNext = useCallback(() => emblaApi?.scrollNext(), [emblaApi])
++
++  useEffect(() => {
++    let active = true
++    fetch('/api/site')
++      .then((r) => r.json())
++      .then((data) => { if (active) setEncartes(data.encartes ?? []) })
++    return () => { active = false }
++  }, [])
++
++  if (encartes.length === 0) return null
++
++  return (
++    <section id="encartes" className="py-16 bg-white">
++      <div ref={revealRef} className={`max-w-7xl mx-auto px-4 transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
++        <div className="text-center mb-12">
++          <span className="inline-block bg-orange-100 text-orange-600 text-sm font-semibold px-4 py-1.5 rounded-full mb-3 animate-scaleIn">
++            Ofertas da Semana
++          </span>
++          <h2 className="text-3xl md:text-4xl font-extrabold text-gray-800">
++            Encartes
++          </h2>
++          <p className="text-gray-500 mt-2">Confira nossas ofertas imperdíveis!</p>
++        </div>
++
++        <div className="relative">
++          <div className="embla" ref={emblaRef}>
++            <div className="embla__container">
++              {encartes.map((encarte) => (
++                <div key={encarte.id} className="embla__slide--3 px-3">
++                  <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden hover:shadow-2xl transition-all duration-300 group hover:-translate-y-1">
++                    {encarte.imagens && encarte.imagens.length > 0 && (
++                      <div className="relative cursor-pointer overflow-hidden" onClick={() => setImagemAberta(encarte.imagens[0].imagem_url)}>
++                        <img
++                          src={encarte.imagens[0].imagem_url}
++                          alt={encarte.titulo}
++                          className="w-full h-56 object-cover group-hover:scale-110 transition-transform duration-500"
++                        />
++                        {encarte.imagens.length > 1 && (
++                          <span className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-lg backdrop-blur-sm">
++                            +{encarte.imagens.length - 1} fotos
++                          </span>
++                        )}
++                      </div>
++                    )}
++                    <div className="p-5">
++                      {encarte.categoria && (
++                        <span
++                          className="text-xs font-medium px-2.5 py-1 rounded-full inline-block mb-2"
++                          style={{
++                            backgroundColor: encarte.categoria.cor + '22',
++                            color: encarte.categoria.cor,
++                          }}
++                        >
++                          {encarte.categoria.icone} {encarte.categoria.nome}
++                        </span>
++                      )}
++                      <h3 className="text-gray-800 font-bold text-lg">{encarte.titulo}</h3>
++                      {encarte.descricao && (
++                        <p className="text-gray-500 text-sm mt-1">{encarte.descricao}</p>
++                      )}
++                      <p className="text-orange-600 text-xs font-medium mt-3">
++                        Válido até {new Date(encarte.data_fim + 'T00:00:00').toLocaleDateString('pt-BR')}
++                      </p>
++                    </div>
++                  </div>
++                </div>
++              ))}
++            </div>
++          </div>
++
++          <button
++            onClick={scrollPrev}
++            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 bg-white shadow-lg border border-gray-200 rounded-full w-10 h-10 flex items-center justify-center text-gray-600 hover:text-orange-600 hover:border-orange-300 transition z-10"
++          >
++            ‹
++          </button>
++          <button
++            onClick={scrollNext}
++            className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-2 bg-white shadow-lg border border-gray-200 rounded-full w-10 h-10 flex items-center justify-center text-gray-600 hover:text-orange-600 hover:border-orange-300 transition z-10"
++          >
++            ›
++          </button>
++        </div>
++      </div>
++
++      {imagemAberta && (
++        <div
++          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 animate-fadeIn"
++          onClick={() => setImagemAberta(null)}
++        >
++          <div className="relative max-w-4xl w-full animate-scaleIn">
++            <img src={imagemAberta} alt="" className="w-full rounded-2xl" />
++            <button
++              onClick={() => setImagemAberta(null)}
++              className="absolute top-4 right-4 bg-white text-gray-800 w-10 h-10 rounded-full flex items-center justify-center text-xl font-bold hover:bg-gray-100 transition"
++            >
++              ✕
++            </button>
++          </div>
++        </div>
++      )}
++    </section>
++  )
++}
+diff --git a/src/components/FaleConoscoSection.tsx b/src/components/FaleConoscoSection.tsx
+new file mode 100644
+index 0000000..fa0c019
+--- /dev/null
++++ b/src/components/FaleConoscoSection.tsx
+@@ -0,0 +1,119 @@
++'use client'
++
++import { useState } from 'react'
++
++export default function FaleConoscoSection() {
++  const [nome, setNome] = useState('')
++  const [email, setEmail] = useState('')
++  const [mensagemTexto, setMensagemTexto] = useState('')
++  const [enviado, setEnviado] = useState(false)
++
++  function handleSubmit(e: React.FormEvent) {
++    e.preventDefault()
++    const texto = encodeURIComponent(
++      `Olá! Meu nome é ${nome}.\nE-mail: ${email}\n\n${mensagemTexto}`
++    )
++    window.open(`https://wa.me/5551911198639?text=${texto}`, '_blank')
++    setEnviado(true)
++    setNome('')
++    setEmail('')
++    setMensagemTexto('')
++  }
++
++  return (
++    <section id="fale-conosco" className="py-16 bg-white">
++      <div className="max-w-5xl mx-auto px-4">
++        <div className="text-center mb-12">
++          <h2 className="text-3xl md:text-4xl font-extrabold text-gray-800">
++            Fale Conosco
++          </h2>
++          <p className="text-gray-500 mt-2">Estamos sempre prontos para atender você</p>
++        </div>
++
++        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
++          <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-8 text-white">
++            <h3 className="text-xl font-bold mb-6">Informações de contato</h3>
++            <div className="space-y-4">
++              <div className="flex items-start gap-3">
++                <span className="text-2xl">📍</span>
++                <div>
++                  <p className="font-semibold">Endereço</p>
++                  <p className="text-orange-100 text-sm">Taquara, RS</p>
++                </div>
++              </div>
++              <div className="flex items-start gap-3">
++                <span className="text-2xl">📞</span>
++                <div>
++                  <p className="font-semibold">Fale Conosco</p>
++                  <p className="text-orange-100 text-sm">(51) 9119-8639</p>
++                </div>
++              </div>
++              <div className="flex items-start gap-3">
++                <span className="text-2xl">📱</span>
++                <div>
++                  <p className="font-semibold">Televendas</p>
++                  <p className="text-orange-100 text-sm">(51) 9707-8458</p>
++                </div>
++              </div>
++              <div className="flex items-start gap-3">
++                <span className="text-2xl">⏰</span>
++                <div>
++                  <p className="font-semibold">Horário</p>
++                  <p className="text-orange-100 text-sm">Seg a Dom: 8h às 20h</p>
++                </div>
++              </div>
++              <div className="flex items-start gap-3">
++                <span className="text-2xl">📧</span>
++                <div>
++                  <p className="font-semibold">E-mail</p>
++                  <p className="text-orange-100 text-sm">contato@certoatacado.com</p>
++                </div>
++              </div>
++            </div>
++          </div>
++
++          <div className="bg-white border border-gray-200 rounded-2xl p-8">
++            <h3 className="text-xl font-bold text-gray-800 mb-4">Envie sua mensagem</h3>
++            {enviado && (
++              <p className="text-green-600 text-sm mb-4 bg-green-50 p-3 rounded-xl">
++                Redirecionando para WhatsApp...
++              </p>
++            )}
++            <form onSubmit={handleSubmit} className="space-y-4">
++              <input
++                type="text"
++                value={nome}
++                onChange={(e) => setNome(e.target.value)}
++                placeholder="Seu nome"
++                required
++                className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition"
++              />
++              <input
++                type="email"
++                value={email}
++                onChange={(e) => setEmail(e.target.value)}
++                placeholder="Seu e-mail"
++                required
++                className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition"
++              />
++              <textarea
++                value={mensagemTexto}
++                onChange={(e) => setMensagemTexto(e.target.value)}
++                placeholder="Sua mensagem..."
++                rows={4}
++                required
++                className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition resize-none"
++              />
++              <button
++                type="submit"
++                className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-xl py-3 text-sm transition shadow-md"
++              >
++                Enviar via WhatsApp
++              </button>
++            </form>
++          </div>
++        </div>
++      </div>
++    </section>
++  )
++}
+diff --git a/src/components/HeroSection.tsx b/src/components/HeroSection.tsx
+new file mode 100644
+index 0000000..cfa478c
+--- /dev/null
++++ b/src/components/HeroSection.tsx
+@@ -0,0 +1,88 @@
++'use client'
++
++import CertoLogo from './CertoLogo'
++
++export default function HeroSection() {
++  return (
++    <section id="inicio" className="relative bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white overflow-hidden">
++      <div className="absolute inset-0 opacity-10">
++        <div className="absolute top-10 left-10 w-40 h-40 bg-white rounded-full blur-3xl animate-pulse" />
++        <div className="absolute bottom-10 right-10 w-60 h-60 bg-yellow-300 rounded-full blur-3xl animate-pulse [animation-delay:1s]" />
++        <div className="absolute top-1/2 left-1/2 w-32 h-32 bg-orange-300 rounded-full blur-2xl animate-pulse [animation-delay:2s]" />
++      </div>
++
++      <div className="max-w-7xl mx-auto px-4 py-20 md:py-32 relative z-10">
++        <div className="flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-16">
++          {/* Logo com animação de entrada (puxado da esquerda) */}
++          <div className="text-center lg:text-left animate-pullFromLeft">
++            <CertoLogo size="xl" light />
++          </div>
++
++          {/* Mascote SVG animada puxando o logo */}
++          <div className="relative animate-mascotEntrance hidden md:block">
++            {/* Corda/conexão visual */}
++            <div className="absolute left-0 top-1/2 -translate-x-full w-16 h-1 bg-gradient-to-l from-white/60 to-transparent animate-ropeWiggle origin-right" />
++
++            {/* Mascote - personagem estilizado */}
++            <div className="relative w-48 h-48 lg:w-56 lg:h-56 animate-float">
++              <svg viewBox="0 0 200 200" className="w-full h-full drop-shadow-2xl">
++                {/* Corpo */}
++                <circle cx="100" cy="90" r="50" fill="#FFD4A3" stroke="#F97316" strokeWidth="3"/>
++                {/* Cabelo */}
++                <ellipse cx="100" cy="55" rx="52" ry="30" fill="#5C3317"/>
++                <ellipse cx="65" cy="70" rx="8" ry="25" fill="#5C3317"/>
++                <ellipse cx="135" cy="70" rx="8" ry="25" fill="#5C3317"/>
++                {/* Olhos */}
++                <circle cx="82" cy="85" r="8" fill="white"/>
++                <circle cx="118" cy="85" r="8" fill="white"/>
++                <circle cx="84" cy="86" r="4" fill="#2D5016"/>
++                <circle cx="120" cy="86" r="4" fill="#2D5016"/>
++                <circle cx="85" cy="84" r="1.5" fill="white"/>
++                <circle cx="121" cy="84" r="1.5" fill="white"/>
++                {/* Boca sorrindo */}
++                <path d="M88 102 Q100 115 112 102" fill="none" stroke="#D4522A" strokeWidth="2.5" strokeLinecap="round"/>
++                {/* Bochechas */}
++                <circle cx="72" cy="98" r="6" fill="#FFB5B5" opacity="0.5"/>
++                <circle cx="128" cy="98" r="6" fill="#FFB5B5" opacity="0.5"/>
++                {/* Avental/uniforme Certo */}
++                <path d="M60 130 Q100 125 140 130 L145 180 Q100 185 55 180 Z" fill="#F97316" stroke="#EA580C" strokeWidth="2"/>
++                {/* Checkmark no avental */}
++                <path d="M88 155 L97 164 L115 146" fill="none" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
++                {/* Braço esquerdo (puxando) */}
++                <path d="M55 140 Q30 130 15 120" fill="none" stroke="#FFD4A3" strokeWidth="12" strokeLinecap="round"/>
++                <circle cx="15" cy="118" r="8" fill="#FFD4A3" stroke="#F0C090" strokeWidth="1.5"/>
++                {/* Braço direito */}
++                <path d="M145 140 Q160 150 165 160" fill="none" stroke="#FFD4A3" strokeWidth="12" strokeLinecap="round"/>
++                <circle cx="167" cy="162" r="8" fill="#FFD4A3" stroke="#F0C090" strokeWidth="1.5"/>
++              </svg>
++
++              {/* Balão de fala */}
++              <div className="absolute -top-4 -right-4 bg-white text-orange-600 font-bold text-xs px-3 py-1.5 rounded-full shadow-lg animate-bounce [animation-duration:2s]">
++                Vem! 🛒
++              </div>
++            </div>
++          </div>
++        </div>
++
++        <p className="mt-8 text-xl md:text-2xl text-orange-100 max-w-2xl mx-auto text-center animate-fadeIn [animation-delay:0.8s] opacity-0">
++          Os melhores preços do atacado e varejo para você e sua família!
++        </p>
++
++        <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 animate-fadeIn [animation-delay:1.1s] opacity-0">
++          <a
++            href="#encartes"
++            className="bg-white text-orange-600 font-bold px-10 py-4 rounded-2xl text-lg hover:bg-orange-50 hover:scale-105 transition-all duration-300 shadow-xl"
++          >
++            Ver encartes
++          </a>
++          <a
++            href="#sorteios"
++            className="bg-orange-800/50 text-white font-bold px-10 py-4 rounded-2xl text-lg hover:bg-orange-800 hover:scale-105 transition-all duration-300 border border-orange-400/30"
++          >
++            Participar de sorteios
++          </a>
++        </div>
++      </div>
++    </section>
++  )
++}
+diff --git a/src/components/NossaHistoriaSection.tsx b/src/components/NossaHistoriaSection.tsx
+new file mode 100644
+index 0000000..ae237f8
+--- /dev/null
++++ b/src/components/NossaHistoriaSection.tsx
+@@ -0,0 +1,55 @@
++'use client'
++
++import { useScrollReveal } from '@/hooks/useScrollReveal'
++
++export default function NossaHistoriaSection() {
++  const { ref, visible } = useScrollReveal()
++
++  return (
++    <section id="nossa-historia" className="py-20 bg-orange-50">
++      <div ref={ref} className="max-w-5xl mx-auto px-4">
++        <div className={`text-center mb-12 transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
++          <span className="inline-block bg-orange-100 text-orange-600 text-sm font-semibold px-4 py-1.5 rounded-full mb-3">
++            Quem somos
++          </span>
++          <h2 className="text-3xl md:text-4xl font-extrabold text-gray-800">
++            Nossa História
++          </h2>
++          <p className="text-gray-500 mt-2">Conheça a trajetória do Certo Atacado</p>
++        </div>
++
++        <div className={`bg-white rounded-2xl p-8 md:p-12 shadow-lg border border-orange-100 transition-all duration-700 delay-200 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
++          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
++            <div className={`transition-all duration-700 delay-300 ${visible ? 'animate-slideInLeft' : 'opacity-0'}`}>
++              <div className="w-full h-64 bg-gradient-to-br from-orange-400 to-orange-600 rounded-2xl flex items-center justify-center relative overflow-hidden group">
++                <div className="absolute inset-0 bg-gradient-to-t from-orange-700/30 to-transparent" />
++                <svg width="120" height="120" viewBox="0 0 48 48" fill="none" className="relative z-10 animate-float">
++                  <circle cx="24" cy="24" r="22" fill="white" fillOpacity="0.3"/>
++                  <path d="M14 24L21 31L34 17" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
++                </svg>
++              </div>
++            </div>
++            <div className={`transition-all duration-700 delay-500 ${visible ? 'animate-slideInRight' : 'opacity-0'}`}>
++              <h3 className="text-2xl font-bold text-gray-800 mb-4">
++                O lugar certo de comprar barato
++              </h3>
++              <p className="text-gray-600 leading-relaxed mb-4">
++                O Certo Atacado nasceu com a missão de oferecer os melhores preços do atacado e varejo
++                para famílias e comerciantes da nossa região. Com comprometimento e respeito ao cliente,
++                crescemos e nos tornamos referência em economia e qualidade.
++              </p>
++              <p className="text-gray-600 leading-relaxed mb-4">
++                Nossa equipe trabalha diariamente para garantir que você encontre tudo o que precisa
++                com preços que cabem no seu bolso, sem abrir mão da qualidade dos produtos.
++              </p>
++              <p className="text-gray-600 leading-relaxed">
++                Venha nos visitar e descubra por que somos o <strong className="text-orange-600">lugar certo
++                de comprar barato</strong>!
++              </p>
++            </div>
++          </div>
++        </div>
++      </div>
++    </section>
++  )
++}
+diff --git a/src/components/ProdutosSection.tsx b/src/components/ProdutosSection.tsx
+new file mode 100644
+index 0000000..43d71c2
+--- /dev/null
++++ b/src/components/ProdutosSection.tsx
+@@ -0,0 +1,120 @@
++'use client'
++
++import { useEffect, useState, useCallback } from 'react'
++import useEmblaCarousel from 'embla-carousel-react'
++import Autoplay from 'embla-carousel-autoplay'
++import { useScrollReveal } from '@/hooks/useScrollReveal'
++
++interface Produto {
++  id: string
++  nome: string
++  descricao: string
++  preco_varejo: number
++  preco_atacado: number
++  unidade: string
++  imagem_url: string | null
++  categoria: { nome: string; icone: string } | null
++}
++
++export default function ProdutosSection() {
++  const [produtos, setProdutos] = useState<Produto[]>([])
++  const { ref: revealRef, visible } = useScrollReveal()
++
++  const [emblaRef, emblaApi] = useEmblaCarousel(
++    { loop: true, align: 'start', slidesToScroll: 1 },
++    [Autoplay({ delay: 3500, stopOnInteraction: true })]
++  )
++
++  const scrollPrev = useCallback(() => emblaApi?.scrollPrev(), [emblaApi])
++  const scrollNext = useCallback(() => emblaApi?.scrollNext(), [emblaApi])
++
++  useEffect(() => {
++    let active = true
++    fetch('/api/site')
++      .then((r) => r.json())
++      .then((data) => { if (active) setProdutos(data.produtos ?? []) })
++    return () => { active = false }
++  }, [])
++
++  if (produtos.length === 0) return null
++
++  return (
++    <section id="produtos" className="py-16 bg-white">
++      <div ref={revealRef} className={`max-w-7xl mx-auto px-4 transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
++        <div className="text-center mb-12">
++          <span className="inline-block bg-green-100 text-green-600 text-sm font-semibold px-4 py-1.5 rounded-full mb-3">
++            Preços imbatíveis
++          </span>
++          <h2 className="text-3xl md:text-4xl font-extrabold text-gray-800">
++            Produtos em Destaque
++          </h2>
++          <p className="text-gray-500 mt-2">Confira os melhores preços do atacado e varejo</p>
++        </div>
++
++        <div className="relative">
++          <div className="embla" ref={emblaRef}>
++            <div className="embla__container">
++              {produtos.map((produto) => (
++                <div key={produto.id} className="embla__slide--3 px-3">
++                  <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden hover:shadow-2xl transition-all duration-300 group hover:-translate-y-1">
++                    {produto.imagem_url ? (
++                      <div className="overflow-hidden">
++                        <img
++                          src={produto.imagem_url}
++                          alt={produto.nome}
++                          className="w-full h-44 object-cover group-hover:scale-110 transition-transform duration-500"
++                        />
++                      </div>
++                    ) : (
++                      <div className="w-full h-44 bg-gradient-to-br from-orange-50 to-orange-100 flex items-center justify-center text-5xl">
++                        📦
++                      </div>
++                    )}
++                    <div className="p-4">
++                      {produto.categoria && (
++                        <span className="text-[10px] text-gray-400 font-medium">
++                          {produto.categoria.icone} {produto.categoria.nome}
++                        </span>
++                      )}
++                      <h3 className="text-gray-800 font-semibold text-sm leading-tight mt-1">{produto.nome}</h3>
++                      <div className="mt-3 space-y-1">
++                        <div className="flex items-baseline gap-1">
++                          <span className="text-xs text-gray-400">Varejo:</span>
++                          <span className="text-orange-600 font-extrabold text-xl">
++                            R$ {Number(produto.preco_varejo).toFixed(2)}
++                          </span>
++                        </div>
++                        {produto.preco_atacado && (
++                          <div className="flex items-baseline gap-1">
++                            <span className="text-xs text-gray-400">Atacado:</span>
++                            <span className="text-green-600 font-bold text-sm">
++                              R$ {Number(produto.preco_atacado).toFixed(2)}
++                            </span>
++                          </div>
++                        )}
++                        <span className="text-[10px] text-gray-400">{produto.unidade}</span>
++                      </div>
++                    </div>
++                  </div>
++                </div>
++              ))}
++            </div>
++          </div>
++
++          <button
++            onClick={scrollPrev}
++            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 bg-white shadow-lg border border-gray-200 rounded-full w-10 h-10 flex items-center justify-center text-gray-600 hover:text-orange-600 hover:border-orange-300 transition z-10"
++          >
++            ‹
++          </button>
++          <button
++            onClick={scrollNext}
++            className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-2 bg-white shadow-lg border border-gray-200 rounded-full w-10 h-10 flex items-center justify-center text-gray-600 hover:text-orange-600 hover:border-orange-300 transition z-10"
++          >
++            ›
++          </button>
++        </div>
++      </div>
++    </section>
++  )
++}
+diff --git a/src/components/SiteFooter.tsx b/src/components/SiteFooter.tsx
+new file mode 100644
+index 0000000..3bc7bb8
+--- /dev/null
++++ b/src/components/SiteFooter.tsx
+@@ -0,0 +1,224 @@
++import Link from 'next/link'
++
++const lojas = [
++  {
++    nome: 'Taquara – Medianeira',
++    endereco: 'R. Picada Gravatá, 1350',
++    bairro: 'Medianeira, Taquara – RS',
++    mapsLink: 'https://maps.google.com/?q=R.+Picada+Gravat%C3%A1,+1350+Medianeira+Taquara+RS',
++  },
++  {
++    nome: 'Taquara – Santa Maria',
++    endereco: 'Av. Oscar Martins Rangel, 3621',
++    bairro: 'Santa Maria, Taquara – RS',
++    mapsLink: 'https://maps.google.com/?q=Av.+Oscar+Martins+Rangel,+3621+Santa+Maria+Taquara+RS',
++  },
++  {
++    nome: 'Parobé – Centro',
++    endereco: 'R. Vera Cruz, 285, Sala 2',
++    bairro: 'Centro, Parobé – RS',
++    mapsLink: 'https://maps.google.com/?q=R.+Vera+Cruz,+285+Centro+Parob%C3%A9+RS',
++  },
++  {
++    nome: 'Taquara – Centro',
++    endereco: 'Av. Júlio de Castilhos, 2279',
++    bairro: 'Centro, Taquara – RS',
++    mapsLink: 'https://maps.google.com/?q=Av.+J%C3%BAlio+de+Castilhos,+2279+Centro+Taquara+RS',
++  },
++]
++
++export default function SiteFooter() {
++  return (
++    <footer>
++      {/* Nossas Lojas */}
++      <div id="nossas-lojas" className="bg-orange-50 py-16">
++        <div className="max-w-7xl mx-auto px-4">
++          <div className="text-center mb-10">
++            <div className="flex items-center justify-center gap-3 mb-2">
++              <span className="text-3xl">🏪</span>
++              <h2 className="text-3xl md:text-4xl font-black text-orange-600">Nossas Lojas</h2>
++            </div>
++            <div className="w-16 h-1 bg-orange-500 mx-auto mt-3 rounded-full" />
++          </div>
++          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
++            {lojas.map((loja) => (
++              <div key={loja.nome} className="bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 hover:-translate-y-1 group">
++                <a
++                  href={loja.mapsLink}
++                  target="_blank"
++                  rel="noopener noreferrer"
++                  className="relative block h-48 bg-gradient-to-br from-orange-400 to-orange-600 overflow-hidden"
++                >
++                  <div className="absolute inset-0 bg-orange-500/80 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
++                    <svg width="40" height="40" viewBox="0 0 24 24" fill="white"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
++                    <span className="text-white font-bold mt-2">Ver no Mapa</span>
++                  </div>
++                  <div className="absolute inset-0 flex items-center justify-center opacity-30">
++                    <svg width="80" height="80" viewBox="0 0 24 24" fill="white"><path d="M19 6h-2c0-2.76-2.24-5-5-5S7 3.24 7 6H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-7-3c1.66 0 3 1.34 3 3H9c0-1.66 1.34-3 3-3zm0 10c-2.76 0-5-2.24-5-5h2c0 1.66 1.34 3 3 3s3-1.34 3-3h2c0 2.76-2.24 5-5 5z"/></svg>
++                  </div>
++                </a>
++                <div className="p-5 text-center">
++                  <h3 className="text-orange-600 font-bold text-lg mb-2">{loja.nome}</h3>
++                  <p className="text-gray-600 text-sm">{loja.endereco}</p>
++                  <p className="text-gray-500 text-sm">{loja.bairro}</p>
++                </div>
++              </div>
++            ))}
++          </div>
++        </div>
++      </div>
++
++      {/* Footer principal */}
++      <div className="bg-orange-600 text-white">
++        <div className="max-w-7xl mx-auto px-4 py-12">
++          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
++            {/* Logo e slogan */}
++            <div>
++              <div className="flex items-center gap-3 mb-4">
++                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center flex-shrink-0">
++                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
++                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" fill="#F97316" strokeWidth="0.5"/>
++                  </svg>
++                </div>
++                <div>
++                  <span className="text-xl font-black tracking-tight">Certo</span>
++                  <p className="text-orange-200 text-xs font-semibold tracking-wider">Atacado & Varejo</p>
++                </div>
++              </div>
++              <p className="text-orange-100 text-sm mb-1">Lugar certo de comprar barato.</p>
++              <p className="text-orange-200 text-sm">Qualidade e economia para você e sua família.</p>
++            </div>
++
++            {/* Informações */}
++            <div>
++              <h3 className="text-lg font-bold mb-1">Informações</h3>
++              <div className="w-8 h-0.5 bg-orange-300 mb-4" />
++              <div className="space-y-4">
++                <div className="flex items-start gap-3">
++                  <svg className="w-5 h-5 mt-0.5 flex-shrink-0 text-orange-200" fill="currentColor" viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg>
++                  <div>
++                    <p className="font-bold text-sm">Horário de Funcionamento</p>
++                    <p className="text-orange-100 text-sm">Seg a Dom: 8h–20h</p>
++                  </div>
++                </div>
++                <div className="flex items-start gap-3">
++                  <svg className="w-5 h-5 mt-0.5 flex-shrink-0 text-orange-200" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
++                  <div>
++                    <p className="font-bold text-sm">Localização</p>
++                    <p className="text-orange-100 text-sm">Taquara, RS</p>
++                  </div>
++                </div>
++              </div>
++            </div>
++
++            {/* Contato */}
++            <div>
++              <h3 className="text-lg font-bold mb-1">Contato</h3>
++              <div className="w-8 h-0.5 bg-orange-300 mb-4" />
++              <div className="space-y-3">
++                <a href="mailto:contato@certoatacado.com" className="flex items-center gap-3 hover:text-orange-200 transition text-sm">
++                  <svg className="w-5 h-5 flex-shrink-0 text-orange-200" fill="currentColor" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
++                  contato@certoatacado.com
++                </a>
++                <a href="tel:+5551911198639" className="flex items-center gap-3 hover:text-orange-200 transition text-sm">
++                  <svg className="w-5 h-5 flex-shrink-0 text-orange-200" fill="currentColor" viewBox="0 0 24 24"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
++                  (51) 9119-8639 — Fale Conosco
++                </a>
++                <a href="https://wa.me/5551970748458" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:text-orange-200 transition text-sm">
++                  <svg className="w-5 h-5 flex-shrink-0 text-green-300" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.832-1.438A9.955 9.955 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2z"/></svg>
++                  (51) 9707-8458 — Televendas
++                </a>
++                <a href="https://wa.me/5551947538382" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:text-orange-200 transition text-sm">
++                  <svg className="w-5 h-5 flex-shrink-0 text-orange-200" fill="currentColor" viewBox="0 0 24 24"><path d="M20 6H16V4C16 2.89 15.11 2 14 2H10C8.89 2 8 2.89 8 4V6H4C2.89 6 2 6.89 2 8V19C2 20.11 2.89 21 4 21H20C21.11 21 20 20.11 20 19V8C22 6.89 21.11 6 20 6ZM10 4H14V6H10V4Z"/></svg>
++                  (51) 9475-8382 — Trabalhe Conosco
++                </a>
++              </div>
++            </div>
++
++            {/* Redes Sociais */}
++            <div>
++              <h3 className="text-lg font-bold mb-1">Redes Sociais</h3>
++              <div className="w-8 h-0.5 bg-orange-300 mb-4" />
++              <div className="flex gap-3">
++                <a href="https://facebook.com/certoatacado" target="_blank" rel="noopener noreferrer" className="w-12 h-12 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition">
++                  <svg className="w-6 h-6" fill="white" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
++                </a>
++                <a href="https://instagram.com/certoatacado" target="_blank" rel="noopener noreferrer" className="w-12 h-12 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition">
++                  <svg className="w-6 h-6" fill="white" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
++                </a>
++                <a href="https://linkedin.com/company/certoatacado" target="_blank" rel="noopener noreferrer" className="w-12 h-12 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition">
++                  <svg className="w-6 h-6" fill="white" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
++                </a>
++              </div>
++            </div>
++          </div>
++        </div>
++      </div>
++
++      {/* Formas de Pagamento */}
++      <div className="bg-orange-600">
++        <div className="max-w-4xl mx-auto px-4 pb-6">
++          <div className="bg-white rounded-2xl p-8 text-center shadow-lg">
++            <h3 className="text-lg font-black text-gray-800 tracking-wider mb-6">FORMAS DE PAGAMENTO</h3>
++            <div className="flex flex-wrap items-center justify-center gap-4 mb-4">
++              {[
++                { name: 'Visa', color: '#1A1F71', textColor: 'white' },
++                { name: 'Master', color: '#EB001B', textColor: 'white' },
++                { name: 'Amex', color: '#006FCF', textColor: 'white' },
++                { name: 'Discover', color: '#FF6600', textColor: 'white' },
++                { name: 'JCB', color: '#0B7B3E', textColor: 'white' },
++                { name: 'Diners', color: '#004A97', textColor: 'white' },
++                { name: 'Elo', color: '#000000', textColor: 'white' },
++                { name: 'Hiper', color: '#F37021', textColor: 'white' },
++                { name: 'PIX', color: '#32BCAD', textColor: 'white' },
++              ].map((card) => (
++                <span
++                  key={card.name}
++                  className="inline-flex items-center justify-center w-16 h-11 rounded-lg text-xs font-bold shadow-sm border border-gray-100"
++                  style={{ backgroundColor: card.color, color: card.textColor }}
++                >
++                  {card.name}
++                </span>
++              ))}
++            </div>
++            <p className="text-gray-500 text-xs">* Aceitamos todas as principais bandeiras e cartões de benefícios.</p>
++          </div>
++        </div>
++      </div>
++
++      {/* Pesquisa de Satisfação */}
++      <div className="bg-orange-100 border-t-4 border-orange-400">
++        <div className="max-w-7xl mx-auto px-4 py-4 text-center">
++          <a
++            href="#pesquisa"
++            className="inline-flex items-center gap-2 text-orange-700 font-bold text-lg hover:text-orange-800 transition"
++          >
++            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 7V3.5L18.5 9H13zM6 20V4h6v6h6v10H6z"/></svg>
++            Pesquisa de Satisfação
++          </a>
++        </div>
++      </div>
++
++      {/* Bottom bar */}
++      <div className="bg-orange-700 border-t border-orange-600">
++        <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
++          <p className="text-orange-200 text-xs">
++            © {new Date().getFullYear()} Certo Atacado & Varejo. Todos os direitos reservados.
++          </p>
++          <div className="flex items-center gap-4 text-xs">
++            <Link href="/politica-de-privacidade" className="text-orange-200 hover:text-white transition underline">
++              Política de Privacidade
++            </Link>
++            <Link href="/termos-de-uso" className="text-orange-200 hover:text-white transition underline">
++              Termos de Uso
++            </Link>
++            <Link href="/admin/login" className="text-orange-300 hover:text-white transition flex items-center gap-1">
++              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
++              Acesso Restrito
++            </Link>
++          </div>
++        </div>
++      </div>
++    </footer>
++  )
++}
+diff --git a/src/components/SiteHeader.tsx b/src/components/SiteHeader.tsx
+new file mode 100644
+index 0000000..deebbe6
+--- /dev/null
++++ b/src/components/SiteHeader.tsx
+@@ -0,0 +1,81 @@
++'use client'
++
++import { useState } from 'react'
++import Link from 'next/link'
++import CertoLogo from './CertoLogo'
++
++const menuItems = [
++  { href: '/', label: 'Início' },
++  { href: '/nossa-historia', label: 'Nossa História' },
++  { href: '/fale-conosco', label: 'Fale Conosco' },
++  { href: '/trabalhe-conosco', label: 'Trabalhe Conosco' },
++]
++
++export default function SiteHeader() {
++  const [menuAberto, setMenuAberto] = useState(false)
++
++  return (
++    <header className="bg-white shadow-md sticky top-0 z-50">
++      <div className="max-w-7xl mx-auto px-4">
++        <div className="flex items-center justify-between py-3">
++          <Link href="/" className="flex-shrink-0">
++            <CertoLogo size="sm" />
++          </Link>
++
++          <nav className="hidden lg:flex items-center gap-5">
++            {menuItems.map((item) => (
++              <Link
++                key={item.href}
++                href={item.href}
++                className="text-sm font-medium text-gray-600 hover:text-orange-600 transition-colors duration-200"
++              >
++                {item.label}
++              </Link>
++            ))}
++            <a
++              href="https://wa.me/5551970748458"
++              target="_blank"
++              rel="noopener noreferrer"
++              className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white font-bold text-sm px-5 py-2.5 rounded-full transition-all duration-200 hover:scale-105 shadow-md"
++            >
++              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.832-1.438A9.955 9.955 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2z"/></svg>
++              Televendas
++            </a>
++          </nav>
++
++          <button
++            onClick={() => setMenuAberto(!menuAberto)}
++            className="lg:hidden text-gray-600 p-2"
++          >
++            {menuAberto ? '✕' : '☰'}
++          </button>
++        </div>
++
++        {menuAberto && (
++          <nav className="lg:hidden pb-4 border-t border-gray-100 pt-3">
++            {menuItems.map((item) => (
++              <Link
++                key={item.href}
++                href={item.href}
++                onClick={() => setMenuAberto(false)}
++                className="block py-2 text-sm font-medium text-gray-600 hover:text-orange-600 transition"
++              >
++                {item.label}
++              </Link>
++            ))}
++            <a
++              href="https://wa.me/5551970748458"
++              target="_blank"
++              rel="noopener noreferrer"
++              onClick={() => setMenuAberto(false)}
++              className="flex items-center gap-2 bg-green-500 text-white font-bold text-sm px-5 py-2.5 rounded-full mt-3 w-fit"
++            >
++              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.832-1.438A9.955 9.955 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2z"/></svg>
++              Televendas
++            </a>
++          </nav>
++        )}
++      </div>
++    </header>
++  )
++}
+diff --git a/src/components/SorteiosSection.tsx b/src/components/SorteiosSection.tsx
+new file mode 100644
+index 0000000..340d647
+--- /dev/null
++++ b/src/components/SorteiosSection.tsx
+@@ -0,0 +1,184 @@
++'use client'
++
++import { useEffect, useState, useCallback } from 'react'
++import useEmblaCarousel from 'embla-carousel-react'
++import Autoplay from 'embla-carousel-autoplay'
++import { useScrollReveal } from '@/hooks/useScrollReveal'
++
++interface Sorteio {
++  id: string
++  titulo: string
++  descricao: string
++  imagem_url: string | null
++  link_criterio: string | null
++  descricao_link: string | null
++  data_fim: string
++}
++
++export default function SorteiosSection() {
++  const [sorteios, setSorteios] = useState<Sorteio[]>([])
++  const [participando, setParticipando] = useState<string | null>(null)
++  const [nome, setNome] = useState('')
++  const [telefone, setTelefone] = useState('')
++  const [mensagem, setMensagem] = useState('')
++  const [enviando, setEnviando] = useState(false)
++  const { ref: revealRef, visible } = useScrollReveal()
++
++  const [emblaRef, emblaApi] = useEmblaCarousel(
++    { loop: true, align: 'start', slidesToScroll: 1 },
++    [Autoplay({ delay: 5000, stopOnInteraction: true })]
++  )
++
++  const scrollPrev = useCallback(() => emblaApi?.scrollPrev(), [emblaApi])
++  const scrollNext = useCallback(() => emblaApi?.scrollNext(), [emblaApi])
++
++  useEffect(() => {
++    let active = true
++    fetch('/api/site')
++      .then((r) => r.json())
++      .then((data) => { if (active) setSorteios(data.sorteios ?? []) })
++    return () => { active = false }
++  }, [])
++
++  async function handleParticipar(sorteioId: string) {
++    if (!nome || !telefone) {
++      setMensagem('Preencha nome e telefone')
++      return
++    }
++    setEnviando(true)
++    setMensagem('')
++
++    const res = await fetch(`/api/sorteios/${sorteioId}/participar`, {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({ nome, telefone }),
++    })
++
++    const data = await res.json()
++    if (res.ok) {
++      setMensagem('Inscrição realizada com sucesso! Boa sorte!')
++      setNome('')
++      setTelefone('')
++    } else {
++      setMensagem(data.erro || 'Erro ao participar')
++    }
++    setEnviando(false)
++  }
++
++  if (sorteios.length === 0) return null
++
++  return (
++    <section id="sorteios" className="py-16 bg-orange-50">
++      <div ref={revealRef} className={`max-w-7xl mx-auto px-4 transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
++        <div className="text-center mb-12">
++          <span className="inline-block bg-orange-100 text-orange-600 text-sm font-semibold px-4 py-1.5 rounded-full mb-3">
++            Concorra a prêmios
++          </span>
++          <h2 className="text-3xl md:text-4xl font-extrabold text-gray-800">
++            Sorteios
++          </h2>
++          <p className="text-gray-500 mt-2">Participe e concorra a prêmios incríveis!</p>
++        </div>
++
++        <div className="relative">
++          <div className="embla" ref={emblaRef}>
++            <div className="embla__container">
++              {sorteios.map((sorteio) => (
++                <div key={sorteio.id} className="embla__slide--2 px-3">
++                  <div className="bg-white rounded-2xl overflow-hidden shadow-lg border border-orange-100 hover:shadow-2xl transition-all duration-300 hover:-translate-y-1">
++                    {sorteio.imagem_url && (
++                      <div className="overflow-hidden">
++                        <img
++                          src={sorteio.imagem_url}
++                          alt={sorteio.titulo}
++                          className="w-full h-56 object-cover hover:scale-105 transition-transform duration-500"
++                        />
++                      </div>
++                    )}
++                    <div className="p-6">
++                      <h3 className="text-gray-800 font-bold text-xl mb-2">{sorteio.titulo}</h3>
++                      {sorteio.descricao && (
++                        <p className="text-gray-500 text-sm mb-3">{sorteio.descricao}</p>
++                      )}
++                      <p className="text-orange-600 text-xs font-medium mb-4">
++                        Participe até {new Date(sorteio.data_fim).toLocaleDateString('pt-BR')}
++                      </p>
++
++                      {sorteio.link_criterio && (
++                        <a
++                          href={sorteio.link_criterio}
++                          target="_blank"
++                          rel="noopener noreferrer"
++                          className="block bg-gradient-to-r from-purple-500 to-pink-500 text-white text-center text-sm font-semibold px-4 py-3 rounded-xl mb-4 hover:opacity-90 hover:scale-[1.02] transition-all duration-200"
++                        >
++                          {sorteio.descricao_link || 'Cumprir critério para participar'}
++                        </a>
++                      )}
++
++                      {participando === sorteio.id ? (
++                        <div className="space-y-3 animate-fadeIn">
++                          <input
++                            type="text"
++                            value={nome}
++                            onChange={(e) => setNome(e.target.value)}
++                            placeholder="Seu nome completo"
++                            className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition"
++                          />
++                          <input
++                            type="tel"
++                            value={telefone}
++                            onChange={(e) => setTelefone(e.target.value)}
++                            placeholder="(00) 00000-0000"
++                            className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition"
++                          />
++                          {mensagem && (
++                            <p className={`text-sm ${mensagem.includes('sucesso') ? 'text-green-600' : 'text-red-500'}`}>
++                              {mensagem}
++                            </p>
++                          )}
++                          <button
++                            onClick={() => handleParticipar(sorteio.id)}
++                            disabled={enviando}
++                            className="w-full bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 text-white font-semibold rounded-xl py-3 text-sm transition shadow-md hover:shadow-lg"
++                          >
++                            {enviando ? 'Enviando...' : 'Confirmar participação'}
++                          </button>
++                          <button
++                            onClick={() => { setParticipando(null); setMensagem('') }}
++                            className="w-full text-gray-500 text-sm hover:text-gray-700 transition"
++                          >
++                            Cancelar
++                          </button>
++                        </div>
++                      ) : (
++                        <button
++                          onClick={() => { setParticipando(sorteio.id); setMensagem('') }}
++                          className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-xl py-3 text-base transition-all duration-200 shadow-md hover:shadow-lg hover:scale-[1.02]"
++                        >
++                          Quero participar!
++                        </button>
++                      )}
++                    </div>
++                  </div>
++                </div>
++              ))}
++            </div>
++          </div>
++
++          <button
++            onClick={scrollPrev}
++            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 bg-white shadow-lg border border-gray-200 rounded-full w-10 h-10 flex items-center justify-center text-gray-600 hover:text-orange-600 hover:border-orange-300 transition z-10"
++          >
++            ‹
++          </button>
++          <button
++            onClick={scrollNext}
++            className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-2 bg-white shadow-lg border border-gray-200 rounded-full w-10 h-10 flex items-center justify-center text-gray-600 hover:text-orange-600 hover:border-orange-300 transition z-10"
++          >
++            ›
++          </button>
++        </div>
++      </div>
++    </section>
++  )
++}
+diff --git a/src/components/TrabalheConoscoSection.tsx b/src/components/TrabalheConoscoSection.tsx
+new file mode 100644
+index 0000000..a4b3525
+--- /dev/null
++++ b/src/components/TrabalheConoscoSection.tsx
+@@ -0,0 +1,97 @@
++'use client'
++
++import { useState } from 'react'
++
++export default function TrabalheConoscoSection() {
++  const [nome, setNome] = useState('')
++  const [telefone, setTelefone] = useState('')
++  const [cargo, setCargo] = useState('')
++  const [enviado, setEnviado] = useState(false)
++
++  function handleSubmit(e: React.FormEvent) {
++    e.preventDefault()
++    const texto = encodeURIComponent(
++      `Olá! Gostaria de trabalhar no Certo Atacado.\n\nNome: ${nome}\nTelefone: ${telefone}\nCargo desejado: ${cargo}`
++    )
++    window.open(`https://wa.me/5500000000000?text=${texto}`, '_blank')
++    setEnviado(true)
++    setNome('')
++    setTelefone('')
++    setCargo('')
++  }
++
++  return (
++    <section id="trabalhe-conosco" className="py-16 bg-gray-50">
++      <div className="max-w-3xl mx-auto px-4">
++        <div className="text-center mb-12">
++          <h2 className="text-3xl md:text-4xl font-extrabold text-gray-800">
++            Trabalhe Conosco
++          </h2>
++          <p className="text-gray-500 mt-2">Faça parte da família Certo Atacado!</p>
++        </div>
++
++        <div className="bg-white rounded-2xl p-8 shadow-lg border border-gray-200">
++          <p className="text-gray-600 text-sm mb-6">
++            Estamos sempre em busca de pessoas comprometidas e apaixonadas pelo que fazem.
++            Preencha o formulário abaixo e entraremos em contato!
++          </p>
++
++          {enviado && (
++            <p className="text-green-600 text-sm mb-4 bg-green-50 p-3 rounded-xl">
++              Redirecionando para WhatsApp...
++            </p>
++          )}
++
++          <form onSubmit={handleSubmit} className="space-y-4">
++            <div>
++              <label className="block text-sm text-gray-600 mb-1.5">Nome completo</label>
++              <input
++                type="text"
++                value={nome}
++                onChange={(e) => setNome(e.target.value)}
++                placeholder="Seu nome completo"
++                required
++                className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition"
++              />
++            </div>
++            <div>
++              <label className="block text-sm text-gray-600 mb-1.5">Telefone</label>
++              <input
++                type="tel"
++                value={telefone}
++                onChange={(e) => setTelefone(e.target.value)}
++                placeholder="(00) 00000-0000"
++                required
++                className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition"
++              />
++            </div>
++            <div>
++              <label className="block text-sm text-gray-600 mb-1.5">Cargo desejado</label>
++              <select
++                value={cargo}
++                onChange={(e) => setCargo(e.target.value)}
++                required
++                className="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition"
++              >
++                <option value="">Selecione...</option>
++                <option value="Operador de Caixa">Operador de Caixa</option>
++                <option value="Repositor">Repositor</option>
++                <option value="Açougueiro">Açougueiro</option>
++                <option value="Padeiro">Padeiro</option>
++                <option value="Auxiliar de Limpeza">Auxiliar de Limpeza</option>
++                <option value="Fiscal de Loja">Fiscal de Loja</option>
++                <option value="Outro">Outro</option>
++              </select>
++            </div>
++            <button
++              type="submit"
++              className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-xl py-3 text-sm transition shadow-md"
++            >
++              Enviar candidatura via WhatsApp
++            </button>
++          </form>
++        </div>
++      </div>
++    </section>
++  )
++}
+diff --git a/src/hooks/useScrollReveal.ts b/src/hooks/useScrollReveal.ts
+new file mode 100644
+index 0000000..f5fc7cb
+--- /dev/null
++++ b/src/hooks/useScrollReveal.ts
+@@ -0,0 +1,28 @@
++'use client'
++
++import { useEffect, useRef, useState } from 'react'
++
++export function useScrollReveal(threshold = 0.15) {
++  const ref = useRef<HTMLDivElement>(null)
++  const [visible, setVisible] = useState(false)
++
++  useEffect(() => {
++    const el = ref.current
++    if (!el) return
++
++    const observer = new IntersectionObserver(
++      ([entry]) => {
++        if (entry.isIntersecting) {
++          setVisible(true)
++          observer.unobserve(el)
++        }
++      },
++      { threshold }
++    )
++
++    observer.observe(el)
++    return () => observer.disconnect()
++  }, [threshold])
++
++  return { ref, visible }
++}

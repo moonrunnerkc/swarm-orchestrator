@@ -1,0 +1,149 @@
+diff --git a/REPLIT_NEXT_STEPS_PROMPT.md b/REPLIT_NEXT_STEPS_PROMPT.md
+new file mode 100644
+index 0000000..d80a465
+--- /dev/null
++++ b/REPLIT_NEXT_STEPS_PROMPT.md
+@@ -0,0 +1,143 @@
++# Replit Agent Prompt — Final QA, Bug Hunt, and Responsive Optimization
++
++You are the Replit Agent for **UmmahTrusted Birmingham**. Do a deep, systematic QA and optimization pass of the app before production launch.
++
++## Objective
++Ship a stable, fast, slim, and mobile-friendly MVP with all current features working end-to-end across desktop and mobile.
++
++## Execution Rules
++1. **Do not add new major features yet** (favorites can wait).
++2. Focus on **bug fixing, responsiveness, UX polish, and performance**.
++3. Keep changes incremental and reversible.
++4. After each phase, commit with clear messages and provide a short changelog.
++5. At the end, produce a final release-readiness report with:
++   - fixed issues
++   - remaining known issues
++   - risk level per issue
++   - go/no-go recommendation
++
++## Phase 1 — Baseline & Environment Validation
++- Verify app boot and seed setup from a clean install.
++- Verify all demo accounts and role routing:
++  - `admin@ummahtrusted.local`
++  - `customer@ummahtrusted.local`
++  - sample provider accounts
++- Confirm no startup/runtime errors in logs.
++- Record current Lighthouse baseline (mobile + desktop) for:
++  - Landing page
++  - Search page
++  - Provider detail page
++  - Dashboard page(s)
++
++## Phase 2 — End-to-End Functional QA (All Core Flows)
++Run full manual + scripted checks for these flows:
++
++### Public/User
++- Landing page renders hero, featured providers, top categories, live stats.
++- Search filters all work together and independently:
++  - category
++  - area
++  - language
++  - women-only
++  - home-visit
++  - price
++- Filter state persists correctly through navigation/back.
++- Provider detail loads complete data (badges, areas, languages, reviews, ratings).
++- Booking lead form:
++  - successful submission path
++  - validation errors
++  - rate limiting behavior
++- Report provider flow:
++  - submit report
++  - confirmation state
++  - admin visibility
++
++### Provider
++- Provider login and dashboard access control.
++- Profile editor saves and displays updated data correctly.
++- Inbox lifecycle works: `new → contacted → accepted → completed`.
++- Status changes are persisted and visible after refresh.
++
++### Admin
++- Moderation queue processes entries correctly.
++- Reports queue triage actions work and persist.
++- Audit log records actions with accurate actor/timestamps.
++- Overview dashboard stats are accurate and update correctly.
++
++### Security & Permissions
++- Role-based access control for all protected routes.
++- Unauthorized access returns safe behavior (redirect/403).
++- Form input sanitization and server-side validation checks.
++- Ensure rate limiting cannot be trivially bypassed.
++
++## Phase 3 — Responsive & Mobile-First Polish
++Test at minimum these breakpoints: **320, 375, 390, 414, 768, 1024, 1280, 1440**.
++
++For each key page, verify and fix:
++- No horizontal overflow.
++- Typography readable without zoom.
++- Buttons/links have proper touch target sizes.
++- Forms usable with mobile keyboards.
++- Filter controls usable on small screens (drawer/modal if needed).
++- Tables/cards stack gracefully.
++- Nav/header/footer remain usable and uncluttered.
++- Hero section imagery scales without clipping key content.
++
++Specifically reduce visual bloat:
++- Normalize spacing scale.
++- Remove redundant UI blocks.
++- Trim oversized paddings/margins on mobile.
++- Keep content density balanced for quick scanning.
++
++## Phase 4 — Performance & Bundle Slimming
++- Remove dead code/components/assets.
++- Optimize images (responsive sizes + compression).
++- Enable lazy loading where appropriate.
++- Minimize unnecessary re-renders.
++- Validate API payload sizes and avoid over-fetching.
++- Ensure DB queries are indexed for search/filter-heavy paths.
++- Re-run Lighthouse and compare before/after.
++
++## Phase 5 — Data Integrity & Reliability
++- Verify seed data consistency (22 providers across neighborhoods).
++- Ensure neighborhood/category/language values are normalized.
++- Validate rating/review/stat calculations.
++- Add or improve error boundaries and fallback UI states.
++- Confirm empty states for no-results and no-data pages.
++
++## Phase 6 — Regression Suite
++Create/update a compact regression checklist and run it on:
++- Desktop Chrome (latest)
++- Mobile emulation (iPhone SE, iPhone 14, Pixel 7)
++- If available: one real mobile browser test
++
++Minimum automated tests to add/update:
++- auth + role guard tests
++- search filter combination test(s)
++- booking lead submission + rate limit tests
++- provider lead-status workflow tests
++- admin moderation/report workflow tests
++
++## Deliverables (Required)
++1. **Issue Log** (table):
++   - ID
++   - Severity (Critical/High/Medium/Low)
++   - Area
++   - Repro steps
++   - Root cause
++   - Fix summary
++   - Status
++2. **Responsive Audit Matrix** by page + breakpoint.
++3. **Performance Diff** (before/after metrics).
++4. **Final Production Checklist** with pass/fail.
++5. **Recommendation**:
++   - Go live now / Go live with caveats / Block release
++
++## Success Criteria
++- No critical bugs open.
++- No broken core flow for customer/provider/admin.
++- Mobile experience is clean, readable, and touch-friendly.
++- Lighthouse scores improved and acceptable for MVP.
++- Release checklist passes.
++
++When done, provide a concise release report and a prioritized list of next improvements (including whether to proceed with Favorites next).

@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24108",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24108,
+    "headSha": "02cea8b6cd5d6e76956fc58eb0c6b7d7b02ce9a8",
+    "baseSha": "8825aa4714128d902105af8710bdfbd7d7c3e83b",
+    "title": "windows-sandbox: pass workspace roots to runner",
+    "body": "## Why\n\n#23813 switches the Windows sandbox runner path to `PermissionProfile`, but it still left one runtime anchor for resolving symbolic `:workspace_roots` entries. That is not enough once a turn has multiple effective workspace roots: exact entries and deny globs under `:workspace_roots` need to be materialized for every runtime root before the command runner chooses token mode or builds ACL plans.\n\n## What Changed\n\n- Replaces the Windows runner/setup `permission_profile_cwd` plumbing with `workspace_roots: Vec<AbsolutePathBuf>`.\n- Resolves Windows-local `PermissionProfile` data with `materialize_project_roots_with_workspace_roots(...)` instead of the single-cwd helper.\n- Threads `Config::effective_workspace_roots()` through core execution, unified exec, TUI setup/read-grant flows, app-server setup, and `debug sandbox` on Windows.\n- Updates elevated runner IPC `SpawnRequest` to send `workspace_roots` and bumps the framed IPC protocol version to `3` for the payload shape change.\n- Adds Windows-local resolver coverage for expanding exact and glob `:workspace_roots` entries across multiple roots.\n\n## Verification\n\n- `cargo check -p codex-windows-sandbox -p codex-core -p codex-tui -p codex-cli -p codex-app-server`\n- `cargo test -p codex-windows-sandbox`\n- `cargo test -p codex-core windows_sandbox`\n- `cargo test -p codex-app-server windows_sandbox`\n- `cargo test -p codex-tui windows_sandbox`\n- `cargo test -p codex-cli debug_sandbox`\n- `just fix -p codex-windows-sandbox -p codex-core -p codex-tui -p codex-cli -p codex-app-server`\n- `just fix -p codex-windows-sandbox`\n\nA local macOS cross-check with `cargo check --target x86_64-pc-windows-msvc ...` did not reach crate Rust code because native dependencies require Windows SDK headers (`windows.h` / `assert.h`) in this environment; Windows CI remains the real target validation.\n\n\n\n\n---\n[//]: # (BEGIN SAPLING FOOTER)\nStack created with [Sapling](https://sapling-scm.com). Best reviewed with [ReviewStack](https://reviewstack.dev/openai/codex/pull/24108).\n* __->__ #24108\n* #23813",
+    "author": "bolinfest",
+    "headRef": "pr24108",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "02cea8b6cd5d6e76956fc58eb0c6b7d7b02ce9a8",
+    "baseSha": "8825aa4714128d902105af8710bdfbd7d7c3e83b"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24108.diff",
+  "vendoredAt": "2026-05-24T03:13:23.931Z",
+  "collectedAt": "2026-05-24T03:13:23.931Z"
+}

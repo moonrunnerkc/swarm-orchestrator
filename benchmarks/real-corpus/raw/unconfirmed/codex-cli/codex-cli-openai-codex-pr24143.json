@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24143",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24143,
+    "headSha": "5c78d1caa85542500600fc9901ba0b835c7b3880",
+    "baseSha": "efab4dc64cdf687b2eede3c7f1b2ae681934d5d6",
+    "title": "Track thread start in ChatGPT telemetry",
+    "body": "## Why\nThread startup latency should live on thread initialization rather than on turn telemetry. This lets ChatGPT measure how long a new thread takes to become ready without polluting resumed or forked thread events, and keeps turn telemetry focused on turn-specific timing.\n\n## What changed\n- add a thread-start timing fact in `codex-rs/analytics` and plumb it into `codex_thread_initialized`\n- emit the duration from `ThreadRequestProcessor` when a new thread start completes\n- populate `thread_start_duration_ms` only for newly created threads; resumed and forked threads continue to emit `null`\n- add serialization and reducer coverage for the enriched thread event\n\n## Verification\n- `cargo check -p codex-analytics -p codex-app-server -p codex-core`\n- `just fix -p codex-analytics -p codex-core`\n",
+    "author": "aibrahim-oai",
+    "headRef": "aibrahim/telemetry-thread-start",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "5c78d1caa85542500600fc9901ba0b835c7b3880",
+    "baseSha": "efab4dc64cdf687b2eede3c7f1b2ae681934d5d6"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24143.diff",
+  "vendoredAt": "2026-05-24T03:20:56.660Z",
+  "collectedAt": "2026-05-24T03:20:56.660Z"
+}

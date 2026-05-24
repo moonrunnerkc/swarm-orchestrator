@@ -1,0 +1,386 @@
+diff --git a/src/_data/demos/escalation-pathways.html b/src/_data/demos/escalation-pathways.html
+new file mode 100644
+index 0000000..0df7495
+--- /dev/null
++++ b/src/_data/demos/escalation-pathways.html
+@@ -0,0 +1,296 @@
++<!doctype html>
++<html>
++<head>
++  <meta charset="utf-8">
++  <style>
++    * { box-sizing: border-box; margin: 0; padding: 0; }
++    body {
++      font-family: system-ui, -apple-system, sans-serif;
++      background: #0f0f1a;
++      color: #e2e8f0;
++      height: 100vh;
++      overflow: hidden;
++      font-size: 13px;
++      display: flex;
++      flex-direction: column;
++      padding: 20px;
++    }
++    .scenario-selector {
++      display: flex;
++      gap: 12px;
++      margin-bottom: 20px;
++      padding-bottom: 16px;
++      border-bottom: 1px solid #2a2a55;
++    }
++    .scenario-btn {
++      padding: 10px 16px;
++      background: #1a1a2e;
++      border: 1px solid #2a2a55;
++      border-radius: 8px;
++      color: #94a3b8;
++      cursor: pointer;
++      font-size: 12px;
++      transition: all 0.2s;
++    }
++    .scenario-btn:hover { border-color: #3b82f6; color: #fff; }
++    .scenario-btn.active { background: #3b82f6; border-color: #3b82f6; color: white; }
++    .demo-area {
++      flex: 1;
++      display: flex;
++      flex-direction: column;
++      gap: 16px;
++    }
++    .agent-panel {
++      background: #1a1a2e;
++      border-radius: 12px;
++      padding: 16px;
++      border: 1px solid #2a2a55;
++    }
++    .agent-header {
++      display: flex;
++      align-items: center;
++      gap: 12px;
++      margin-bottom: 12px;
++    }
++    .agent-avatar {
++      width: 36px;
++      height: 36px;
++      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
++      border-radius: 50%;
++      display: flex;
++      align-items: center;
++      justify-content: center;
++      font-size: 16px;
++    }
++    .agent-info { flex: 1; }
++    .agent-name { font-weight: 500; }
++    .agent-status { font-size: 11px; color: #64748b; }
++    .status-badge {
++      padding: 4px 10px;
++      border-radius: 12px;
++      font-size: 11px;
++      font-weight: 500;
++    }
++    .status-running { background: #1e3a5f; color: #3b82f6; }
++    .status-paused { background: #fef3c7; color: #92400e; }
++    .agent-log {
++      background: #151528;
++      border-radius: 8px;
++      padding: 12px;
++      font-family: monospace;
++      font-size: 12px;
++      max-height: 120px;
++      overflow-y: auto;
++    }
++    .log-entry { margin-bottom: 6px; color: #94a3b8; }
++    .log-entry:last-child { margin-bottom: 0; }
++    .escalation-card {
++      background: #fef3c7;
++      border: 2px solid #f59e0b;
++      border-radius: 12px;
++      padding: 20px;
++      color: #92400e;
++      animation: attentionPulse 2s infinite;
++    }
++    @keyframes attentionPulse {
++      0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
++      50% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
++    }
++    .escalation-header {
++      display: flex;
++      align-items: center;
++      gap: 12px;
++      margin-bottom: 12px;
++    }
++    .escalation-icon {
++      width: 40px;
++      height: 40px;
++      background: #f59e0b;
++      border-radius: 50%;
++      display: flex;
++      align-items: center;
++      justify-content: center;
++      font-size: 20px;
++    }
++    .escalation-title { font-size: 16px; font-weight: 600; }
++    .escalation-reason {
++      background: rgba(0,0,0,0.05);
++      padding: 12px;
++      border-radius: 8px;
++      margin-bottom: 16px;
++    }
++    .escalation-reason-title { font-weight: 500; margin-bottom: 4px; }
++    .escalation-reason-text { font-size: 12px; opacity: 0.8; }
++    .context-box {
++      background: rgba(0,0,0,0.05);
++      padding: 12px;
++      border-radius: 8px;
++      margin-bottom: 16px;
++    }
++    .context-title { font-size: 11px; font-weight: 500; margin-bottom: 8px; text-transform: uppercase; }
++    .context-item {
++      display: flex;
++      justify-content: space-between;
++      font-size: 12px;
++      margin-bottom: 4px;
++    }
++    .context-label { opacity: 0.7; }
++    .escalation-actions {
++      display: flex;
++      gap: 12px;
++    }
++    .btn {
++      flex: 1;
++      padding: 10px 16px;
++      border-radius: 8px;
++      border: none;
++      font-size: 13px;
++      font-weight: 500;
++      cursor: pointer;
++      transition: all 0.2s;
++    }
++    .btn-approve {
++      background: #22c55e;
++      color: white;
++    }
++    .btn-approve:hover { background: #16a34a; }
++    .btn-modify {
++      background: rgba(0,0,0,0.1);
++      color: #92400e;
++    }
++    .btn-reject {
++      background: #ef4444;
++      color: white;
++    }
++    .hidden { display: none !important; }
++  </style>
++</head>
++<body>
++  <div class="scenario-selector">
++    <button class="scenario-btn active" onclick="setScenario('confidence')">Low Confidence</button>
++    <button class="scenario-btn" onclick="setScenario('authorization')">Authorization Required</button>
++    <button class="scenario-btn" onclick="setScenario('conflict')">Conflict Detected</button>
++  </div>
++
++  <div class="demo-area">
++    <div class="agent-panel">
++      <div class="agent-header">
++        <div class="agent-avatar">🤖</div>
++        <div class="agent-info">
++          <div class="agent-name">Deployment Agent</div>
++          <div class="agent-status">Waiting for human input...</div>
++        </div>
++        <span class="status-badge status-paused">⏸ Paused</span>
++      </div>
++      <div class="agent-log" id="agentLog">
++        <div class="log-entry">[14:32:01] Analyzing deployment requirements...</div>
++        <div class="log-entry">[14:32:05] Checking environment variables...</div>
++        <div class="log-entry">[14:32:08] ⚠️ Escalation triggered: Confidence below threshold</div>
++        <div class="log-entry">[14:32:08] ⏸ Paused, awaiting human decision...</div>
++      </div>
++    </div>
++
++    <div class="escalation-card" id="escalationCard">
++      <div class="escalation-header">
++        <div class="escalation-icon">⚠️</div>
++        <div class="escalation-title">Human Review Required</div>
++      </div>
++
++      <div class="escalation-reason">
++        <div class="escalation-reason-title">Trigger: Low Confidence</div>
++        <div class="escalation-reason-text" id="escalationReason">The agent is unsure about the database migration plan (confidence: 65%). This requires your expertise.</div>
++      </div>
++
++      <div class="context-box">
++        <div class="context-title">Context</div>
++        <div class="context-item">
++          <span class="context-label">Action</span>
++          <span>Deploy v2.4.0 to production</span>
++        </div>
++        <div class="context-item">
++          <span class="context-label">Risk Level</span>
++          <span id="riskLevel">Medium</span>
++        </div>
++        <div class="context-item">
++          <span class="context-label">Estimated Impact</span>
++          <span id="impactLevel">~500 users affected</span>
++        </div>
++        <div class="context-item">
++          <span class="context-label">Confidence Score</span>
++          <span id="confidenceScore">65%</span>
++        </div>
++      </div>
++
++      <div class="escalation-actions">
++        <button class="btn btn-approve" onclick="handleDecision('approve')">✓ Approve</button>
++        <button class="btn btn-modify" onclick="handleDecision('modify')">✎ Modify</button>
++        <button class="btn btn-reject" onclick="handleDecision('reject')">✕ Reject</button>
++      </div>
++    </div>
++  </div>
++
++  <script>
++    const scenarios = {
++      confidence: {
++        reason: "The agent is unsure about the database migration plan (confidence: 65%). This requires your expertise.",
++        risk: "Medium",
++        impact: "~500 users affected",
++        score: "65%",
++        log: [
++          "[14:32:01] Analyzing deployment requirements...",
++          "[14:32:05] Checking environment variables...",
++          "[14:32:08] ⚠️ Escalation triggered: Confidence below threshold",
++          "[14:32:08] ⏸ Paused, awaiting human decision..."
++        ]
++      },
++      authorization: {
++        reason: "This action requires explicit authorization: Deleting production database records.",
++        risk: "High",
++        impact: "Irreversible data loss",
++        score: "Authorization required",
++        log: [
++          "[14:32:01] Scanning for obsolete records...",
++          "[14:32:03] Found 1,247 records to archive",
++          "[14:32:05] ⚠️ Escalation triggered: Authorization boundary",
++          "[14:32:05] ⏸ Paused, awaiting human approval..."
++        ]
++      },
++      conflict: {
++        reason: "Detected conflicting requirements: 'Minimize cost' vs 'Maximize performance'.",
++        risk: "Medium",
++        impact: "Trade-off decision needed",
++        score: "Conflict detected",
++        log: [
++          "[14:32:01] Optimizing resource allocation...",
++          "[14:32:04] Analyzing constraints...",
++          "[14:32:07] ⚠️ Escalation triggered: Conflicting requirements",
++          "[14:32:07] ⏸ Paused, awaiting human resolution..."
++        ]
++      }
++    };
++
++    function setScenario(type) {
++      document.querySelectorAll('.scenario-btn').forEach(btn => btn.classList.remove('active'));
++      event.target.classList.add('active');
++
++      const s = scenarios[type];
++      document.getElementById('escalationReason').textContent = s.reason;
++      document.getElementById('riskLevel').textContent = s.risk;
++      document.getElementById('impactLevel').textContent = s.impact;
++      document.getElementById('confidenceScore').textContent = s.score;
++
++      const logEl = document.getElementById('agentLog');
++      logEl.innerHTML = s.log.map(entry => `<div class="log-entry">${entry}</div>`).join('');
++    }
++
++    function handleDecision(decision) {
++      const messages = {
++        approve: "✓ Approved! Agent resuming...",
++        modify: "✎ Opening modification interface...",
++        reject: "✕ Rejected. Agent will explore alternatives."
++      };
++      alert(messages[decision]);
++    }
++  </script>
++</body>
++</html>
+diff --git a/src/_data/demos/escalation-pathways.json b/src/_data/demos/escalation-pathways.json
+new file mode 100644
+index 0000000..ec53a3c
+--- /dev/null
++++ b/src/_data/demos/escalation-pathways.json
+@@ -0,0 +1,3 @@
++{
++  "height": 480
++}
+diff --git a/src/_data/patterns/escalation-pathways.json b/src/_data/patterns/escalation-pathways.json
+new file mode 100644
+index 0000000..a56cb94
+--- /dev/null
++++ b/src/_data/patterns/escalation-pathways.json
+@@ -0,0 +1,69 @@
++{
++  "id": 904,
++  "slug": "escalation-pathways",
++  "category": "ai-feedback",
++  "title": {
++    "fr": "Chemins d'Escalade (Agent → Humain)",
++    "en": "Escalation Pathways (Agent → Human Handoff)"
++  },
++  "categoryLabel": {
++    "slug": "ai-feedback",
++    "fr": "AI — Feedback & Contrôle",
++    "en": "AI — Feedback & Control"
++  },
++  "firstSeenOn": {
++    "product": "Replit Agent",
++    "url": "https://replit.com",
++    "approximateDate": "2024"
++  },
++  "examples": [
++    {
++      "name": "Enterprise AI Governance",
++      "desc": {
++        "fr": "Points de contrôle pour les actions sensibles nécessitant approbation humaine avant exécution",
++        "en": "Checkpoint gates for sensitive actions requiring human approval before execution"
++      }
++    },
++    {
++      "name": "Customer Support Bots",
++      "desc": {
++        "fr": "Transfert automatique vers un agent humain quand la confiance est insuffisante",
++        "en": "Automatic handoff to human agent when confidence is insufficient"
++      }
++    }
++  ],
++  "guide": {
++    "fr": [
++      "**Définissez des seuils clairs** : Confiance < 80%, actions financières, conflits détectés",
++      "**Pause élégante** : L'agent sauvegarde son état et attend, ne plante pas",
++      "**Contexte complet** : Présentez à l'humain toutes les infos nécessaires pour décider",
++      "**Reprise fluide** : Après la décision humaine, l'agent continue sans redémarrage"
++    ],
++    "en": [
++      "**Define clear thresholds** : Confidence < 80%, financial actions, detected conflicts",
++      "**Pause gracefully** : Agent saves state and waits, doesn't crash",
++      "**Full context** : Present human with all info needed to decide",
++      "**Seamless resume** : After human decision, agent continues without restart"
++    ]
++  },
++  "pitfalls": {
++    "fr": [
++      "❌ Escalader trop souvent - cela annule l'intérêt de l'automatisation",
++      "❌ Ne pas fournir de contexte - l'humain ne sait pas pourquoi on lui demande",
++      "❌ Bloquer indéfiniment sans timeout ou rappel"
++    ],
++    "en": [
++      "❌ Escalating too frequently - defeats the purpose of automation",
++      "❌ Not providing context - human doesn't know why they're being asked",
++      "❌ Blocking indefinitely without timeout or reminder"
++    ]
++  },
++  "what": {
++    "fr": "Déclencheurs structurés pour quand l'IA rencontre ambiguïté, conflits ou limites d'autorisation - pause élégante pour input humain.",
++    "en": "Structured triggers for when AI hits ambiguity, conflicts, or authorization limits - pausing gracefully for human input."
++  },
++  "why": {
++    "fr": "Les agents IA ne sont pas infaillibles. Les points d'escalade bien conçus préviennent les erreurs coûteuses tout en maintenant l'autonomie là où l'IA excelle.",
++    "en": "AI agents are not infallible. Well-designed escalation points prevent costly errors while maintaining autonomy where AI excels."
++  }
++}

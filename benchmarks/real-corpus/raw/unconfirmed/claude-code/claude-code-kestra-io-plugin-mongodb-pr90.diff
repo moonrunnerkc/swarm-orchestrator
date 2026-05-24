@@ -1,0 +1,23 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.mongodb.md b/src/main/resources/doc/io.kestra.plugin.mongodb.md
+new file mode 100644
+index 0000000..5c30664
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.mongodb.md
+@@ -0,0 +1,17 @@
++# How to use the MongoDB plugin
++
++Connect to any MongoDB deployment — local, Atlas, or replica set — to query, write, and trigger flows from collection changes.
++
++## Authentication
++
++Set the `uri` property to a MongoDB connection string (e.g., `mongodb://user:password@host:27017/dbname`). For Atlas, use the `mongodb+srv://` scheme. Store the full URI in a [secret](https://kestra.io/docs/concepts/secret) to avoid exposing credentials. Alternatively, set `host`, `port`, `username`, and `password` individually if you prefer not to construct the URI manually.
++
++## Common properties
++
++Set `database` and `collection` on each task, or apply them globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults) if all tasks in a flow target the same collection.
++
++## Tasks
++
++`Find` retrieves documents matching a filter and returns them as Kestra internal storage for downstream tasks. `Aggregate` runs a pipeline and is the right choice for grouped, transformed, or multi-stage queries. `InsertOne` adds a single document; `Bulk` handles batched write operations (inserts, updates, deletes) in a single request — use `Bulk` when writing multiple documents to avoid per-document round trips. `Update` modifies matching documents and `Delete` removes them. `Load` writes records from a Kestra internal storage file into a collection — use it after a download or transform step to ingest structured data.
++
++`Trigger` polls a collection on a schedule and starts one execution per batch of new documents matching a filter. Use it to drive downstream processing whenever new data arrives in MongoDB.

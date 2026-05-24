@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-oven-sh-bun-pr31258",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "branch=claude/"
+  },
+  "pr": {
+    "number": 31258,
+    "headSha": "868caff0557809c84c9be1cbc5a4c04030715594",
+    "baseSha": "30c007120807d4576417b897f86e22f96e45d939",
+    "title": "fix: zero-initialize primitive scratch buffers (EXP-089)",
+    "body": "## Summary\n\nThis fixes audit finding EXP-089 by making the broad primitive scratch-buffer constructors return initialized Rust values:\n\n- `PathBuffer::uninit()` now returns `PathBuffer::ZEROED`\n- `WPathBuffer::uninit()` now returns `WPathBuffer::ZEROED`\n- `depth_buf_uninit()` now returns `[0; MAX_DEPTH]`\n\nThe old bodies used `MaybeUninit::uninit().assume_init()` to model Zig `undefined` scratch storage. Even for integer element types where every bit pattern is valid, uninitialized memory is not an initialized Rust value: Miri rejects the constructor itself with `encountered uninitialized memory, but expected an integer`, before caller write-before-read discipline can matter.\n\nThis is the audit's emergency correctness patch. A performance-preserving follow-up could wrap the storage in `MaybeUninit` and expose only initialized prefixes, but the current safe API cannot return an uninitialized primitive array as `[T; N]`.\n\nThis also removes the stale `invalid_value` allowances and comments that claimed the constructors were sound because callers used the buffers as write-only scratch space.\n\n## Duplicate check\n\nBefore opening this, I checked existing open/all PRs and local/remotes for EXP-089, `PathBuffer`, `WPathBuffer`, `depth_buf_uninit`, and scratch-buffer fixes. I did not find an existing PR that covers this constructor-validity issue.\n\n## Verification\n\n- `bun run fmt:rust`\n- `git diff --check`\n- `cargo check -p bun_core`\n- `cargo check -p bun_install`\n- `cargo check --workspace`\n- `CARGO_TARGET_DIR=/tmp/exp-089-postfix-target cargo +nightly miri run` in a temp crate depending on local `bun_core` and calling the real `PathBuffer::uninit()` / `WPathBuffer::uninit()` constructors\n- `bun bd test test/cli/install/hoist.test.ts`",
+    "author": "Dicklesworthstone",
+    "headRef": "claude/ub-fix-scratch-buffer-init",
+    "repository": "oven-sh/bun"
+  },
+  "diffRef": {
+    "repository": "oven-sh/bun",
+    "headSha": "868caff0557809c84c9be1cbc5a4c04030715594",
+    "baseSha": "30c007120807d4576417b897f86e22f96e45d939"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-oven-sh-bun-pr31258.diff",
+  "vendoredAt": "2026-05-24T03:23:32.521Z",
+  "collectedAt": "2026-05-24T03:23:32.521Z"
+}

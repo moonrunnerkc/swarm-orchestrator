@@ -1,0 +1,41 @@
+diff --git a/AGENTS.md b/AGENTS.md
+new file mode 100644
+index 0000000..6703100
+--- /dev/null
++++ b/AGENTS.md
+@@ -0,0 +1,35 @@
++# AGENTS.md
++
++## Cursor Cloud specific instructions
++
++### Overview
++
++**vid2txt** is a Rust CLI tool that plays video files as ASCII art in the terminal. It's a single binary crate with no workspaces or sub-crates.
++
++### Prerequisites
++
++- **Rust stable toolchain** (edition 2024 support required by dependencies; Rust >= 1.85 recommended).
++- **FFmpeg** must be on `PATH` (used at runtime via `ffmpeg-sidecar` crate to decode video frames). `ffprobe` is optional but preferred for metadata probing.
++
++### Key commands
++
++All commands run from the repository root. See `README.md` and `.github/workflows/ci.yml` for reference.
++
++| Action | Command |
++|--------|---------|
++| Build | `cargo build` |
++| Lint | `cargo clippy -- -D warnings` |
++| Test | `cargo test --verbose` |
++| Run | `cargo run -- <VIDEO_FILE> [OPTIONS]` |
++| Help | `cargo run -- --help` |
++
++### Testing notes
++
++- The tool uses the **alternate screen** via `crossterm`, so when running interactively it takes over the terminal. For CI/headless testing, pipe output or use fixed `--width`/`--height` to avoid terminal-size detection issues.
++- To generate a quick test video: `ffmpeg -y -f lavfi -i "testsrc=duration=3:size=320x240:rate=10" -c:v libx264 -pix_fmt yuv420p /tmp/test_video.mp4`
++- Unit tests (`cargo test`) cover terminal sizing/letterboxing logic and do not require a video file.
++
++### Gotchas
++
++- The default Rust toolchain on the VM (1.83.0) is too old for latest `clap_lex` (requires `edition2024`). The update script runs `rustup update stable && rustup default stable` to ensure a recent enough toolchain.
++- No Docker, no databases, no network services needed. This is a fully self-contained CLI tool.

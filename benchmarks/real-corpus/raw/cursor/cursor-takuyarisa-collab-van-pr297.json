@@ -1,0 +1,26 @@
+{
+  "id": "cursor-takuyarisa-collab-van-pr297",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 297,
+    "headSha": "2bc85b2917521858d49ac161a80aaebd41c87193",
+    "baseSha": "48557a6cb81289c4612ee03e0cfcf83c945972ca",
+    "title": "PLAY形成: 役割別ターゲットでパネル一体感を改善",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## 概要\n\nPR296後もPLAY形成が「破片を寄せただけ」に見えていたため、最終配置を **centerCore / leftWing / rightWing / topCap / bottomCap** の5役割で具体化した。\n\n## 変更内容\n\n- `ensurePlayFormationTargetsAssigned`: グリッド＋中心寄せを廃止し、PLAYパネル矩形＋`textCx`・P/L/A行中心（`computePlayGlyphRowCenterY`）基準で配置。中央主面の左右に翼を **12〜28px** 重ね、上下capは主面とわずかに重なる位置に限定。\n- `tagPlayFormationShards`: 形成対象は **最大5枚**（5役割と一対一）。破片数の急増はしない。\n- 役割ごとに `playFormationDepthIdx` を固定（奥行きの噛み合い）。\n- `?debug=1` のときのみ、ターゲット確定時に `[PLAY_FORM_ROLE]` を console に1回出力（shardId / targetX / targetY / targetRot[deg]）。\n- `BUILD_TIMESTAMP` を更新。\n\n## 維持したもの\n\n- 既存の形成速度・収束ロック閾値・Home最終位置・PLAYデフォルト背景非表示の方針は変更していない（物理係数・`formStart`/`formEnd`式は据え置き）。\n\n## 確認\n\n- ブラウザで Boot→Home、PLAY背面に中央面＋左右の重なりが出ること。\n- `?debug=1` で `[PLAY_FORM_ROLE]` が出ること、通常時は出ないこと。\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-5930e502-050c-4e0f-a87c-4cf93fffb3cb\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-5930e502-050c-4e0f-a87c-4cf93fffb3cb\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "takuyarisa-collab",
+    "headRef": "cursor/play-formation-role-targets-b3cb",
+    "repository": "takuyarisa-collab/van"
+  },
+  "diffRef": {
+    "repository": "takuyarisa-collab/van",
+    "headSha": "2bc85b2917521858d49ac161a80aaebd41c87193",
+    "baseSha": "48557a6cb81289c4612ee03e0cfcf83c945972ca"
+  },
+  "vendoredDiffPath": "cursor/cursor-takuyarisa-collab-van-pr297.diff",
+  "vendoredAt": "2026-05-24T03:11:54.552Z",
+  "collectedAt": "2026-05-24T03:11:54.552Z"
+}

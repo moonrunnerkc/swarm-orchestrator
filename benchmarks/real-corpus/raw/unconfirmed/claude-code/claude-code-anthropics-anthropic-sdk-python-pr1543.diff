@@ -1,0 +1,69 @@
+diff --git a/src/anthropic/lib/tools/mcp.py b/src/anthropic/lib/tools/mcp.py
+index 219f5cca9..617b6fb99 100644
+--- a/src/anthropic/lib/tools/mcp.py
++++ b/src/anthropic/lib/tools/mcp.py
+@@ -15,7 +15,7 @@
+ import json
+ import base64
+ from typing import Any, Iterable
+-from urllib.parse import urlparse
++from urllib.parse import unquote, urlparse
+ from typing_extensions import Literal
+ 
+ try:
+@@ -289,9 +289,13 @@ def mcp_resource_to_file(
+     resource = result.contents[0]
+     uri_str = str(resource.uri)
+ 
+-    # Extract filename from URI
++    # Extract filename from URI. urlparse() does NOT percent-decode the path,
++    # so we unquote here — otherwise a URI like file:///docs/my%20notes.txt
++    # would yield "my%20notes.txt" rather than "my notes.txt", which most
++    # downstream file-upload paths would reject or display wrong.
+     path = urlparse(uri_str).path
+-    name = path.rsplit("/", 1)[-1] if path else None
++    last_segment = path.rsplit("/", 1)[-1] if path else ""
++    name = unquote(last_segment) if last_segment else None
+ 
+     # Get bytes
+     if isinstance(resource, BlobResourceContents):
+diff --git a/tests/lib/tools/test_mcp_tool.py b/tests/lib/tools/test_mcp_tool.py
+index 8064a0f6f..c06f2e443 100644
+--- a/tests/lib/tools/test_mcp_tool.py
++++ b/tests/lib/tools/test_mcp_tool.py
+@@ -273,6 +273,35 @@ def test_empty_contents_raises(self) -> None:
+         with pytest.raises(UnsupportedMCPValueError):
+             mcp_resource_to_file(ReadResourceResult(contents=[]))
+ 
++    def test_percent_encoded_filename_is_decoded(self) -> None:
++        # urlparse() does not percent-decode the path, so without explicit
++        # unquoting a URI like file:///docs/my%20notes.txt would yield
++        # "my%20notes.txt" instead of "my notes.txt".
++        name, _, _ = mcp_resource_to_file(
++            _read_result(
++                [_text_resource(uri="file:///docs/my%20notes.txt", text="hi").model_dump()]
++            )
++        )
++        assert name == "my notes.txt"
++
++    def test_percent_encoded_unicode_filename_is_decoded(self) -> None:
++        # %E6%97%A5 is the UTF-8 percent-encoding for "日" (U+65E5).
++        name, _, _ = mcp_resource_to_file(
++            _read_result(
++                [_text_resource(uri="file:///%E6%97%A5%E8%A8%98.txt", text="x").model_dump()]
++            )
++        )
++        assert name == "日記.txt"
++
++    def test_uri_with_trailing_slash_yields_no_filename(self) -> None:
++        # Previously this returned "" (empty string), which downstream file-
++        # upload code would treat as a filename and likely reject. None is the
++        # documented signal for "no filename".
++        name, _, _ = mcp_resource_to_file(
++            _read_result([_text_resource(uri="file:///some/dir/", text="hi").model_dump()])
++        )
++        assert name is None
++
+ 
+ # -----------------------------------------------------------------------
+ # Tests: tool wrappers

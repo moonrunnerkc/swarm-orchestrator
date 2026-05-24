@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-TatsuyaOGth-chat-app-pr11",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 11,
+    "headSha": "2f85ff73ef640ce13d5dbb72eba97e165b71c4aa",
+    "baseSha": "cb4a7d995a2922414531ebd4c0b867fe4e6074a8",
+    "title": "ユーザープロンプトのインライン再編集を追加し、編集中再送フローを実装",
+    "body": "既送信のユーザープロンプトを、LLM応答の完了を待たずにその場で再編集できるようにしました。編集確定時は進行中応答を停止し、編集対象以降の履歴を破棄して、更新後プロンプトで再生成します。\n\n- **UI: ユーザーバブルの編集導線**\n  - ユーザーメッセージに編集アイコン（✎）を追加\n  - アイコンはユーザーバブルのホバー時のみ表示\n  - 既存ロード済み履歴のユーザーメッセージにも同じ編集導線を適用\n\n- **UI: インライン編集モード**\n  - 編集開始でバブル内を `textarea` + アクションに切替\n  - 操作は丸（◯: 完了）/ バツ（×: キャンセル）の最小UI\n  - キャンセル時は内容・履歴ともに無変更\n\n- **生成制御: 編集確定時の再送フロー**\n  - 編集中でも進行中ストリームは継続（停止しない）\n  - 完了時にのみ進行中レスポンスをキャンセル\n  - 編集対象ユーザーメッセージ以降の会話履歴/表示を破棄\n  - 更新プロンプトをセッションへ保存し、同一パラメータで再送\n  - 進行中生成のライフサイクルを `startAssistantGeneration(...)` に集約し、通常送信と編集再送で共通化\n\n```js\ndoneBtn.addEventListener('click', async () => {\n  const nextText = textarea.value.trim();\n  if (!nextText || nextText === originalText) return finishEdit();\n\n  await cancelActiveGenerationForEdit();      // 完了時のみ停止\n  userMsg.content = nextText;\n  messages = messages.slice(0, userIdx + 1);  // 以降履歴を破棄\n  await window.sessions.update(activeSessionId, { messages });\n\n  await startAssistantGeneration({\n    sessionId: activeSessionId,\n    ...getChatRequestParams(),\n    paramsSnapshot: JSON.parse(JSON.stringify(workingParams)),\n  });\n});\n```",
+    "author": "Copilot",
+    "headRef": "copilot/add-prompt-editing-feature",
+    "repository": "TatsuyaOGth/chat-app"
+  },
+  "diffRef": {
+    "repository": "TatsuyaOGth/chat-app",
+    "headSha": "2f85ff73ef640ce13d5dbb72eba97e165b71c4aa",
+    "baseSha": "cb4a7d995a2922414531ebd4c0b867fe4e6074a8"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-TatsuyaOGth-chat-app-pr11.diff",
+  "vendoredAt": "2026-05-24T03:06:22.814Z",
+  "collectedAt": "2026-05-24T03:06:22.814Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24132",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24132,
+    "headSha": "0f1f48cded534b7030a8f75ec387a7676d7a5469",
+    "baseSha": "acd851e89f31a74c2140f167dcb922dc08becc44",
+    "title": "[codex] Track app-server, thread, and turn timing in ChatGPT telemetry",
+    "body": "## Why\nWe want ChatGPT-facing telemetry for app-server startup, thread start, and per-turn timing breakdowns while keeping turn-only timing data attached to the turn event. This change does that by reusing the existing analytics client and reducer pipeline instead of introducing a separate reporting path.\n\n## What\n- add a `codex_app_server_started` event with runtime, RPC transport, completion time, and startup duration\n- capture thread start duration in app-server and attach it to `codex_thread_initialized` for new threads\n- extend turn timing tracking to record request start delay, cumulative sampling time, and blocking tool critical-path time before emitting the turn event\n- roll approval wait time up from review events and expose the remaining `finalize_duration_ms` on `codex_turn`\n- add analytics reducer/client coverage and turn timing unit coverage for the new event shapes and timing merge behavior\n\n## Testing\n- `cargo check -p codex-analytics -p codex-app-server -p codex-core`\n- Not run locally per repo guidance; CI should validate the test suite.",
+    "author": "aibrahim-oai",
+    "headRef": "aibrahim/chatgpt-turn-telemetry",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "0f1f48cded534b7030a8f75ec387a7676d7a5469",
+    "baseSha": "acd851e89f31a74c2140f167dcb922dc08becc44"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24132.diff",
+  "vendoredAt": "2026-05-24T03:21:00.617Z",
+  "collectedAt": "2026-05-24T03:21:00.617Z"
+}

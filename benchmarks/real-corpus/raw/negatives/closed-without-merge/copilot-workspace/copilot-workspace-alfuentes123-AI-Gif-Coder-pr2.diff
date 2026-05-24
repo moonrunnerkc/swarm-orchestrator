@@ -1,0 +1,269 @@
+diff --git a/lib/main.dart b/lib/main.dart
+index 9225ce7..53f25ad 100644
+--- a/lib/main.dart
++++ b/lib/main.dart
+@@ -49,6 +49,13 @@ class LMStudioApp extends StatelessWidget {
+   }
+ }
+ 
++class ChatSession {
++  ChatSession({required this.title});
++
++  String title;
++  final List<Map<String, dynamic>> messages = [];
++}
++
+ class ChatPage extends StatefulWidget {
+   const ChatPage({super.key, required this.store, required this.settingsReady});
+ 
+@@ -65,15 +72,24 @@ class _ChatPageState extends State<ChatPage> {
+   bool _agentMode = false;
+   final TextEditingController _inputController = TextEditingController();
+   final ScrollController _scrollController = ScrollController();
+-  final List<Map<String, dynamic>> _messages = [];
++  final List<ChatSession> _chats = [];
++  int _activeChatIndex = 0;
++  int _nextChatNumber = 1;
+   String? _gifPath;
+   ValueNotifier<String>? _currentReplyNotifier;
+   bool _stopRequested = false;
+   bool _expandedChat = false;
++  bool _showChatTabs = false;
++
++  List<Map<String, dynamic>> get _messages =>
++      _chats[_activeChatIndex].messages;
++  ChatSession get _activeChat => _chats[_activeChatIndex];
++  bool get _canSwitchChat => _state == AppState.waiting;
+ 
+   @override
+   void initState() {
+     super.initState();
++    _chats.add(ChatSession(title: _newChatTitle()));
+     if (_settings.isLoaded) {
+       _gifPath = _settings.getCachedGifPath(_state);
+     }
+@@ -88,6 +104,43 @@ class _ChatPageState extends State<ChatPage> {
+     setState(() => _gifPath = path);
+   }
+ 
++  String _newChatTitle() => 'Chat ${_nextChatNumber++}';
++
++  void _startNewChat() {
++    if (!_canSwitchChat) return;
++    setState(() {
++      _chats.add(ChatSession(title: _newChatTitle()));
++      _activeChatIndex = _chats.length - 1;
++      _expandedChat = false;
++    });
++    _scrollToEnd();
++  }
++
++  void _selectChat(int index) {
++    if (!_canSwitchChat || index == _activeChatIndex) return;
++    setState(() {
++      _activeChatIndex = index;
++      if (_messages.isEmpty) {
++        _expandedChat = false;
++      }
++    });
++    _scrollToEnd();
++  }
++
++  void _updateChatTitle(String prompt) {
++    final userCount =
++        _messages.where((msg) => msg['role'] == 'user').length;
++    if (userCount > 1) return;
++    final trimmed = prompt.trim();
++    if (trimmed.isEmpty) return;
++    final firstLine = trimmed.split('\n').first.trim();
++    if (firstLine.isEmpty) return;
++    final maxLength = 28;
++    _activeChat.title = firstLine.length > maxLength
++        ? '${firstLine.substring(0, maxLength)}…'
++        : firstLine;
++  }
++
+   @override
+   void dispose() {
+     _stopRequested = true;
+@@ -143,6 +196,7 @@ class _ChatPageState extends State<ChatPage> {
+       _messages.add({'role': 'user', 'content': prompt});
+       _state = AppState.thinking;
+       _gifPath = _settings.getCachedGifPath(_state);
++      _updateChatTitle(prompt);
+     });
+     _inputController.clear();
+     _scrollToEnd();
+@@ -361,6 +415,172 @@ class _ChatPageState extends State<ChatPage> {
+         fit: StackFit.expand,
+         children: [
+           Positioned.fill(child: _buildBackgroundGif(context)),
++          SafeArea(
++            child: Align(
++              alignment: Alignment.topLeft,
++              child: Padding(
++                padding: const EdgeInsets.only(left: 8, top: 6),
++                child: Column(
++                  crossAxisAlignment: CrossAxisAlignment.start,
++                  children: [
++                    InkWell(
++                      onTap: () =>
++                          setState(() => _showChatTabs = !_showChatTabs),
++                      borderRadius: BorderRadius.circular(12),
++                      child: Container(
++                        padding: const EdgeInsets.symmetric(
++                            horizontal: 8, vertical: 4),
++                        decoration: BoxDecoration(
++                          color: Colors.black.withValues(alpha: 0.4),
++                          borderRadius: BorderRadius.circular(12),
++                          border: Border.all(
++                            color: Colors.white.withValues(alpha: 0.1),
++                            width: 0.5,
++                          ),
++                        ),
++                        child: Row(
++                          mainAxisSize: MainAxisSize.min,
++                          children: [
++                            Icon(
++                              _showChatTabs
++                                  ? Icons.keyboard_arrow_left_rounded
++                                  : Icons.chat_bubble_outline_rounded,
++                              size: 14,
++                              color: Colors.white.withValues(alpha: 0.7),
++                            ),
++                            const SizedBox(width: 4),
++                            Text(
++                              _showChatTabs ? 'HIDE CHATS' : 'SHOW CHATS',
++                              style: TextStyle(
++                                fontSize: 9,
++                                fontWeight: FontWeight.w600,
++                                letterSpacing: 0.5,
++                                color: Colors.white.withValues(alpha: 0.7),
++                              ),
++                            ),
++                          ],
++                        ),
++                      ),
++                    ),
++                    const SizedBox(height: 6),
++                    AnimatedSwitcher(
++                      duration: const Duration(milliseconds: 200),
++                      switchInCurve: Curves.easeOut,
++                      switchOutCurve: Curves.easeIn,
++                      child: !_showChatTabs
++                          ? const SizedBox.shrink()
++                          : Container(
++                              width: 200,
++                              constraints:
++                                  const BoxConstraints(maxHeight: 320),
++                              decoration: BoxDecoration(
++                                color: Colors.black.withValues(alpha: 0.55),
++                                borderRadius: BorderRadius.circular(12),
++                                border: Border.all(
++                                  color: Colors.white.withValues(alpha: 0.1),
++                                  width: 0.5,
++                                ),
++                              ),
++                              child: Column(
++                                mainAxisSize: MainAxisSize.min,
++                                children: [
++                                  Padding(
++                                    padding: const EdgeInsets.symmetric(
++                                        horizontal: 8, vertical: 6),
++                                    child: Row(
++                                      children: [
++                                        Text(
++                                          'CHATS',
++                                          style: TextStyle(
++                                            fontSize: 10,
++                                            fontWeight: FontWeight.w600,
++                                            letterSpacing: 0.6,
++                                            color: Colors.white
++                                                .withValues(alpha: 0.7),
++                                          ),
++                                        ),
++                                        const Spacer(),
++                                        IconButton(
++                                          visualDensity:
++                                              VisualDensity.compact,
++                                          icon: const Icon(
++                                              Icons.add_circle_outline,
++                                              size: 18),
++                                          tooltip: 'New chat',
++                                          onPressed:
++                                              _canSwitchChat ? _startNewChat : null,
++                                        ),
++                                      ],
++                                    ),
++                                  ),
++                                  const Divider(height: 1),
++                                  Flexible(
++                                    child: ListView.builder(
++                                      shrinkWrap: true,
++                                      itemCount: _chats.length,
++                                      itemBuilder: (context, index) {
++                                        final chat = _chats[index];
++                                        final isActive =
++                                            index == _activeChatIndex;
++                                        final canTap = _canSwitchChat;
++                                        return InkWell(
++                                          onTap: canTap
++                                              ? () => _selectChat(index)
++                                              : null,
++                                          child: Container(
++                                            padding: const EdgeInsets.symmetric(
++                                                horizontal: 10, vertical: 8),
++                                            decoration: BoxDecoration(
++                                              color: isActive
++                                                  ? Colors.white
++                                                      .withValues(alpha: 0.1)
++                                                  : Colors.transparent,
++                                            ),
++                                            child: Row(
++                                              children: [
++                                                Icon(
++                                                  isActive
++                                                      ? Icons
++                                                          .chat_bubble_rounded
++                                                      : Icons
++                                                          .chat_bubble_outline_rounded,
++                                                  size: 14,
++                                                  color: Colors.white
++                                                      .withValues(alpha: 0.7),
++                                                ),
++                                                const SizedBox(width: 6),
++                                                Expanded(
++                                                  child: Text(
++                                                    chat.title,
++                                                    maxLines: 1,
++                                                    overflow:
++                                                        TextOverflow.ellipsis,
++                                                    style: TextStyle(
++                                                      fontSize: 11,
++                                                      color: Colors.white
++                                                          .withValues(
++                                                              alpha: canTap
++                                                                  ? 0.85
++                                                                  : 0.5),
++                                                    ),
++                                                  ),
++                                                ),
++                                              ],
++                                            ),
++                                          ),
++                                        );
++                                      },
++                                    ),
++                                  ),
++                                ],
++                              ),
++                            ),
++                    ),
++                  ],
++                ),
++              ),
++            ),
++          ),
+           Positioned(
+             left: 0,
+             right: 0,

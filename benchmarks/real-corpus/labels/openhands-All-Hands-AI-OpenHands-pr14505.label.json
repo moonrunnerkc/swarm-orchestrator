@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "PR fixes a regression introduced in #14401 where the conversation model chip displayed the literal 'OpenHands' string rather than the raw llm_model. The diff in frontend/src/utils/agent-display-label.ts changes the OpenHands branch from `if (llmModel) return 'OpenHands'; return null;` to `return llmModel ?? null;`, restoring pre-regression behavior while keeping the ACP brand-mapping logic intact. The two test files (conversation-name.test.tsx and recent-conversation.test.tsx) are updated to reflect the corrected behavior: the assertions now expect 'openai/gpt-4o' / 'anthropic/claude-sonnet-4-20250514' instead of 'OpenHands', which is the legitimate inverse of the regression fix — tests must encode the new (correct) contract, not the old buggy one. This is test-update-following-implementation, not test relaxation or assertion strip.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T14:00:00.000Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-claude-code-pr59508",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 59508,
+    "headSha": "67ec4ccd13bb3381d5c78d9f876fcb49fd9059c1",
+    "baseSha": "d61bfb5b562eea5091b11ad1858a9ae429b6bd23",
+    "title": "fix(examples/hooks): bash_command_validator regex false negatives (#59441)",
+    "body": "Fixes #59441.\n\nThe `_VALIDATION_RULES` in `examples/hooks/bash_command_validator_example.py` had two regex bugs that caused silent false negatives on common command shapes:\n\n1. **grep:** `^grep\\b(?!.*\\|)` exempted `grep` even when it was the *leading* command of a pipeline (e.g. `grep foo | wc -l`), because the `(?!.*\\|)` lookahead fails on any pipe anywhere in the string. The lookahead was apparently intended to exempt downstream uses like `cat foo | grep bar`, but the `^grep` anchor already handles that — the lookahead was dead code that turned into a false-negative source. Dropped it.\n\n2. **find:** `^find\\s+\\S+\\s+-name\\b` only matched the `find PATH -name` shape. The most common real-world form — `find PATH -type f -name '*.log'` — was missed because of the rigid `\\S+\\s+-name` adjacency. Changed to `^find\\s+\\S+.*\\s-name\\b` to allow arbitrary predicates between the path and `-name`.\n\n## Case matrix (matches the issue body)\n\n| Command | Before | After |\n|---|---|---|\n| `grep foo \\| wc -l` | not flagged | flagged ✓ |\n| `grep foo bar.txt \\| head -5` | not flagged | flagged ✓ |\n| `find / -type f -name '*.log'` | not flagged | flagged ✓ |\n| `find . -type d -name node_modules` | not flagged | flagged ✓ |\n| `find . -maxdepth 2 -name '*.md'` | not flagged | flagged ✓ |\n\nRegression guards (still NOT flagged):\n\n| Command | Status |\n|---|---|\n| `cat foo \\| grep bar` | not flagged ✓ (downstream grep) |\n| `xargs find . -name foo` | not flagged ✓ (anchored to start) |\n| `find / -type f -newer foo.txt` | not flagged ✓ (no `-name`) |\n| `findstr foo` | not flagged ✓ (`\\b` after `find`) |\n\nConsidered switching to `shlex`-based parsing to also catch prefix forms (`sudo grep`, `time grep`) but that would expand the example's scope significantly; happy to do as a follow-up if the maintainers prefer that direction.",
+    "author": "dhruba-datta",
+    "headRef": "fix/bash-validator-regex-bugs",
+    "repository": "anthropics/claude-code"
+  },
+  "diffRef": {
+    "repository": "anthropics/claude-code",
+    "headSha": "67ec4ccd13bb3381d5c78d9f876fcb49fd9059c1",
+    "baseSha": "d61bfb5b562eea5091b11ad1858a9ae429b6bd23"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-claude-code-pr59508.diff",
+  "vendoredAt": "2026-05-24T03:16:03.181Z",
+  "collectedAt": "2026-05-24T03:16:03.181Z"
+}

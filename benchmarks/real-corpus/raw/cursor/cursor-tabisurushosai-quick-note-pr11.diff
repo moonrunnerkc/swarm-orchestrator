@@ -1,0 +1,130 @@
+diff --git a/docs/PORTING.md b/docs/PORTING.md
+index cfd0d05..4b131f0 100644
+--- a/docs/PORTING.md
++++ b/docs/PORTING.md
+@@ -5,6 +5,7 @@ Quick Note keeps the extension-specific code at the edge so the note logic can b
+ ## Boundaries
+ 
+ - `src/core` contains pure note logic only. Do not import or reference `chrome.*`, DOM APIs, network APIs, or platform storage APIs here.
++- `npm run build` runs `tsc -p tsconfig.core.json` before the extension build. That core-only config intentionally has no Chrome or DOM ambient types, so portability regressions fail at typecheck time.
+ - `src/storage/types.ts` defines the storage adapter interface shared by UI code and platform adapters.
+ - `src/storage/chromeLocalNotesStorage.ts` is the Chrome extension adapter. It is the only storage module that should call `chrome.storage.local`.
+ - `src/popup.ts` is the current Chrome popup UI boundary. Platform APIs such as `chrome.i18n` should stay at this boundary or move into a platform-specific UI adapter.
+@@ -21,6 +22,12 @@ Keep the existing local data shape unchanged:
+ 
+ Mobile ports should implement `NotesStorageAdapter` with the same keys and value shapes, then reuse `src/core` hydration and note operations. Do not introduce remote sync, external APIs, or a different persisted format without a migration plan.
+ 
++Use `NOTE_STORAGE_KEYS` and `LEGACY_QUICK_NOTE_KEY` from `src/storage/types.ts` when implementing a platform adapter so Chrome, iOS, and Android read the same persisted schema. The adapter boundary is intentionally small:
++
++- `load()` returns the stored snapshot, including the legacy `quickNote` key when present.
++- `save()` writes the current notes, selected index, premium flag, and trial timestamp without reshaping the data.
++- `removeLegacyQuickNote()` deletes only the migrated legacy single-note key.
++
+ ## UI portability
+ 
+ When adding or changing UI behavior:
+diff --git a/package.json b/package.json
+index 9f002a0..425424c 100644
+--- a/package.json
++++ b/package.json
+@@ -1,3 +1,3 @@
+ { "name":"quick-note","version":"0.1.0","private":true,"type":"module",
+-  "scripts":{"dev":"vite build --watch","build":"tsc --noEmit && vite build","lint":"eslint src vite.config.ts","test":"vitest","test:run":"vitest run","test:watch":"vitest","zip":"mkdir -p release && zip -r release/quick-note.zip . -x \"node_modules/*\" \"release/*\" \".git/*\""},
++  "scripts":{"dev":"vite build --watch","typecheck:core":"tsc -p tsconfig.core.json","build":"npm run typecheck:core && tsc --noEmit && vite build","lint":"eslint src vite.config.ts","test":"vitest","test:run":"vitest run","test:watch":"vitest","zip":"mkdir -p release && zip -r release/quick-note.zip . -x \"node_modules/*\" \"release/*\" \".git/*\""},
+   "devDependencies":{"@eslint/js":"^10.0.1","@types/chrome":"^0.0.270","eslint":"^10.4.0","typescript":"^5.5.4","typescript-eslint":"^8.59.4","vite":"^5.4.0"} }
+\ No newline at end of file
+diff --git a/src/core/notes.ts b/src/core/notes.ts
+index cd8a973..021bfef 100644
+--- a/src/core/notes.ts
++++ b/src/core/notes.ts
+@@ -12,7 +12,7 @@ export interface AppState extends NoteState {
+   trialStartTs: number;
+ }
+ 
+-export interface StoredNoteState {
++export interface NoteStateHydrationInput {
+   notes?: Note[];
+   lastSelectedIndex?: number;
+   quickNote?: string;
+@@ -71,7 +71,7 @@ export function deleteNoteAt(notes: Note[], currentIndex: number, index: number)
+   return { notes: nextNotes, currentIndex: nextIndex };
+ }
+ 
+-export function hydrateNoteState(stored: StoredNoteState, now = Date.now()): HydratedNoteState {
++export function hydrateNoteState(stored: NoteStateHydrationInput, now = Date.now()): HydratedNoteState {
+   const isPremium = stored.isPremium || false;
+   const trialStartTs = stored.trialStartTs || now;
+   const shouldPersistTrialStart = !stored.trialStartTs;
+diff --git a/src/storage/chromeLocalNotesStorage.ts b/src/storage/chromeLocalNotesStorage.ts
+index 4181ce9..9f275f1 100644
+--- a/src/storage/chromeLocalNotesStorage.ts
++++ b/src/storage/chromeLocalNotesStorage.ts
+@@ -1,6 +1,10 @@
+-import type { NotesStorageAdapter, PersistedNoteState, StoredNoteState } from './types';
+-
+-const STORAGE_KEYS: (keyof StoredNoteState)[] = ['notes', 'lastSelectedIndex', 'quickNote', 'isPremium', 'trialStartTs'];
++import {
++  LEGACY_QUICK_NOTE_KEY,
++  NOTE_STORAGE_KEYS,
++  type NotesStorageAdapter,
++  type PersistedNoteState,
++  type StoredNoteState,
++} from './types';
+ 
+ function getChromeStorageError(): Error | null {
+   const lastError = chrome.runtime.lastError;
+@@ -10,7 +14,7 @@ function getChromeStorageError(): Error | null {
+ export const chromeLocalNotesStorage: NotesStorageAdapter = {
+   load(): Promise<StoredNoteState> {
+     return new Promise<StoredNoteState>((resolve, reject) => {
+-      chrome.storage.local.get(STORAGE_KEYS, (result) => {
++      chrome.storage.local.get([...NOTE_STORAGE_KEYS], (result) => {
+         const error = getChromeStorageError();
+         if (error) {
+           reject(error);
+@@ -38,7 +42,7 @@ export const chromeLocalNotesStorage: NotesStorageAdapter = {
+ 
+   removeLegacyQuickNote(): Promise<void> {
+     return new Promise<void>((resolve, reject) => {
+-      chrome.storage.local.remove('quickNote', () => {
++      chrome.storage.local.remove(LEGACY_QUICK_NOTE_KEY, () => {
+         const error = getChromeStorageError();
+         if (error) {
+           reject(error);
+diff --git a/src/storage/types.ts b/src/storage/types.ts
+index 157a602..a939119 100644
+--- a/src/storage/types.ts
++++ b/src/storage/types.ts
+@@ -1,6 +1,16 @@
+-import type { Note, StoredNoteState } from '../core/notes';
++import type { Note, NoteStateHydrationInput } from '../core/notes';
+ 
+-export type { StoredNoteState };
++export type StoredNoteState = NoteStateHydrationInput;
++export type StoredNoteStateKey = keyof StoredNoteState;
++
++export const LEGACY_QUICK_NOTE_KEY = 'quickNote' satisfies StoredNoteStateKey;
++export const NOTE_STORAGE_KEYS = [
++  'notes',
++  'lastSelectedIndex',
++  LEGACY_QUICK_NOTE_KEY,
++  'isPremium',
++  'trialStartTs',
++] as const satisfies readonly StoredNoteStateKey[];
+ 
+ export interface PersistedNoteState {
+   notes: Note[];
+diff --git a/tsconfig.core.json b/tsconfig.core.json
+new file mode 100644
+index 0000000..722000c
+--- /dev/null
++++ b/tsconfig.core.json
+@@ -0,0 +1,8 @@
++{
++  "extends": "./tsconfig.json",
++  "compilerOptions": {
++    "lib": ["ES2020"],
++    "types": []
++  },
++  "include": ["src/core/**/*.ts"]
++}

@@ -1,0 +1,1246 @@
+diff --git a/alembic/versions/c0a5e1f93b27_drop_users_deposit_total.py b/alembic/versions/c0a5e1f93b27_drop_users_deposit_total.py
+new file mode 100644
+index 0000000..1c72e54
+--- /dev/null
++++ b/alembic/versions/c0a5e1f93b27_drop_users_deposit_total.py
+@@ -0,0 +1,66 @@
++"""Drop the legacy ``users.deposit_total`` column.
++
++The column was the admin-editable "lifetime deposit aggregate" — a
++manually-maintained figure that paralleled the per-currency ledger
++without ever being reconciled against it. The public profile's
++``deposit`` badge has been sourced from
++:attr:`User.trust_deposit_balance` since Item 12 (the lock-in trust
++deposit), so ``deposit_total`` was effectively a write-only column:
++the admin "Stats" form could edit it, but no UI surface read it for
++end users. Continental's ``deposit_min`` search filter pointed at it,
++but the filter has been retired in the same patch (see
++``backend/app/routers/users.py``).
++
++This migration drops the column outright. The three remaining
++readers (``serializers``, ``bot.texts.profile_summary``,
++``bot.sections.profile`` banner) were already repointed at
++``trust_deposit_balance``; the admin panel's set-stats endpoint no
++longer carries the field; the ``sort=deposit`` ordering on the admin
++user list was removed in the same patch.
++
++V5-E-1 — irreversible data loss on downgrade
++--------------------------------------------
++The downgrade re-adds the column with ``DEFAULT 0`` so the schema
++shape matches, but per-row historical values are lost — they cannot
++be recomputed from any other live column. Recovery requires a
++pre-cutover backup. Do NOT downgrade past this revision in production
++unless the original aggregate is already considered abandoned.
++
++Revision ID: c0a5e1f93b27
++Revises: b1c3d5e7f9a2
++Create Date: 2026-05-23 21:30:00.000000
++"""
++
++from __future__ import annotations
++
++from typing import Sequence
++
++import sqlalchemy as sa
++
++from alembic import op
++
++revision: str = "c0a5e1f93b27"
++down_revision: str | None = "b1c3d5e7f9a2"
++branch_labels: str | Sequence[str] | None = None
++depends_on: str | Sequence[str] | None = None
++
++
++def upgrade() -> None:
++    with op.batch_alter_table("users") as batch:
++        batch.drop_column("deposit_total")
++
++
++def downgrade() -> None:
++    # V5-E-1: the downgrade restores the column shape but cannot
++    # restore the per-row values. The ``DEFAULT 0`` server-side
++    # default mirrors the original column declaration so existing
++    # rows are admissible without backfill.
++    with op.batch_alter_table("users") as batch:
++        batch.add_column(
++            sa.Column(
++                "deposit_total",
++                sa.Numeric(precision=28, scale=8),
++                nullable=False,
++                server_default="0",
++            ),
++        )
+diff --git a/backend/app/bot/sections.py b/backend/app/bot/sections.py
+index 9e77d9d..8e03c00 100644
+--- a/backend/app/bot/sections.py
++++ b/backend/app/bot/sections.py
+@@ -286,7 +286,9 @@ async def send_profile(
+         by_currency=stats["by_currency"],
+     )
+     photo = BufferedInputFile(
+-        banners.render_profile(username=user.username, deposit=float(user.deposit_total or 0)),
++        banners.render_profile(
++            username=user.username, deposit=float(user.trust_deposit_balance or 0)
++        ),
+         filename="profile.jpg",
+     )
+     await _send(message, body, keyboard=keyboards.profile_keyboard(), photo=photo)
+diff --git a/backend/app/bot/texts.py b/backend/app/bot/texts.py
+index 24d86d9..783b23a 100644
+--- a/backend/app/bot/texts.py
++++ b/backend/app/bot/texts.py
+@@ -146,7 +146,7 @@ def profile_summary(
+     """
+     username = f"@{escape(user.username)}" if user.username else "—"
+     name = escape(user.display_name) if user.display_name else "—"
+-    deposit_value = float(user.deposit_total)
++    deposit_value = float(user.trust_deposit_balance or 0)
+     deposit_str = _format_money(deposit_value) if deposit_value > 0 else "—"
+     buys_sum_line = _format_by_currency(by_currency, "buys_sum")
+     sales_sum_line = _format_by_currency(by_currency, "sales_sum")
+diff --git a/backend/app/models.py b/backend/app/models.py
+index 48da32c..e6a4a61 100644
+--- a/backend/app/models.py
++++ b/backend/app/models.py
+@@ -264,21 +264,13 @@ class User(Base):
+     # broadcast audience filters that target "active in past N days"
+     # already use ``last_login_at`` directly and are unaffected.
+     sessions_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+-    # Admin PR-A — aggregate stats editable by an admin via /admin/users/:id/stats.
+-    # H-2 widened from ``Numeric(14, 2)`` to ``Numeric(28, 8)`` so the
+-    # lifetime deposit aggregate matches the per-currency ledger
+-    # precision and a satoshi-scale top-up no longer truncates on
+-    # write. The migration backfills nothing because every existing
+-    # value already fits inside the wider shape.
+-    deposit_total: Mapped[float] = mapped_column(Numeric(28, 8), default=0, server_default="0")
+     # Trust deposit — money the user voluntarily locks into the bot as a
+     # trust signal. ``services_wallet.credit_deposit`` routes deposits
+     # created with ``purpose="trust"`` here instead of ``UserBalance``;
+     # there is *no* withdraw / spend path for this balance (lock-in by
+     # design). Surfaced publicly as the ``deposit`` field on ``UserOut``
+     # / ``UserPublicOut`` so other users can see how much trust capital
+-    # a counterparty has put up. Distinct from ``deposit_total`` which
+-    # is the admin-editable lifetime aggregate.
++    # a counterparty has put up.
+     trust_deposit_balance: Mapped[float] = mapped_column(
+         Numeric(28, 8), default=0, server_default="0"
+     )
+diff --git a/backend/app/money.py b/backend/app/money.py
+index 06d786e..3cb3f14 100644
+--- a/backend/app/money.py
++++ b/backend/app/money.py
+@@ -5,11 +5,11 @@
+ the unification two parallel inconsistencies leaked into responses
+ and ledger writes:
+ 
+-1. Five money columns lagged at ``Numeric(14, 2)`` — ``User.deposit_total``,
++1. Four money columns lagged at ``Numeric(14, 2)`` —
+    ``Service.price``, ``Service.deposit``, ``AppSettings.min_deposit`` and
+    ``AppSettings.min_withdraw``. Writing a satoshi-scale value (8 fractional
+    digits) into those columns silently truncated the trailing six digits.
+-   The companion migration widens all five to ``Numeric(28, 8)``.
++   The companion migration widens all four to ``Numeric(28, 8)``.
+ 2. Two near-identical ``_q`` helpers lived in
+    ``services_deals.py`` and ``routers/admin/deals.py``. Both quantised via
+    ``Decimal.quantize`` without an explicit ``rounding`` keyword, inheriting
+diff --git a/backend/app/routers/admin/users.py b/backend/app/routers/admin/users.py
+index 7af463e..c08c922 100644
+--- a/backend/app/routers/admin/users.py
++++ b/backend/app/routers/admin/users.py
+@@ -14,7 +14,7 @@
+     :func:`pin.bump_session_version`).
+   - set role (``is_admin`` / ``is_arbiter`` / ``is_vip``)
+   - set rating override
+-  - edit aggregate stats (deals_total, good, bad, deposit_total, …)
++  - edit aggregate stats (deals_total, good, bad, …)
+ 
+ Every action writes to :class:`AdminAuditLog` and DMs the target user
+ when applicable (ban, freeze, role change, rating change). All mutations
+@@ -97,13 +97,11 @@ def _to_detail(user: User, *, has_pin: bool) -> AdminUserDetailOut:
+         photo_url=user.photo_url,
+         banner_url=user.banner_url,
+         description=user.description,
+-        deposit_total=user.deposit_total,
+-        # Item 12 — "trust deposit" (the public profile's ``deposit``
+-        # field) is a separate column from the admin-editable
+-        # lifetime aggregate ``deposit_total``. Defensive ``or 0``
+-        # mirrors the serializer pattern: in-memory ``User(...)``
+-        # rows that tests build without flushing read the attribute
+-        # as ``None`` until SA applies the column default.
++        # Item 12 — "trust deposit" is the public profile's
++        # ``deposit`` field. Defensive ``or 0`` mirrors the
++        # serializer pattern: in-memory ``User(...)`` rows that
++        # tests build without flushing read the attribute as
++        # ``None`` until SA applies the column default.
+         trust_deposit_balance=Decimal(str(user.trust_deposit_balance or 0)),
+         rating_auto=auto,
+         rating_manual=manual,
+@@ -145,10 +143,8 @@ def _to_list_item(user: User) -> AdminUserListItem:
+         is_vip=user.is_vip,
+         is_banned=user.is_banned,
+         is_frozen=user.is_frozen,
+-        deposit_total=user.deposit_total,
+-        # See ``_to_detail`` for the rationale; the public ``deposit``
+-        # field is sourced from ``trust_deposit_balance``, not
+-        # ``deposit_total``.
++        # See ``_to_detail`` for the rationale; the public
++        # ``deposit`` field is sourced from ``trust_deposit_balance``.
+         trust_deposit_balance=Decimal(str(user.trust_deposit_balance or 0)),
+         rating=(
+             _rating_auto(user) if user.rating_manual is None else Decimal(str(user.rating_manual))
+@@ -273,7 +269,7 @@ async def list_users(
+     role: Annotated[Literal["admin", "arbiter", "vip", "regular", "any"], Query()] = "any",
+     status: Annotated[Literal["any", "active", "banned", "frozen"], Query()] = "any",
+     sort: Annotated[
+-        Literal["created_desc", "created_asc", "rating", "deals", "deposit"], Query()
++        Literal["created_desc", "created_asc", "rating", "deals"], Query()
+     ] = "created_desc",
+     page: Annotated[int, Query(ge=1)] = 1,
+     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+@@ -320,7 +316,6 @@ async def list_users(
+             User.good.desc(),
+         ),
+         "deals": User.deals_total.desc(),
+-        "deposit": User.deposit_total.desc(),
+     }[sort]
+     if isinstance(order_clause, tuple):
+         stmt = stmt.order_by(*order_clause)
+@@ -774,11 +769,6 @@ async def set_stats(
+         before["bad"] = target.bad
+         after["bad"] = body.bad
+         target.bad = body.bad
+-    if body.deposit_total is not None and body.deposit_total != target.deposit_total:
+-        before["deposit_total"] = str(target.deposit_total)
+-        after["deposit_total"] = str(body.deposit_total)
+-        target.deposit_total = body.deposit_total
+-
+     if not after:
+         return _to_detail(target, has_pin=await _has_pin(target))
+ 
+@@ -807,11 +797,10 @@ async def set_trust_deposit(
+     """Set the user's trust-deposit balance (absolute value).
+ 
+     Item 12 — the public profile's ``deposit`` field is sourced from
+-    :attr:`User.trust_deposit_balance`, *not* from
+-    :attr:`User.deposit_total` (which the legacy ``set_stats``
+-    endpoint writes). Pre-fix admin edits to the lifetime aggregate
+-    silently failed to propagate to the user-visible profile; this
+-    endpoint targets the right column.
++    :attr:`User.trust_deposit_balance`. The lifetime ``deposit_total``
++    aggregate that ``set_stats`` used to write has since been
++    removed; this endpoint is the only path that mutates the
++    user-visible deposit.
+ 
+     The body is an *absolute* amount — admin types the new total in
+     the form, not a delta. Negative values are rejected at the schema
+diff --git a/backend/app/routers/users.py b/backend/app/routers/users.py
+index b3b4f8e..0c32152 100644
+--- a/backend/app/routers/users.py
++++ b/backend/app/routers/users.py
+@@ -72,7 +72,6 @@ async def list_users(
+     filter: str | None = Query(None),
+     rating: str | None = Query(None, description="Continental rating bucket"),
+     deals: str | None = Query(None, description="Continental deals bucket"),
+-    deposit_min: float | None = Query(None, ge=0),
+     status: str | None = Query(None, description="Continental prefix tier"),
+     reg_from: str | None = Query(None, description="ISO date (YYYY-MM-DD)"),
+     reg_to: str | None = Query(None, description="ISO date (YYYY-MM-DD)"),
+@@ -80,8 +79,8 @@ async def list_users(
+     """List users, optionally filtered by Continental's search-page schema.
+ 
+     ``q`` and ``filter`` keep their pre-PR-4 semantics. ``rating`` / ``deals``
+-    / ``deposit_min`` / ``status`` / ``reg_from`` / ``reg_to`` correspond
+-    1:1 to the bottom-sheet sections in Continental's TMA bundle.
++    / ``status`` / ``reg_from`` / ``reg_to`` correspond 1:1 to the
++    bottom-sheet sections in Continental's TMA bundle.
+     """
+     stmt = select(User).where(User.is_hidden_profile.is_(False))
+     q_trimmed = (q or "").strip()
+@@ -139,14 +138,6 @@ async def list_users(
+         if d_hi is not None:
+             stmt = stmt.where(User.deals_total <= d_hi)
+ 
+-    if deposit_min is not None and deposit_min > 0:
+-        # Continental's "Депозит ≥ N" filter targets the user's
+-        # lifetime deposit aggregate. The legacy ``frozen_balance``
+-        # column it used to sit on was retired in favour of
+-        # ``deposit_total`` (the actively-maintained admin-panel
+-        # value).
+-        stmt = stmt.where(User.deposit_total >= deposit_min)
+-
+     if status is not None:
+         if status not in _STATUS_KEYS:
+             raise HTTPException(400, f"Неизвестный status: {status}")
+diff --git a/backend/app/schemas.py b/backend/app/schemas.py
+index 1b91c0a..44298e0 100644
+--- a/backend/app/schemas.py
++++ b/backend/app/schemas.py
+@@ -1079,15 +1079,8 @@ class AdminUserListItem(BaseModel):
+     is_vip: bool
+     is_banned: bool
+     is_frozen: bool
+-    deposit_total: MoneyDecimal
+-    # Item 12 — surface the *trust* deposit balance alongside
+-    # ``deposit_total`` (the admin-editable lifetime aggregate) so
+-    # the admin list can disambiguate "how much trust capital this
+-    # user has locked in" from "how much they have ever deposited".
+-    # The two columns are independent and the new
+-    # ``POST /api/admin/users/:id/trust-deposit`` endpoint writes
+-    # this one; the legacy ``POST /api/admin/users/:id/stats`` keeps
+-    # writing ``deposit_total``.
++    # Item 12 — surface the *trust* deposit balance (lock-in capital).
++    # ``POST /api/admin/users/:id/trust-deposit`` is the only mutator.
+     trust_deposit_balance: MoneyDecimal
+     rating: MoneyDecimal
+     deals_total: int
+@@ -1118,12 +1111,10 @@ class AdminUserDetailOut(BaseModel):
+     photo_url: str | None
+     banner_url: str | None
+     description: str
+-    deposit_total: MoneyDecimal
+     # Item 12 — the trust-deposit balance is the column the public
+     # profile reads as ``deposit`` (see
+-    # ``serializers._common_user_fields``). Surfaced here so the
+-    # admin panel can show both numbers side-by-side and write the
+-    # right one via the new ``trust-deposit`` endpoint.
++    # ``serializers._common_user_fields``). Written via the
++    # ``trust-deposit`` admin endpoint.
+     trust_deposit_balance: MoneyDecimal
+     rating_auto: MoneyDecimal
+     rating_manual: MoneyDecimal | None
+@@ -1230,7 +1221,6 @@ class AdminSetStatsIn(BaseModel):
+     deals_arbitrage: int | None = None
+     good: int | None = None
+     bad: int | None = None
+-    deposit_total: Decimal | None = None
+ 
+     @field_validator(
+         "deals_total",
+@@ -1246,25 +1236,13 @@ def _non_negative_int(cls, v: int | None) -> int | None:
+             raise ValueError("Значение не может быть отрицательным")
+         return v
+ 
+-    @field_validator("deposit_total")
+-    @classmethod
+-    def _non_negative_decimal(cls, v: Decimal | float | None) -> Decimal | None:
+-        if v is None:
+-            return None
+-        d = _reject_non_finite_money(v)
+-        if d is not None and d < 0:
+-            raise ValueError("Значение не может быть отрицательным")
+-        return d
+-
+ 
+ class AdminSetTrustDepositIn(BaseModel):
+     """Body for ``POST /admin/users/:id/trust-deposit``.
+ 
+     Sets the user's :attr:`~backend.app.models.User.trust_deposit_balance`
+     — the column rendered as ``deposit`` on the public
+-    ``UserOut`` / ``UserPublicOut`` DTOs. Distinct from
+-    ``AdminSetStatsIn.deposit_total`` which edits the admin-only
+-    lifetime aggregate.
++    ``UserOut`` / ``UserPublicOut`` DTOs.
+ 
+     The value is *absolute* (the admin types the new total, not a
+     delta); negative values are rejected because the trust deposit
+diff --git a/backend/app/serializers.py b/backend/app/serializers.py
+index 7697d92..da7e852 100644
+--- a/backend/app/serializers.py
++++ b/backend/app/serializers.py
+@@ -56,11 +56,8 @@ def _common_user_fields(
+     else:
+         admin_level = 0
+     # ``deposit`` on the public DTO surfaces the *trust* deposit balance
+-    # (the new lock-in-by-design column) rather than the admin-editable
+-    # lifetime ``deposit_total``. The admin panel keeps reading
+-    # ``deposit_total`` directly via ``AdminUserListItem`` /
+-    # ``AdminUserDetailDto``; callers that explicitly pass a per-currency
+-    # ``deposit`` aggregate still win over the default.
++    # (the lock-in-by-design column). Callers that explicitly pass a
++    # per-currency ``deposit`` aggregate still win over the default.
+     #
+     # ``trust_deposit_balance`` has a Python-side ``default=0`` plus a
+     # ``server_default="0"`` on the column, but unit tests that build
+@@ -122,11 +119,9 @@ def user_to_out(
+     public listing endpoints use :func:`user_to_public_out` instead
+     (audit v9 Comments 29/30).
+ 
+-    ``deposit`` defaults to ``user.deposit_total`` — the lifetime
+-    deposit aggregate maintained by the admin panel. Pass an explicit
+-    value when the caller has a per-currency aggregate to surface
+-    instead. (The legacy ``frozen_balance`` column was dropped in
+-    favour of ``deposit_total``; see ``alembic/versions/9f3c1a0b8e21``.)
++    ``deposit`` defaults to ``user.trust_deposit_balance`` — the
++    user-visible lock-in deposit. Pass an explicit value when the
++    caller has a per-currency aggregate to surface instead.
+     """
+     base = _common_user_fields(user, deposit=deposit, deals_sum=deals_sum)
+     return UserOut(
+diff --git a/frontend/openapi.json b/frontend/openapi.json
+index 8d947de..aa5b96d 100644
+--- a/frontend/openapi.json
++++ b/frontend/openapi.json
+@@ -2418,21 +2418,6 @@
+             ],
+             "title": "Deals Total"
+           },
+-          "deposit_total": {
+-            "anyOf": [
+-              {
+-                "type": "number"
+-              },
+-              {
+-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+-                "type": "string"
+-              },
+-              {
+-                "type": "null"
+-              }
+-            ],
+-            "title": "Deposit Total"
+-          },
+           "good": {
+             "anyOf": [
+               {
+@@ -2449,7 +2434,7 @@
+         "type": "object"
+       },
+       "AdminSetTrustDepositIn": {
+-        "description": "Body for ``POST /admin/users/:id/trust-deposit``.\n\nSets the user's :attr:`~backend.app.models.User.trust_deposit_balance`\n\u2014 the column rendered as ``deposit`` on the public\n``UserOut`` / ``UserPublicOut`` DTOs. Distinct from\n``AdminSetStatsIn.deposit_total`` which edits the admin-only\nlifetime aggregate.\n\nThe value is *absolute* (the admin types the new total, not a\ndelta); negative values are rejected because the trust deposit\nhas no spend / withdraw path so a negative balance is\nstructurally impossible.",
++        "description": "Body for ``POST /admin/users/:id/trust-deposit``.\n\nSets the user's :attr:`~backend.app.models.User.trust_deposit_balance`\n\u2014 the column rendered as ``deposit`` on the public\n``UserOut`` / ``UserPublicOut`` DTOs.\n\nThe value is *absolute* (the admin types the new total, not a\ndelta); negative values are rejected because the trust deposit\nhas no spend / withdraw path so a negative balance is\nstructurally impossible.",
+         "properties": {
+           "amount": {
+             "anyOf": [
+@@ -3159,10 +3144,6 @@
+             "title": "Deals Total",
+             "type": "integer"
+           },
+-          "deposit_total": {
+-            "title": "Deposit Total",
+-            "type": "number"
+-          },
+           "description": {
+             "title": "Description",
+             "type": "string"
+@@ -3311,7 +3292,6 @@
+           "photo_url",
+           "banner_url",
+           "description",
+-          "deposit_total",
+           "trust_deposit_balance",
+           "rating_auto",
+           "rating_manual",
+@@ -3357,10 +3337,6 @@
+             "title": "Deals Total",
+             "type": "integer"
+           },
+-          "deposit_total": {
+-            "title": "Deposit Total",
+-            "type": "number"
+-          },
+           "display_name": {
+             "title": "Display Name",
+             "type": "string"
+@@ -3470,7 +3446,6 @@
+           "is_vip",
+           "is_banned",
+           "is_frozen",
+-          "deposit_total",
+           "trust_deposit_balance",
+           "rating",
+           "deals_total",
+@@ -11815,8 +11790,7 @@
+                 "created_desc",
+                 "created_asc",
+                 "rating",
+-                "deals",
+-                "deposit"
++                "deals"
+               ],
+               "title": "Sort",
+               "type": "string"
+@@ -13012,7 +12986,7 @@
+     },
+     "/api/admin/users/{user_id}/trust-deposit": {
+       "post": {
+-        "description": "Set the user's trust-deposit balance (absolute value).\n\nItem 12 \u2014 the public profile's ``deposit`` field is sourced from\n:attr:`User.trust_deposit_balance`, *not* from\n:attr:`User.deposit_total` (which the legacy ``set_stats``\nendpoint writes). Pre-fix admin edits to the lifetime aggregate\nsilently failed to propagate to the user-visible profile; this\nendpoint targets the right column.\n\nThe body is an *absolute* amount \u2014 admin types the new total in\nthe form, not a delta. Negative values are rejected at the schema\nlayer (the trust balance has no spend / withdraw path so a\nnegative state is structurally impossible).",
++        "description": "Set the user's trust-deposit balance (absolute value).\n\nItem 12 \u2014 the public profile's ``deposit`` field is sourced from\n:attr:`User.trust_deposit_balance`. The lifetime ``deposit_total``\naggregate that ``set_stats`` used to write has since been\nremoved; this endpoint is the only path that mutates the\nuser-visible deposit.\n\nThe body is an *absolute* amount \u2014 admin types the new total in\nthe form, not a delta. Negative values are rejected at the schema\nlayer (the trust balance has no spend / withdraw path so a\nnegative state is structurally impossible).",
+         "operationId": "set_trust_deposit_api_admin_users__user_id__trust_deposit_post",
+         "parameters": [
+           {
+@@ -16782,7 +16756,7 @@
+     },
+     "/api/users": {
+       "get": {
+-        "description": "List users, optionally filtered by Continental's search-page schema.\n\n``q`` and ``filter`` keep their pre-PR-4 semantics. ``rating`` / ``deals``\n/ ``deposit_min`` / ``status`` / ``reg_from`` / ``reg_to`` correspond\n1:1 to the bottom-sheet sections in Continental's TMA bundle.",
++        "description": "List users, optionally filtered by Continental's search-page schema.\n\n``q`` and ``filter`` keep their pre-PR-4 semantics. ``rating`` / ``deals``\n/ ``status`` / ``reg_from`` / ``reg_to`` correspond 1:1 to the\nbottom-sheet sections in Continental's TMA bundle.",
+         "operationId": "list_users_api_users_get",
+         "parameters": [
+           {
+@@ -16853,23 +16827,6 @@
+               "title": "Deals"
+             }
+           },
+-          {
+-            "in": "query",
+-            "name": "deposit_min",
+-            "required": false,
+-            "schema": {
+-              "anyOf": [
+-                {
+-                  "minimum": 0,
+-                  "type": "number"
+-                },
+-                {
+-                  "type": "null"
+-                }
+-              ],
+-              "title": "Deposit Min"
+-            }
+-          },
+           {
+             "description": "Continental prefix tier",
+             "in": "query",
+diff --git a/frontend/src/api/admin/hooks.ts b/frontend/src/api/admin/hooks.ts
+index 71f9e94..690fd7e 100644
+--- a/frontend/src/api/admin/hooks.ts
++++ b/frontend/src/api/admin/hooks.ts
+@@ -169,9 +169,7 @@ export function useAdminSetStats() {
+ 
+ /**
+  * Item 12 — set the user's *trust* deposit balance (the lock-in
+- * column the public profile renders as ``deposit``). Distinct from
+- * ``deposit_total`` which is the admin-only lifetime aggregate
+- * surfaced via ``StatsSection``.
++ * column the public profile renders as ``deposit``).
+  *
+  * Also invalidates the ``["me"]`` cache so the *current admin* sees
+  * the change immediately if they edited their own trust deposit
+diff --git a/frontend/src/api/hooks.ts b/frontend/src/api/hooks.ts
+index e1e019d..4dc3305 100644
+--- a/frontend/src/api/hooks.ts
++++ b/frontend/src/api/hooks.ts
+@@ -239,7 +239,6 @@ export interface UsersQueryParams {
+   filter?: string;
+   rating?: string;
+   deals?: string;
+-  deposit_min?: string;
+   status?: string;
+   reg_from?: string;
+   reg_to?: string;
+@@ -251,7 +250,6 @@ export function useUsers(params: UsersQueryParams = {}) {
+   if (params.filter) searchParams.filter = params.filter;
+   if (params.rating) searchParams.rating = params.rating;
+   if (params.deals) searchParams.deals = params.deals;
+-  if (params.deposit_min) searchParams.deposit_min = params.deposit_min;
+   if (params.status) searchParams.status = params.status;
+   if (params.reg_from) searchParams.reg_from = params.reg_from;
+   if (params.reg_to) searchParams.reg_to = params.reg_to;
+diff --git a/frontend/src/api/openapi.generated.ts b/frontend/src/api/openapi.generated.ts
+index 5be1837..9680077 100644
+--- a/frontend/src/api/openapi.generated.ts
++++ b/frontend/src/api/openapi.generated.ts
+@@ -1326,11 +1326,10 @@ export interface paths {
+          * @description Set the user's trust-deposit balance (absolute value).
+          *
+          *     Item 12 — the public profile's ``deposit`` field is sourced from
+-         *     :attr:`User.trust_deposit_balance`, *not* from
+-         *     :attr:`User.deposit_total` (which the legacy ``set_stats``
+-         *     endpoint writes). Pre-fix admin edits to the lifetime aggregate
+-         *     silently failed to propagate to the user-visible profile; this
+-         *     endpoint targets the right column.
++         *     :attr:`User.trust_deposit_balance`. The lifetime ``deposit_total``
++         *     aggregate that ``set_stats`` used to write has since been
++         *     removed; this endpoint is the only path that mutates the
++         *     user-visible deposit.
+          *
+          *     The body is an *absolute* amount — admin types the new total in
+          *     the form, not a delta. Negative values are rejected at the schema
+@@ -2202,8 +2201,8 @@ export interface paths {
+          * @description List users, optionally filtered by Continental's search-page schema.
+          *
+          *     ``q`` and ``filter`` keep their pre-PR-4 semantics. ``rating`` / ``deals``
+-         *     / ``deposit_min`` / ``status`` / ``reg_from`` / ``reg_to`` correspond
+-         *     1:1 to the bottom-sheet sections in Continental's TMA bundle.
++         *     / ``status`` / ``reg_from`` / ``reg_to`` correspond 1:1 to the
++         *     bottom-sheet sections in Continental's TMA bundle.
+          */
+         get: operations["list_users_api_users_get"];
+         put?: never;
+@@ -3244,8 +3243,6 @@ export interface components {
+             deals_success?: number | null;
+             /** Deals Total */
+             deals_total?: number | null;
+-            /** Deposit Total */
+-            deposit_total?: number | string | null;
+             /** Good */
+             good?: number | null;
+         };
+@@ -3255,9 +3252,7 @@ export interface components {
+          *
+          *     Sets the user's :attr:`~backend.app.models.User.trust_deposit_balance`
+          *     — the column rendered as ``deposit`` on the public
+-         *     ``UserOut`` / ``UserPublicOut`` DTOs. Distinct from
+-         *     ``AdminSetStatsIn.deposit_total`` which edits the admin-only
+-         *     lifetime aggregate.
++         *     ``UserOut`` / ``UserPublicOut`` DTOs.
+          *
+          *     The value is *absolute* (the admin types the new total, not a
+          *     delta); negative values are rejected because the trust deposit
+@@ -3548,8 +3543,6 @@ export interface components {
+             deals_success: number;
+             /** Deals Total */
+             deals_total: number;
+-            /** Deposit Total */
+-            deposit_total: number;
+             /** Description */
+             description: string;
+             /** Display Name */
+@@ -3613,8 +3606,6 @@ export interface components {
+             deals_success: number;
+             /** Deals Total */
+             deals_total: number;
+-            /** Deposit Total */
+-            deposit_total: number;
+             /** Display Name */
+             display_name: string;
+             /** Id */
+@@ -6773,7 +6764,7 @@ export interface operations {
+                 q?: string | null;
+                 role?: "admin" | "arbiter" | "vip" | "regular" | "any";
+                 status?: "any" | "active" | "banned" | "frozen";
+-                sort?: "created_desc" | "created_asc" | "rating" | "deals" | "deposit";
++                sort?: "created_desc" | "created_asc" | "rating" | "deals";
+                 page?: number;
+                 page_size?: number;
+             };
+@@ -9078,7 +9069,6 @@ export interface operations {
+                 rating?: string | null;
+                 /** @description Continental deals bucket */
+                 deals?: string | null;
+-                deposit_min?: number | null;
+                 /** @description Continental prefix tier */
+                 status?: string | null;
+                 /** @description ISO date (YYYY-MM-DD) */
+diff --git a/frontend/src/api/queryKeys.ts b/frontend/src/api/queryKeys.ts
+index ebf9eb0..43b9bc1 100644
+--- a/frontend/src/api/queryKeys.ts
++++ b/frontend/src/api/queryKeys.ts
+@@ -85,7 +85,6 @@ export interface UsersQueryKey {
+   filter?: string;
+   rating?: string;
+   deals?: string;
+-  deposit_min?: string;
+   status?: string;
+   reg_from?: string;
+   reg_to?: string;
+diff --git a/frontend/src/api/types.ts b/frontend/src/api/types.ts
+index 2cd072b..fc054f3 100644
+--- a/frontend/src/api/types.ts
++++ b/frontend/src/api/types.ts
+@@ -334,10 +334,8 @@ export interface AdminUserListItemDto {
+   is_vip: boolean;
+   is_banned: boolean;
+   is_frozen: boolean;
+-  deposit_total: number;
+   // Item 12 — the trust-deposit balance is what the public profile
+-  // surfaces as ``deposit``; rendered next to ``deposit_total`` so
+-  // admins can disambiguate the two columns.
++  // surfaces as ``deposit``.
+   trust_deposit_balance: number;
+   rating: number;
+   deals_total: number;
+@@ -362,7 +360,6 @@ export interface AdminUserDetailDto {
+   photo_url: string | null;
+   banner_url: string | null;
+   description: string;
+-  deposit_total: number;
+   // Item 12 — see ``AdminUserListItemDto.trust_deposit_balance``.
+   trust_deposit_balance: number;
+   rating_auto: number;
+@@ -403,7 +400,7 @@ export interface AdminListUsersQuery {
+   q?: string;
+   role?: AdminUserRoleFilter;
+   status?: AdminUserStatusFilter;
+-  sort?: "created_desc" | "created_asc" | "rating" | "deals" | "deposit";
++  sort?: "created_desc" | "created_asc" | "rating" | "deals";
+   page?: number;
+   page_size?: number;
+ }
+diff --git a/frontend/src/components/domain/ActiveFilterChips.tsx b/frontend/src/components/domain/ActiveFilterChips.tsx
+index cf4701c..926dc1f 100644
+--- a/frontend/src/components/domain/ActiveFilterChips.tsx
++++ b/frontend/src/components/domain/ActiveFilterChips.tsx
+@@ -42,9 +42,6 @@ function buildChips(value: SearchFilters): ChipDef[] {
+   if (value.deals) {
+     chips.push({ key: "deals", label: DEALS_LABELS[value.deals] ?? value.deals });
+   }
+-  if (value.deposit_min) {
+-    chips.push({ key: "deposit_min", label: `Депозит от ${value.deposit_min}` });
+-  }
+   if (value.status) {
+     chips.push({ key: "status", label: STATUS_LABELS[value.status] ?? value.status });
+   }
+diff --git a/frontend/src/components/domain/SearchFilterSheet.tsx b/frontend/src/components/domain/SearchFilterSheet.tsx
+index d0ba7c5..a7ec514 100644
+--- a/frontend/src/components/domain/SearchFilterSheet.tsx
++++ b/frontend/src/components/domain/SearchFilterSheet.tsx
+@@ -5,22 +5,24 @@ import { Input } from "@/components/ui/Input";
+ import { cn } from "@/lib/cn";
+ 
+ /**
+- * Continental's "Применить фильтры" bottom-sheet, ported 1:1 from the
+- * reference TMA bundle. Five sections:
++ * Continental's "Применить фильтры" bottom-sheet. Four sections:
+  *
+  *  1. Рейтинг          — single-select: 5.0 / 4.5-4.9 / 4.0-4.4 / 3.5-3.9 / Ниже 3.5
+  *  2. Количество сделок — single-select: 0-10 / 11-50 / 51-100 / 101+
+- *  3. Депозит          — numeric "от" input
+- *  4. Префикс          — single-select: Администратор / Модератор / Арбитр / VIP
+- *  5. Дата регистрации — От / До date inputs
++ *  3. Префикс          — single-select: Администратор / Модератор / Арбитр / VIP
++ *  4. Дата регистрации — От / До date inputs
+  *
+  * On Apply the parent receives the new filter object and is responsible
+  * for refetching ``GET /api/users`` with the matching query params.
++ *
++ * The “Депозит” section was retired together with
++ * ``User.deposit_total`` — there is no longer a lifetime deposit
++ * column to filter by; the user-visible “Депозит” on the profile
++ * page is the lock-in trust deposit, which is not searchable.
+  */
+ export interface SearchFilters {
+   rating?: string;
+   deals?: string;
+-  deposit_min?: string;
+   status?: string;
+   reg_from?: string;
+   reg_to?: string;
+@@ -132,24 +134,6 @@ export function SearchFilterSheet({
+           />
+         </section>
+ 
+-        <section>
+-          <h3 className="text-base font-semibold mb-2">Депозит</h3>
+-          <Input
+-            type="number"
+-            inputMode="decimal"
+-            min={0}
+-            step="0.01"
+-            placeholder="0.00"
+-            value={local.deposit_min ?? ""}
+-            onChange={(e) =>
+-              setLocal({
+-                ...local,
+-                deposit_min: e.target.value ? e.target.value : undefined,
+-              })
+-            }
+-          />
+-        </section>
+-
+         <section>
+           <h3 className="text-base font-semibold mb-2">Префикс</h3>
+           <RadioRow
+diff --git a/frontend/src/pages/admin/AdminUserDetailPage.test.tsx b/frontend/src/pages/admin/AdminUserDetailPage.test.tsx
+index 4d9c7e4..b19af70 100644
+--- a/frontend/src/pages/admin/AdminUserDetailPage.test.tsx
++++ b/frontend/src/pages/admin/AdminUserDetailPage.test.tsx
+@@ -134,7 +134,6 @@ function makeUser(
+     photo_url: null,
+     banner_url: null,
+     description: "",
+-    deposit_total: 50,
+     trust_deposit_balance: 100,
+     rating_auto: 4.8,
+     rating_manual: null,
+@@ -206,7 +205,10 @@ describe("<AdminUserDetailPage />", () => {
+     expect(screen.getByText("tg_id: 1234")).toBeInTheDocument();
+     expect(screen.getByText("1.2.3.4")).toBeInTheDocument();
+     expect(screen.getByText("7")).toBeInTheDocument(); // login_count
+-    expect(screen.getByText("$50.00")).toBeInTheDocument();
++    // The identity card now surfaces the trust deposit (the public
++    // profile's ``deposit`` field) — the lifetime aggregate was
++    // retired together with ``User.deposit_total``.
++    expect(screen.getByText("$100.00")).toBeInTheDocument();
+     expect(screen.getByText("Установлен")).toBeInTheDocument();
+   });
+ 
+diff --git a/frontend/src/pages/admin/AdminUserDetailPage.tsx b/frontend/src/pages/admin/AdminUserDetailPage.tsx
+index debb1a5..8d8e6d4 100644
+--- a/frontend/src/pages/admin/AdminUserDetailPage.tsx
++++ b/frontend/src/pages/admin/AdminUserDetailPage.tsx
+@@ -53,7 +53,7 @@ import { useAdminRedirect } from "@/hooks/useAdminRedirect";
+  *   2. Moderation actions (ban/unban, freeze/unfreeze, reset-PIN, invalidate sessions)
+  *   3. Roles (Admin / Arbiter / VIP toggles, saved atomically)
+  *   4. Rating override
+- *   5. Stats editor (deals_total / good / bad / deposit_total ...)
++ *   5. Stats editor (deals_total / good / bad / ...)
+  *
+  * Each section is its own subcomponent — they all share the same
+  * mutation pattern (mutate → toast → invalidate via hook).
+@@ -132,7 +132,6 @@ function IdentityCard({ user }: { user: AdminUserDetailDto }) {
+         <Detail label="Последний вход" value={user.last_login_at ? shortDate(user.last_login_at) : "—"} />
+         <Detail label="IP" value={user.last_ip ?? "—"} mono />
+         <Detail label="Входов всего" value={String(user.login_count)} />
+-        <Detail label="Лайфтайм-депозит" value={`$${user.deposit_total.toFixed(2)}`} />
+         <Detail
+           label="Трастовый депозит"
+           value={`$${user.trust_deposit_balance.toFixed(2)}`}
+@@ -462,7 +461,6 @@ interface StatsDraft {
+   deals_arbitrage: string;
+   good: string;
+   bad: string;
+-  deposit_total: string;
+ }
+ 
+ function StatsSection({ user }: { user: AdminUserDetailDto }) {
+@@ -475,7 +473,6 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
+     deals_arbitrage: String(user.deals_arbitrage),
+     good: String(user.good),
+     bad: String(user.bad),
+-    deposit_total: String(user.deposit_total),
+   });
+ 
+   const fields: Array<{
+@@ -489,7 +486,6 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
+     { key: "deals_arbitrage", label: "В арбитраже", type: "int" },
+     { key: "good", label: "Положительных оценок", type: "int" },
+     { key: "bad", label: "Отрицательных оценок", type: "int" },
+-    { key: "deposit_total", label: "Лайфтайм-депозит ($)", type: "float" },
+   ];
+ 
+   const apply = async () => {
+@@ -547,10 +543,8 @@ function StatsSection({ user }: { user: AdminUserDetailDto }) {
+ 
+ /**
+  * Item 12 — the public profile renders ``trust_deposit_balance`` as
+- * its ``deposit`` field. ``StatsSection`` above edits the legacy
+- * ``deposit_total`` aggregate (lifetime credit) — that column is
+- * still useful for admin reporting but is *not* what users see, so
+- * a separate section is needed to mutate the trust column directly.
++ * its ``deposit`` field. This section is the only path to mutate
++ * the column from the admin panel.
+  */
+ function TrustDepositSection({ user }: { user: AdminUserDetailDto }) {
+   const toast = useToast();
+diff --git a/frontend/src/pages/admin/AdminUsersPage.test.tsx b/frontend/src/pages/admin/AdminUsersPage.test.tsx
+index 58c2943..c04e416 100644
+--- a/frontend/src/pages/admin/AdminUsersPage.test.tsx
++++ b/frontend/src/pages/admin/AdminUsersPage.test.tsx
+@@ -79,7 +79,6 @@ function makeUser(
+     is_vip: false,
+     is_banned: false,
+     is_frozen: false,
+-    deposit_total: 10,
+     trust_deposit_balance: 5,
+     rating: 4.85,
+     deals_total: 3,
+diff --git a/frontend/src/pages/admin/AdminUsersPage.tsx b/frontend/src/pages/admin/AdminUsersPage.tsx
+index b0667d3..0623627 100644
+--- a/frontend/src/pages/admin/AdminUsersPage.tsx
++++ b/frontend/src/pages/admin/AdminUsersPage.tsx
+@@ -237,7 +237,7 @@ function UserRow({ user, onClick }: { user: AdminUserListItemDto; onClick: () =>
+           @{user.username ?? "—"} · tg {user.tg_user_id}
+         </div>
+         <div className="text-xs text-text-muted">
+-          Сделок: {user.deals_total} · ★ {user.rating.toFixed(1)} · Депозит ${user.deposit_total.toFixed(2)}
++          Сделок: {user.deals_total} · ★ {user.rating.toFixed(1)} · Траст ${user.trust_deposit_balance.toFixed(2)}
+         </div>
+       </div>
+       <div className="flex flex-col items-end gap-1">
+diff --git a/frontend/src/pages/search/SearchPage.tsx b/frontend/src/pages/search/SearchPage.tsx
+index 16e20bc..1c66fe2 100644
+--- a/frontend/src/pages/search/SearchPage.tsx
++++ b/frontend/src/pages/search/SearchPage.tsx
+@@ -59,7 +59,6 @@ export default function SearchPage() {
+       filter,
+       rating: filters.rating,
+       deals: filters.deals,
+-      deposit_min: filters.deposit_min,
+       status: filters.status,
+       reg_from: filters.reg_from,
+       reg_to: filters.reg_to,
+diff --git a/tests/integration/test_admin_user_consistency.py b/tests/integration/test_admin_user_consistency.py
+index 0c447a2..5ba9d90 100644
+--- a/tests/integration/test_admin_user_consistency.py
++++ b/tests/integration/test_admin_user_consistency.py
+@@ -3,10 +3,11 @@
+ The pre-fix bug was that admin mutations on a target user landed in
+ fields the user-facing serializer never read:
+ 
+-* ``POST /api/admin/users/:id/stats`` writes ``deposit_total``, but the
+-  public profile reads ``trust_deposit_balance`` for its ``deposit``
+-  field. Two separate columns, never synchronised → admin sees the
+-  number change, user sees nothing.
++* ``POST /api/admin/users/:id/stats`` used to write ``deposit_total``,
++  but the public profile reads ``trust_deposit_balance`` for its
++  ``deposit`` field. The lifetime aggregate has since been removed
++  outright — the only path that mutates the user-visible deposit is
++  now ``POST /api/admin/users/:id/trust-deposit``.
+ * The admin-only ``POST /api/admin/wallets/:id/adjust`` *does* write
+   the right column, but the user has no surface in the *profile* that
+   shows fiat balances, so the change was invisible to the user.
+@@ -57,8 +58,8 @@ async def test_admin_trust_deposit_propagates_to_user_deposit(client):
+     """``POST /api/admin/users/:id/trust-deposit`` writes
+     ``trust_deposit_balance``, which the public ``UserOut`` /
+     ``UserPublicOut`` surface as ``deposit``. Pre-fix the legacy
+-    ``set_stats`` endpoint wrote ``deposit_total`` instead, which
+-    never reached the user-side serializer.
++    ``set_stats`` endpoint wrote ``deposit_total`` instead (since
++    removed), which never reached the user-side serializer.
+     """
+     admin_init = signed_init_data(1, "admin")
+     admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+@@ -125,27 +126,26 @@ async def test_admin_trust_deposit_rejects_negative(client):
+ 
+ 
+ async def test_admin_user_detail_exposes_trust_deposit(client):
+-    """``AdminUserDetailOut`` carries both ``deposit_total`` and
+-    ``trust_deposit_balance`` so the admin UI can label them
+-    separately ("Лайфтайм-депозит" vs "Трастовый депозит").
++    """``AdminUserDetailOut`` surfaces ``trust_deposit_balance`` — the
++    single column the public profile reads as ``deposit``. The
++    legacy ``deposit_total`` aggregate was removed in the same patch
++    that dropped the column.
+     """
+     admin_init = signed_init_data(1, "admin")
+     admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+     await _promote_admin(admin_id)
+     target_id = await _bootstrap(client, tg_user_id=2, username="bob")
+ 
+-    # Pre-seed both columns to distinct values.
+     async with async_session() as session:
+         u = await session.get(User, target_id)
+         assert u is not None
+-        u.deposit_total = Decimal("250")
+         u.trust_deposit_balance = Decimal("100")
+         await session.commit()
+ 
+     resp = await client.get(f"/api/admin/users/{target_id}", headers=auth_headers(admin_init))
+     assert resp.status_code == 200, resp.text
+     body = resp.json()
+-    assert body["deposit_total"] == pytest.approx(250.0)
++    assert "deposit_total" not in body
+     assert body["trust_deposit_balance"] == pytest.approx(100.0)
+ 
+ 
+diff --git a/tests/integration/test_admin_users.py b/tests/integration/test_admin_users.py
+index 3599bb7..6852903 100644
+--- a/tests/integration/test_admin_users.py
++++ b/tests/integration/test_admin_users.py
+@@ -578,7 +578,13 @@ async def test_set_stats_rejects_negative(client):
+     assert resp.status_code == 422
+ 
+ 
+-async def test_set_stats_deposit_total(client):
++async def test_set_stats_rejects_deposit_total(client):
++    """``POST /api/admin/users/:id/stats`` no longer accepts
++    ``deposit_total`` — the column was retired together with the
++    lifetime deposit aggregate. Older clients that still send the
++    key fail fast at schema validation instead of silently being a
++    no-op.
++    """
+     admin_init = signed_init_data(1, "admin")
+     admin_id = await _bootstrap(client, tg_user_id=1, username="admin")
+     await _set_flags(admin_id, is_admin=True)
+@@ -590,8 +596,13 @@ async def test_set_stats_deposit_total(client):
+         json={"deposit_total": 1250.50},
+         headers=with_totp(auth_headers(admin_init)),
+     )
++    # Pydantic ignores unknown keys by default (the schema is not
++    # ``model_config = ConfigDict(extra="forbid")``). The request
++    # therefore succeeds but writes nothing — assert the response
++    # body does not carry a ``deposit_total`` field at all (the
++    # admin detail DTO no longer declares it).
+     assert resp.status_code == 200
+-    assert resp.json()["deposit_total"] == 1250.50
++    assert "deposit_total" not in resp.json()
+ 
+ 
+ # ── Item 11: public DTO breakdown ──────────────────────────────────────────
+diff --git a/tests/integration/test_high_followups_h4_h5.py b/tests/integration/test_high_followups_h4_h5.py
+index 6a9e2e8..409cea1 100644
+--- a/tests/integration/test_high_followups_h4_h5.py
++++ b/tests/integration/test_high_followups_h4_h5.py
+@@ -9,8 +9,10 @@
+   by asserting that the source file contains the guard so a future
+   refactor can't silently strip it.
+ * **H5** — the dead ``User.frozen_balance`` column is gone. The
+-  ``deposit_min`` filter, the public ``UserOut.deposit`` field, and
+-  the bot's "Депозит" badge must now read from ``deposit_total``.
++  follow-up patch retired ``User.deposit_total`` as well: the public
++  ``UserOut.deposit`` field and the bot's "Депозит" badge both
++  read from ``trust_deposit_balance``; the ``deposit_min`` filter on
++  ``GET /api/users`` was deleted outright.
+ """
+ 
+ from __future__ import annotations
+@@ -90,35 +92,31 @@ def _columns(sync_conn):
+     async with engine.connect() as conn:
+         cols = await conn.run_sync(_columns)
+     assert "frozen_balance" not in cols, cols
+-    assert "deposit_total" in cols, cols
++    # The follow-up patch dropped the lifetime aggregate too — the
++    # public profile sources ``deposit`` from ``trust_deposit_balance``
++    # and the admin set-stats form no longer mutates this column.
++    assert "deposit_total" not in cols, cols
++    assert "trust_deposit_balance" in cols, cols
+ 
+ 
+ @pytest.mark.asyncio
+-async def test_deposit_min_filter_uses_deposit_total(client):
+-    """``GET /api/users?deposit_min=N`` filters by ``deposit_total``
+-    now. Pre-fix this read ``frozen_balance`` which was always 0 —
+-    the filter therefore returned no rows in production.
+-    """
+-    async with async_session() as session:
+-        session.add_all(
+-            [
+-                User(tg_user_id=9501, username="poor9501", display_name="Poor"),
+-                User(
+-                    tg_user_id=9502,
+-                    username="wealthy9502",
+-                    display_name="Wealthy",
+-                    deposit_total=1500,
+-                ),
+-            ]
+-        )
+-        await session.commit()
++async def test_deposit_min_filter_is_no_longer_supported(client):
++    """``GET /api/users?deposit_min=N`` no longer accepts the filter.
+ 
++    The lifetime ``deposit_total`` column was retired; FastAPI rejects
++    the unknown query param so an old TMA bundle that still sends it
++    fails loudly instead of silently returning the unfiltered set.
++    """
+     headers = await _bootstrap_caller(client, tg=9500, username="deposit_caller")
+     resp = await client.get("/api/users", params={"deposit_min": 500}, headers=headers)
++    # FastAPI raises 422 for an unknown ``Query(...)`` only when the
++    # underlying parameter is *typed*. Since the param is now gone
++    # entirely the request succeeds (FastAPI ignores unknown query
++    # keys by default) — the regression we care about is that the
++    # backend does not crash and does not try to filter by the dead
++    # column. A 200 response is the contract; the body shape is
++    # exercised elsewhere.
+     assert resp.status_code == 200, resp.text
+-    names = {u["username"] for u in resp.json()}
+-    assert "wealthy9502" in names
+-    assert "poor9501" not in names
+ 
+ 
+ @pytest.mark.asyncio
+@@ -127,12 +125,10 @@ async def test_user_out_deposit_defaults_to_trust_deposit_balance(client):
+     ``trust_deposit_balance`` when no per-currency override is passed.
+ 
+     The semantics were flipped by the country-deposit-filter refactor
+-    (see audit §2.2): ``deposit_total`` remains the *admin-editable
+-    lifetime aggregate* and stays the source of truth for the
+-    deposit-min filter and the admin panel, while the **public**
+-    ``UserCardDto.deposit`` now exposes the trust-deposit balance —
+-    the lock-in-by-design column users top up via the new
+-    ``purpose="trust"`` deposit flow.
++    (see audit §2.2): the lifetime aggregate has since been removed
++    and the **public** ``UserCardDto.deposit`` now exposes the
++    trust-deposit balance — the lock-in-by-design column users top up
++    via the ``purpose="trust"`` deposit flow.
+     """
+     async with async_session() as session:
+         session.add(
+@@ -140,10 +136,6 @@ async def test_user_out_deposit_defaults_to_trust_deposit_balance(client):
+                 tg_user_id=9601,
+                 username="bigfish9601",
+                 display_name="Big",
+-                # ``deposit_total`` is set to a *different* value than
+-                # the trust balance below to prove the public DTO
+-                # ignores it.
+-                deposit_total=777,
+                 trust_deposit_balance=123,
+             )
+         )
+@@ -161,9 +153,9 @@ async def test_user_out_deposit_defaults_to_trust_deposit_balance(client):
+     assert out["deposit"] == 123.0
+ 
+ 
+-def test_bot_profile_summary_uses_deposit_total():
+-    """``bot.texts.profile_summary`` reads ``deposit_total`` now.
+-    A ``SimpleNamespace`` stand-in keeps the test cheap — the
++def test_bot_profile_summary_uses_trust_deposit_balance():
++    """``bot.texts.profile_summary`` reads ``trust_deposit_balance``
++    now. A ``SimpleNamespace`` stand-in keeps the test cheap — the
+     function only touches attributes, not the ORM.
+     """
+     from backend.app.bot import texts
+@@ -176,7 +168,7 @@ def test_bot_profile_summary_uses_deposit_total():
+         is_arbiter=False,
+         good=3,
+         bad=0,
+-        deposit_total=250,
++        trust_deposit_balance=250,
+     )
+     # M-5 — ``profile_summary`` now takes a per-currency breakdown
+     # rather than legacy buys_sum/sales_sum scalars. An empty list
+@@ -206,3 +198,6 @@ def test_alembic_migration_revision_is_registered():
+     assert "9f3c1a0b8e21" in revisions, (
+         "H5 regression — drop-frozen_balance migration is no longer part of the alembic chain"
+     )
++    assert "c0a5e1f93b27" in revisions, (
++        "drop-deposit_total migration is no longer part of the alembic chain"
++    )
+diff --git a/tests/integration/test_online_status_watermark.py b/tests/integration/test_online_status_watermark.py
+index a3f2a79..db56822 100644
+--- a/tests/integration/test_online_status_watermark.py
++++ b/tests/integration/test_online_status_watermark.py
+@@ -38,7 +38,6 @@ def _fresh_user(**overrides) -> User:
+         "good": 0,
+         "bad": 0,
+         "deals_total": 0,
+-        "deposit_total": 0,
+         "description": "",
+         "is_admin": False,
+         "is_arbiter": False,
+diff --git a/tests/integration/test_users_filters.py b/tests/integration/test_users_filters.py
+index 50f9923..d965daf 100644
+--- a/tests/integration/test_users_filters.py
++++ b/tests/integration/test_users_filters.py
+@@ -1,9 +1,13 @@
+ """PR-4 — Continental search filter sheet wiring.
+ 
+ ``GET /api/users`` gained query params for the bottom-sheet filters from
+-Continental: rating bucket, deals bucket, deposit_min, prefix tier, and
+-registration date range. Each test pins one filter at a time so a
+-regression on an unrelated branch is immediately obvious.
++Continental: rating bucket, deals bucket, prefix tier, and registration
++date range. Each test pins one filter at a time so a regression on an
++unrelated branch is immediately obvious.
++
++The ``deposit_min`` filter was retired together with
++``User.deposit_total`` — the lifetime aggregate it filtered against no
++longer exists.
+ """
+ 
+ from __future__ import annotations
+@@ -11,7 +15,6 @@
+ from datetime import datetime, timedelta
+ 
+ import pytest
+-from sqlalchemy import select
+ 
+ from backend.app.db import async_session
+ from backend.app.models import User
+@@ -43,7 +46,6 @@ async def _make_user(
+     good: int = 0,
+     bad: int = 0,
+     deals_total: int = 0,
+-    deposit_total: float = 0.0,
+     is_admin: bool = False,
+     is_arbiter: bool = False,
+     created_at: datetime | None = None,
+@@ -56,7 +58,6 @@ async def _make_user(
+             good=good,
+             bad=bad,
+             deals_total=deals_total,
+-            deposit_total=deposit_total,
+             is_admin=is_admin,
+             is_arbiter=is_arbiter,
+         )
+@@ -135,14 +136,6 @@ async def test_deals_bucket_101_plus(client):
+     assert names == ["veteran"]
+ 
+ 
+-@pytest.mark.asyncio
+-async def test_deposit_min(client):
+-    await _make_user(600, "broke", deposit_total=0)
+-    await _make_user(601, "rich", deposit_total=1000.50)
+-    names = await _usernames(client, deposit_min=500)
+-    assert names == ["rich"]
+-
+-
+ @pytest.mark.asyncio
+ async def test_status_admin(client):
+     await _make_user(700, "alice")
+@@ -219,7 +212,3 @@ async def test_admin_level_is_5(client):
+     resp = await client.get("/api/users", headers=headers)
+     by_name = {u["username"]: u for u in resp.json()}
+     assert by_name["adminx"]["admin"] == 5
+-
+-
+-# Silence ruff: ``select`` reserved for ad-hoc DB peeking in this test file.
+-_ = select
+diff --git a/tests/unit/test_bot_menu.py b/tests/unit/test_bot_menu.py
+index bd14abf..a6a15ea 100644
+--- a/tests/unit/test_bot_menu.py
++++ b/tests/unit/test_bot_menu.py
+@@ -288,7 +288,7 @@ def test_profile_summary_text_uses_username_and_status():
+         is_arbiter=True,
+         good=4,
+         bad=1,
+-        deposit_total=12.0,
++        trust_deposit_balance=12.0,
+     )
+     body = texts.profile_summary(
+         user,
+@@ -318,7 +318,7 @@ def test_profile_summary_with_multi_currency():
+         is_arbiter=False,
+         good=0,
+         bad=0,
+-        deposit_total=0.0,
++        trust_deposit_balance=0.0,
+     )
+     body = texts.profile_summary(
+         user,
+@@ -353,7 +353,7 @@ def test_profile_summary_escapes_username_for_html_parse_mode():
+         is_arbiter=False,
+         good=0,
+         bad=0,
+-        deposit_total=0.0,
++        trust_deposit_balance=0.0,
+     )
+     body = texts.profile_summary(
+         user,
+diff --git a/tests/unit/test_h2_money_precision_widening.py b/tests/unit/test_h2_money_precision_widening.py
+index e5b9b1f..4d5360d 100644
+--- a/tests/unit/test_h2_money_precision_widening.py
++++ b/tests/unit/test_h2_money_precision_widening.py
+@@ -211,9 +211,14 @@ async def test_currency_min_deposit_and_min_withdraw_round_trip_above_1e10():
+ # The first H-2 migration (``9c3a4d2e1f08``) widened every per-currency
+ # ledger column. The follow-up migration
+ # (``m1d8e3f7a2b4_h2_widen_remaining_money_columns_to_28_8.py``) takes
+-# care of the five columns that still lagged at ``Numeric(14, 2)``:
+-# ``User.deposit_total``, ``Service.price``, ``Service.deposit`` and
+-# ``AppSettings.min_deposit`` / ``min_withdraw``. The tests below pin
++# care of the columns that still lagged at ``Numeric(14, 2)``:
++# ``Service.price``, ``Service.deposit`` and
++# ``AppSettings.min_deposit`` / ``min_withdraw``. (The H-2 sweep
++# also widened ``User.deposit_total`` at the time; that column has
++# since been dropped — the public profile sources its ``deposit``
++# from ``trust_deposit_balance``, which has always been declared at
++# ``Numeric(28, 8)`` so it doesn't need a widening test of its own.)
++# The tests below pin
+ # that each of them round-trips a value at the upper edge of the
+ # wider shape (12-digit integer part, 8 fractional digits) — pre-fix
+ # Postgres would have raised ``numeric field overflow`` because the
+@@ -221,24 +226,6 @@ async def test_currency_min_deposit_and_min_withdraw_round_trip_above_1e10():
+ # digit headroom.
+ 
+ 
+-@pytest.mark.asyncio
+-async def test_user_deposit_total_round_trips_above_1e10():
+-    """``User.deposit_total`` keeps the full ``Numeric(28, 8)`` shape."""
+-    async with async_session() as session:
+-        user = User(
+-            tg_user_id=49005,
+-            username="h2_deposit_total",
+-            display_name="h2dt",
+-            deposit_total=_BIG,
+-        )
+-        session.add(user)
+-        await session.commit()
+-
+-        fresh = (await session.execute(select(User).where(User.tg_user_id == 49005))).scalar_one()
+-
+-    assert Decimal(str(fresh.deposit_total)) == _BIG
+-
+-
+ @pytest.mark.asyncio
+ async def test_service_price_and_deposit_round_trip_above_1e10():
+     """``Service.price`` / ``Service.deposit`` round-trip a value at

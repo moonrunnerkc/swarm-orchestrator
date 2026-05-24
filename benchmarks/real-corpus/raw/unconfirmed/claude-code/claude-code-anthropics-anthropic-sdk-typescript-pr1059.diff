@@ -1,0 +1,36 @@
+diff --git a/src/_vendor/partial-json-parser/parser.ts b/src/_vendor/partial-json-parser/parser.ts
+index 9470c462..cee61b2e 100644
+--- a/src/_vendor/partial-json-parser/parser.ts
++++ b/src/_vendor/partial-json-parser/parser.ts
+@@ -187,6 +187,7 @@ const tokenize = (input: string): Token[] => {
+           tokens = tokens.slice(0, tokens.length - 1);
+           return strip(tokens);
+         }
++        break;
+       case 'string':
+         let tokenBeforeTheLastToken = tokens[tokens.length - 2];
+         if (tokenBeforeTheLastToken?.type === 'delimiter') {
+diff --git a/tests/lib/partial-json.test.ts b/tests/lib/partial-json.test.ts
+index 6717e55d..20b9c498 100644
+--- a/tests/lib/partial-json.test.ts
++++ b/tests/lib/partial-json.test.ts
+@@ -51,6 +51,19 @@ describe('partialParse', () => {
+     expect(partialParse(`{"foo": 123, "bar": 45.67}`)).toEqual({ foo: 123, bar: 45.67 });
+   });
+ 
++  test('array with a complete trailing number after a comma', () => {
++    expect(partialParse(`{"foo": [1, 2`)).toEqual({ foo: [1, 2] });
++  });
++
++  test('array with multiple complete trailing numbers', () => {
++    expect(partialParse(`{"nums": [10, 20, 3`)).toEqual({ nums: [10, 20, 3] });
++  });
++
++  test('array with an incomplete trailing number', () => {
++    expect(partialParse(`{"foo": [1, 2.`)).toEqual({ foo: [1] });
++    expect(partialParse(`{"foo": [1, -`)).toEqual({ foo: [1] });
++  });
++
+   test('JSON string with boolean values', () => {
+     expect(partialParse(`{"foo": true, "bar": false}`)).toEqual({ foo: true, bar: false });
+   });

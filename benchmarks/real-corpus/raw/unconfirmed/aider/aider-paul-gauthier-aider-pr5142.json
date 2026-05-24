@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5142",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5142,
+    "headSha": "e16ddd8b880777d113761cb83d8a5fb46349e0cc",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "security: bump GitPython, Pillow, urllib3 to CVE-clean versions",
+    "body": "## Summary\n\nBumps three transitively-pinned libraries to their lowest CVE-clean versions. Trivy scans of images built with `aider-chat==0.86.2` reported 7 HIGH-severity CVEs across these three libraries.\n\n- `gitpython` 3.1.46 → 3.1.49 (CVE-2026-42215, -42284, -44243, -44244)\n- `pillow` 12.1.1 → 12.2.0 (CVE-2026-42311)\n- `urllib3` 2.6.3 → 2.7.0 (CVE-2026-44431)\n\nCloses #5139\nCloses #5140\nCloses #5141\n\n## Files touched\n\nThe pins live in pip-tools / `uv pip compile`-generated lockfiles, not in `pyproject.toml`. Edited in place:\n\n- `requirements.txt`\n- `requirements/common-constraints.txt`\n- `requirements/requirements-browser.txt`\n- `requirements/requirements-dev.txt`\n- `requirements/requirements-help.txt`\n\n## Quirks / things for the maintainer to double-check\n\n- `uv` was not available in our environment, so the lockfiles were updated **by hand** rather than regenerated. The 3 changed pins are simple version-string swaps — no hashes are present in the existing lockfiles, so no hash regeneration was needed. Still, please run `uv pip compile --no-strip-extras --constraint=requirements/common-constraints.txt --output-file=tmp.requirements.txt requirements/requirements.in` (and the equivalent for the other `.in` files) locally to confirm no transitive resolution drift before merging.\n- All bumps within same major release line; expected drop-in.\n\n## Verification\n\n- `aider --version` smoke-tested in downstream consumer.\n\n## Downstream context\n\nReported by the HomericIntelligence/AchaeanFleet team. We've worked around it locally by force-overriding the pins post-install, but a native upstream fix removes the need for that workaround everywhere.\n",
+    "author": "mvillmow",
+    "headRef": "security/bump-vulnerable-pins-2026-05",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "e16ddd8b880777d113761cb83d8a5fb46349e0cc",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5142.diff",
+  "vendoredAt": "2026-05-24T03:19:21.046Z",
+  "collectedAt": "2026-05-24T03:19:21.046Z"
+}

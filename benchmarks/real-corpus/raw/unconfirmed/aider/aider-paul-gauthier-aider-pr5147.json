@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5147",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5147,
+    "headSha": "2f1bd42845aa81135834611048663d3c83da696a",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "feat: add OrcaRouter (orcarouter/) as a first-class provider",
+    "body": "## PR Description\r\n\r\n```markdown\r\n## Summary\r\n\r\nThis PR adds [OrcaRouter](https://www.orcarouter.ai) — an OpenAI-compatible LLM\r\nmeta-router — as a first-class provider in aider, parallel to the existing\r\nOpenRouter integration. Users can run any of OrcaRouter's 150+ upstream models\r\n(OpenAI / Anthropic / Google / DeepSeek / xAI / Qwen / MiniMax / Kimi / Z.ai /\r\n…) with a single API key:\r\n\r\n```bash\r\nexport ORCAROUTER_API_KEY=<key>\r\naider --model orcarouter/openai/gpt-4o\r\naider --model orcarouter/anthropic/claude-opus-4.7\r\naider --model orcarouter-auto   # alias for the adaptive router\r\n```\r\n\r\nI'm an engineer on the OrcaRouter team.\r\n\r\n## What's added\r\n\r\n- **`aider/orcarouter.py`** — `OrcaRouterModelManager` that fetches the public\r\n  pricing/catalog feed at `https://www.orcarouter.ai/api/pricing` (no auth) and\r\n  exposes per-model `max_input_tokens` / `max_output_tokens` /\r\n  `input_cost_per_token` / `output_cost_per_token` in the litellm\r\n  `get_model_info` shape. Computed from OrcaRouter's published quota formula\r\n  (`model_ratio * 2 USD/1M` for input, `× completion_ratio` for output).\r\n  24h on-disk cache at `~/.aider/caches/orcarouter_models.json`, mirroring the\r\n  OpenRouter manager.\r\n- **`aider/models.py`** —\r\n  - `ModelInfoManager` delegates to `OrcaRouterModelManager` for\r\n    `orcarouter/`-prefixed models when litellm has no built-in info.\r\n  - `Model.send_completion` auto-routes `orcarouter/<vendor>/<model>` to\r\n    `https://api.orcarouter.ai/v1` via litellm's OpenAI-compatible client,\r\n    using `ORCAROUTER_API_KEY` from the environment. `HTTP-Referer` /\r\n    `X-Title` attribution headers are injected so OrcaRouter's console can\r\n    credit traffic to aider (users can override via\r\n    `extra_params.extra_headers`).\r\n  - `ORCAROUTER_API_KEY` added to `fast_validate_environment` keymap so\r\n    aider's startup env check recognises it.\r\n  - `orcarouter-auto` alias added to `MODEL_ALIASES` for OrcaRouter's\r\n    adaptive router.\r\n- **`aider/website/docs/llms/orcarouter.md`** — new docs page (parallel to\r\n  `openrouter.md`) covering setup, the adaptive `orcarouter/auto` router,\r\n  the tool-calling caveat, and `extra_body` provider-routing config.\r\n- **`tests/basic/test_orcarouter.py`** — unit tests mirroring the OpenRouter\r\n  test pattern: pricing formula on a flat-array payload, pricing formula on\r\n  the wrapped `{\"data\": [...]}` payload, empty-result handling, and the\r\n  `ModelInfoManager` delegation.\r\n\r\n## Design notes\r\n\r\n- **No litellm upstream changes needed**. The `orcarouter/` prefix is rewritten\r\n  to `openai/<rest>` for the underlying litellm call, with `api_base` and\r\n  `api_key` injected, so litellm's existing OpenAI-compatible client handles\r\n  the request. The user-facing model name keeps the `orcarouter/` prefix so\r\n  aider's per-provider hooks (alias resolution, metadata lookup) work\r\n  uniformly.\r\n- **Closely follows the OpenRouter integration shape** so it's easy to review\r\n  side-by-side and maintains the same caching / fallback behaviour.\r\n\r\n## How verified\r\n\r\n- Unit tests added (`pytest tests/basic/test_orcarouter.py`).\r\n- Manual smoke test against `https://www.orcarouter.ai/api/pricing` confirms\r\n  the pricing formula matches published per-model rates (e.g.\r\n  `openai/gpt-4o`: `model_ratio=1.25, completion_ratio=4` →\r\n  `$2.50 / $10.00 per 1M tokens`).\r\n- Linted with the project's pre-commit config (Black / isort).\r\n\r\nHappy to iterate on naming, doc tone, or scope. Thanks for maintaining aider!\r\n```",
+    "author": "xilema2",
+    "headRef": "feat/orcarouter",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "2f1bd42845aa81135834611048663d3c83da696a",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5147.diff",
+  "vendoredAt": "2026-05-24T03:19:18.565Z",
+  "collectedAt": "2026-05-24T03:19:18.565Z"
+}

@@ -1,0 +1,240 @@
+diff --git a/src/components/SaveLoadPanel.tsx b/src/components/SaveLoadPanel.tsx
+index 982b71d..5d496ef 100644
+--- a/src/components/SaveLoadPanel.tsx
++++ b/src/components/SaveLoadPanel.tsx
+@@ -35,7 +35,7 @@ const writeSlotMeta = (meta: (SaveSlotMeta | null)[]) => {
+   localStorage.setItem(getSaveMetaKey(), JSON.stringify(meta));
+ };
+ 
+-export const SaveLoadPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
++export const SaveLoadPanel: React.FC<{ onClose: () => void; loadOnly?: boolean }> = ({ onClose, loadOnly = false }) => {
+   const { state, loadGameFromData } = useGame();
+   const [slots, setSlots] = useState<(SaveSlotMeta | null)[]>(readAllSlotMeta());
+   const [importText, setImportText] = useState('');
+@@ -206,9 +206,9 @@ export const SaveLoadPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
+         <div className="flex items-center justify-between mb-6">
+           <div>
+             <h2 className="text-xl font-bold bg-gradient-to-r from-amber-400 to-[#d4af37] bg-clip-text text-transparent flex items-center gap-2">
+-              <Save size={20} /> 存/讀檔紀錄管理
++              <Save size={20} /> {loadOnly ? '讀檔紀錄管理' : '存/讀檔紀錄管理'}
+             </h2>
+-            <p className="text-[11px] text-slate-400 mt-1">可查看各槽位紀錄時間，並直接讀取檔案。</p>
++            <p className="text-[11px] text-slate-400 mt-1">{loadOnly ? '可直接讀取既有槽位，或匯入外部 JSON 存檔。' : '可查看各槽位紀錄時間，並直接讀取檔案。'}</p>
+           </div>
+           <button onClick={onClose} className="p-1.5 rounded hover:bg-white/10 transition-all text-slate-400 hover:text-white">
+             <X size={20} />
+@@ -256,14 +256,16 @@ export const SaveLoadPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
+ 
+               {/* Actions */}
+               <div className="flex items-center gap-1.5 flex-shrink-0">
+-                <button
+-                  onClick={() => handleSave(i)}
+-                  title="存檔至此槽位"
+-                  className="px-2 py-1.5 rounded bg-[rgba(212,175,55,0.1)] border border-[#d4af37]/25 hover:border-[#d4af37]/60 text-[#d4af37] hover:text-[#ffd700] transition-all text-[11px] font-semibold flex items-center gap-1"
+-                >
+-                  <Save size={14} />
+-                  <span>存檔</span>
+-                </button>
++                {!loadOnly && (
++                  <button
++                    onClick={() => handleSave(i)}
++                    title="存檔至此槽位"
++                    className="px-2 py-1.5 rounded bg-[rgba(212,175,55,0.1)] border border-[#d4af37]/25 hover:border-[#d4af37]/60 text-[#d4af37] hover:text-[#ffd700] transition-all text-[11px] font-semibold flex items-center gap-1"
++                  >
++                    <Save size={14} />
++                    <span>存檔</span>
++                  </button>
++                )}
+                 {slot && (
+                   <>
+                     <button
+@@ -274,22 +276,26 @@ export const SaveLoadPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
+                       <FolderOpen size={14} />
+                       <span>讀取</span>
+                     </button>
+-                    <button
+-                      onClick={() => handleExport(i)}
+-                      title="匯出存檔"
+-                      className="px-2 py-1.5 rounded bg-[rgba(100,255,100,0.08)] border border-emerald-500/30 hover:border-emerald-500/60 text-emerald-400 hover:text-emerald-300 transition-all text-[11px] font-semibold flex items-center gap-1"
+-                    >
+-                      <Download size={14} />
+-                      <span>匯出</span>
+-                    </button>
+-                    <button
+-                      onClick={() => handleDelete(i)}
+-                      title="刪除此槽位"
+-                      className="px-2 py-1.5 rounded bg-[rgba(255,100,100,0.08)] border border-red-500/30 hover:border-red-500/60 text-red-400 hover:text-red-300 transition-all text-[11px] font-semibold flex items-center gap-1"
+-                    >
+-                      <Trash2 size={14} />
+-                      <span>刪除</span>
+-                    </button>
++                    {!loadOnly && (
++                      <>
++                        <button
++                          onClick={() => handleExport(i)}
++                          title="匯出存檔"
++                          className="px-2 py-1.5 rounded bg-[rgba(100,255,100,0.08)] border border-emerald-500/30 hover:border-emerald-500/60 text-emerald-400 hover:text-emerald-300 transition-all text-[11px] font-semibold flex items-center gap-1"
++                        >
++                          <Download size={14} />
++                          <span>匯出</span>
++                        </button>
++                        <button
++                          onClick={() => handleDelete(i)}
++                          title="刪除此槽位"
++                          className="px-2 py-1.5 rounded bg-[rgba(255,100,100,0.08)] border border-red-500/30 hover:border-red-500/60 text-red-400 hover:text-red-300 transition-all text-[11px] font-semibold flex items-center gap-1"
++                        >
++                          <Trash2 size={14} />
++                          <span>刪除</span>
++                        </button>
++                      </>
++                    )}
+                   </>
+                 )}
+               </div>
+diff --git a/src/components/Scheduler.tsx b/src/components/Scheduler.tsx
+index 4a78d85..8084147 100644
+--- a/src/components/Scheduler.tsx
++++ b/src/components/Scheduler.tsx
+@@ -231,10 +231,11 @@ export const Scheduler: React.FC = () => {
+ 
+             {activeType ? (
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+-                {visibleActivities.map(act => (
++                {visibleActivities.map((act, index) => (
+                   <ActivityCard
+                     key={act.id}
+                     act={act}
++                    index={index + 1}
+                     onSelect={handleSelectActivity}
+                     active={selected[activeSlot] === act.id}
+                     fatherBackground={daughter.fatherBackground}
+@@ -339,12 +340,13 @@ export const Scheduler: React.FC = () => {
+ 
+ interface ActivityCardProps {
+   act: Activity;
++  index: number;
+   onSelect: (id: string) => void;
+   active: boolean;
+   fatherBackground: string;
+ }
+ 
+-const ActivityCard: React.FC<ActivityCardProps> = ({ act, onSelect, active, fatherBackground }) => {
++const ActivityCard: React.FC<ActivityCardProps> = ({ act, index, onSelect, active, fatherBackground }) => {
+   let cost = act.cost;
+   if (fatherBackground === 'scholar' && act.type === 'study') {
+     const isHumanities = ['rhetoric', 'history', 'music_poetry', 'theology_art', 'etiquette'].includes(act.id);
+@@ -361,7 +363,7 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ act, onSelect, active, fath
+   return (
+     <div
+       onClick={() => onSelect(act.id)}
+-      className={`p-3.5 rounded-lg border-2 cursor-pointer transition-all flex flex-col justify-between ${
++      className={`p-3.5 rounded-lg border-2 cursor-pointer transition-all flex flex-col justify-between min-h-[150px] ${
+         active
+           ? 'bg-[rgba(212,175,55,0.08)] border-[#d4af37] shadow-[0_0_12px_rgba(212,175,55,0.18)]'
+           : 'bg-[rgba(255,255,255,0.02)] border-slate-700/90 hover:border-slate-500 hover:bg-[rgba(255,255,255,0.04)]'
+@@ -369,6 +371,15 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ act, onSelect, active, fath
+     >
+       <div className="flex justify-between items-start gap-2">
+         <div>
++          <div className="mb-1.5">
++            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
++              active
++                ? 'text-[#ffe58a] border-[#d4af37]/50 bg-[#d4af37]/15'
++                : 'text-slate-300 border-slate-600/70 bg-slate-900/50'
++            }`}>
++              {act.type === 'work' ? '打工' : act.type === 'study' ? '學習' : '休息'} #{index}
++            </span>
++          </div>
+           <h4 className={`text-sm font-bold ${active ? 'text-[#ffd700]' : 'text-slate-200'}`}>
+             {act.name}
+           </h4>
+diff --git a/src/components/StartScreen.tsx b/src/components/StartScreen.tsx
+index af3e78c..2503018 100644
+--- a/src/components/StartScreen.tsx
++++ b/src/components/StartScreen.tsx
+@@ -4,9 +4,10 @@ import { EndingGallery } from './EndingGallery';
+ import { AchievementPanel } from './AchievementPanel';
+ import {
+   Sparkles, Calendar, User, Shield, BookOpen, Coins, Music, Lock, Trophy,
+-  ChevronLeft, ChevronRight,
++  ChevronLeft, ChevronRight, FolderOpen,
+ } from 'lucide-react';
+ import type { CharacterId, FatherBackground } from '../types';
++import { SaveLoadPanel } from './SaveLoadPanel';
+ 
+ type StartStep = 'prologue' | 'father' | 'daughter';
+ 
+@@ -117,6 +118,7 @@ export const StartScreen: React.FC = () => {
+   const [name, setName] = useState('');
+   const [showGallery, setShowGallery] = useState(false);
+   const [showAchievements, setShowAchievements] = useState(false);
++  const [showLoadPanel, setShowLoadPanel] = useState(false);
+   const [birthMonth, setBirthMonth] = useState(5);
+   const [birthDay, setBirthDay] = useState(20);
+   const [selectedChar, setSelectedChar] = useState<CharacterId>('honghua');
+@@ -199,6 +201,13 @@ export const StartScreen: React.FC = () => {
+               >
+                 <Trophy size={12} /> 榮譽成就 ({state.unlockedAchievements?.length || 0})
+               </button>
++              <button
++                type="button"
++                onClick={() => setShowLoadPanel(true)}
++                className="text-[10px] text-sky-300 hover:text-sky-200 border border-sky-500/30 hover:border-sky-400/50 bg-sky-500/5 hover:bg-sky-500/10 px-2.5 py-1.5 rounded transition-all flex items-center gap-1.5 uppercase font-semibold"
++              >
++                <FolderOpen size={12} /> 讀取存檔
++              </button>
+             </div>
+ 
+             {/* Title Center */}
+@@ -515,6 +524,7 @@ export const StartScreen: React.FC = () => {
+ 
+       {showGallery && <EndingGallery onClose={() => setShowGallery(false)} />}
+       {showAchievements && <AchievementPanel onClose={() => setShowAchievements(false)} />}
++      {showLoadPanel && <SaveLoadPanel onClose={() => setShowLoadPanel(false)} loadOnly />}
+     </div>
+   );
+ };
+diff --git a/src/data/events.ts b/src/data/events.ts
+index 1c5efbc..956fa7c 100644
+--- a/src/data/events.ts
++++ b/src/data/events.ts
+@@ -1018,10 +1018,24 @@ export const AVG_EVENTS: Record<string, AVGEvent> = {
+         text: '喲，小姑娘，看妳一臉疲憊的樣子，要不要在我們黑鑽俱樂部玩一把？只要贏了，這間賭場的產權分紅就是妳的；要是輸了，妳手上的所有金幣歸我，敢不敢賭一把？',
+         choices: [
+           {
+-            text: '🎲 憑強運盲擲梭哈！（大成功概率 100%）',
+-            effect: (_state) => {
++            text: '🎲 憑強運盲擲梭哈！（艾莉卡 100%，其他角色一般機率）',
++            effect: (state) => {
++              const isErica = state.daughter.characterId === 'erica';
++              const successChance = isErica ? 1 : 0.35;
++              const isSuccess = Math.random() < successChance;
++
++              if (!isSuccess) {
++                return {
++                  log: `${state.daughter.name} 運氣不佳，盲擲失利，賭桌上的籌碼瞬間歸零。`,
++                  nextDialogId: 'casino_fail',
++                  rewards: {
++                    gold: -state.daughter.gold
++                  }
++                };
++              }
++
+               return {
+-                log: '艾莉卡憑藉強運連續盲擲三個 6 點共 18 點滿分！贏到賭場老闆當場破產，轉讓「賭場產權書」！',
++                log: `${state.daughter.name} 憑藉強運連續盲擲三個 6 點共 18 點滿分！贏到賭場老闆當場破產，轉讓「賭場產權書」！`,
+                 nextDialogId: 'casino_success',
+                 rewards: {
+                   addInventory: 'casino_property'
+@@ -1044,6 +1058,11 @@ export const AVG_EVENTS: Record<string, AVGEvent> = {
+         speaker: '地下賭場老闆 凱薩',
+         text: '這、這不可能……！連續盲擲 18 點！？妳這丫頭運氣也太逆天了吧！罷了，願賭服輸，這張「賭場產權書」歸妳了，以後每季的分紅我會派人送去。',
+         nextId: undefined
++      },
++      casino_fail: {
++        speaker: '地下賭場老闆 凱薩',
++        text: '哼，勝負已分。賭桌上的籌碼我就全收下了，下次再來挑戰吧。',
++        nextId: undefined
+       }
+     }
+   },

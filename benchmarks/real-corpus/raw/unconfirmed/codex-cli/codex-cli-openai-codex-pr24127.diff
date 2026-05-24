@@ -1,0 +1,1568 @@
+diff --git a/codex-rs/app-server-protocol/schema/json/ClientRequest.json b/codex-rs/app-server-protocol/schema/json/ClientRequest.json
+index 7595527c212..976c7ba2e7b 100644
+--- a/codex-rs/app-server-protocol/schema/json/ClientRequest.json
++++ b/codex-rs/app-server-protocol/schema/json/ClientRequest.json
+@@ -3818,6 +3818,30 @@
+       ],
+       "type": "string"
+     },
++    "ThreadSuggestNextPromptParams": {
++      "description": "Requests a best-effort predicted next prompt for one loaded thread.\n\nThis is an internal interactive-client helper. The request does not advance the thread or persist a new item; it asks the server to sample from the thread's current prompt-visible history.",
++      "properties": {
++        "cancel": {
++          "description": "When true, cancel the request identified by `cancellation_token` without sampling.\n\nThis requires `cancellation_token`.",
++          "type": "boolean"
++        },
++        "cancellationToken": {
++          "description": "Optional client token used to cancel an older in-flight suggestion request.\n\nReusing a token cancels the older request before this request samples.",
++          "type": [
++            "string",
++            "null"
++          ]
++        },
++        "threadId": {
++          "description": "Thread whose current completed history should be used for prediction.",
++          "type": "string"
++        }
++      },
++      "required": [
++        "threadId"
++      ],
++      "type": "object"
++    },
+     "ThreadUnarchiveParams": {
+       "properties": {
+         "threadId": {
+@@ -4656,6 +4680,30 @@
+       "title": "Thread/readRequest",
+       "type": "object"
+     },
++    {
++      "properties": {
++        "id": {
++          "$ref": "#/definitions/RequestId"
++        },
++        "method": {
++          "enum": [
++            "thread/suggestNextPrompt"
++          ],
++          "title": "Thread/suggestNextPromptRequestMethod",
++          "type": "string"
++        },
++        "params": {
++          "$ref": "#/definitions/ThreadSuggestNextPromptParams"
++        }
++      },
++      "required": [
++        "id",
++        "method",
++        "params"
++      ],
++      "title": "Thread/suggestNextPromptRequest",
++      "type": "object"
++    },
+     {
+       "description": "Append raw Responses API items to the thread history without starting a user turn.",
+       "properties": {
+diff --git a/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.schemas.json b/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.schemas.json
+index a7384050362..7bdd45e3f10 100644
+--- a/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.schemas.json
++++ b/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.schemas.json
+@@ -660,6 +660,30 @@
+           "title": "Thread/readRequest",
+           "type": "object"
+         },
++        {
++          "properties": {
++            "id": {
++              "$ref": "#/definitions/v2/RequestId"
++            },
++            "method": {
++              "enum": [
++                "thread/suggestNextPrompt"
++              ],
++              "title": "Thread/suggestNextPromptRequestMethod",
++              "type": "string"
++            },
++            "params": {
++              "$ref": "#/definitions/v2/ThreadSuggestNextPromptParams"
++            }
++          },
++          "required": [
++            "id",
++            "method",
++            "params"
++          ],
++          "title": "Thread/suggestNextPromptRequest",
++          "type": "object"
++        },
+         {
+           "description": "Append raw Responses API items to the thread history without starting a user turn.",
+           "properties": {
+@@ -17823,6 +17847,47 @@
+         "title": "ThreadStatusChangedNotification",
+         "type": "object"
+       },
++      "ThreadSuggestNextPromptParams": {
++        "$schema": "http://json-schema.org/draft-07/schema#",
++        "description": "Requests a best-effort predicted next prompt for one loaded thread.\n\nThis is an internal interactive-client helper. The request does not advance the thread or persist a new item; it asks the server to sample from the thread's current prompt-visible history.",
++        "properties": {
++          "cancel": {
++            "description": "When true, cancel the request identified by `cancellation_token` without sampling.\n\nThis requires `cancellation_token`.",
++            "type": "boolean"
++          },
++          "cancellationToken": {
++            "description": "Optional client token used to cancel an older in-flight suggestion request.\n\nReusing a token cancels the older request before this request samples.",
++            "type": [
++              "string",
++              "null"
++            ]
++          },
++          "threadId": {
++            "description": "Thread whose current completed history should be used for prediction.",
++            "type": "string"
++          }
++        },
++        "required": [
++          "threadId"
++        ],
++        "title": "ThreadSuggestNextPromptParams",
++        "type": "object"
++      },
++      "ThreadSuggestNextPromptResponse": {
++        "$schema": "http://json-schema.org/draft-07/schema#",
++        "description": "Returns the predicted prompt text, or silence when no suggestion is suitable.",
++        "properties": {
++          "suggestion": {
++            "description": "Composer-ready prompt text after server-side suppression and filtering.",
++            "type": [
++              "string",
++              "null"
++            ]
++          }
++        },
++        "title": "ThreadSuggestNextPromptResponse",
++        "type": "object"
++      },
+       "ThreadTokenUsage": {
+         "properties": {
+           "last": {
+diff --git a/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.v2.schemas.json b/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.v2.schemas.json
+index ac565328f9d..f7e5470f16f 100644
+--- a/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.v2.schemas.json
++++ b/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.v2.schemas.json
+@@ -1386,6 +1386,30 @@
+           "title": "Thread/readRequest",
+           "type": "object"
+         },
++        {
++          "properties": {
++            "id": {
++              "$ref": "#/definitions/RequestId"
++            },
++            "method": {
++              "enum": [
++                "thread/suggestNextPrompt"
++              ],
++              "title": "Thread/suggestNextPromptRequestMethod",
++              "type": "string"
++            },
++            "params": {
++              "$ref": "#/definitions/ThreadSuggestNextPromptParams"
++            }
++          },
++          "required": [
++            "id",
++            "method",
++            "params"
++          ],
++          "title": "Thread/suggestNextPromptRequest",
++          "type": "object"
++        },
+         {
+           "description": "Append raw Responses API items to the thread history without starting a user turn.",
+           "properties": {
+@@ -15647,6 +15671,47 @@
+       "title": "ThreadStatusChangedNotification",
+       "type": "object"
+     },
++    "ThreadSuggestNextPromptParams": {
++      "$schema": "http://json-schema.org/draft-07/schema#",
++      "description": "Requests a best-effort predicted next prompt for one loaded thread.\n\nThis is an internal interactive-client helper. The request does not advance the thread or persist a new item; it asks the server to sample from the thread's current prompt-visible history.",
++      "properties": {
++        "cancel": {
++          "description": "When true, cancel the request identified by `cancellation_token` without sampling.\n\nThis requires `cancellation_token`.",
++          "type": "boolean"
++        },
++        "cancellationToken": {
++          "description": "Optional client token used to cancel an older in-flight suggestion request.\n\nReusing a token cancels the older request before this request samples.",
++          "type": [
++            "string",
++            "null"
++          ]
++        },
++        "threadId": {
++          "description": "Thread whose current completed history should be used for prediction.",
++          "type": "string"
++        }
++      },
++      "required": [
++        "threadId"
++      ],
++      "title": "ThreadSuggestNextPromptParams",
++      "type": "object"
++    },
++    "ThreadSuggestNextPromptResponse": {
++      "$schema": "http://json-schema.org/draft-07/schema#",
++      "description": "Returns the predicted prompt text, or silence when no suggestion is suitable.",
++      "properties": {
++        "suggestion": {
++          "description": "Composer-ready prompt text after server-side suppression and filtering.",
++          "type": [
++            "string",
++            "null"
++          ]
++        }
++      },
++      "title": "ThreadSuggestNextPromptResponse",
++      "type": "object"
++    },
+     "ThreadTokenUsage": {
+       "properties": {
+         "last": {
+diff --git a/codex-rs/app-server-protocol/schema/json/v2/ThreadSuggestNextPromptParams.json b/codex-rs/app-server-protocol/schema/json/v2/ThreadSuggestNextPromptParams.json
+new file mode 100644
+index 00000000000..7d361ae0192
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/json/v2/ThreadSuggestNextPromptParams.json
+@@ -0,0 +1,26 @@
++{
++  "$schema": "http://json-schema.org/draft-07/schema#",
++  "description": "Requests a best-effort predicted next prompt for one loaded thread.\n\nThis is an internal interactive-client helper. The request does not advance the thread or persist a new item; it asks the server to sample from the thread's current prompt-visible history.",
++  "properties": {
++    "cancel": {
++      "description": "When true, cancel the request identified by `cancellation_token` without sampling.\n\nThis requires `cancellation_token`.",
++      "type": "boolean"
++    },
++    "cancellationToken": {
++      "description": "Optional client token used to cancel an older in-flight suggestion request.\n\nReusing a token cancels the older request before this request samples.",
++      "type": [
++        "string",
++        "null"
++      ]
++    },
++    "threadId": {
++      "description": "Thread whose current completed history should be used for prediction.",
++      "type": "string"
++    }
++  },
++  "required": [
++    "threadId"
++  ],
++  "title": "ThreadSuggestNextPromptParams",
++  "type": "object"
++}
+\ No newline at end of file
+diff --git a/codex-rs/app-server-protocol/schema/json/v2/ThreadSuggestNextPromptResponse.json b/codex-rs/app-server-protocol/schema/json/v2/ThreadSuggestNextPromptResponse.json
+new file mode 100644
+index 00000000000..a414ff49898
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/json/v2/ThreadSuggestNextPromptResponse.json
+@@ -0,0 +1,15 @@
++{
++  "$schema": "http://json-schema.org/draft-07/schema#",
++  "description": "Returns the predicted prompt text, or silence when no suggestion is suitable.",
++  "properties": {
++    "suggestion": {
++      "description": "Composer-ready prompt text after server-side suppression and filtering.",
++      "type": [
++        "string",
++        "null"
++      ]
++    }
++  },
++  "title": "ThreadSuggestNextPromptResponse",
++  "type": "object"
++}
+\ No newline at end of file
+diff --git a/codex-rs/app-server-protocol/schema/typescript/ClientRequest.ts b/codex-rs/app-server-protocol/schema/typescript/ClientRequest.ts
+index 86ba2cd171f..84b1ed5c62b 100644
+--- a/codex-rs/app-server-protocol/schema/typescript/ClientRequest.ts
++++ b/codex-rs/app-server-protocol/schema/typescript/ClientRequest.ts
+@@ -75,6 +75,7 @@ import type { ThreadRollbackParams } from "./v2/ThreadRollbackParams";
+ import type { ThreadSetNameParams } from "./v2/ThreadSetNameParams";
+ import type { ThreadShellCommandParams } from "./v2/ThreadShellCommandParams";
+ import type { ThreadStartParams } from "./v2/ThreadStartParams";
++import type { ThreadSuggestNextPromptParams } from "./v2/ThreadSuggestNextPromptParams";
+ import type { ThreadUnarchiveParams } from "./v2/ThreadUnarchiveParams";
+ import type { ThreadUnsubscribeParams } from "./v2/ThreadUnsubscribeParams";
+ import type { TurnInterruptParams } from "./v2/TurnInterruptParams";
+@@ -85,4 +86,4 @@ import type { WindowsSandboxSetupStartParams } from "./v2/WindowsSandboxSetupSta
+ /**
+  * Request from the client to the server.
+  */
+-export type ClientRequest ={ "method": "initialize", id: RequestId, params: InitializeParams, } | { "method": "thread/start", id: RequestId, params: ThreadStartParams, } | { "method": "thread/resume", id: RequestId, params: ThreadResumeParams, } | { "method": "thread/fork", id: RequestId, params: ThreadForkParams, } | { "method": "thread/archive", id: RequestId, params: ThreadArchiveParams, } | { "method": "thread/unsubscribe", id: RequestId, params: ThreadUnsubscribeParams, } | { "method": "thread/name/set", id: RequestId, params: ThreadSetNameParams, } | { "method": "thread/goal/set", id: RequestId, params: ThreadGoalSetParams, } | { "method": "thread/goal/get", id: RequestId, params: ThreadGoalGetParams, } | { "method": "thread/goal/clear", id: RequestId, params: ThreadGoalClearParams, } | { "method": "thread/metadata/update", id: RequestId, params: ThreadMetadataUpdateParams, } | { "method": "thread/unarchive", id: RequestId, params: ThreadUnarchiveParams, } | { "method": "thread/compact/start", id: RequestId, params: ThreadCompactStartParams, } | { "method": "thread/shellCommand", id: RequestId, params: ThreadShellCommandParams, } | { "method": "thread/approveGuardianDeniedAction", id: RequestId, params: ThreadApproveGuardianDeniedActionParams, } | { "method": "thread/rollback", id: RequestId, params: ThreadRollbackParams, } | { "method": "thread/list", id: RequestId, params: ThreadListParams, } | { "method": "thread/loaded/list", id: RequestId, params: ThreadLoadedListParams, } | { "method": "thread/read", id: RequestId, params: ThreadReadParams, } | { "method": "thread/inject_items", id: RequestId, params: ThreadInjectItemsParams, } | { "method": "skills/list", id: RequestId, params: SkillsListParams, } | { "method": "hooks/list", id: RequestId, params: HooksListParams, } | { "method": "marketplace/add", id: RequestId, params: MarketplaceAddParams, } | { "method": "marketplace/remove", id: RequestId, params: MarketplaceRemoveParams, } | { "method": "marketplace/upgrade", id: RequestId, params: MarketplaceUpgradeParams, } | { "method": "plugin/list", id: RequestId, params: PluginListParams, } | { "method": "plugin/installed", id: RequestId, params: PluginInstalledParams, } | { "method": "plugin/read", id: RequestId, params: PluginReadParams, } | { "method": "plugin/skill/read", id: RequestId, params: PluginSkillReadParams, } | { "method": "plugin/share/save", id: RequestId, params: PluginShareSaveParams, } | { "method": "plugin/share/updateTargets", id: RequestId, params: PluginShareUpdateTargetsParams, } | { "method": "plugin/share/list", id: RequestId, params: PluginShareListParams, } | { "method": "plugin/share/checkout", id: RequestId, params: PluginShareCheckoutParams, } | { "method": "plugin/share/delete", id: RequestId, params: PluginShareDeleteParams, } | { "method": "app/list", id: RequestId, params: AppsListParams, } | { "method": "fs/readFile", id: RequestId, params: FsReadFileParams, } | { "method": "fs/writeFile", id: RequestId, params: FsWriteFileParams, } | { "method": "fs/createDirectory", id: RequestId, params: FsCreateDirectoryParams, } | { "method": "fs/getMetadata", id: RequestId, params: FsGetMetadataParams, } | { "method": "fs/readDirectory", id: RequestId, params: FsReadDirectoryParams, } | { "method": "fs/remove", id: RequestId, params: FsRemoveParams, } | { "method": "fs/copy", id: RequestId, params: FsCopyParams, } | { "method": "fs/watch", id: RequestId, params: FsWatchParams, } | { "method": "fs/unwatch", id: RequestId, params: FsUnwatchParams, } | { "method": "skills/config/write", id: RequestId, params: SkillsConfigWriteParams, } | { "method": "plugin/install", id: RequestId, params: PluginInstallParams, } | { "method": "plugin/uninstall", id: RequestId, params: PluginUninstallParams, } | { "method": "turn/start", id: RequestId, params: TurnStartParams, } | { "method": "turn/steer", id: RequestId, params: TurnSteerParams, } | { "method": "turn/interrupt", id: RequestId, params: TurnInterruptParams, } | { "method": "review/start", id: RequestId, params: ReviewStartParams, } | { "method": "model/list", id: RequestId, params: ModelListParams, } | { "method": "modelProvider/capabilities/read", id: RequestId, params: ModelProviderCapabilitiesReadParams, } | { "method": "experimentalFeature/list", id: RequestId, params: ExperimentalFeatureListParams, } | { "method": "permissionProfile/list", id: RequestId, params: PermissionProfileListParams, } | { "method": "experimentalFeature/enablement/set", id: RequestId, params: ExperimentalFeatureEnablementSetParams, } | { "method": "mcpServer/oauth/login", id: RequestId, params: McpServerOauthLoginParams, } | { "method": "config/mcpServer/reload", id: RequestId, params: undefined, } | { "method": "mcpServerStatus/list", id: RequestId, params: ListMcpServerStatusParams, } | { "method": "mcpServer/resource/read", id: RequestId, params: McpResourceReadParams, } | { "method": "mcpServer/tool/call", id: RequestId, params: McpServerToolCallParams, } | { "method": "windowsSandbox/setupStart", id: RequestId, params: WindowsSandboxSetupStartParams, } | { "method": "windowsSandbox/readiness", id: RequestId, params: undefined, } | { "method": "account/login/start", id: RequestId, params: LoginAccountParams, } | { "method": "account/login/cancel", id: RequestId, params: CancelLoginAccountParams, } | { "method": "account/logout", id: RequestId, params: undefined, } | { "method": "account/rateLimits/read", id: RequestId, params: undefined, } | { "method": "account/sendAddCreditsNudgeEmail", id: RequestId, params: SendAddCreditsNudgeEmailParams, } | { "method": "feedback/upload", id: RequestId, params: FeedbackUploadParams, } | { "method": "command/exec", id: RequestId, params: CommandExecParams, } | { "method": "command/exec/write", id: RequestId, params: CommandExecWriteParams, } | { "method": "command/exec/terminate", id: RequestId, params: CommandExecTerminateParams, } | { "method": "command/exec/resize", id: RequestId, params: CommandExecResizeParams, } | { "method": "config/read", id: RequestId, params: ConfigReadParams, } | { "method": "externalAgentConfig/detect", id: RequestId, params: ExternalAgentConfigDetectParams, } | { "method": "externalAgentConfig/import", id: RequestId, params: ExternalAgentConfigImportParams, } | { "method": "config/value/write", id: RequestId, params: ConfigValueWriteParams, } | { "method": "config/batchWrite", id: RequestId, params: ConfigBatchWriteParams, } | { "method": "configRequirements/read", id: RequestId, params: undefined, } | { "method": "account/read", id: RequestId, params: GetAccountParams, } | { "method": "getConversationSummary", id: RequestId, params: GetConversationSummaryParams, } | { "method": "gitDiffToRemote", id: RequestId, params: GitDiffToRemoteParams, } | { "method": "getAuthStatus", id: RequestId, params: GetAuthStatusParams, } | { "method": "fuzzyFileSearch", id: RequestId, params: FuzzyFileSearchParams, };
++export type ClientRequest ={ "method": "initialize", id: RequestId, params: InitializeParams, } | { "method": "thread/start", id: RequestId, params: ThreadStartParams, } | { "method": "thread/resume", id: RequestId, params: ThreadResumeParams, } | { "method": "thread/fork", id: RequestId, params: ThreadForkParams, } | { "method": "thread/archive", id: RequestId, params: ThreadArchiveParams, } | { "method": "thread/unsubscribe", id: RequestId, params: ThreadUnsubscribeParams, } | { "method": "thread/name/set", id: RequestId, params: ThreadSetNameParams, } | { "method": "thread/goal/set", id: RequestId, params: ThreadGoalSetParams, } | { "method": "thread/goal/get", id: RequestId, params: ThreadGoalGetParams, } | { "method": "thread/goal/clear", id: RequestId, params: ThreadGoalClearParams, } | { "method": "thread/metadata/update", id: RequestId, params: ThreadMetadataUpdateParams, } | { "method": "thread/unarchive", id: RequestId, params: ThreadUnarchiveParams, } | { "method": "thread/compact/start", id: RequestId, params: ThreadCompactStartParams, } | { "method": "thread/shellCommand", id: RequestId, params: ThreadShellCommandParams, } | { "method": "thread/approveGuardianDeniedAction", id: RequestId, params: ThreadApproveGuardianDeniedActionParams, } | { "method": "thread/rollback", id: RequestId, params: ThreadRollbackParams, } | { "method": "thread/list", id: RequestId, params: ThreadListParams, } | { "method": "thread/loaded/list", id: RequestId, params: ThreadLoadedListParams, } | { "method": "thread/read", id: RequestId, params: ThreadReadParams, } | { "method": "thread/suggestNextPrompt", id: RequestId, params: ThreadSuggestNextPromptParams, } | { "method": "thread/inject_items", id: RequestId, params: ThreadInjectItemsParams, } | { "method": "skills/list", id: RequestId, params: SkillsListParams, } | { "method": "hooks/list", id: RequestId, params: HooksListParams, } | { "method": "marketplace/add", id: RequestId, params: MarketplaceAddParams, } | { "method": "marketplace/remove", id: RequestId, params: MarketplaceRemoveParams, } | { "method": "marketplace/upgrade", id: RequestId, params: MarketplaceUpgradeParams, } | { "method": "plugin/list", id: RequestId, params: PluginListParams, } | { "method": "plugin/installed", id: RequestId, params: PluginInstalledParams, } | { "method": "plugin/read", id: RequestId, params: PluginReadParams, } | { "method": "plugin/skill/read", id: RequestId, params: PluginSkillReadParams, } | { "method": "plugin/share/save", id: RequestId, params: PluginShareSaveParams, } | { "method": "plugin/share/updateTargets", id: RequestId, params: PluginShareUpdateTargetsParams, } | { "method": "plugin/share/list", id: RequestId, params: PluginShareListParams, } | { "method": "plugin/share/checkout", id: RequestId, params: PluginShareCheckoutParams, } | { "method": "plugin/share/delete", id: RequestId, params: PluginShareDeleteParams, } | { "method": "app/list", id: RequestId, params: AppsListParams, } | { "method": "fs/readFile", id: RequestId, params: FsReadFileParams, } | { "method": "fs/writeFile", id: RequestId, params: FsWriteFileParams, } | { "method": "fs/createDirectory", id: RequestId, params: FsCreateDirectoryParams, } | { "method": "fs/getMetadata", id: RequestId, params: FsGetMetadataParams, } | { "method": "fs/readDirectory", id: RequestId, params: FsReadDirectoryParams, } | { "method": "fs/remove", id: RequestId, params: FsRemoveParams, } | { "method": "fs/copy", id: RequestId, params: FsCopyParams, } | { "method": "fs/watch", id: RequestId, params: FsWatchParams, } | { "method": "fs/unwatch", id: RequestId, params: FsUnwatchParams, } | { "method": "skills/config/write", id: RequestId, params: SkillsConfigWriteParams, } | { "method": "plugin/install", id: RequestId, params: PluginInstallParams, } | { "method": "plugin/uninstall", id: RequestId, params: PluginUninstallParams, } | { "method": "turn/start", id: RequestId, params: TurnStartParams, } | { "method": "turn/steer", id: RequestId, params: TurnSteerParams, } | { "method": "turn/interrupt", id: RequestId, params: TurnInterruptParams, } | { "method": "review/start", id: RequestId, params: ReviewStartParams, } | { "method": "model/list", id: RequestId, params: ModelListParams, } | { "method": "modelProvider/capabilities/read", id: RequestId, params: ModelProviderCapabilitiesReadParams, } | { "method": "experimentalFeature/list", id: RequestId, params: ExperimentalFeatureListParams, } | { "method": "permissionProfile/list", id: RequestId, params: PermissionProfileListParams, } | { "method": "experimentalFeature/enablement/set", id: RequestId, params: ExperimentalFeatureEnablementSetParams, } | { "method": "mcpServer/oauth/login", id: RequestId, params: McpServerOauthLoginParams, } | { "method": "config/mcpServer/reload", id: RequestId, params: undefined, } | { "method": "mcpServerStatus/list", id: RequestId, params: ListMcpServerStatusParams, } | { "method": "mcpServer/resource/read", id: RequestId, params: McpResourceReadParams, } | { "method": "mcpServer/tool/call", id: RequestId, params: McpServerToolCallParams, } | { "method": "windowsSandbox/setupStart", id: RequestId, params: WindowsSandboxSetupStartParams, } | { "method": "windowsSandbox/readiness", id: RequestId, params: undefined, } | { "method": "account/login/start", id: RequestId, params: LoginAccountParams, } | { "method": "account/login/cancel", id: RequestId, params: CancelLoginAccountParams, } | { "method": "account/logout", id: RequestId, params: undefined, } | { "method": "account/rateLimits/read", id: RequestId, params: undefined, } | { "method": "account/sendAddCreditsNudgeEmail", id: RequestId, params: SendAddCreditsNudgeEmailParams, } | { "method": "feedback/upload", id: RequestId, params: FeedbackUploadParams, } | { "method": "command/exec", id: RequestId, params: CommandExecParams, } | { "method": "command/exec/write", id: RequestId, params: CommandExecWriteParams, } | { "method": "command/exec/terminate", id: RequestId, params: CommandExecTerminateParams, } | { "method": "command/exec/resize", id: RequestId, params: CommandExecResizeParams, } | { "method": "config/read", id: RequestId, params: ConfigReadParams, } | { "method": "externalAgentConfig/detect", id: RequestId, params: ExternalAgentConfigDetectParams, } | { "method": "externalAgentConfig/import", id: RequestId, params: ExternalAgentConfigImportParams, } | { "method": "config/value/write", id: RequestId, params: ConfigValueWriteParams, } | { "method": "config/batchWrite", id: RequestId, params: ConfigBatchWriteParams, } | { "method": "configRequirements/read", id: RequestId, params: undefined, } | { "method": "account/read", id: RequestId, params: GetAccountParams, } | { "method": "getConversationSummary", id: RequestId, params: GetConversationSummaryParams, } | { "method": "gitDiffToRemote", id: RequestId, params: GitDiffToRemoteParams, } | { "method": "getAuthStatus", id: RequestId, params: GetAuthStatusParams, } | { "method": "fuzzyFileSearch", id: RequestId, params: FuzzyFileSearchParams, };
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/ThreadSuggestNextPromptParams.ts b/codex-rs/app-server-protocol/schema/typescript/v2/ThreadSuggestNextPromptParams.ts
+new file mode 100644
+index 00000000000..7b87e1496a9
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/ThreadSuggestNextPromptParams.ts
+@@ -0,0 +1,28 @@
++// GENERATED CODE! DO NOT MODIFY BY HAND!
++
++// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
++
++/**
++ * Requests a best-effort predicted next prompt for one loaded thread.
++ *
++ * This is an internal interactive-client helper. The request does not advance
++ * the thread or persist a new item; it asks the server to sample from the
++ * thread's current prompt-visible history.
++ */
++export type ThreadSuggestNextPromptParams = {
++/**
++ * Thread whose current completed history should be used for prediction.
++ */
++threadId: string,
++/**
++ * Optional client token used to cancel an older in-flight suggestion request.
++ *
++ * Reusing a token cancels the older request before this request samples.
++ */
++cancellationToken?: string | null,
++/**
++ * When true, cancel the request identified by `cancellation_token` without sampling.
++ *
++ * This requires `cancellation_token`.
++ */
++cancel?: boolean, };
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/ThreadSuggestNextPromptResponse.ts b/codex-rs/app-server-protocol/schema/typescript/v2/ThreadSuggestNextPromptResponse.ts
+new file mode 100644
+index 00000000000..e2186c4b932
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/ThreadSuggestNextPromptResponse.ts
+@@ -0,0 +1,12 @@
++// GENERATED CODE! DO NOT MODIFY BY HAND!
++
++// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
++
++/**
++ * Returns the predicted prompt text, or silence when no suggestion is suitable.
++ */
++export type ThreadSuggestNextPromptResponse = {
++/**
++ * Composer-ready prompt text after server-side suppression and filtering.
++ */
++suggestion: string | null, };
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/index.ts b/codex-rs/app-server-protocol/schema/typescript/v2/index.ts
+index 5b4f2ed2831..0fca2af4f5c 100644
+--- a/codex-rs/app-server-protocol/schema/typescript/v2/index.ts
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/index.ts
+@@ -416,6 +416,8 @@ export type { ThreadStartSource } from "./ThreadStartSource";
+ export type { ThreadStartedNotification } from "./ThreadStartedNotification";
+ export type { ThreadStatus } from "./ThreadStatus";
+ export type { ThreadStatusChangedNotification } from "./ThreadStatusChangedNotification";
++export type { ThreadSuggestNextPromptParams } from "./ThreadSuggestNextPromptParams";
++export type { ThreadSuggestNextPromptResponse } from "./ThreadSuggestNextPromptResponse";
+ export type { ThreadTokenUsage } from "./ThreadTokenUsage";
+ export type { ThreadTokenUsageUpdatedNotification } from "./ThreadTokenUsageUpdatedNotification";
+ export type { ThreadUnarchiveParams } from "./ThreadUnarchiveParams";
+diff --git a/codex-rs/app-server-protocol/src/protocol/common.rs b/codex-rs/app-server-protocol/src/protocol/common.rs
+index a8bec6b4025..31519b0b72a 100644
+--- a/codex-rs/app-server-protocol/src/protocol/common.rs
++++ b/codex-rs/app-server-protocol/src/protocol/common.rs
+@@ -585,6 +585,12 @@ client_request_definitions! {
+         serialization: thread_id(params.thread_id),
+         response: v2::ThreadReadResponse,
+     },
++    ThreadSuggestNextPrompt => "thread/suggestNextPrompt" {
++        params: v2::ThreadSuggestNextPromptParams,
++        // Hidden prediction must never queue interactive thread work behind its sampling request.
++        serialization: None,
++        response: v2::ThreadSuggestNextPromptResponse,
++    },
+     #[experimental("thread/turns/list")]
+     ThreadTurnsList => "thread/turns/list" {
+         params: v2::ThreadTurnsListParams,
+@@ -1961,6 +1967,26 @@ mod tests {
+             },
+         };
+         assert_eq!(mcp_resource_read.serialization_scope(), None);
++
++        let suggest_next_prompt_cancel = ClientRequest::ThreadSuggestNextPrompt {
++            request_id: request_id(),
++            params: v2::ThreadSuggestNextPromptParams {
++                thread_id: "suggest-thread".to_string(),
++                cancellation_token: Some("suggestion-1".to_string()),
++                cancel: true,
++            },
++        };
++        assert_eq!(suggest_next_prompt_cancel.serialization_scope(), None);
++
++        let suggest_next_prompt = ClientRequest::ThreadSuggestNextPrompt {
++            request_id: request_id(),
++            params: v2::ThreadSuggestNextPromptParams {
++                thread_id: "suggest-thread".to_string(),
++                cancellation_token: Some("suggestion-1".to_string()),
++                cancel: false,
++            },
++        };
++        assert_eq!(suggest_next_prompt.serialization_scope(), None);
+     }
+ 
+     #[test]
+diff --git a/codex-rs/app-server-protocol/src/protocol/v2/thread.rs b/codex-rs/app-server-protocol/src/protocol/v2/thread.rs
+index 4971d5f4b8a..d57e46e9ad8 100644
+--- a/codex-rs/app-server-protocol/src/protocol/v2/thread.rs
++++ b/codex-rs/app-server-protocol/src/protocol/v2/thread.rs
+@@ -1143,6 +1143,38 @@ pub struct ThreadReadResponse {
+     pub thread: Thread,
+ }
+ 
++#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
++#[serde(rename_all = "camelCase")]
++#[ts(export_to = "v2/")]
++/// Requests a best-effort predicted next prompt for one loaded thread.
++///
++/// This is an internal interactive-client helper. The request does not advance
++/// the thread or persist a new item; it asks the server to sample from the
++/// thread's current prompt-visible history.
++pub struct ThreadSuggestNextPromptParams {
++    /// Thread whose current completed history should be used for prediction.
++    pub thread_id: String,
++    /// Optional client token used to cancel an older in-flight suggestion request.
++    ///
++    /// Reusing a token cancels the older request before this request samples.
++    #[ts(optional = nullable)]
++    pub cancellation_token: Option<String>,
++    /// When true, cancel the request identified by `cancellation_token` without sampling.
++    ///
++    /// This requires `cancellation_token`.
++    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
++    pub cancel: bool,
++}
++
++#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
++#[serde(rename_all = "camelCase")]
++#[ts(export_to = "v2/")]
++/// Returns the predicted prompt text, or silence when no suggestion is suitable.
++pub struct ThreadSuggestNextPromptResponse {
++    /// Composer-ready prompt text after server-side suppression and filtering.
++    pub suggestion: Option<String>,
++}
++
+ #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+ #[serde(rename_all = "camelCase")]
+ #[ts(export_to = "v2/")]
+diff --git a/codex-rs/app-server/README.md b/codex-rs/app-server/README.md
+index dcc29530736..6155e503744 100644
+--- a/codex-rs/app-server/README.md
++++ b/codex-rs/app-server/README.md
+@@ -137,6 +137,7 @@ Example with notification opt-out:
+ - `thread/list` — page through stored rollouts; supports cursor-based pagination and optional `modelProviders`, `sourceKinds`, `archived`, `cwd`, and `searchTerm` filters. Each returned `thread` includes `status` (`ThreadStatus`), defaulting to `notLoaded` when the thread is not currently loaded.
+ - `thread/loaded/list` — list the thread ids currently loaded in memory.
+ - `thread/read` — read a stored thread by id without resuming it; optionally include turns via `includeTurns`. The returned `thread` includes `status` (`ThreadStatus`), defaulting to `notLoaded` when the thread is not currently loaded.
++- `thread/suggestNextPrompt` — sample a filtered next-prompt suggestion for a loaded thread without starting a turn. This is an internal TUI helper, not a general conversation mutation API.
+ - `thread/turns/list` — experimental; page through a stored thread’s turn history without resuming it; supports cursor-based pagination with `sortDirection`, `itemsView`, `nextCursor`, and `backwardsCursor`.
+ - `thread/turns/items/list` — experimental; reserved for paging full items for one turn. The API shape is present, but app-server currently returns an unsupported-method JSON-RPC error.
+ - `thread/metadata/update` — patch stored thread metadata in sqlite; currently supports updating persisted `gitInfo` fields and returns the refreshed `thread`.
+diff --git a/codex-rs/app-server/src/message_processor.rs b/codex-rs/app-server/src/message_processor.rs
+index 0e1f019de92..92a795d5f1a 100644
+--- a/codex-rs/app-server/src/message_processor.rs
++++ b/codex-rs/app-server/src/message_processor.rs
+@@ -1081,6 +1081,9 @@ impl MessageProcessor {
+             ClientRequest::ThreadRead { params, .. } => {
+                 self.thread_processor.thread_read(params).await
+             }
++            ClientRequest::ThreadSuggestNextPrompt { params, .. } => {
++                self.turn_processor.thread_suggest_next_prompt(params).await
++            }
+             ClientRequest::ThreadTurnsList { params, .. } => {
+                 self.thread_processor.thread_turns_list(params).await
+             }
+diff --git a/codex-rs/app-server/src/request_processors.rs b/codex-rs/app-server/src/request_processors.rs
+index d0958e80ab9..7f31e4acf65 100644
+--- a/codex-rs/app-server/src/request_processors.rs
++++ b/codex-rs/app-server/src/request_processors.rs
+@@ -230,6 +230,8 @@ use codex_app_server_protocol::ThreadStartParams;
+ use codex_app_server_protocol::ThreadStartResponse;
+ use codex_app_server_protocol::ThreadStartedNotification;
+ use codex_app_server_protocol::ThreadStatus;
++use codex_app_server_protocol::ThreadSuggestNextPromptParams;
++use codex_app_server_protocol::ThreadSuggestNextPromptResponse;
+ use codex_app_server_protocol::ThreadTurnsItemsListParams;
+ use codex_app_server_protocol::ThreadTurnsListParams;
+ use codex_app_server_protocol::ThreadTurnsListResponse;
+diff --git a/codex-rs/app-server/src/request_processors/turn_processor.rs b/codex-rs/app-server/src/request_processors/turn_processor.rs
+index ff2825be678..93a28d89803 100644
+--- a/codex-rs/app-server/src/request_processors/turn_processor.rs
++++ b/codex-rs/app-server/src/request_processors/turn_processor.rs
+@@ -10,6 +10,8 @@ pub(crate) struct TurnRequestProcessor {
+     config: Arc<Config>,
+     config_manager: ConfigManager,
+     pending_thread_unloads: Arc<Mutex<HashSet<ThreadId>>>,
++    pending_next_prompt_suggestions:
++        Arc<Mutex<HashMap<NextPromptSuggestionCancellationKey, NextPromptSuggestionCancellation>>>,
+     thread_state_manager: ThreadStateManager,
+     thread_watch_manager: ThreadWatchManager,
+     thread_list_state_permit: Arc<Semaphore>,
+@@ -46,6 +48,54 @@ struct ThreadSettingsBuildParams {
+     personality: Option<Personality>,
+ }
+ 
++#[derive(Clone, Eq, Hash, PartialEq)]
++struct NextPromptSuggestionCancellationKey {
++    thread_id: String,
++    cancellation_token: String,
++}
++
++impl NextPromptSuggestionCancellationKey {
++    fn new(thread_id: &str, cancellation_token: &str) -> Self {
++        Self {
++            thread_id: thread_id.to_string(),
++            cancellation_token: cancellation_token.to_string(),
++        }
++    }
++}
++
++enum NextPromptSuggestionCancellation {
++    Active(Arc<CancellationToken>),
++    /// One-shot marker for a cancel request that arrived before its matching
++    /// suggestion request reserved the token.
++    Cancelled {
++        expires_at: std::time::Instant,
++    },
++    /// Short-lived record for a request that was already cancelled or completed.
++    ///
++    /// This lets late duplicate cancels become no-ops instead of creating a
++    /// stale one-shot cancellation for a future request that reuses the token.
++    Retired {
++        expires_at: std::time::Instant,
++    },
++}
++
++const NEXT_PROMPT_SUGGESTION_RETIRED_TOKEN_TTL: std::time::Duration =
++    std::time::Duration::from_secs(/*secs*/ 60);
++
++fn prune_expired_next_prompt_suggestions(
++    pending_next_prompt_suggestions: &mut HashMap<
++        NextPromptSuggestionCancellationKey,
++        NextPromptSuggestionCancellation,
++    >,
++) {
++    let now = std::time::Instant::now();
++    pending_next_prompt_suggestions.retain(|_, cancellation| match cancellation {
++        NextPromptSuggestionCancellation::Active(_) => true,
++        NextPromptSuggestionCancellation::Cancelled { expires_at }
++        | NextPromptSuggestionCancellation::Retired { expires_at } => *expires_at > now,
++    });
++}
++
+ impl TurnRequestProcessor {
+     #[allow(clippy::too_many_arguments)]
+     pub(crate) fn new(
+@@ -71,6 +121,7 @@ impl TurnRequestProcessor {
+             config,
+             config_manager,
+             pending_thread_unloads,
++            pending_next_prompt_suggestions: Arc::new(Mutex::new(HashMap::new())),
+             thread_state_manager,
+             thread_watch_manager,
+             thread_list_state_permit,
+@@ -114,6 +165,21 @@ impl TurnRequestProcessor {
+             .map(|response| Some(response.into()))
+     }
+ 
++    /// Handles the internal next-prompt RPC without mutating thread state.
++    ///
++    /// The loaded thread owns sampling and filtering. This processor maps the
++    /// typed RPC boundary onto that thread API, tracks optional client
++    /// cancellation tokens, and converts unexpected core errors into the
++    /// app-server error channel.
++    pub(crate) async fn thread_suggest_next_prompt(
++        &self,
++        params: ThreadSuggestNextPromptParams,
++    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
++        self.thread_suggest_next_prompt_inner(params)
++            .await
++            .map(|response| Some(response.into()))
++    }
++
+     pub(crate) async fn turn_steer(
+         &self,
+         request_id: &ConnectionRequestId,
+@@ -668,6 +734,151 @@ impl TurnRequestProcessor {
+         Ok(ThreadSettingsUpdateResponse {})
+     }
+ 
++    async fn thread_suggest_next_prompt_inner(
++        &self,
++        params: ThreadSuggestNextPromptParams,
++    ) -> Result<ThreadSuggestNextPromptResponse, JSONRPCErrorError> {
++        let ThreadSuggestNextPromptParams {
++            thread_id,
++            cancellation_token,
++            cancel,
++        } = params;
++        let suggestion_cancellation = self
++            .next_prompt_suggestion_cancellation(&thread_id, cancellation_token.as_deref(), cancel)
++            .await?;
++        let Some(suggestion_cancellation) = suggestion_cancellation else {
++            return Ok(ThreadSuggestNextPromptResponse { suggestion: None });
++        };
++
++        let result = async {
++            let (_, thread) = self.load_thread(&thread_id).await?;
++            thread
++                .suggest_next_prompt(suggestion_cancellation.as_ref().clone())
++                .await
++                .map_err(|err| internal_error(format!("failed to suggest next prompt: {err}")))
++        }
++        .await;
++        self.clear_next_prompt_suggestion_cancellation(
++            &thread_id,
++            cancellation_token.as_deref(),
++            &suggestion_cancellation,
++        )
++        .await;
++        let suggestion = result?;
++        Ok(ThreadSuggestNextPromptResponse { suggestion })
++    }
++
++    async fn next_prompt_suggestion_cancellation(
++        &self,
++        thread_id: &str,
++        cancellation_token: Option<&str>,
++        cancel: bool,
++    ) -> Result<Option<Arc<CancellationToken>>, JSONRPCErrorError> {
++        let Some(cancellation_token) = cancellation_token else {
++            if cancel {
++                return Err(invalid_request(
++                    "cancellationToken is required when cancel is true",
++                ));
++            }
++            return Ok(Some(Arc::new(CancellationToken::new())));
++        };
++
++        let mut pending_next_prompt_suggestions = self.pending_next_prompt_suggestions.lock().await;
++        prune_expired_next_prompt_suggestions(&mut pending_next_prompt_suggestions);
++        let key = NextPromptSuggestionCancellationKey::new(thread_id, cancellation_token);
++        if cancel {
++            match pending_next_prompt_suggestions.remove(&key) {
++                Some(NextPromptSuggestionCancellation::Active(existing)) => {
++                    existing.cancel();
++                    pending_next_prompt_suggestions.insert(
++                        key,
++                        NextPromptSuggestionCancellation::Retired {
++                            expires_at: std::time::Instant::now()
++                                + NEXT_PROMPT_SUGGESTION_RETIRED_TOKEN_TTL,
++                        },
++                    );
++                }
++                Some(NextPromptSuggestionCancellation::Cancelled { expires_at }) => {
++                    pending_next_prompt_suggestions.insert(
++                        key,
++                        NextPromptSuggestionCancellation::Cancelled { expires_at },
++                    );
++                }
++                Some(NextPromptSuggestionCancellation::Retired { expires_at }) => {
++                    pending_next_prompt_suggestions.insert(
++                        key,
++                        NextPromptSuggestionCancellation::Retired { expires_at },
++                    );
++                }
++                None => {
++                    pending_next_prompt_suggestions.insert(
++                        key,
++                        NextPromptSuggestionCancellation::Cancelled {
++                            expires_at: std::time::Instant::now()
++                                + NEXT_PROMPT_SUGGESTION_RETIRED_TOKEN_TTL,
++                        },
++                    );
++                }
++            }
++            return Ok(None);
++        }
++
++        match pending_next_prompt_suggestions.remove(&key) {
++            Some(NextPromptSuggestionCancellation::Active(existing)) => existing.cancel(),
++            Some(NextPromptSuggestionCancellation::Cancelled { .. }) => {
++                pending_next_prompt_suggestions.insert(
++                    key,
++                    NextPromptSuggestionCancellation::Retired {
++                        expires_at: std::time::Instant::now()
++                            + NEXT_PROMPT_SUGGESTION_RETIRED_TOKEN_TTL,
++                    },
++                );
++                return Ok(None);
++            }
++            Some(NextPromptSuggestionCancellation::Retired { .. }) | None => {}
++        }
++
++        let cancellation = Arc::new(CancellationToken::new());
++        pending_next_prompt_suggestions.insert(
++            key,
++            NextPromptSuggestionCancellation::Active(Arc::clone(&cancellation)),
++        );
++        Ok(Some(cancellation))
++    }
++
++    async fn clear_next_prompt_suggestion_cancellation(
++        &self,
++        thread_id: &str,
++        cancellation_token: Option<&str>,
++        suggestion_cancellation: &Arc<CancellationToken>,
++    ) {
++        let Some(cancellation_token) = cancellation_token else {
++            return;
++        };
++
++        let mut pending_next_prompt_suggestions = self.pending_next_prompt_suggestions.lock().await;
++        prune_expired_next_prompt_suggestions(&mut pending_next_prompt_suggestions);
++        let key = NextPromptSuggestionCancellationKey::new(thread_id, cancellation_token);
++        if pending_next_prompt_suggestions
++            .get(&key)
++            .is_some_and(|current| match current {
++                NextPromptSuggestionCancellation::Active(current) => {
++                    Arc::ptr_eq(current, suggestion_cancellation)
++                }
++                NextPromptSuggestionCancellation::Cancelled { .. }
++                | NextPromptSuggestionCancellation::Retired { .. } => false,
++            })
++        {
++            pending_next_prompt_suggestions.insert(
++                key,
++                NextPromptSuggestionCancellation::Retired {
++                    expires_at: std::time::Instant::now()
++                        + NEXT_PROMPT_SUGGESTION_RETIRED_TOKEN_TTL,
++                },
++            );
++        }
++    }
++
+     async fn thread_inject_items_response_inner(
+         &self,
+         params: ThreadInjectItemsParams,
+diff --git a/codex-rs/app-server/tests/suite/v2/mod.rs b/codex-rs/app-server/tests/suite/v2/mod.rs
+index 92e0f126f37..6b572f0a5c1 100644
+--- a/codex-rs/app-server/tests/suite/v2/mod.rs
++++ b/codex-rs/app-server/tests/suite/v2/mod.rs
+@@ -62,6 +62,7 @@ mod thread_settings_update;
+ mod thread_shell_command;
+ mod thread_start;
+ mod thread_status;
++mod thread_suggest_next_prompt;
+ mod thread_unarchive;
+ mod thread_unsubscribe;
+ mod turn_interrupt;
+diff --git a/codex-rs/app-server/tests/suite/v2/thread_suggest_next_prompt.rs b/codex-rs/app-server/tests/suite/v2/thread_suggest_next_prompt.rs
+new file mode 100644
+index 00000000000..67b96c0a5bf
+--- /dev/null
++++ b/codex-rs/app-server/tests/suite/v2/thread_suggest_next_prompt.rs
+@@ -0,0 +1,544 @@
++use anyhow::Result;
++use app_test_support::McpProcess;
++use app_test_support::to_response;
++use codex_app_server_protocol::JSONRPCResponse;
++use codex_app_server_protocol::RequestId;
++use codex_app_server_protocol::ThreadInjectItemsParams;
++use codex_app_server_protocol::ThreadInjectItemsResponse;
++use codex_app_server_protocol::ThreadStartParams;
++use codex_app_server_protocol::ThreadStartResponse;
++use codex_app_server_protocol::ThreadSuggestNextPromptResponse;
++use codex_protocol::models::ContentItem;
++use codex_protocol::models::ResponseItem;
++use core_test_support::responses;
++use pretty_assertions::assert_eq;
++use serde_json::json;
++use std::path::Path;
++use tempfile::TempDir;
++use tokio::time::sleep;
++use tokio::time::timeout;
++
++const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(/*secs*/ 10);
++
++#[tokio::test]
++async fn thread_suggest_next_prompt_samples_loaded_history_without_tools() -> Result<()> {
++    let server = responses::start_mock_server().await;
++    let body = responses::sse(vec![
++        responses::ev_response_created("resp-1"),
++        responses::ev_assistant_message("msg-1", "run the tests"),
++        responses::ev_completed("resp-1"),
++    ]);
++    let response_mock = responses::mount_sse_once(&server, body).await;
++
++    let codex_home = TempDir::new()?;
++    create_config_toml(codex_home.path(), &server.uri())?;
++
++    let mut mcp = McpProcess::new(codex_home.path()).await?;
++    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
++
++    let thread_req = mcp
++        .send_thread_start_request(ThreadStartParams {
++            model: Some("mock-model".to_string()),
++            ..Default::default()
++        })
++        .await?;
++    let thread_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(thread_req)),
++    )
++    .await??;
++    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(thread_resp)?;
++
++    inject_suggestion_history(&mut mcp, &thread.id).await?;
++
++    let request_id = mcp
++        .send_raw_request(
++            "thread/suggestNextPrompt",
++            Some(json!({ "threadId": thread.id })),
++        )
++        .await?;
++    let response: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
++    )
++    .await??;
++    let response = to_response::<ThreadSuggestNextPromptResponse>(response)?;
++
++    assert_eq!(response.suggestion.as_deref(), Some("run the tests"));
++    let request = response_mock.single_request();
++    assert_eq!(request.body_json()["tools"], json!([]));
++    assert!(
++        request
++            .message_input_texts("user")
++            .last()
++            .is_some_and(|text| text.contains("[SUGGESTION MODE:")),
++        "suggestion prompt should be appended as the final user message"
++    );
++
++    Ok(())
++}
++
++#[tokio::test]
++async fn thread_suggest_next_prompt_cancel_stops_in_flight_sampling() -> Result<()> {
++    let server = responses::start_mock_server().await;
++    let body = responses::sse(vec![
++        responses::ev_response_created("resp-1"),
++        responses::ev_assistant_message("msg-1", "run the tests"),
++        responses::ev_completed("resp-1"),
++    ]);
++    let response_mock = responses::mount_response_once(
++        &server,
++        responses::sse_response(body).set_delay(std::time::Duration::from_secs(/*secs*/ 5)),
++    )
++    .await;
++
++    let codex_home = TempDir::new()?;
++    create_config_toml(codex_home.path(), &server.uri())?;
++
++    let mut mcp = McpProcess::new(codex_home.path()).await?;
++    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
++
++    let thread_req = mcp
++        .send_thread_start_request(ThreadStartParams {
++            model: Some("mock-model".to_string()),
++            ..Default::default()
++        })
++        .await?;
++    let thread_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(thread_req)),
++    )
++    .await??;
++    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(thread_resp)?;
++    inject_suggestion_history(&mut mcp, &thread.id).await?;
++
++    let suggestion_req = mcp
++        .send_raw_request(
++            "thread/suggestNextPrompt",
++            Some(json!({
++                "threadId": thread.id,
++                "cancellationToken": "next-prompt-suggestion-test",
++            })),
++        )
++        .await?;
++    wait_for_request_count(&response_mock, /*expected*/ 1).await?;
++    let cancel_req = mcp
++        .send_raw_request(
++            "thread/suggestNextPrompt",
++            Some(json!({
++                "threadId": thread.id,
++                "cancellationToken": "next-prompt-suggestion-test",
++                "cancel": true,
++            })),
++        )
++        .await?;
++
++    let cancel_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(cancel_req)),
++    )
++    .await??;
++    let cancel_resp = to_response::<ThreadSuggestNextPromptResponse>(cancel_resp)?;
++    assert_eq!(cancel_resp.suggestion, None);
++
++    let suggestion_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(suggestion_req)),
++    )
++    .await??;
++    let suggestion_resp = to_response::<ThreadSuggestNextPromptResponse>(suggestion_resp)?;
++    assert_eq!(suggestion_resp.suggestion, None);
++    assert_eq!(response_mock.requests().len(), /*expected*/ 1);
++
++    Ok(())
++}
++
++#[tokio::test]
++async fn thread_suggest_next_prompt_cancel_is_scoped_to_thread() -> Result<()> {
++    let server = responses::start_mock_server().await;
++    let body = responses::sse(vec![
++        responses::ev_response_created("resp-1"),
++        responses::ev_assistant_message("msg-1", "run the tests"),
++        responses::ev_completed("resp-1"),
++    ]);
++    let response_mock = responses::mount_response_once(
++        &server,
++        responses::sse_response(body)
++            .set_delay(std::time::Duration::from_millis(/*millis*/ 100)),
++    )
++    .await;
++
++    let codex_home = TempDir::new()?;
++    create_config_toml(codex_home.path(), &server.uri())?;
++
++    let mut mcp = McpProcess::new(codex_home.path()).await?;
++    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
++
++    let first_thread_req = mcp
++        .send_thread_start_request(ThreadStartParams {
++            model: Some("mock-model".to_string()),
++            ..Default::default()
++        })
++        .await?;
++    let first_thread_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(first_thread_req)),
++    )
++    .await??;
++    let ThreadStartResponse {
++        thread: first_thread,
++        ..
++    } = to_response::<ThreadStartResponse>(first_thread_resp)?;
++    inject_suggestion_history(&mut mcp, &first_thread.id).await?;
++
++    let second_thread_req = mcp
++        .send_thread_start_request(ThreadStartParams {
++            model: Some("mock-model".to_string()),
++            ..Default::default()
++        })
++        .await?;
++    let second_thread_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(second_thread_req)),
++    )
++    .await??;
++    let ThreadStartResponse {
++        thread: second_thread,
++        ..
++    } = to_response::<ThreadStartResponse>(second_thread_resp)?;
++
++    let suggestion_req = mcp
++        .send_raw_request(
++            "thread/suggestNextPrompt",
++            Some(json!({
++                "threadId": first_thread.id,
++                "cancellationToken": "next-prompt-suggestion-shared-token",
++            })),
++        )
++        .await?;
++    wait_for_request_count(&response_mock, /*expected*/ 1).await?;
++
++    let cancel_req = mcp
++        .send_raw_request(
++            "thread/suggestNextPrompt",
++            Some(json!({
++                "threadId": second_thread.id,
++                "cancellationToken": "next-prompt-suggestion-shared-token",
++                "cancel": true,
++            })),
++        )
++        .await?;
++    let cancel_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(cancel_req)),
++    )
++    .await??;
++    let cancel_resp = to_response::<ThreadSuggestNextPromptResponse>(cancel_resp)?;
++    assert_eq!(cancel_resp.suggestion, None);
++
++    let suggestion_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(suggestion_req)),
++    )
++    .await??;
++    let suggestion_resp = to_response::<ThreadSuggestNextPromptResponse>(suggestion_resp)?;
++    assert_eq!(suggestion_resp.suggestion.as_deref(), Some("run the tests"));
++    assert_eq!(response_mock.requests().len(), /*expected*/ 1);
++
++    Ok(())
++}
++
++#[tokio::test]
++async fn thread_suggest_next_prompt_cancel_before_start_suppresses_sampling() -> Result<()> {
++    let server = responses::start_mock_server().await;
++    let body = responses::sse(vec![
++        responses::ev_response_created("resp-1"),
++        responses::ev_assistant_message("msg-1", "run the tests"),
++        responses::ev_completed("resp-1"),
++    ]);
++    let response_mock = responses::mount_sse_once(&server, body).await;
++
++    let codex_home = TempDir::new()?;
++    create_config_toml(codex_home.path(), &server.uri())?;
++
++    let mut mcp = McpProcess::new(codex_home.path()).await?;
++    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
++
++    let thread_req = mcp
++        .send_thread_start_request(ThreadStartParams {
++            model: Some("mock-model".to_string()),
++            ..Default::default()
++        })
++        .await?;
++    let thread_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(thread_req)),
++    )
++    .await??;
++    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(thread_resp)?;
++    inject_suggestion_history(&mut mcp, &thread.id).await?;
++
++    let cancel_req = mcp
++        .send_raw_request(
++            "thread/suggestNextPrompt",
++            Some(json!({
++                "threadId": thread.id,
++                "cancellationToken": "next-prompt-suggestion-immediate-cancel",
++                "cancel": true,
++            })),
++        )
++        .await?;
++    let cancel_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(cancel_req)),
++    )
++    .await??;
++    let cancel_resp = to_response::<ThreadSuggestNextPromptResponse>(cancel_resp)?;
++    assert_eq!(cancel_resp.suggestion, None);
++
++    let suggestion_req = mcp
++        .send_raw_request(
++            "thread/suggestNextPrompt",
++            Some(json!({
++                "threadId": thread.id,
++                "cancellationToken": "next-prompt-suggestion-immediate-cancel",
++            })),
++        )
++        .await?;
++    let suggestion_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(suggestion_req)),
++    )
++    .await??;
++    let suggestion_resp = to_response::<ThreadSuggestNextPromptResponse>(suggestion_resp)?;
++    assert_eq!(suggestion_resp.suggestion, None);
++    assert_eq!(response_mock.requests().len(), /*expected*/ 0);
++
++    let late_duplicate_cancel_req = mcp
++        .send_raw_request(
++            "thread/suggestNextPrompt",
++            Some(json!({
++                "threadId": thread.id,
++                "cancellationToken": "next-prompt-suggestion-immediate-cancel",
++                "cancel": true,
++            })),
++        )
++        .await?;
++    let late_duplicate_cancel_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(late_duplicate_cancel_req)),
++    )
++    .await??;
++    let late_duplicate_cancel_resp =
++        to_response::<ThreadSuggestNextPromptResponse>(late_duplicate_cancel_resp)?;
++    assert_eq!(late_duplicate_cancel_resp.suggestion, None);
++
++    let reused_token_req = mcp
++        .send_raw_request(
++            "thread/suggestNextPrompt",
++            Some(json!({
++                "threadId": thread.id,
++                "cancellationToken": "next-prompt-suggestion-immediate-cancel",
++            })),
++        )
++        .await?;
++    let reused_token_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(reused_token_req)),
++    )
++    .await??;
++    let reused_token_resp = to_response::<ThreadSuggestNextPromptResponse>(reused_token_resp)?;
++    assert_eq!(
++        reused_token_resp.suggestion.as_deref(),
++        Some("run the tests")
++    );
++    assert_eq!(response_mock.requests().len(), /*expected*/ 1);
++
++    Ok(())
++}
++
++#[tokio::test]
++async fn thread_suggest_next_prompt_late_cancel_does_not_suppress_reused_token() -> Result<()> {
++    let server = responses::start_mock_server().await;
++    let response_mock = responses::mount_sse_sequence(
++        &server,
++        vec![
++            responses::sse(vec![
++                responses::ev_response_created("resp-1"),
++                responses::ev_assistant_message("msg-1", "run the tests"),
++                responses::ev_completed("resp-1"),
++            ]),
++            responses::sse(vec![
++                responses::ev_response_created("resp-2"),
++                responses::ev_assistant_message("msg-2", "commit changes"),
++                responses::ev_completed("resp-2"),
++            ]),
++        ],
++    )
++    .await;
++
++    let codex_home = TempDir::new()?;
++    create_config_toml(codex_home.path(), &server.uri())?;
++
++    let mut mcp = McpProcess::new(codex_home.path()).await?;
++    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
++
++    let thread_req = mcp
++        .send_thread_start_request(ThreadStartParams {
++            model: Some("mock-model".to_string()),
++            ..Default::default()
++        })
++        .await?;
++    let thread_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(thread_req)),
++    )
++    .await??;
++    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(thread_resp)?;
++    inject_suggestion_history(&mut mcp, &thread.id).await?;
++
++    let first_suggestion_req = mcp
++        .send_raw_request(
++            "thread/suggestNextPrompt",
++            Some(json!({
++                "threadId": thread.id,
++                "cancellationToken": "next-prompt-suggestion-late-cancel",
++            })),
++        )
++        .await?;
++    let first_suggestion_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(first_suggestion_req)),
++    )
++    .await??;
++    let first_suggestion_resp =
++        to_response::<ThreadSuggestNextPromptResponse>(first_suggestion_resp)?;
++    assert_eq!(
++        first_suggestion_resp.suggestion.as_deref(),
++        Some("run the tests")
++    );
++
++    let cancel_req = mcp
++        .send_raw_request(
++            "thread/suggestNextPrompt",
++            Some(json!({
++                "threadId": thread.id,
++                "cancellationToken": "next-prompt-suggestion-late-cancel",
++                "cancel": true,
++            })),
++        )
++        .await?;
++    let cancel_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(cancel_req)),
++    )
++    .await??;
++    let cancel_resp = to_response::<ThreadSuggestNextPromptResponse>(cancel_resp)?;
++    assert_eq!(cancel_resp.suggestion, None);
++
++    let second_suggestion_req = mcp
++        .send_raw_request(
++            "thread/suggestNextPrompt",
++            Some(json!({
++                "threadId": thread.id,
++                "cancellationToken": "next-prompt-suggestion-late-cancel",
++            })),
++        )
++        .await?;
++    let second_suggestion_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(second_suggestion_req)),
++    )
++    .await??;
++    let second_suggestion_resp =
++        to_response::<ThreadSuggestNextPromptResponse>(second_suggestion_resp)?;
++    assert_eq!(
++        second_suggestion_resp.suggestion.as_deref(),
++        Some("commit changes")
++    );
++    assert_eq!(response_mock.requests().len(), /*expected*/ 2);
++
++    Ok(())
++}
++
++async fn inject_suggestion_history(mcp: &mut McpProcess, thread_id: &str) -> Result<()> {
++    let items = vec![
++        message("user", "fix the bug"),
++        message("assistant", "I fixed it"),
++        message("user", "continue"),
++        message("assistant", "The change is ready"),
++    ];
++    let inject_req = mcp
++        .send_thread_inject_items_request(ThreadInjectItemsParams {
++            thread_id: thread_id.to_string(),
++            items: items
++                .into_iter()
++                .map(serde_json::to_value)
++                .collect::<serde_json::Result<Vec<_>>>()?,
++        })
++        .await?;
++    let inject_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(inject_req)),
++    )
++    .await??;
++    let _response: ThreadInjectItemsResponse =
++        to_response::<ThreadInjectItemsResponse>(inject_resp)?;
++    Ok(())
++}
++
++async fn wait_for_request_count(
++    response_mock: &core_test_support::responses::ResponseMock,
++    expected: usize,
++) -> Result<()> {
++    timeout(DEFAULT_READ_TIMEOUT, async {
++        loop {
++            if response_mock.requests().len() >= expected {
++                return;
++            }
++            sleep(std::time::Duration::from_millis(/*millis*/ 10)).await;
++        }
++    })
++    .await?;
++    Ok(())
++}
++
++fn message(role: &str, text: &str) -> ResponseItem {
++    let content = match role {
++        "assistant" => ContentItem::OutputText {
++            text: text.to_string(),
++        },
++        _ => ContentItem::InputText {
++            text: text.to_string(),
++        },
++    };
++    ResponseItem::Message {
++        id: None,
++        role: role.to_string(),
++        content: vec![content],
++        phase: None,
++    }
++}
++
++fn create_config_toml(codex_home: &Path, server_uri: &str) -> std::io::Result<()> {
++    let config_toml = codex_home.join("config.toml");
++    std::fs::write(
++        config_toml,
++        format!(
++            r#"
++model = "mock-model"
++approval_policy = "never"
++sandbox_mode = "read-only"
++
++model_provider = "mock_provider"
++
++[model_providers.mock_provider]
++name = "Mock provider for test"
++base_url = "{server_uri}/v1"
++wire_api = "responses"
++request_max_retries = 0
++stream_max_retries = 0
++"#
++        ),
++    )
++}
+diff --git a/codex-rs/core/src/client.rs b/codex-rs/core/src/client.rs
+index 07a1c2adf5e..14d5022114d 100644
+--- a/codex-rs/core/src/client.rs
++++ b/codex-rs/core/src/client.rs
+@@ -236,6 +236,7 @@ pub struct ModelClient {
+ pub struct ModelClientSession {
+     client: ModelClient,
+     websocket_session: WebsocketSession,
++    cache_websocket_on_drop: bool,
+     /// Turn state for sticky routing.
+     ///
+     /// This is an `OnceLock` that stores the turn state value received from the server
+@@ -363,6 +364,20 @@ impl ModelClient {
+         ModelClientSession {
+             client: self.clone(),
+             websocket_session: self.take_cached_websocket_session(),
++            cache_websocket_on_drop: true,
++            turn_state: Arc::new(OnceLock::new()),
++        }
++    }
++
++    /// Creates a streaming session isolated from the reusable turn WebSocket cache.
++    ///
++    /// Hidden best-effort requests use this so they cannot consume or reset the warm connection
++    /// reserved for the next real turn.
++    pub(crate) fn new_uncached_session(&self) -> ModelClientSession {
++        ModelClientSession {
++            client: self.clone(),
++            websocket_session: WebsocketSession::default(),
++            cache_websocket_on_drop: false,
+             turn_state: Arc::new(OnceLock::new()),
+         }
+     }
+@@ -931,6 +946,9 @@ impl ModelClient {
+ 
+ impl Drop for ModelClientSession {
+     fn drop(&mut self) {
++        if !self.cache_websocket_on_drop {
++            return;
++        }
+         let websocket_session = std::mem::take(&mut self.websocket_session);
+         self.client
+             .store_cached_websocket_session(websocket_session);
+diff --git a/codex-rs/core/src/next_prompt_suggestion.rs b/codex-rs/core/src/next_prompt_suggestion.rs
+index a857ea1615b..de3106903ca 100644
+--- a/codex-rs/core/src/next_prompt_suggestion.rs
++++ b/codex-rs/core/src/next_prompt_suggestion.rs
+@@ -39,7 +39,7 @@ use tokio_util::sync::CancellationToken;
+ mod next_prompt_suggestion_tests;
+ 
+ const NEXT_PROMPT_SUGGESTION_TOKEN_HEADROOM: i64 = 1_024;
+-const NEXT_PROMPT_SUGGESTION_SAMPLE_TIMEOUT: Duration = Duration::from_secs(8);
++const NEXT_PROMPT_SUGGESTION_SAMPLE_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 8);
+ 
+ #[derive(Clone, Copy)]
+ struct HistorySnapshot {
+@@ -103,39 +103,56 @@ pub(crate) async fn suggest_next_prompt(
+     if !session_is_idle_for_suggestion(sess).await {
+         return None;
+     }
+-    let mut client_session = sess.services.model_client.new_session();
+-    let mut stream = match client_session
+-        .stream(
+-            &prompt,
+-            &turn_context.model_info,
+-            &turn_context.session_telemetry,
+-            turn_context.reasoning_effort,
+-            turn_context.reasoning_summary,
+-            turn_context.config.service_tier.clone(),
+-            /*turn_metadata_header*/ None,
+-            &InferenceTraceContext::disabled(),
+-        )
+-        .or_cancel(&cancellation_token)
+-        .await
+-    {
+-        Ok(Ok(stream)) => stream,
+-        Ok(Err(err)) => {
+-            tracing::debug!(
+-                error = ?err,
+-                "next prompt suggestion failed before sampling started"
+-            );
+-            return None;
+-        }
+-        Err(codex_async_utils::CancelErr::Cancelled) => {
+-            tracing::debug!("next prompt suggestion canceled before sampling started");
+-            return None;
++    let mut client_session = sess.services.model_client.new_uncached_session();
++    let sample_deadline = tokio::time::sleep(NEXT_PROMPT_SUGGESTION_SAMPLE_TIMEOUT);
++    tokio::pin!(sample_deadline);
++    let inference_trace = InferenceTraceContext::disabled();
++    let mut stream = {
++        let stream = client_session
++            .stream(
++                &prompt,
++                &turn_context.model_info,
++                &turn_context.session_telemetry,
++                turn_context.reasoning_effort,
++                turn_context.reasoning_summary,
++                turn_context.config.service_tier.clone(),
++                /*turn_metadata_header*/ None,
++                &inference_trace,
++            )
++            .or_cancel(&cancellation_token);
++        match tokio::select! {
++            result = stream => result,
++            _ = &mut sample_deadline => {
++                tracing::debug!("next prompt suggestion timed out before sampling started");
++                return None;
++            }
++        } {
++            Ok(Ok(stream)) => stream,
++            Ok(Err(err)) => {
++                tracing::debug!(
++                    error = ?err,
++                    "next prompt suggestion failed before sampling started"
++                );
++                return None;
++            }
++            Err(codex_async_utils::CancelErr::Cancelled) => {
++                tracing::debug!("next prompt suggestion canceled before sampling started");
++                return None;
++            }
+         }
+     };
++    if cancellation_token.is_cancelled() {
++        tracing::debug!("next prompt suggestion skipped after cancellation");
++        client_session.reset_websocket_session();
++        return None;
++    }
++    if !session_is_idle_for_suggestion(sess).await {
++        client_session.reset_websocket_session();
++        return None;
++    }
+     let mut streamed_text = String::new();
+     let mut completed_text = None;
+     let mut latest_rate_limits = None;
+-    let sample_deadline = tokio::time::sleep(NEXT_PROMPT_SUGGESTION_SAMPLE_TIMEOUT);
+-    tokio::pin!(sample_deadline);
+     let completed_response_id = loop {
+         if !session_is_idle_for_suggestion(sess).await {
+             client_session.reset_websocket_session();
+@@ -150,7 +167,7 @@ pub(crate) async fn suggest_next_prompt(
+                     return None;
+                 }
+             },
+-            _ = tokio::time::sleep(Duration::from_millis(100)) => continue,
++            _ = tokio::time::sleep(Duration::from_millis(/*millis*/ 100)) => continue,
+             _ = &mut sample_deadline => {
+                 tracing::debug!("next prompt suggestion timed out while sampling");
+                 client_session.reset_websocket_session();
+@@ -201,15 +218,6 @@ pub(crate) async fn suggest_next_prompt(
+                             }),
+                         })
+                         .await;
+-                    } else {
+-                        sess.send_event(
+-                            &turn_context,
+-                            EventMsg::TokenCount(TokenCountEvent {
+-                                info: None,
+-                                rate_limits: Some(rate_limits),
+-                            }),
+-                        )
+-                        .await;
+                     }
+                 }
+                 break response_id;
+@@ -223,6 +231,10 @@ pub(crate) async fn suggest_next_prompt(
+             .await;
+     }
+     client_session.reset_websocket_session();
++    if cancellation_token.is_cancelled() {
++        tracing::debug!("next prompt suggestion canceled after sampling completed");
++        return None;
++    }
+     if !session_history_matches_snapshot(sess, history_snapshot).await {
+         tracing::debug!("next prompt suggestion skipped after history changed");
+         return None;
+@@ -363,6 +375,7 @@ fn has_unpaired_tool_flow(items: &[ResponseItem]) -> bool {
+                     client_tool_search_outputs.insert(call_id.clone());
+                 }
+             }
++            ResponseItem::ToolSearchOutput { execution, .. } if execution == "server" => {}
+             ResponseItem::CustomToolCall { call_id, .. } => {
+                 custom_tool_calls.insert(call_id.clone());
+             }
+diff --git a/codex-rs/core/tests/suite/next_prompt_suggestion.rs b/codex-rs/core/tests/suite/next_prompt_suggestion.rs
+index 9d96024f44a..5466d640a77 100644
+--- a/codex-rs/core/tests/suite/next_prompt_suggestion.rs
++++ b/codex-rs/core/tests/suite/next_prompt_suggestion.rs
+@@ -4,13 +4,17 @@ use core_test_support::responses::ev_assistant_message;
+ use core_test_support::responses::ev_completed;
+ use core_test_support::responses::ev_completed_with_tokens;
+ use core_test_support::responses::ev_response_created;
++use core_test_support::responses::mount_response_sequence;
+ use core_test_support::responses::mount_sse_sequence;
+ use core_test_support::responses::sse;
++use core_test_support::responses::sse_response;
+ use core_test_support::skip_if_no_network;
+ use core_test_support::test_codex::test_codex;
+ use core_test_support::wait_for_event;
+ use pretty_assertions::assert_eq;
+ use serde_json::json;
++use std::time::Duration;
++use tokio::time::timeout;
+ use tokio_util::sync::CancellationToken;
+ use wiremock::MockServer;
+ 
+@@ -122,6 +126,52 @@ async fn suggest_next_prompt_skips_early_history_without_request() -> Result<()>
+     Ok(())
+ }
+ 
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn suggest_next_prompt_times_out_during_stream_startup() -> Result<()> {
++    skip_if_no_network!(Ok(()));
++
++    let server = MockServer::start().await;
++    let first_turn_response = sse_response(sse(vec![
++        ev_response_created("resp-1"),
++        ev_assistant_message("msg-1", "first turn complete"),
++        ev_completed("resp-1"),
++    ]));
++    let second_turn_response = sse_response(sse(vec![
++        ev_response_created("resp-2"),
++        ev_assistant_message("msg-2", "second turn complete"),
++        ev_completed("resp-2"),
++    ]));
++    let delayed_suggestion_response = sse_response(sse(vec![
++        ev_response_created("resp-suggestion"),
++        ev_assistant_message("msg-suggestion", "run the tests"),
++        ev_completed("resp-suggestion"),
++    ]))
++    .set_delay(Duration::from_secs(/*secs*/ 30));
++    let responses = mount_response_sequence(
++        &server,
++        vec![
++            first_turn_response,
++            second_turn_response,
++            delayed_suggestion_response,
++        ],
++    )
++    .await;
++
++    let test = test_codex().build(&server).await?;
++    test.submit_turn("first task").await?;
++    test.submit_turn("second task").await?;
++
++    let suggestion = timeout(
++        Duration::from_secs(/*secs*/ 10),
++        test.codex.suggest_next_prompt(CancellationToken::new()),
++    )
++    .await??;
++    assert_eq!(suggestion, None);
++    assert_eq!(responses.requests().len(), 3);
++
++    Ok(())
++}
++
+ fn ev_rate_limits() -> serde_json::Value {
+     json!({
+         "type": "codex.rate_limits",

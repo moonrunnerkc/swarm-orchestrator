@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-zakaria-bennis-Karman-Prep-pr21",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer"
+  },
+  "pr": {
+    "number": 21,
+    "headSha": "42708c58b58a07e6ed812bb61c6eefa56717dc46",
+    "baseSha": "83a71d748156894c3878183a343aa3e2de15990d",
+    "title": "Add per-tool agent context files (Claude / Gemini / Replit)",
+    "body": "## Summary\n\nFour small files that make this repo work cleanly across Claude Code, Gemini CLI / Gemini Code Assist, and Replit Agent — without duplicating documentation that already exists.\n\n| File | Auto-loaded by | Lines |\n|---|---|---|\n| `CLAUDE.md` | Claude Code | 27 |\n| `GEMINI.md` | Gemini CLI + Gemini Code Assist | 27 |\n| `replit.md` | Replit Agent | 32 |\n| `.replit` | Replit workspace runtime | 23 |\n\n## How they work\n\nEach `.md` has an identical \"read these first\" section pointing at the existing canonical docs:\n\n- `CONTRIBUTING.md`\n- `docs/handoff.md`\n- `docs/architecture.md`\n- `docs/adr/`\n\n…rather than duplicating their content. When `CONTRIBUTING.md` changes, no per-tool file needs updating.\n\nWhat each adds beyond the doc pointers:\n\n- **Repo defaults any agent must respect**: lint rules at `error`, the 5 required CI checks, migration filename format, the no-monster-files rule (~700-line cap), the Zod-on-server-actions convention. The things that would silently fail CI or get rejected at review if an agent didn't know about them up-front.\n- **replit.md additionally**: how to run THIS repo on Replit specifically — Secrets panel mapping, Node version source, and the fact that Replit is a dev environment only (production is Cloudflare Workers, not Replit Deployments).\n\n## `.replit` specifics\n\n- `run = \"npm run dev:next\"` — Replit's **Run** button boots the dev server out-of-the-box.\n- `modules = [\"nodejs-22:v0\"]` matches `.nvmrc`.\n- `[deployment]` block points at `npm run build` / `npm run start` so Replit's Deploy button surfaces a sane command rather than its default (which would conflict with our OpenNext output).\n- Port 3000 → external 80.\n\n## What's NOT in this PR\n\n- **No content duplication.** The temptation with these files is to copy-paste your architecture into them. Resisted — the human-readable docs are the source of truth.\n- **No tool-specific code or hooks.** This is config + context only.\n- **No changes to CONTRIBUTING.md or other docs.** They're already AI-friendly.\n\n## Test plan\n\n- [x] `tsc --noEmit` clean\n- [x] `npm run lint` 0 errors (7 unchanged Phase B warnings)\n- [x] `npm test` 152 / 152 pass\n- [x] `npm run format:check` clean\n- [ ] CI green\n- [ ] Manual smoke: open the repo in Claude Code (already running), Gemini CLI, and Replit. Each should auto-load its file and orient itself without further prompting.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "zakaria-bennis",
+    "headRef": "zakaria/ai-tool-context-files",
+    "repository": "zakaria-bennis/Karman-Prep"
+  },
+  "diffRef": {
+    "repository": "zakaria-bennis/Karman-Prep",
+    "headSha": "42708c58b58a07e6ed812bb61c6eefa56717dc46",
+    "baseSha": "83a71d748156894c3878183a343aa3e2de15990d"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-zakaria-bennis-Karman-Prep-pr21.diff",
+  "vendoredAt": "2026-05-24T03:14:45.049Z",
+  "collectedAt": "2026-05-24T03:14:45.049Z"
+}

@@ -1,0 +1,19 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.openai.md b/src/main/resources/doc/io.kestra.plugin.openai.md
+new file mode 100644
+index 0000000..febfa2c
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.openai.md
+@@ -0,0 +1,13 @@
++# How to use the OpenAI plugin
++
++Call OpenAI models for chat completions, image generation, and file management from Kestra flows.
++
++## Authentication
++
++Set `apiKey` to your OpenAI API key. Store it in a [secret](https://kestra.io/docs/concepts/secret). Optionally set `organizationId` to scope requests to a specific organization, or override `baseUrl` to point at an OpenAI-compatible endpoint such as Azure OpenAI.
++
++## Tasks
++
++`ChatCompletion` sends a list of messages to a model and returns the response — use it for single-turn prompts, summarization, classification, or any conversational interaction. `Responses` calls the newer OpenAI Responses API, which is better suited for agentic use cases with tool calls and multi-step reasoning.
++
++`CreateImage` generates an image via DALL-E given a text prompt. `UploadFile` uploads a file to OpenAI — use it to prepare training data for fine-tuning.

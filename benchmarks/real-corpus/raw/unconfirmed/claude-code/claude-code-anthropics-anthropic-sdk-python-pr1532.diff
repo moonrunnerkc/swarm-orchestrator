@@ -1,0 +1,1464 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index e4c0a290a..d6ddb811a 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -21,10 +21,10 @@ jobs:
+     runs-on: ${{ github.repository == 'stainless-sdks/anthropic-python' && 'depot-ubuntu-24.04' || 'ubuntu-latest' }}
+     if: (github.event_name == 'push' || github.event.pull_request.head.repo.fork)
+     steps:
+-      - uses: actions/checkout@v6
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+ 
+       - name: Install uv
+-        uses: astral-sh/setup-uv@v5
++        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+         with:
+           version: '0.10.2'
+ 
+@@ -43,10 +43,10 @@ jobs:
+       id-token: write
+     runs-on: ${{ github.repository == 'stainless-sdks/anthropic-python' && 'depot-ubuntu-24.04' || 'ubuntu-latest' }}
+     steps:
+-      - uses: actions/checkout@v6
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+ 
+       - name: Install uv
+-        uses: astral-sh/setup-uv@v5
++        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+         with:
+           version: '0.10.2'
+ 
+@@ -61,7 +61,7 @@ jobs:
+           github.repository == 'stainless-sdks/anthropic-python' &&
+           !startsWith(github.ref, 'refs/heads/stl/')
+         id: github-oidc
+-        uses: actions/github-script@v8
++        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+         with:
+           script: core.setOutput('github_token', await core.getIDToken());
+ 
+@@ -81,10 +81,10 @@ jobs:
+     runs-on: ${{ github.repository == 'stainless-sdks/anthropic-python' && 'depot-ubuntu-24.04' || 'ubuntu-latest' }}
+     if: github.event_name == 'push' || github.event.pull_request.head.repo.fork
+     steps:
+-      - uses: actions/checkout@v6
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+ 
+       - name: Install uv
+-        uses: astral-sh/setup-uv@v5
++        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+         with:
+           version: '0.10.2'
+ 
+diff --git a/.github/workflows/create-releases.yml b/.github/workflows/create-releases.yml
+index 466d5145c..52f73a642 100644
+--- a/.github/workflows/create-releases.yml
++++ b/.github/workflows/create-releases.yml
+@@ -14,7 +14,7 @@ jobs:
+     environment: production-release
+ 
+     steps:
+-      - uses: actions/checkout@v6
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+ 
+       - uses: stainless-api/trigger-release-please@bb6677c5a04578eec1ccfd9e1913b5b78ed64c61 # v1.4.0
+         id: release
+@@ -24,7 +24,7 @@ jobs:
+ 
+       - name: Install uv
+         if: ${{ steps.release.outputs.releases_created }}
+-        uses: astral-sh/setup-uv@v5
++        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+         with:
+           version: '0.9.13'
+ 
+diff --git a/.github/workflows/detect-breaking-changes.yml b/.github/workflows/detect-breaking-changes.yml
+index 4a1f43e57..511d06203 100644
+--- a/.github/workflows/detect-breaking-changes.yml
++++ b/.github/workflows/detect-breaking-changes.yml
+@@ -15,13 +15,13 @@ jobs:
+         run: |
+           echo "FETCH_DEPTH=$(expr ${{ github.event.pull_request.commits }} + 1)" >> $GITHUB_ENV
+ 
+-      - uses: actions/checkout@v6
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+         with:
+           # Ensure we can check out the pull request base in the script below.
+           fetch-depth: ${{ env.FETCH_DEPTH }}
+ 
+       - name: Install uv
+-        uses: astral-sh/setup-uv@v5
++        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+         with:
+           version: '0.10.2'
+       - name: Install dependencies
+diff --git a/.github/workflows/publish-pypi.yml b/.github/workflows/publish-pypi.yml
+index 6aba90697..af6786755 100644
+--- a/.github/workflows/publish-pypi.yml
++++ b/.github/workflows/publish-pypi.yml
+@@ -11,10 +11,10 @@ jobs:
+     environment: production-release
+ 
+     steps:
+-      - uses: actions/checkout@v6
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+ 
+       - name: Install uv
+-        uses: astral-sh/setup-uv@v5
++        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+         with:
+           version: '0.9.13'
+ 
+diff --git a/.release-please-manifest.json b/.release-please-manifest.json
+index aebbc8bc4..f70d9978a 100644
+--- a/.release-please-manifest.json
++++ b/.release-please-manifest.json
+@@ -1,3 +1,3 @@
+ {
+-  ".": "0.101.0"
++  ".": "0.102.0"
+ }
+\ No newline at end of file
+diff --git a/.stats.yml b/.stats.yml
+index 5a84c2e7b..0997c882f 100644
+--- a/.stats.yml
++++ b/.stats.yml
+@@ -1,4 +1,4 @@
+ configured_endpoints: 97
+-openapi_spec_url: https://storage.googleapis.com/stainless-sdk-openapi-specs/anthropic/anthropic-0df2c793ea4c3ad955e8e488be39d7041a0a95e2fe144dd69ae4d9fb72835190.yml
+-openapi_spec_hash: b169b786bdf1f07d7f77f18f7b94abfa
+-config_hash: ed43b84afda7441f472a59dda6badb05
++openapi_spec_url: https://storage.googleapis.com/stainless-sdk-openapi-specs/anthropic/anthropic-9bc52c052beb11ccfff68e9d96335774c8377f914bcf36278e5774c68aa84e69.yml
++openapi_spec_hash: 3a5f6e11b9fda1c165c6f9edbdee7d90
++config_hash: ed200254fa6776c7b124706c91c80475
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 0adf617c1..d41765297 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,20 @@
+ # Changelog
+ 
++## 0.102.0 (2026-05-13)
++
++Full Changelog: [v0.101.0...v0.102.0](https://github.com/anthropics/anthropic-sdk-python/compare/v0.101.0...v0.102.0)
++
++### Features
++
++* **api:** Add BetaManagedAgentsSearchResultBlock types ([3681f10](https://github.com/anthropics/anthropic-sdk-python/commit/3681f1042608b6be4e5a56e8b52e6a619b9210f4))
++* **api:** Add support for cache diagnostics beta ([db51c6c](https://github.com/anthropics/anthropic-sdk-python/commit/db51c6caabb1bede4c2d671a96e6ef88e90ffaba))
++* **internal/types:** support eagerly validating pydantic iterators ([68dabb0](https://github.com/anthropics/anthropic-sdk-python/commit/68dabb0e9b11ecd8745b231019e9bf788b72101a))
++
++
++### Chores
++
++* **api:** spec updates ([d579133](https://github.com/anthropics/anthropic-sdk-python/commit/d5791337776ba9d4876d3683e6ab9419365be9d3))
++
+ ## 0.101.0 (2026-05-11)
+ 
+ Full Changelog: [v0.100.0...v0.101.0](https://github.com/anthropics/anthropic-sdk-python/compare/v0.100.0...v0.101.0)
+diff --git a/api.md b/api.md
+index ffd7a2f70..9e08b5635 100644
+--- a/api.md
++++ b/api.md
+@@ -315,6 +315,12 @@ from anthropic.types.beta import (
+     BetaBashCodeExecutionToolResultErrorParam,
+     BetaCacheControlEphemeral,
+     BetaCacheCreation,
++    BetaCacheMissMessagesChanged,
++    BetaCacheMissModelChanged,
++    BetaCacheMissPreviousMessageNotFound,
++    BetaCacheMissSystemChanged,
++    BetaCacheMissToolsChanged,
++    BetaCacheMissUnavailable,
+     BetaCitationCharLocation,
+     BetaCitationCharLocationParam,
+     BetaCitationConfig,
+@@ -362,6 +368,8 @@ from anthropic.types.beta import (
+     BetaContextManagementConfig,
+     BetaContextManagementResponse,
+     BetaCountTokensContextManagementResponse,
++    BetaDiagnostics,
++    BetaDiagnosticsParam,
+     BetaDirectCaller,
+     BetaDocumentBlock,
+     BetaEncryptedCodeExecutionResultBlock,
+@@ -689,6 +697,9 @@ from anthropic.types.beta.sessions import (
+     BetaManagedAgentsRetryStatusExhausted,
+     BetaManagedAgentsRetryStatusRetrying,
+     BetaManagedAgentsRetryStatusTerminal,
++    BetaManagedAgentsSearchResultBlock,
++    BetaManagedAgentsSearchResultCitations,
++    BetaManagedAgentsSearchResultContent,
+     BetaManagedAgentsSendSessionEvents,
+     BetaManagedAgentsSessionDeletedEvent,
+     BetaManagedAgentsSessionEndTurn,
+diff --git a/pyproject.toml b/pyproject.toml
+index 2665782ca..995f86015 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -1,6 +1,6 @@
+ [project]
+ name = "anthropic"
+-version = "0.101.0"
++version = "0.102.0"
+ description = "The official Python library for the anthropic API"
+ dynamic = ["readme"]
+ license = "MIT"
+diff --git a/src/anthropic/_models.py b/src/anthropic/_models.py
+index 2d979355a..dc00516bc 100644
+--- a/src/anthropic/_models.py
++++ b/src/anthropic/_models.py
+@@ -25,7 +25,9 @@
+     ClassVar,
+     Protocol,
+     Required,
++    Annotated,
+     ParamSpec,
++    TypeAlias,
+     TypedDict,
+     TypeGuard,
+     final,
+@@ -79,7 +81,15 @@
+ from ._constants import RAW_RESPONSE_HEADER
+ 
+ if TYPE_CHECKING:
++    from pydantic import GetCoreSchemaHandler, ValidatorFunctionWrapHandler
++    from pydantic_core import CoreSchema, core_schema
+     from pydantic_core.core_schema import ModelField, ModelSchema, LiteralSchema, ModelFieldsSchema
++else:
++    try:
++        from pydantic_core import CoreSchema, core_schema
++    except ImportError:
++        CoreSchema = None
++        core_schema = None
+ 
+ __all__ = ["BaseModel", "GenericModel"]
+ 
+@@ -412,6 +422,76 @@ def model_dump_json(
+             )
+ 
+ 
++class _EagerIterable(list[_T], Generic[_T]):
++    """
++    Accepts any Iterable[T] input (including generators), consumes it
++    eagerly, and validates all items upfront.
++
++    Validation preserves the original container type where possible
++    (e.g. a set[T] stays a set[T]).  Serialization (model_dump / JSON)
++    always emits a list — round-tripping through model_dump() will not
++    restore the original container type.
++    """
++
++    @classmethod
++    def __get_pydantic_core_schema__(
++        cls,
++        source_type: Any,
++        handler: GetCoreSchemaHandler,
++    ) -> CoreSchema:
++        (item_type,) = get_args(source_type) or (Any,)
++        item_schema: CoreSchema = handler.generate_schema(item_type)
++        list_of_items_schema: CoreSchema = core_schema.list_schema(item_schema)
++
++        return core_schema.no_info_wrap_validator_function(
++            cls._validate,
++            list_of_items_schema,
++            serialization=core_schema.plain_serializer_function_ser_schema(
++                cls._serialize,
++                info_arg=False,
++            ),
++        )
++
++    @staticmethod
++    def _validate(v: Iterable[_T], handler: "ValidatorFunctionWrapHandler") -> Any:
++        original_type: type[Any] = type(v)
++
++        # Normalize to list so list_schema can validate each item
++        if isinstance(v, list):
++            items: list[_T] = v
++        else:
++            try:
++                items = list(v)
++            except TypeError as e:
++                raise TypeError("Value is not iterable") from e
++
++        # Validate items against the inner schema
++        validated: list[_T] = handler(items)
++
++        # Reconstruct original container type
++        if original_type is list:
++            return validated
++        # str(list) produces the list's repr, not a string built from items,
++        # so skip reconstruction for str and its subclasses.
++        if issubclass(original_type, str):
++            return validated
++        try:
++            return original_type(validated)
++        except (TypeError, ValueError):
++            # If the type cannot be reconstructed, just return the validated list
++            return validated
++
++    @staticmethod
++    def _serialize(v: Iterable[_T]) -> list[_T]:
++        """Always serialize as a list so Pydantic's JSON encoder is happy."""
++        if isinstance(v, list):
++            return v
++        return list(v)
++
++
++EagerIterable: TypeAlias = Annotated[Iterable[_T], _EagerIterable]
++
++
+ def _construct_field(value: object, field: FieldInfo, key: str) -> object:
+     if value is None:
+         return field_get_default(field)
+diff --git a/src/anthropic/_version.py b/src/anthropic/_version.py
+index 15af5edca..689368eec 100644
+--- a/src/anthropic/_version.py
++++ b/src/anthropic/_version.py
+@@ -1,4 +1,4 @@
+ # File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+ 
+ __title__ = "anthropic"
+-__version__ = "0.101.0"  # x-release-please-version
++__version__ = "0.102.0"  # x-release-please-version
+diff --git a/src/anthropic/resources/beta/messages/messages.py b/src/anthropic/resources/beta/messages/messages.py
+index 47810dbe9..834e4b940 100644
+--- a/src/anthropic/resources/beta/messages/messages.py
++++ b/src/anthropic/resources/beta/messages/messages.py
+@@ -36,6 +36,7 @@
+ from ...._constants import DEFAULT_TIMEOUT, MODEL_NONSTREAMING_TOKENS
+ from ...._streaming import Stream, AsyncStream
+ from ....types.beta import (
++    BetaDiagnosticsParam,
+     BetaThinkingConfigParam,
+     message_create_params,
+     message_count_tokens_params,
+@@ -64,6 +65,7 @@
+ from ....types.beta.parsed_beta_message import ParsedBetaMessage
+ from ....types.beta.beta_text_block_param import BetaTextBlockParam
+ from ....types.beta.beta_tool_union_param import BetaToolUnionParam
++from ....types.beta.beta_diagnostics_param import BetaDiagnosticsParam
+ from ....types.beta.beta_tool_choice_param import BetaToolChoiceParam
+ from ....lib.tools._beta_compaction_control import CompactionControl
+ from ....types.beta.beta_output_config_param import BetaOutputConfigParam
+@@ -115,6 +117,7 @@ def create(
+         cache_control: Optional[BetaCacheControlEphemeralParam] | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -243,6 +246,9 @@ def create(
+               This allows you to control how Claude manages context across multiple requests,
+               such as whether to clear function results or not.
+ 
++          diagnostics: Request-level diagnostics. Currently carries the previous response id for
++              prompt-cache divergence reporting.
++
+           inference_geo: Specifies the geographic region for inference processing. If not specified, the
+               workspace's `default_inference_geo` is used.
+ 
+@@ -426,6 +432,7 @@ def create(
+         cache_control: Optional[BetaCacheControlEphemeralParam] | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -557,6 +564,9 @@ def create(
+               This allows you to control how Claude manages context across multiple requests,
+               such as whether to clear function results or not.
+ 
++          diagnostics: Request-level diagnostics. Currently carries the previous response id for
++              prompt-cache divergence reporting.
++
+           inference_geo: Specifies the geographic region for inference processing. If not specified, the
+               workspace's `default_inference_geo` is used.
+ 
+@@ -736,6 +746,7 @@ def create(
+         cache_control: Optional[BetaCacheControlEphemeralParam] | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -867,6 +878,9 @@ def create(
+               This allows you to control how Claude manages context across multiple requests,
+               such as whether to clear function results or not.
+ 
++          diagnostics: Request-level diagnostics. Currently carries the previous response id for
++              prompt-cache divergence reporting.
++
+           inference_geo: Specifies the geographic region for inference processing. If not specified, the
+               workspace's `default_inference_geo` is used.
+ 
+@@ -1045,6 +1059,7 @@ def create(
+         cache_control: Optional[BetaCacheControlEphemeralParam] | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -1110,6 +1125,7 @@ def create(
+                     "cache_control": cache_control,
+                     "container": container,
+                     "context_management": context_management,
++                    "diagnostics": diagnostics,
+                     "inference_geo": inference_geo,
+                     "mcp_servers": mcp_servers,
+                     "metadata": metadata,
+@@ -1149,6 +1165,7 @@ def parse(
+         cache_control: Optional[BetaCacheControlEphemeralParam] | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -1248,6 +1265,7 @@ def parser(response: BetaMessage) -> ParsedBetaMessage[ResponseFormatT]:
+                     "cache_control": cache_control,
+                     "container": container,
+                     "context_management": context_management,
++                    "diagnostics": diagnostics,
+                     "inference_geo": inference_geo,
+                     "mcp_servers": mcp_servers,
+                     "metadata": metadata,
+@@ -1291,6 +1309,7 @@ def tool_runner(
+         cache_control: Optional[BetaCacheControlEphemeralParam] | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         max_iterations: int | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+@@ -1331,6 +1350,7 @@ def tool_runner(
+         max_iterations: int | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -1369,6 +1389,7 @@ def tool_runner(
+         cache_control: Optional[BetaCacheControlEphemeralParam] | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -1405,6 +1426,7 @@ def tool_runner(
+         cache_control: Optional[BetaCacheControlEphemeralParam] | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -1479,6 +1501,7 @@ def tool_runner(
+                 "cache_control": cache_control,
+                 "container": container,
+                 "context_management": context_management,
++                "diagnostics": diagnostics,
+                 "inference_geo": inference_geo,
+                 "mcp_servers": mcp_servers,
+                 "metadata": metadata,
+@@ -1535,6 +1558,7 @@ def stream(
+         cache_control: Optional[BetaCacheControlEphemeralParam] | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -1621,6 +1645,7 @@ def stream(
+                     "output_format": omit,
+                     "container": container,
+                     "context_management": context_management,
++                    "diagnostics": diagnostics,
+                     "inference_geo": inference_geo,
+                     "mcp_servers": mcp_servers,
+                     "service_tier": service_tier,
+@@ -1955,6 +1980,7 @@ async def create(
+         cache_control: Optional[BetaCacheControlEphemeralParam] | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -2083,6 +2109,9 @@ async def create(
+               This allows you to control how Claude manages context across multiple requests,
+               such as whether to clear function results or not.
+ 
++          diagnostics: Request-level diagnostics. Currently carries the previous response id for
++              prompt-cache divergence reporting.
++
+           inference_geo: Specifies the geographic region for inference processing. If not specified, the
+               workspace's `default_inference_geo` is used.
+ 
+@@ -2266,6 +2295,7 @@ async def create(
+         cache_control: Optional[BetaCacheControlEphemeralParam] | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -2397,6 +2427,9 @@ async def create(
+               This allows you to control how Claude manages context across multiple requests,
+               such as whether to clear function results or not.
+ 
++          diagnostics: Request-level diagnostics. Currently carries the previous response id for
++              prompt-cache divergence reporting.
++
+           inference_geo: Specifies the geographic region for inference processing. If not specified, the
+               workspace's `default_inference_geo` is used.
+ 
+@@ -2576,6 +2609,7 @@ async def create(
+         cache_control: Optional[BetaCacheControlEphemeralParam] | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -2707,6 +2741,9 @@ async def create(
+               This allows you to control how Claude manages context across multiple requests,
+               such as whether to clear function results or not.
+ 
++          diagnostics: Request-level diagnostics. Currently carries the previous response id for
++              prompt-cache divergence reporting.
++
+           inference_geo: Specifies the geographic region for inference processing. If not specified, the
+               workspace's `default_inference_geo` is used.
+ 
+@@ -2885,6 +2922,7 @@ async def create(
+         cache_control: Optional[BetaCacheControlEphemeralParam] | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -2950,6 +2988,7 @@ async def create(
+                     "cache_control": cache_control,
+                     "container": container,
+                     "context_management": context_management,
++                    "diagnostics": diagnostics,
+                     "inference_geo": inference_geo,
+                     "mcp_servers": mcp_servers,
+                     "metadata": metadata,
+@@ -2989,6 +3028,7 @@ async def parse(
+         cache_control: Optional[BetaCacheControlEphemeralParam] | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -3087,6 +3127,7 @@ def parser(response: BetaMessage) -> ParsedBetaMessage[ResponseFormatT]:
+                     "cache_control": cache_control,
+                     "container": container,
+                     "context_management": context_management,
++                    "diagnostics": diagnostics,
+                     "inference_geo": inference_geo,
+                     "mcp_servers": mcp_servers,
+                     "output_config": merged_output_config,
+@@ -3131,6 +3172,7 @@ def tool_runner(
+         max_iterations: int | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -3170,6 +3212,7 @@ def tool_runner(
+         cache_control: Optional[BetaCacheControlEphemeralParam] | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -3208,6 +3251,7 @@ def tool_runner(
+         cache_control: Optional[BetaCacheControlEphemeralParam] | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -3244,6 +3288,7 @@ def tool_runner(
+         cache_control: Optional[BetaCacheControlEphemeralParam] | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         metadata: BetaMetadataParam | Omit = omit,
+@@ -3311,6 +3356,7 @@ def tool_runner(
+                 "cache_control": cache_control,
+                 "container": container,
+                 "context_management": context_management,
++                "diagnostics": diagnostics,
+                 "inference_geo": inference_geo,
+                 "mcp_servers": mcp_servers,
+                 "metadata": metadata,
+@@ -3370,6 +3416,7 @@ def stream(
+         output_format: None | type[ResponseFormatT] | BetaJSONOutputFormatParam | Omit = omit,
+         container: Optional[message_create_params.Container] | Omit = omit,
+         context_management: Optional[BetaContextManagementConfigParam] | Omit = omit,
++        diagnostics: Optional[BetaDiagnosticsParam] | Omit = omit,
+         inference_geo: Optional[str] | Omit = omit,
+         mcp_servers: Iterable[BetaRequestMCPServerURLDefinitionParam] | Omit = omit,
+         service_tier: Literal["auto", "standard_only"] | Omit = omit,
+@@ -3451,6 +3498,7 @@ def stream(
+                     "output_format": omit,
+                     "container": container,
+                     "context_management": context_management,
++                    "diagnostics": diagnostics,
+                     "inference_geo": inference_geo,
+                     "mcp_servers": mcp_servers,
+                     "service_tier": service_tier,
+diff --git a/src/anthropic/types/anthropic_beta_param.py b/src/anthropic/types/anthropic_beta_param.py
+index ac4620623..a6340649f 100644
+--- a/src/anthropic/types/anthropic_beta_param.py
++++ b/src/anthropic/types/anthropic_beta_param.py
+@@ -34,5 +34,6 @@
+         "user-profiles-2026-03-24",
+         "advisor-tool-2026-03-01",
+         "managed-agents-2026-04-01",
++        "cache-diagnosis-2026-04-07",
+     ],
+ ]
+diff --git a/src/anthropic/types/beta/__init__.py b/src/anthropic/types/beta/__init__.py
+index ba047936c..4aa855e42 100644
+--- a/src/anthropic/types/beta/__init__.py
++++ b/src/anthropic/types/beta/__init__.py
+@@ -14,6 +14,7 @@
+ from .beta_text_block import BetaTextBlock as BetaTextBlock
+ from .beta_text_delta import BetaTextDelta as BetaTextDelta
+ from .beta_tool_param import BetaToolParam as BetaToolParam
++from .beta_diagnostics import BetaDiagnostics as BetaDiagnostics
+ from .beta_environment import BetaEnvironment as BetaEnvironment
+ from .beta_stop_reason import BetaStopReason as BetaStopReason
+ from .file_list_params import FileListParams as FileListParams
+@@ -63,6 +64,7 @@
+ from .skill_create_response import SkillCreateResponse as SkillCreateResponse
+ from .skill_delete_response import SkillDeleteResponse as SkillDeleteResponse
+ from .beta_base64_pdf_source import BetaBase64PDFSource as BetaBase64PDFSource
++from .beta_diagnostics_param import BetaDiagnosticsParam as BetaDiagnosticsParam
+ from .beta_effort_capability import BetaEffortCapability as BetaEffortCapability
+ from .beta_image_block_param import BetaImageBlockParam as BetaImageBlockParam
+ from .beta_mcp_toolset_param import BetaMCPToolsetParam as BetaMCPToolsetParam
+@@ -112,6 +114,7 @@
+ from .user_profile_create_params import UserProfileCreateParams as UserProfileCreateParams
+ from .user_profile_update_params import UserProfileUpdateParams as UserProfileUpdateParams
+ from .beta_base64_pdf_block_param import BetaBase64PDFBlockParam as BetaBase64PDFBlockParam
++from .beta_cache_miss_unavailable import BetaCacheMissUnavailable as BetaCacheMissUnavailable
+ from .beta_citation_char_location import BetaCitationCharLocation as BetaCitationCharLocation
+ from .beta_citation_page_location import BetaCitationPageLocation as BetaCitationPageLocation
+ from .beta_citations_config_param import BetaCitationsConfigParam as BetaCitationsConfigParam
+@@ -138,6 +141,8 @@
+ from .beta_tool_uses_trigger_param import BetaToolUsesTriggerParam as BetaToolUsesTriggerParam
+ from .beta_web_search_result_block import BetaWebSearchResultBlock as BetaWebSearchResultBlock
+ from .beta_all_thinking_turns_param import BetaAllThinkingTurnsParam as BetaAllThinkingTurnsParam
++from .beta_cache_miss_model_changed import BetaCacheMissModelChanged as BetaCacheMissModelChanged
++from .beta_cache_miss_tools_changed import BetaCacheMissToolsChanged as BetaCacheMissToolsChanged
+ from .beta_json_output_format_param import BetaJSONOutputFormatParam as BetaJSONOutputFormatParam
+ from .beta_mcp_tool_use_block_param import BetaMCPToolUseBlockParam as BetaMCPToolUseBlockParam
+ from .beta_raw_message_stream_event import BetaRawMessageStreamEvent as BetaRawMessageStreamEvent
+@@ -148,6 +153,7 @@
+ from .beta_advisor_tool_result_block import BetaAdvisorToolResultBlock as BetaAdvisorToolResultBlock
+ from .beta_advisor_tool_result_error import BetaAdvisorToolResultError as BetaAdvisorToolResultError
+ from .beta_base64_image_source_param import BetaBase64ImageSourceParam as BetaBase64ImageSourceParam
++from .beta_cache_miss_system_changed import BetaCacheMissSystemChanged as BetaCacheMissSystemChanged
+ from .beta_managed_agents_multiagent import BetaManagedAgentsMultiagent as BetaManagedAgentsMultiagent
+ from .beta_search_result_block_param import BetaSearchResultBlockParam as BetaSearchResultBlockParam
+ from .beta_advisor_result_block_param import BetaAdvisorResultBlockParam as BetaAdvisorResultBlockParam
+@@ -162,6 +168,7 @@
+ from .beta_tool_reference_block_param import BetaToolReferenceBlockParam as BetaToolReferenceBlockParam
+ from .beta_unrestricted_network_param import BetaUnrestrictedNetworkParam as BetaUnrestrictedNetworkParam
+ from .beta_advisor_tool_20260301_param import BetaAdvisorTool20260301Param as BetaAdvisorTool20260301Param
++from .beta_cache_miss_messages_changed import BetaCacheMissMessagesChanged as BetaCacheMissMessagesChanged
+ from .beta_code_execution_output_block import BetaCodeExecutionOutputBlock as BetaCodeExecutionOutputBlock
+ from .beta_code_execution_result_block import BetaCodeExecutionResultBlock as BetaCodeExecutionResultBlock
+ from .beta_compact_20260112_edit_param import BetaCompact20260112EditParam as BetaCompact20260112EditParam
+@@ -375,6 +382,9 @@
+ from .beta_bash_code_execution_tool_result_error import (
+     BetaBashCodeExecutionToolResultError as BetaBashCodeExecutionToolResultError,
+ )
++from .beta_cache_miss_previous_message_not_found import (
++    BetaCacheMissPreviousMessageNotFound as BetaCacheMissPreviousMessageNotFound,
++)
+ from .beta_citation_content_block_location_param import (
+     BetaCitationContentBlockLocationParam as BetaCitationContentBlockLocationParam,
+ )
+diff --git a/src/anthropic/types/beta/beta_cache_miss_messages_changed.py b/src/anthropic/types/beta/beta_cache_miss_messages_changed.py
+new file mode 100644
+index 000000000..83d1a4c0b
+--- /dev/null
++++ b/src/anthropic/types/beta/beta_cache_miss_messages_changed.py
+@@ -0,0 +1,17 @@
++# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
++
++from typing_extensions import Literal
++
++from ..._models import BaseModel
++
++__all__ = ["BetaCacheMissMessagesChanged"]
++
++
++class BetaCacheMissMessagesChanged(BaseModel):
++    cache_missed_input_tokens: int
++    """
++    Approximate number of input tokens that would have been read from cache had the
++    prefix matched the previous request.
++    """
++
++    type: Literal["messages_changed"]
+diff --git a/src/anthropic/types/beta/beta_cache_miss_model_changed.py b/src/anthropic/types/beta/beta_cache_miss_model_changed.py
+new file mode 100644
+index 000000000..cf3aedf8d
+--- /dev/null
++++ b/src/anthropic/types/beta/beta_cache_miss_model_changed.py
+@@ -0,0 +1,17 @@
++# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
++
++from typing_extensions import Literal
++
++from ..._models import BaseModel
++
++__all__ = ["BetaCacheMissModelChanged"]
++
++
++class BetaCacheMissModelChanged(BaseModel):
++    cache_missed_input_tokens: int
++    """
++    Approximate number of input tokens that would have been read from cache had the
++    prefix matched the previous request.
++    """
++
++    type: Literal["model_changed"]
+diff --git a/src/anthropic/types/beta/beta_cache_miss_previous_message_not_found.py b/src/anthropic/types/beta/beta_cache_miss_previous_message_not_found.py
+new file mode 100644
+index 000000000..dc103c9cd
+--- /dev/null
++++ b/src/anthropic/types/beta/beta_cache_miss_previous_message_not_found.py
+@@ -0,0 +1,11 @@
++# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
++
++from typing_extensions import Literal
++
++from ..._models import BaseModel
++
++__all__ = ["BetaCacheMissPreviousMessageNotFound"]
++
++
++class BetaCacheMissPreviousMessageNotFound(BaseModel):
++    type: Literal["previous_message_not_found"]
+diff --git a/src/anthropic/types/beta/beta_cache_miss_system_changed.py b/src/anthropic/types/beta/beta_cache_miss_system_changed.py
+new file mode 100644
+index 000000000..92eba4920
+--- /dev/null
++++ b/src/anthropic/types/beta/beta_cache_miss_system_changed.py
+@@ -0,0 +1,17 @@
++# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
++
++from typing_extensions import Literal
++
++from ..._models import BaseModel
++
++__all__ = ["BetaCacheMissSystemChanged"]
++
++
++class BetaCacheMissSystemChanged(BaseModel):
++    cache_missed_input_tokens: int
++    """
++    Approximate number of input tokens that would have been read from cache had the
++    prefix matched the previous request.
++    """
++
++    type: Literal["system_changed"]
+diff --git a/src/anthropic/types/beta/beta_cache_miss_tools_changed.py b/src/anthropic/types/beta/beta_cache_miss_tools_changed.py
+new file mode 100644
+index 000000000..8ae454222
+--- /dev/null
++++ b/src/anthropic/types/beta/beta_cache_miss_tools_changed.py
+@@ -0,0 +1,17 @@
++# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
++
++from typing_extensions import Literal
++
++from ..._models import BaseModel
++
++__all__ = ["BetaCacheMissToolsChanged"]
++
++
++class BetaCacheMissToolsChanged(BaseModel):
++    cache_missed_input_tokens: int
++    """
++    Approximate number of input tokens that would have been read from cache had the
++    prefix matched the previous request.
++    """
++
++    type: Literal["tools_changed"]
+diff --git a/src/anthropic/types/beta/beta_cache_miss_unavailable.py b/src/anthropic/types/beta/beta_cache_miss_unavailable.py
+new file mode 100644
+index 000000000..4063a9016
+--- /dev/null
++++ b/src/anthropic/types/beta/beta_cache_miss_unavailable.py
+@@ -0,0 +1,11 @@
++# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
++
++from typing_extensions import Literal
++
++from ..._models import BaseModel
++
++__all__ = ["BetaCacheMissUnavailable"]
++
++
++class BetaCacheMissUnavailable(BaseModel):
++    type: Literal["unavailable"]
+diff --git a/src/anthropic/types/beta/beta_diagnostics.py b/src/anthropic/types/beta/beta_diagnostics.py
+new file mode 100644
+index 000000000..f00296226
+--- /dev/null
++++ b/src/anthropic/types/beta/beta_diagnostics.py
+@@ -0,0 +1,44 @@
++# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
++
++from typing import Union, Optional
++from typing_extensions import Annotated, TypeAlias
++
++from ..._utils import PropertyInfo
++from ..._models import BaseModel
++from .beta_cache_miss_unavailable import BetaCacheMissUnavailable
++from .beta_cache_miss_model_changed import BetaCacheMissModelChanged
++from .beta_cache_miss_tools_changed import BetaCacheMissToolsChanged
++from .beta_cache_miss_system_changed import BetaCacheMissSystemChanged
++from .beta_cache_miss_messages_changed import BetaCacheMissMessagesChanged
++from .beta_cache_miss_previous_message_not_found import BetaCacheMissPreviousMessageNotFound
++
++__all__ = ["BetaDiagnostics", "CacheMissReason"]
++
++CacheMissReason: TypeAlias = Annotated[
++    Union[
++        BetaCacheMissModelChanged,
++        BetaCacheMissSystemChanged,
++        BetaCacheMissToolsChanged,
++        BetaCacheMissMessagesChanged,
++        BetaCacheMissPreviousMessageNotFound,
++        BetaCacheMissUnavailable,
++        None,
++    ],
++    PropertyInfo(discriminator="type"),
++]
++
++
++class BetaDiagnostics(BaseModel):
++    """Response envelope for request-level diagnostics.
++
++    Present (possibly
++    null) whenever the caller supplied `diagnostics` on the request.
++    """
++
++    cache_miss_reason: Optional[CacheMissReason] = None
++    """
++    Explains why the prompt cache could not fully reuse the prefix from the request
++    identified by `diagnostics.previous_message_id`. `null` means diagnosis is still
++    pending — the response was serialized before the background comparison
++    completed.
++    """
+diff --git a/src/anthropic/types/beta/beta_diagnostics_param.py b/src/anthropic/types/beta/beta_diagnostics_param.py
+new file mode 100644
+index 000000000..3800a6ee8
+--- /dev/null
++++ b/src/anthropic/types/beta/beta_diagnostics_param.py
+@@ -0,0 +1,25 @@
++# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
++
++from __future__ import annotations
++
++from typing import Optional
++from typing_extensions import TypedDict
++
++__all__ = ["BetaDiagnosticsParam"]
++
++
++class BetaDiagnosticsParam(TypedDict, total=False):
++    """Request-level diagnostics.
++
++    Currently carries the previous response
++    id for prompt-cache divergence reporting.
++    """
++
++    previous_message_id: Optional[str]
++    """The `id` (`msg_...`) from this client's previous /v1/messages response.
++
++    The server compares that request's prompt fingerprint against this one and
++    returns `diagnostics.cache_miss_reason` when the prompt-cache prefix could not
++    be reused. Pass `null` on the first turn to opt in without a prior message to
++    compare.
++    """
+diff --git a/src/anthropic/types/beta/beta_managed_agents_outcome_evaluation_resource.py b/src/anthropic/types/beta/beta_managed_agents_outcome_evaluation_resource.py
+index a26bfb3ec..8913564e7 100644
+--- a/src/anthropic/types/beta/beta_managed_agents_outcome_evaluation_resource.py
++++ b/src/anthropic/types/beta/beta_managed_agents_outcome_evaluation_resource.py
+@@ -34,9 +34,9 @@ class BetaManagedAgentsOutcomeEvaluationResource(BaseModel):
+     result: str
+     """Current evaluation state.
+ 
+-    'pending' before the agent begins work; 'running' while producing or revising;
+-    'evaluating' while the grader scores;
+-    'satisfied'/'max_iterations_reached'/'failed'/'interrupted' are terminal.
++    `pending` before the agent begins work; `running` while producing or revising;
++    `evaluating` while the grader scores;
++    `satisfied`/`max_iterations_reached`/`failed`/`interrupted` are terminal.
+     """
+ 
+     type: Literal["outcome_evaluation"]
+diff --git a/src/anthropic/types/beta/beta_message.py b/src/anthropic/types/beta/beta_message.py
+index f594bc03f..84ec6f12b 100644
+--- a/src/anthropic/types/beta/beta_message.py
++++ b/src/anthropic/types/beta/beta_message.py
+@@ -7,6 +7,7 @@
+ from ..._models import BaseModel
+ from .beta_usage import BetaUsage
+ from .beta_container import BetaContainer
++from .beta_diagnostics import BetaDiagnostics
+ from .beta_stop_reason import BetaStopReason
+ from .beta_content_block import BetaContentBlock, BetaContentBlock as BetaContentBlock
+ from .beta_refusal_stop_details import BetaRefusalStopDetails
+@@ -69,6 +70,13 @@ class BetaMessage(BaseModel):
+     Information about context management strategies applied during the request.
+     """
+ 
++    diagnostics: Optional[BetaDiagnostics] = None
++    """Response envelope for request-level diagnostics.
++
++    Present (possibly null) whenever the caller supplied `diagnostics` on the
++    request.
++    """
++
+     model: Model
+     """
+     The model that will complete your prompt.\n\nSee
+diff --git a/src/anthropic/types/beta/message_create_params.py b/src/anthropic/types/beta/message_create_params.py
+index b5159ea53..63828dbed 100644
+--- a/src/anthropic/types/beta/message_create_params.py
++++ b/src/anthropic/types/beta/message_create_params.py
+@@ -15,6 +15,7 @@
+ from .beta_container_params import BetaContainerParams
+ from .beta_text_block_param import BetaTextBlockParam
+ from .beta_tool_union_param import BetaToolUnionParam
++from .beta_diagnostics_param import BetaDiagnosticsParam
+ from .beta_tool_choice_param import BetaToolChoiceParam
+ from .beta_output_config_param import BetaOutputConfigParam
+ from .beta_thinking_config_param import BetaThinkingConfigParam
+@@ -138,6 +139,13 @@ class MessageCreateParamsBase(TypedDict, total=False):
+     such as whether to clear function results or not.
+     """
+ 
++    diagnostics: Optional[BetaDiagnosticsParam]
++    """Request-level diagnostics.
++
++    Currently carries the previous response id for prompt-cache divergence
++    reporting.
++    """
++
+     inference_geo: Optional[str]
+     """Specifies the geographic region for inference processing.
+ 
+diff --git a/src/anthropic/types/beta/messages/batch_create_params.py b/src/anthropic/types/beta/messages/batch_create_params.py
+index a24181f49..fae86ff85 100644
+--- a/src/anthropic/types/beta/messages/batch_create_params.py
++++ b/src/anthropic/types/beta/messages/batch_create_params.py
+@@ -24,6 +24,7 @@ class BatchCreateParams(TypedDict, total=False):
+ 
+ 
+ 
++
+     user_profile_id: Optional[str]
+     """The user profile ID to attribute this request to.
+ 
+diff --git a/src/anthropic/types/beta/sessions/__init__.py b/src/anthropic/types/beta/sessions/__init__.py
+index b2dd97d41..8bf355991 100644
+--- a/src/anthropic/types/beta/sessions/__init__.py
++++ b/src/anthropic/types/beta/sessions/__init__.py
+@@ -43,6 +43,9 @@
+ from .beta_managed_agents_base64_image_source import (
+     BetaManagedAgentsBase64ImageSource as BetaManagedAgentsBase64ImageSource,
+ )
++from .beta_managed_agents_search_result_block import (
++    BetaManagedAgentsSearchResultBlock as BetaManagedAgentsSearchResultBlock,
++)
+ from .beta_managed_agents_send_session_events import (
+     BetaManagedAgentsSendSessionEvents as BetaManagedAgentsSendSessionEvents,
+ )
+@@ -85,6 +88,9 @@
+ from .beta_managed_agents_retry_status_terminal import (
+     BetaManagedAgentsRetryStatusTerminal as BetaManagedAgentsRetryStatusTerminal,
+ )
++from .beta_managed_agents_search_result_content import (
++    BetaManagedAgentsSearchResultContent as BetaManagedAgentsSearchResultContent,
++)
+ from .beta_managed_agents_session_deleted_event import (
+     BetaManagedAgentsSessionDeletedEvent as BetaManagedAgentsSessionDeletedEvent,
+ )
+@@ -115,6 +121,9 @@
+ from .beta_managed_agents_file_image_source_param import (
+     BetaManagedAgentsFileImageSourceParam as BetaManagedAgentsFileImageSourceParam,
+ )
++from .beta_managed_agents_search_result_citations import (
++    BetaManagedAgentsSearchResultCitations as BetaManagedAgentsSearchResultCitations,
++)
+ from .beta_managed_agents_session_requires_action import (
+     BetaManagedAgentsSessionRequiresAction as BetaManagedAgentsSessionRequiresAction,
+ )
+@@ -127,6 +136,9 @@
+ from .beta_managed_agents_base64_image_source_param import (
+     BetaManagedAgentsBase64ImageSourceParam as BetaManagedAgentsBase64ImageSourceParam,
+ )
++from .beta_managed_agents_search_result_block_param import (
++    BetaManagedAgentsSearchResultBlockParam as BetaManagedAgentsSearchResultBlockParam,
++)
+ from .beta_managed_agents_session_retries_exhausted import (
+     BetaManagedAgentsSessionRetriesExhausted as BetaManagedAgentsSessionRetriesExhausted,
+ )
+@@ -163,6 +175,9 @@
+ from .beta_managed_agents_mcp_connection_failed_error import (
+     BetaManagedAgentsMCPConnectionFailedError as BetaManagedAgentsMCPConnectionFailedError,
+ )
++from .beta_managed_agents_search_result_content_param import (
++    BetaManagedAgentsSearchResultContentParam as BetaManagedAgentsSearchResultContentParam,
++)
+ from .beta_managed_agents_user_interrupt_event_params import (
+     BetaManagedAgentsUserInterruptEventParams as BetaManagedAgentsUserInterruptEventParams,
+ )
+@@ -184,6 +199,9 @@
+ from .beta_managed_agents_user_tool_confirmation_event import (
+     BetaManagedAgentsUserToolConfirmationEvent as BetaManagedAgentsUserToolConfirmationEvent,
+ )
++from .beta_managed_agents_search_result_citations_param import (
++    BetaManagedAgentsSearchResultCitationsParam as BetaManagedAgentsSearchResultCitationsParam,
++)
+ from .beta_managed_agents_user_custom_tool_result_event import (
+     BetaManagedAgentsUserCustomToolResultEvent as BetaManagedAgentsUserCustomToolResultEvent,
+ )
+diff --git a/src/anthropic/types/beta/sessions/beta_managed_agents_agent_mcp_tool_result_event.py b/src/anthropic/types/beta/sessions/beta_managed_agents_agent_mcp_tool_result_event.py
+index 3ce0277ee..4aef1dfed 100644
+--- a/src/anthropic/types/beta/sessions/beta_managed_agents_agent_mcp_tool_result_event.py
++++ b/src/anthropic/types/beta/sessions/beta_managed_agents_agent_mcp_tool_result_event.py
+@@ -9,11 +9,17 @@
+ from .beta_managed_agents_text_block import BetaManagedAgentsTextBlock
+ from .beta_managed_agents_image_block import BetaManagedAgentsImageBlock
+ from .beta_managed_agents_document_block import BetaManagedAgentsDocumentBlock
++from .beta_managed_agents_search_result_block import BetaManagedAgentsSearchResultBlock
+ 
+ __all__ = ["BetaManagedAgentsAgentMCPToolResultEvent", "Content"]
+ 
+ Content: TypeAlias = Annotated[
+-    Union[BetaManagedAgentsTextBlock, BetaManagedAgentsImageBlock, BetaManagedAgentsDocumentBlock],
++    Union[
++        BetaManagedAgentsTextBlock,
++        BetaManagedAgentsImageBlock,
++        BetaManagedAgentsDocumentBlock,
++        BetaManagedAgentsSearchResultBlock,
++    ],
+     PropertyInfo(discriminator="type"),
+ ]
+ 
+diff --git a/src/anthropic/types/beta/sessions/beta_managed_agents_agent_tool_result_event.py b/src/anthropic/types/beta/sessions/beta_managed_agents_agent_tool_result_event.py
+index f61925d19..78531a263 100644
+--- a/src/anthropic/types/beta/sessions/beta_managed_agents_agent_tool_result_event.py
++++ b/src/anthropic/types/beta/sessions/beta_managed_agents_agent_tool_result_event.py
+@@ -9,11 +9,17 @@
+ from .beta_managed_agents_text_block import BetaManagedAgentsTextBlock
+ from .beta_managed_agents_image_block import BetaManagedAgentsImageBlock
+ from .beta_managed_agents_document_block import BetaManagedAgentsDocumentBlock
++from .beta_managed_agents_search_result_block import BetaManagedAgentsSearchResultBlock
+ 
+ __all__ = ["BetaManagedAgentsAgentToolResultEvent", "Content"]
+ 
+ Content: TypeAlias = Annotated[
+-    Union[BetaManagedAgentsTextBlock, BetaManagedAgentsImageBlock, BetaManagedAgentsDocumentBlock],
++    Union[
++        BetaManagedAgentsTextBlock,
++        BetaManagedAgentsImageBlock,
++        BetaManagedAgentsDocumentBlock,
++        BetaManagedAgentsSearchResultBlock,
++    ],
+     PropertyInfo(discriminator="type"),
+ ]
+ 
+diff --git a/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_block.py b/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_block.py
+new file mode 100644
+index 000000000..cacbe47f2
+--- /dev/null
++++ b/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_block.py
+@@ -0,0 +1,28 @@
++# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
++
++from typing import List
++from typing_extensions import Literal
++
++from ...._models import BaseModel
++from .beta_managed_agents_search_result_content import BetaManagedAgentsSearchResultContent
++from .beta_managed_agents_search_result_citations import BetaManagedAgentsSearchResultCitations
++
++__all__ = ["BetaManagedAgentsSearchResultBlock"]
++
++
++class BetaManagedAgentsSearchResultBlock(BaseModel):
++    """A block containing a web search result."""
++
++    citations: BetaManagedAgentsSearchResultCitations
++    """Citation settings for a search result."""
++
++    content: List[BetaManagedAgentsSearchResultContent]
++    """Array of text content blocks from the search result."""
++
++    source: str
++    """The URL source of the search result."""
++
++    title: str
++    """The title of the search result."""
++
++    type: Literal["search_result"]
+diff --git a/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_block_param.py b/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_block_param.py
+new file mode 100644
+index 000000000..66e11f266
+--- /dev/null
++++ b/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_block_param.py
+@@ -0,0 +1,29 @@
++# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
++
++from __future__ import annotations
++
++from typing import Iterable
++from typing_extensions import Literal, Required, TypedDict
++
++from .beta_managed_agents_search_result_content_param import BetaManagedAgentsSearchResultContentParam
++from .beta_managed_agents_search_result_citations_param import BetaManagedAgentsSearchResultCitationsParam
++
++__all__ = ["BetaManagedAgentsSearchResultBlockParam"]
++
++
++class BetaManagedAgentsSearchResultBlockParam(TypedDict, total=False):
++    """A block containing a web search result."""
++
++    citations: Required[BetaManagedAgentsSearchResultCitationsParam]
++    """Citation settings for a search result."""
++
++    content: Required[Iterable[BetaManagedAgentsSearchResultContentParam]]
++    """Array of text content blocks from the search result."""
++
++    source: Required[str]
++    """The URL source of the search result."""
++
++    title: Required[str]
++    """The title of the search result."""
++
++    type: Required[Literal["search_result"]]
+diff --git a/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_citations.py b/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_citations.py
+new file mode 100644
+index 000000000..175ab5942
+--- /dev/null
++++ b/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_citations.py
+@@ -0,0 +1,12 @@
++# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
++
++from ...._models import BaseModel
++
++__all__ = ["BetaManagedAgentsSearchResultCitations"]
++
++
++class BetaManagedAgentsSearchResultCitations(BaseModel):
++    """Citation settings for a search result."""
++
++    enabled: bool
++    """Whether citations are enabled for this search result."""
+diff --git a/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_citations_param.py b/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_citations_param.py
+new file mode 100644
+index 000000000..6ec76ee7d
+--- /dev/null
++++ b/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_citations_param.py
+@@ -0,0 +1,14 @@
++# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
++
++from __future__ import annotations
++
++from typing_extensions import Required, TypedDict
++
++__all__ = ["BetaManagedAgentsSearchResultCitationsParam"]
++
++
++class BetaManagedAgentsSearchResultCitationsParam(TypedDict, total=False):
++    """Citation settings for a search result."""
++
++    enabled: Required[bool]
++    """Whether citations are enabled for this search result."""
+diff --git a/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_content.py b/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_content.py
+new file mode 100644
+index 000000000..12cdb161a
+--- /dev/null
++++ b/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_content.py
+@@ -0,0 +1,16 @@
++# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
++
++from typing_extensions import Literal
++
++from ...._models import BaseModel
++
++__all__ = ["BetaManagedAgentsSearchResultContent"]
++
++
++class BetaManagedAgentsSearchResultContent(BaseModel):
++    """Text content within a search result."""
++
++    text: str
++    """The text content."""
++
++    type: Literal["text"]
+diff --git a/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_content_param.py b/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_content_param.py
+new file mode 100644
+index 000000000..2fe470a4a
+--- /dev/null
++++ b/src/anthropic/types/beta/sessions/beta_managed_agents_search_result_content_param.py
+@@ -0,0 +1,16 @@
++# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
++
++from __future__ import annotations
++
++from typing_extensions import Literal, Required, TypedDict
++
++__all__ = ["BetaManagedAgentsSearchResultContentParam"]
++
++
++class BetaManagedAgentsSearchResultContentParam(TypedDict, total=False):
++    """Text content within a search result."""
++
++    text: Required[str]
++    """The text content."""
++
++    type: Required[Literal["text"]]
+diff --git a/src/anthropic/types/beta/sessions/beta_managed_agents_user_custom_tool_result_event.py b/src/anthropic/types/beta/sessions/beta_managed_agents_user_custom_tool_result_event.py
+index 4b695898c..54f26f90e 100644
+--- a/src/anthropic/types/beta/sessions/beta_managed_agents_user_custom_tool_result_event.py
++++ b/src/anthropic/types/beta/sessions/beta_managed_agents_user_custom_tool_result_event.py
+@@ -9,11 +9,17 @@
+ from .beta_managed_agents_text_block import BetaManagedAgentsTextBlock
+ from .beta_managed_agents_image_block import BetaManagedAgentsImageBlock
+ from .beta_managed_agents_document_block import BetaManagedAgentsDocumentBlock
++from .beta_managed_agents_search_result_block import BetaManagedAgentsSearchResultBlock
+ 
+ __all__ = ["BetaManagedAgentsUserCustomToolResultEvent", "Content"]
+ 
+ Content: TypeAlias = Annotated[
+-    Union[BetaManagedAgentsTextBlock, BetaManagedAgentsImageBlock, BetaManagedAgentsDocumentBlock],
++    Union[
++        BetaManagedAgentsTextBlock,
++        BetaManagedAgentsImageBlock,
++        BetaManagedAgentsDocumentBlock,
++        BetaManagedAgentsSearchResultBlock,
++    ],
+     PropertyInfo(discriminator="type"),
+ ]
+ 
+diff --git a/src/anthropic/types/beta/sessions/beta_managed_agents_user_custom_tool_result_event_params.py b/src/anthropic/types/beta/sessions/beta_managed_agents_user_custom_tool_result_event_params.py
+index 05c79e6fe..a76cc7754 100644
+--- a/src/anthropic/types/beta/sessions/beta_managed_agents_user_custom_tool_result_event_params.py
++++ b/src/anthropic/types/beta/sessions/beta_managed_agents_user_custom_tool_result_event_params.py
+@@ -8,11 +8,15 @@
+ from .beta_managed_agents_text_block_param import BetaManagedAgentsTextBlockParam
+ from .beta_managed_agents_image_block_param import BetaManagedAgentsImageBlockParam
+ from .beta_managed_agents_document_block_param import BetaManagedAgentsDocumentBlockParam
++from .beta_managed_agents_search_result_block_param import BetaManagedAgentsSearchResultBlockParam
+ 
+ __all__ = ["BetaManagedAgentsUserCustomToolResultEventParams", "Content"]
+ 
+ Content: TypeAlias = Union[
+-    BetaManagedAgentsTextBlockParam, BetaManagedAgentsImageBlockParam, BetaManagedAgentsDocumentBlockParam
++    BetaManagedAgentsTextBlockParam,
++    BetaManagedAgentsImageBlockParam,
++    BetaManagedAgentsDocumentBlockParam,
++    BetaManagedAgentsSearchResultBlockParam,
+ ]
+ 
+ 
+diff --git a/tests/api_resources/beta/messages/test_batches.py b/tests/api_resources/beta/messages/test_batches.py
+index 11684f23d..00d380215 100644
+--- a/tests/api_resources/beta/messages/test_batches.py
++++ b/tests/api_resources/beta/messages/test_batches.py
+@@ -96,6 +96,7 @@ def test_method_create_with_all_params(self, client: Anthropic) -> None:
+                                 }
+                             ]
+                         },
++                        "diagnostics": {"previous_message_id": "previous_message_id"},
+                         "inference_geo": "inference_geo",
+                         "mcp_servers": [
+                             {
+@@ -560,6 +561,7 @@ async def test_method_create_with_all_params(self, async_client: AsyncAnthropic)
+                                 }
+                             ]
+                         },
++                        "diagnostics": {"previous_message_id": "previous_message_id"},
+                         "inference_geo": "inference_geo",
+                         "mcp_servers": [
+                             {
+diff --git a/tests/api_resources/beta/test_messages.py b/tests/api_resources/beta/test_messages.py
+index 530489247..77977938d 100644
+--- a/tests/api_resources/beta/test_messages.py
++++ b/tests/api_resources/beta/test_messages.py
+@@ -81,6 +81,7 @@ def test_method_create_with_all_params_overload_1(self, client: Anthropic) -> No
+                     }
+                 ]
+             },
++            diagnostics={"previous_message_id": "previous_message_id"},
+             inference_geo="inference_geo",
+             mcp_servers=[
+                 {
+@@ -271,6 +272,7 @@ def test_method_create_with_all_params_overload_2(self, client: Anthropic) -> No
+                     }
+                 ]
+             },
++            diagnostics={"previous_message_id": "previous_message_id"},
+             inference_geo="inference_geo",
+             mcp_servers=[
+                 {
+@@ -647,6 +649,7 @@ async def test_method_create_with_all_params_overload_1(self, async_client: Asyn
+                     }
+                 ]
+             },
++            diagnostics={"previous_message_id": "previous_message_id"},
+             inference_geo="inference_geo",
+             mcp_servers=[
+                 {
+@@ -837,6 +840,7 @@ async def test_method_create_with_all_params_overload_2(self, async_client: Asyn
+                     }
+                 ]
+             },
++            diagnostics={"previous_message_id": "previous_message_id"},
+             inference_geo="inference_geo",
+             mcp_servers=[
+                 {
+diff --git a/tests/lib/tools/test_runners.py b/tests/lib/tools/test_runners.py
+index 6b92e7a9b..225fd2b54 100644
+--- a/tests/lib/tools/test_runners.py
++++ b/tests/lib/tools/test_runners.py
+@@ -42,6 +42,7 @@
+         )
+     ],
+     context_management=None,
++    diagnostics=None,
+     id='msg_01BZsMQjer9AFLgmdRKJ8NcA',
+     model='claude-haiku-4-5-20251001',
+     role='assistant',
+@@ -90,6 +91,7 @@
+         )
+     ],
+     context_management=None,
++    diagnostics=None,
+     id='msg_0158JyopQTFaomteeJoDpS5q',
+     model='claude-haiku-4-5-20251001',
+     role='assistant',
+diff --git a/tests/test_models.py b/tests/test_models.py
+index 494ad8d45..195f23079 100644
+--- a/tests/test_models.py
++++ b/tests/test_models.py
+@@ -1,7 +1,8 @@
+ import json
+-from typing import TYPE_CHECKING, Any, Dict, List, Union, Optional, cast
++from typing import TYPE_CHECKING, Any, Dict, List, Union, Iterable, Optional, cast
+ from datetime import datetime, timezone
+-from typing_extensions import Literal, Annotated, TypeAliasType
++from collections import deque
++from typing_extensions import Literal, Annotated, TypedDict, TypeAliasType
+ 
+ import pytest
+ import pydantic
+@@ -9,7 +10,7 @@
+ 
+ from anthropic._utils import PropertyInfo
+ from anthropic._compat import PYDANTIC_V1, parse_obj, model_dump, model_json
+-from anthropic._models import DISCRIMINATOR_CACHE, BaseModel, construct_type
++from anthropic._models import DISCRIMINATOR_CACHE, BaseModel, EagerIterable, construct_type
+ 
+ 
+ class BasicModel(BaseModel):
+@@ -961,3 +962,56 @@ def __getattr__(self, attr: str) -> Item: ...
+     assert model.a.prop == 1
+     assert isinstance(model.a, Item)
+     assert model.other == "foo"
++
++
++# NOTE: Workaround for Pydantic Iterable behavior.
++# Iterable fields are replaced with a ValidatorIterator and may be consumed
++# during serialization, which can cause subsequent dumps to return empty data.
++# See: https://github.com/pydantic/pydantic/issues/9541
++@pytest.mark.parametrize(
++    "data, expected_validated",
++    [
++        ([1, 2, 3], [1, 2, 3]),
++        ((1, 2, 3), (1, 2, 3)),
++        (set([1, 2, 3]), set([1, 2, 3])),
++        (iter([1, 2, 3]), [1, 2, 3]),
++        ([], []),
++        ((x for x in [1, 2, 3]), [1, 2, 3]),
++        (map(lambda x: x, [1, 2, 3]), [1, 2, 3]),
++        (frozenset([1, 2, 3]), frozenset([1, 2, 3])),
++        (deque([1, 2, 3]), deque([1, 2, 3])),
++    ],
++    ids=["list", "tuple", "set", "iterator", "empty", "generator", "map", "frozenset", "deque"],
++)
++@pytest.mark.skipif(PYDANTIC_V1, reason="this is only supported in pydantic v2")
++def test_iterable_construction(data: Iterable[int], expected_validated: Iterable[int]) -> None:
++    class TypeWithIterable(TypedDict):
++        items: EagerIterable[int]
++
++    class Model(BaseModel):
++        data: TypeWithIterable
++
++    m = Model.model_validate({"data": {"items": data}})
++    assert m.data["items"] == expected_validated
++
++    # Verify repeated dumps don't lose data (the original bug)
++    assert m.model_dump()["data"]["items"] == list(expected_validated)
++    assert m.model_dump()["data"]["items"] == list(expected_validated)
++
++
++@pytest.mark.skipif(PYDANTIC_V1, reason="this is only supported in pydantic v2")
++def test_iterable_construction_str_falls_back_to_list() -> None:
++    # str is iterable (over chars), but str(list_of_chars) produces the list's repr
++    # rather than reconstructing a string from items. We special-case str to fall
++    # back to list instead of attempting reconstruction.
++    class TypeWithIterable(TypedDict):
++        items: EagerIterable[str]
++
++    class Model(BaseModel):
++        data: TypeWithIterable
++
++    m = Model.model_validate({"data": {"items": "hello"}})
++
++    # falls back to list of chars rather than calling str(["h", "e", "l", "l", "o"])
++    assert m.data["items"] == ["h", "e", "l", "l", "o"]
++    assert m.model_dump()["data"]["items"] == ["h", "e", "l", "l", "o"]
+diff --git a/uv.lock b/uv.lock
+index 43be86a36..07c111976 100644
+--- a/uv.lock
++++ b/uv.lock
+@@ -194,7 +194,7 @@ wheels = [
+ 
+ [[package]]
+ name = "anthropic"
+-version = "0.99.0"
++version = "0.101.0"
+ source = { editable = "." }
+ dependencies = [
+     { name = "anyio" },

@@ -1,0 +1,62 @@
+diff --git a/aider/main.py b/aider/main.py
+index afb3f836624..695291ec935 100644
+--- a/aider/main.py
++++ b/aider/main.py
+@@ -819,13 +819,20 @@ def get_io(pretty):
+             )
+             return 1
+ 
+-    main_model = models.Model(
+-        args.model,
+-        weak_model=args.weak_model,
+-        editor_model=args.editor_model,
+-        editor_edit_format=args.editor_edit_format,
+-        verbose=args.verbose,
+-    )
++    try:
++        main_model = models.Model(
++            args.model,
++            weak_model=args.weak_model,
++            editor_model=args.editor_model,
++            editor_edit_format=args.editor_edit_format,
++            verbose=args.verbose,
++        )
++    except ImportError as err:
++        io.tool_error(str(err))
++        io.tool_output("Error loading required imports. Did you install aider properly?")
++        io.offer_url(urls.install_properly, "Open documentation url for more info?")
++        analytics.event("exit", reason="Model initialization import error")
++        return 1
+ 
+     # Check if deprecated remove_reasoning is set
+     if main_model.remove_reasoning is not None:
+diff --git a/tests/basic/test_main.py b/tests/basic/test_main.py
+index c8966a53671..75f07921527 100644
+--- a/tests/basic/test_main.py
++++ b/tests/basic/test_main.py
+@@ -391,6 +391,25 @@ def test_default_yes(self, mock_run, MockInputOutput):
+         args, kwargs = MockInputOutput.call_args
+         self.assertEqual(args[1], None)
+ 
++    @patch("aider.main.models.Model")
++    @patch("aider.main.InputOutput")
++    def test_model_import_error_is_reported(self, MockInputOutput, mock_model):
++        mock_model.side_effect = ImportError(
++            "cannot import name 'is_type_alias_type' from 'openai._utils'"
++        )
++        mock_io_instance = MockInputOutput.return_value
++
++        result = main(["--yes", "--exit"], input=DummyInput(), output=DummyOutput())
++
++        self.assertEqual(result, 1)
++        mock_io_instance.tool_error.assert_called_with(
++            "cannot import name 'is_type_alias_type' from 'openai._utils'"
++        )
++        mock_io_instance.tool_output.assert_any_call(
++            "Error loading required imports. Did you install aider properly?"
++        )
++        mock_io_instance.offer_url.assert_called_once()
++
+     def test_dark_mode_sets_code_theme(self):
+         # Mock InputOutput to capture the configuration
+         with patch("aider.main.InputOutput") as MockInputOutput:

@@ -1,0 +1,26 @@
+{
+  "id": "devin-divord97-ccc-pr19",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 19,
+    "headSha": "d4de0013b41bd097841e60494e010928990a7d18",
+    "baseSha": "ebd6f54cdb223a58e7663ee4bf098e9a8bfe369f",
+    "title": "feat: 替换全部 7 个 stub 为真实阿里云服务集成",
+    "body": "## Summary\n\n将系统中所有 7 个 stub/占位实现替换为真实的阿里云服务集成，同时实现 QA 质检引擎全部 11 种算子。\n\n### 新增实现：\n\n**1. LLM Provider — DashScope (通义千问)**\n- `dashscope_provider.go`: 实现 `Provider` 接口全部 12 个方法（纠错/扩写/优化/摘要/情绪分析/标签提取/满意度预测/IVR分析/完成度判断/话后动作/自动填单/话术推荐/LLM质检）\n- 通过 DashScope REST API 调用通义千问大模型\n\n**2. ASR Provider — 阿里云 NLS**\n- `aliyun_asr_provider.go`: 通过 NLS Gateway 一句话识别 API 实现语音转文字\n\n**3. TTS Provider — 阿里云 NLS**\n- `aliyun_tts_provider.go`: 通过 NLS Gateway TTS API 实现文字转语音\n\n**4. Advanced AI Providers — DashScope**\n- `dashscope_advanced_provider.go`: 6 个高级 AI provider 的真实实现\n  - CommAgent (通信智能体): 多轮对话 + 转人工判断\n  - VoiceCloning (声纹复刻): CosyVoice API\n  - ConversationAnalytics (对话分析): 意图挖掘/SOP发现/话术提取/话题聚类\n  - RingAnalysis (彩铃识别): 音频分类\n  - FullDuplex (全双工): VAD 打断检测 + 续说\n  - Training (智能培训): 模拟通话评估 + 考题生成\n\n**5. SMS — 阿里云 dysmsapi**\n- `internal/infrastructure/aliyunsms/client.go`: HMAC-SHA1 签名 + dysmsapi REST API\n- 更新 `sms/service.go` 注入 `SMSSender` 接口\n\n**6. 微信公众号**\n- `internal/infrastructure/wechat/crypto.go`: AES-CBC 消息加解密 (EncodingAESKey)\n- `internal/infrastructure/wechat/api.go`: AccessToken 管理 + 客服消息 API (文本/图片)\n\n**7. 微博开放平台**\n- `internal/infrastructure/weibo/api.go`: HMAC-SHA256 签名验证 + 私信 API\n\n**8. QA 质检引擎 — 11 种算子全部实现**\n- keyword: 关键词检测 (present/absent)\n- regex: 正则表达式匹配\n- silence: 静音检测 (解析 `[silence:Xs]` 标记)\n- speed: 语速检测 (解析 `[speed:Xwpm]` 或字符估算)\n- interruption: 打断检测 (计数 `[interruption]`)\n- energy: 音量检测 (解析 `[energy:X]`)\n- duration: 通话时长检测\n- entity: 实体提取 (手机号/邮箱/订单号/身份证/姓名)\n- role: 角色规范 (开场白/结束语/必说话术)\n- abnormal_hangup: 异常挂断检测\n- llm: 大模型质检 (通过 QALLMProvider 接口)\n\n### 配置变更：\n- `config.go`: 新增 `AliyunConfig` (AccessKey, NLS AppKey, DashScope API Key)\n- `.env.example`: 新增 5 个环境变量\n- `main.go`: 有 DASHSCOPE_API_KEY 时用真实 provider，否则降级为 stub\n\n## Review & Testing Checklist for Human\n\n- [ ] 验证 DashScope API Key 配置后 LLM 调用正常（设置 `DASHSCOPE_API_KEY` 环境变量，测试 `/ai/analysis/summarize` 等接口）\n- [ ] 验证阿里云 AccessKey 配置后 ASR/TTS/SMS 调用正常\n- [ ] 验证不配置任何 API Key 时系统正常启动（降级为 stub）\n- [ ] 运行 `go test ./...` 确认所有 18 个测试文件通过\n- [ ] 检查 QA 质检引擎各算子：创建不同类型规则 → 运行质检 → 验证评分逻辑\n\n### 建议测试步骤：\n1. 不设 API Key 启动 → 确认 stub 日志\n2. 设置 `DASHSCOPE_API_KEY` → 调用 `/ai/analysis/summarize` → 验证真实 LLM 返回\n3. 创建 keyword/regex/silence/llm 等不同类型 QA 规则 → RunInspection → 验证打分\n\n### Notes\n- 所有外部 API 调用均有 context 超时支持\n- WeChat/Weibo 的消息加解密和 API 回复逻辑已实现，但需要真实的公众号 AppID/AppSecret 才能测试\n- SMS 使用标准阿里云 POP 签名机制，兼容所有 dysmsapi 操作\n- QA 规则中 silence/speed/energy 等音频指标通过转写文本中的元数据标记传入，需要 ASR 转写时插入对应标记\n\n\nLink to Devin session: https://app.devin.ai/sessions/a0ba506a3d574e7b8a041065a6b41144\nRequested by: @divord97\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/divord97/ccc/pull/19\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779583026-real-service-integration",
+    "repository": "divord97/ccc"
+  },
+  "diffRef": {
+    "repository": "divord97/ccc",
+    "headSha": "d4de0013b41bd097841e60494e010928990a7d18",
+    "baseSha": "ebd6f54cdb223a58e7663ee4bf098e9a8bfe369f"
+  },
+  "vendoredDiffPath": "devin/devin-divord97-ccc-pr19.diff",
+  "vendoredAt": "2026-05-24T03:04:30.048Z",
+  "collectedAt": "2026-05-24T03:04:30.048Z"
+}

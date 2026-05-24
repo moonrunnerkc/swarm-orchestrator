@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-oven-sh-bun-pr31267",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "branch=claude/"
+  },
+  "pr": {
+    "number": 31267,
+    "headSha": "c47a469c05ff5a431834078dc13af5a48dd92e5f",
+    "baseSha": "f8dcf1a8a0ca9e5b62f0efda1766772f1b5233b4",
+    "title": "fix(bundler): avoid aliased mutable borrows in chunk codegen",
+    "body": "## Summary\n\nFixes the audit's EXP-111 / Bundler B-1..B-5 aliasing finding in the parallel chunk-codegen path.\n\nThe JS/CSS part-range worker callbacks used to rebuild `&mut LinkerContext` and `&mut Chunk` from shared raw pointers even though that phase only needs shared graph/chunk reads plus disjoint compile-result slot writes. Under Miri stacked borrows, the EXP-111 witness reports a data race between retag writes while reconstructing `&mut Chunk` on parallel worker threads.\n\nThis PR:\n\n- routes JS/CSS part-range codegen through shared `&LinkerContext` / `&Chunk` borrows\n- keeps per-task output writes behind `Chunk::write_compile_result_slot`, which writes only the task's disjoint `compile_results_for_chunk[i]` slot\n- keeps the slot writer on shared access to the boxed `UnsafeCell` slice instead of raw-reading the `Box` representation\n- makes the printer renamer view shared/read-only so part-range printers do not fabricate aliased `&mut ChunkRenamer` borrows\n- requires erased `RequireOrImportMetaCallback::init` contexts to be `Sync`, matching the shared worker-side callback use\n- makes `SymbolMap::follow()` read-only; `follow_all(&mut self)` remains the serial path-compression pass\n- preserves prior serial side effects by preparing browser transpiler state and `Source.path.pretty` before worker fan-out\n- propagates pretty-path initialization failures through the existing bundler `Result` path instead of panicking\n\n## Audit Evidence\n\n- Finding: EXP-111 / Bundler B-1..B-5\n- Witness: `.ub-exorcism/2026-05-15-exhaustive/phase5_experiment_results/EXP-111-sb.log`\n- Miri signal: stacked-borrows data race between retag writes while reconstructing `&mut Chunk` from shared worker raw pointers\n\n## Verification\n\n- `cargo fmt -p bun_ast -p bun_js_printer -p bun_bundler`\n- `cargo fmt --check -p bun_ast -p bun_js_printer -p bun_bundler`\n- `env CARGO_TARGET_DIR=/tmp/bun-ub-fix-bundler-alias-v2-target cargo check -p bun_bundler`\n- `env CARGO_TARGET_DIR=/tmp/bun-ub-fix-bundler-alias-v2-target cargo check --workspace`\n- `bun bd test test/bundler/transpiler/transpiler.test.js`\n- `bun bd test test/bundler/bundler_barrel.test.ts`\n- `bun bd test test/bundler/bundler_html.test.ts`\n- `git diff --check origin/main...HEAD`",
+    "author": "Dicklesworthstone",
+    "headRef": "claude/ub-fix-bundler-chunk-aliasing-v2",
+    "repository": "oven-sh/bun"
+  },
+  "diffRef": {
+    "repository": "oven-sh/bun",
+    "headSha": "c47a469c05ff5a431834078dc13af5a48dd92e5f",
+    "baseSha": "f8dcf1a8a0ca9e5b62f0efda1766772f1b5233b4"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-oven-sh-bun-pr31267.diff",
+  "vendoredAt": "2026-05-24T03:23:28.182Z",
+  "collectedAt": "2026-05-24T03:23:28.182Z"
+}

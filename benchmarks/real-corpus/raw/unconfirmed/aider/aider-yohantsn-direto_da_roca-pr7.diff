@@ -1,0 +1,342 @@
+diff --git a/core_sdk/horta_ui/lib/horta_ui.dart b/core_sdk/horta_ui/lib/horta_ui.dart
+index e65c3ec..d0b12c9 100644
+--- a/core_sdk/horta_ui/lib/horta_ui.dart
++++ b/core_sdk/horta_ui/lib/horta_ui.dart
+@@ -1,2 +1,3 @@
+ export 'widgets/widgets.dart';
++export 'widgets/input_text/horta_text_field.dart';
+ export 'theme/horta_theme.dart';
+diff --git a/core_sdk/horta_ui/lib/widgets/input_text/horta_text_field.dart b/core_sdk/horta_ui/lib/widgets/input_text/horta_text_field.dart
+new file mode 100644
+index 0000000..5977896
+--- /dev/null
++++ b/core_sdk/horta_ui/lib/widgets/input_text/horta_text_field.dart
+@@ -0,0 +1,213 @@
++import 'package:flutter/material.dart';
++import '../theme/horta_color.dart';
++import '../theme/horta_text_theme.dart';
++import '../padding/horta_padding.dart';
++
++class HortaTextField extends StatefulWidget {
++  final String label;
++  final String? hint;
++  final bool isObscure;
++  final ValueChanged<String>? onChanged;
++  final TextEditingController? controller;
++  final TextInputType? keyboardType;
++  final int maxLines;
++  final Widget? prefixIcon;
++
++  const HortaTextField({
++    super.key,
++    required this.label,
++    this.hint,
++    this.isObscure = false,
++    this.onChanged,
++    this.controller,
++    this.keyboardType,
++    this.maxLines = 1,
++    this.prefixIcon,
++  });
++
++  factory HortaTextField.name({
++    Key? key,
++    String? hint,
++    ValueChanged<String>? onChanged,
++    TextEditingController? controller,
++    String? errorMsg,
++    Widget? prefixIcon,
++  }) {
++    return HortaTextField(
++      key: key,
++      label: 'Nome',
++      hint: hint,
++      keyboardType: TextInputType.name,
++      prefixIcon: prefixIcon ?? const Icon(Icons.person),
++      onChanged: onChanged,
++      controller: controller,
++      errorMsg: errorMsg,
++    );
++  }
++
++  factory HortaTextField.email({
++    Key? key,
++    String? hint,
++    ValueChanged<String>? onChanged,
++    TextEditingController? controller,
++    String? errorMsg,
++    Widget? prefixIcon,
++  }) {
++    return HortaTextField(
++      key: key,
++      label: 'E-mail',
++      hint: hint,
++      keyboardType: TextInputType.emailAddress,
++      prefixIcon: prefixIcon ?? const Icon(Icons.email),
++      onChanged: onChanged,
++      controller: controller,
++      errorMsg: errorMsg,
++    );
++  }
++
++  factory HortaTextField.phone({
++    Key? key,
++    String? hint,
++    ValueChanged<String>? onChanged,
++    TextEditingController? controller,
++    String? errorMsg,
++    Widget? prefixIcon,
++  }) {
++    return HortaTextField(
++      key: key,
++      label: 'Telefone',
++      hint: hint,
++      keyboardType: TextInputType.phone,
++      prefixIcon: prefixIcon ?? const Icon(Icons.phone),
++      onChanged: onChanged,
++      controller: controller,
++      errorMsg: errorMsg,
++    );
++  }
++
++  factory HortaTextField.cep({
++    Key? key,
++    String? hint,
++    ValueChanged<String>? onChanged,
++    TextEditingController? controller,
++    String? errorMsg,
++    Widget? prefixIcon,
++  }) {
++    return HortaTextField(
++      key: key,
++      label: 'CEP',
++      hint: hint,
++      keyboardType: TextInputType.number,
++      prefixIcon: prefixIcon ?? const Icon(Icons.pin_drop),
++      onChanged: onChanged,
++      controller: controller,
++      errorMsg: errorMsg,
++    );
++  }
++
++  factory HortaTextField.password({
++    Key? key,
++    String? hint,
++    ValueChanged<String>? onChanged,
++    TextEditingController? controller,
++    String? errorMsg,
++    Widget? prefixIcon,
++  }) {
++    return HortaTextField(
++      key: key,
++      label: 'Senha',
++      hint: hint,
++      isObscure: true,
++      keyboardType: TextInputType.visiblePassword,
++      prefixIcon: prefixIcon ?? const Icon(Icons.lock),
++      onChanged: onChanged,
++      controller: controller,
++      errorMsg: errorMsg,
++    );
++  }
++
++  @override
++  State<HortaTextField> createState() => _HortaTextFieldState();
++}
++
++class _HortaTextFieldState extends State<HortaTextField> {
++  late bool _obscureText;
++
++  @override
++  void initState() {
++    super.initState();
++    _obscureText = widget.isObscure;
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final theme = Theme.of(context);
++    final colorScheme = theme.colorScheme;
++    final textTheme = theme.textTheme;
++
++    return HortaPadding(
++      padding: HortaEdgeInsets.only(top: HortaPaddingSize.medium),
++      child: Column(
++        crossAxisAlignment: CrossAxisAlignment.start,
++        children: [
++          TextFormField(
++            controller: widget.controller,
++            obscureText: _obscureText,
++            keyboardType: widget.keyboardType,
++            maxLines: widget.maxLines,
++            onChanged: widget.onChanged,
++            decoration: InputDecoration(
++              labelText: widget.label,
++              hintText: widget.hint,
++              prefixIcon: widget.prefixIcon,
++              suffixIcon: widget.isObscure
++                  ? IconButton(
++                      icon: Icon(
++                        _obscureText ? Icons.visibility : Icons.visibility_off,
++                      ),
++                      onPressed: () {
++                        setState(() {
++                          _obscureText = !_obscureText;
++                        });
++                      },
++                    )
++                  : null,
++              errorText: widget.errorMsg,
++              labelStyle: textTheme.labelLarge,
++              hintStyle: textTheme.bodyMedium,
++              errorStyle: textTheme.bodySmall,
++              prefixIconColor: colorScheme.onSurfaceVariant,
++              suffixIconColor: colorScheme.onSurfaceVariant,
++              enabledBorder: OutlineInputBorder(
++                borderRadius: BorderRadius.circular(8),
++                borderSide: BorderSide(
++                  color: colorScheme.outline,
++                ),
++              ),
++              focusedBorder: OutlineInputBorder(
++                borderRadius: BorderRadius.circular(8),
++                borderSide: BorderSide(
++                  color: colorScheme.primary,
++                  width: 2,
++                ),
++              ),
++              errorBorder: OutlineInputBorder(
++                borderRadius: BorderRadius.circular(8),
++                borderSide: BorderSide(
++                  color: colorScheme.error,
++                ),
++              ),
++              focusedErrorBorder: OutlineInputBorder(
++                borderRadius: BorderRadius.circular(8),
++                borderSide: BorderSide(
++                  color: colorScheme.error,
++                  width: 2,
++                ),
++              ),
++            ),
++          ),
++        ],
++      ),
++    );
++  }
++}
+diff --git a/core_sdk/horta_ui/pubspec.yaml b/core_sdk/horta_ui/pubspec.yaml
+index 647b808..5966158 100644
+--- a/core_sdk/horta_ui/pubspec.yaml
++++ b/core_sdk/horta_ui/pubspec.yaml
+@@ -20,4 +20,4 @@ dev_dependencies:
+ 
+ flutter:
+   assets:
+-    - assets/images/
+\ No newline at end of file
++    - assets/images/
+diff --git a/core_sdk/horta_ui/test/widgets/input_text/horta_text_field_test.dart b/core_sdk/horta_ui/test/widgets/input_text/horta_text_field_test.dart
+new file mode 100644
+index 0000000..f8760d9
+--- /dev/null
++++ b/core_sdk/horta_ui/test/widgets/input_text/horta_text_field_test.dart
+@@ -0,0 +1,98 @@
++import 'package:flutter/material.dart';
++import 'package:flutter_test/flutter_test.dart';
++import 'package:horta_ui/horta_ui.dart';
++
++void main() {
++  group('HortaTextField', () {
++    testWidgets('name() creates field with correct keyboard type and icon',
++        (WidgetTester tester) async {
++      await tester.pumpWidget(
++        MaterialApp(
++          theme: HortaTheme.light,
++          home: Scaffold(
++            body: HortaTextField.name(),
++          ),
++        ),
++      );
++
++      final textField = tester.widget<TextFormField>(
++        find.byType(TextFormField).first,
++      );
++      expect(textField.keyboardType, TextInputType.name);
++      expect(tester.widget<Icon>(find.byIcon(Icons.person)), isNotNull);
++    });
++
++    testWidgets('email() creates field with correct keyboard type and icon',
++        (WidgetTester tester) async {
++      await tester.pumpWidget(
++        MaterialApp(
++          theme: HortaTheme.light,
++          home: Scaffold(
++            body: HortaTextField.email(),
++          ),
++        ),
++      );
++
++      final textField = tester.widget<TextFormField>(
++        find.byType(TextFormField).first,
++      );
++      expect(textField.keyboardType, TextInputType.emailAddress);
++      expect(tester.widget<Icon>(find.byIcon(Icons.email)), isNotNull);
++    });
++
++    testWidgets('phone() creates field with correct keyboard type and icon',
++        (WidgetTester tester) async {
++      await tester.pumpWidget(
++        MaterialApp(
++          theme: HortaTheme.light,
++          home: Scaffold(
++            body: HortaTextField.phone(),
++          ),
++        ),
++      );
++
++      final textField = tester.widget<TextFormField>(
++        find.byType(TextFormField).first,
++      );
++      expect(textField.keyboardType, TextInputType.phone);
++      expect(tester.widget<Icon>(find.byIcon(Icons.phone)), isNotNull);
++    });
++
++    testWidgets('cep() creates field with correct keyboard type and icon',
++        (WidgetTester tester) async {
++      await tester.pumpWidget(
++        MaterialApp(
++          theme: HortaTheme.light,
++          home: Scaffold(
++            body: HortaTextField.cep(),
++          ),
++        ),
++      );
++
++      final textField = tester.widget<TextFormField>(
++        find.byType(TextFormField).first,
++      );
++      expect(textField.keyboardType, TextInputType.number);
++      expect(tester.widget<Icon>(find.byIcon(Icons.pin_drop)), isNotNull);
++    });
++
++    testWidgets('password() creates field with correct keyboard type and icon',
++        (WidgetTester tester) async {
++      await tester.pumpWidget(
++        MaterialApp(
++          theme: HortaTheme.light,
++          home: Scaffold(
++            body: HortaTextField.password(),
++          ),
++        ),
++      );
++
++      final textField = tester.widget<TextFormField>(
++        find.byType(TextFormField).first,
++      );
++      expect(textField.keyboardType, TextInputType.visiblePassword);
++      expect(textField.obscureText, true);
++      expect(tester.widget<Icon>(find.byIcon(Icons.lock)), isNotNull);
++    });
++  });
++}

@@ -1,0 +1,1472 @@
+diff --git a/__tests__/yao-locator.test.ts b/__tests__/yao-locator.test.ts
+new file mode 100644
+index 0000000..f97eb12
+--- /dev/null
++++ b/__tests__/yao-locator.test.ts
+@@ -0,0 +1,216 @@
++import { describe, it, expect } from 'vitest'
++import { scoreYao, CROSS_YAO_RATIO_THRESHOLD, CROSS_YAO_MIN_SECOND_RATIO } from '@/lib/yao-locator'
++import type { Yao } from '@/lib/types'
++
++// Minimal yao fixture: 6 positions, each with a distinct set of indicators.
++// Use distinct strings so each indicator unambiguously belongs to one yao.
++function makeYao(): Yao[] {
++  return [
++    {
++      position: 1,
++      name: '初九',
++      text: '潜龙勿用',
++      modernReading: '潜伏期',
++      scenario: '场景1',
++      actionable: ['a1'],
++      indicators: ['1-a', '1-b', '1-c'],
++    },
++    {
++      position: 2,
++      name: '九二',
++      text: '见龙在田',
++      modernReading: '初现',
++      scenario: '场景2',
++      actionable: ['a2'],
++      indicators: ['2-a', '2-b', '2-c', '2-d', '2-e'],
++    },
++    {
++      position: 3,
++      name: '九三',
++      text: '终日乾乾',
++      modernReading: '过渡',
++      scenario: '场景3',
++      actionable: ['a3'],
++      indicators: ['3-a', '3-b', '3-c', '3-d'],
++    },
++    {
++      position: 4,
++      name: '九四',
++      text: '或跃在渊',
++      modernReading: '抉择',
++      scenario: '场景4',
++      actionable: ['a4'],
++      indicators: ['4-a', '4-b', '4-c'],
++    },
++    {
++      position: 5,
++      name: '九五',
++      text: '飞龙在天',
++      modernReading: '顶峰',
++      scenario: '场景5',
++      actionable: ['a5'],
++      indicators: ['5-a', '5-b', '5-c', '5-d'],
++    },
++    {
++      position: 6,
++      name: '上九',
++      text: '亢龙有悔',
++      modernReading: '终局',
++      scenario: '场景6',
++      actionable: ['a6'],
++      indicators: ['6-a', '6-b', '6-c'],
++    },
++  ]
++}
++
++describe('scoreYao — basic', () => {
++  it('returns 6 scores sorted by position ascending', () => {
++    const result = scoreYao(makeYao(), new Set())
++    expect(result.scores.length).toBe(6)
++    expect(result.scores.map((s) => s.position)).toEqual([1, 2, 3, 4, 5, 6])
++  })
++
++  it('single yao fully checked → that yao wins with ratio 1', () => {
++    const yao = makeYao()
++    const selected = new Set(['3-a', '3-b', '3-c', '3-d'])
++    const result = scoreYao(yao, selected)
++    expect(result.topPosition).toBe(3)
++    expect(result.topRatio).toBe(1)
++    const s3 = result.scores.find((s) => s.position === 3)!
++    expect(s3.hits).toBe(4)
++    expect(s3.total).toBe(4)
++    expect(s3.ratio).toBe(1)
++    // Other yao all at 0
++    for (const s of result.scores) {
++      if (s.position !== 3) {
++        expect(s.hits).toBe(0)
++        expect(s.ratio).toBe(0)
++      }
++    }
++  })
++})
++
++describe('scoreYao — ratio fairness (not raw count)', () => {
++  it('a fully-checked small yao beats a partially-checked large yao', () => {
++    const yao = makeYao()
++    // Yao 4 has 3 indicators, all checked → ratio 1.0, hits 3
++    // Yao 2 has 5 indicators, 3 checked → ratio 0.6, hits 3
++    const selected = new Set(['4-a', '4-b', '4-c', '2-a', '2-b', '2-c'])
++    const result = scoreYao(yao, selected)
++    expect(result.topPosition).toBe(4)
++    expect(result.topRatio).toBe(1)
++  })
++})
++
++describe('scoreYao — tiebreak by higher position', () => {
++  it('exact tie in ratio → higher position wins', () => {
++    const yao = makeYao()
++    // Yao 1 (3 indicators) → check all → 1.0
++    // Yao 6 (3 indicators) → check all → 1.0
++    const selected = new Set(['1-a', '1-b', '1-c', '6-a', '6-b', '6-c'])
++    const result = scoreYao(yao, selected)
++    expect(result.topPosition).toBe(6)
++    expect(result.topRatio).toBe(1)
++  })
++})
++
++describe('scoreYao — cross-yao detection', () => {
++  it('triggers when second ratio is ≥ top×0.8 AND ≥ 0.3', () => {
++    // Make top = 4/4 = 1.0, second = 3/4 = 0.75? Need second ≥ top × 0.8 = 0.8
++    // Try top=5/5=1.0, second=4/5=0.8 (≥0.8, ≥0.3) → triggers
++    // Use yao 5 (4 inds) and yao 3 (4 inds): top 4/4=1.0, second 3/4=0.75 (<0.8) → no
++    // So use yao 2 (5 inds, all): top=1.0, yao 5 (4 inds, all but one): 3/4=0.75... still <0.8
++    // Easier: yao 2 (5) all checked = 1.0, yao 3 (4) all checked = 1.0 → tie, position 3 wins, second is yao 2 at 1.0 → 1.0 ≥ 1.0×0.8=0.8 AND ≥0.3 → triggers
++    const yao = makeYao()
++    const selected = new Set(['2-a', '2-b', '2-c', '2-d', '2-e', '3-a', '3-b', '3-c', '3-d'])
++    const result = scoreYao(yao, selected)
++    expect(result.topPosition).toBe(3) // tiebreak by higher position
++    expect(result.crossYao).not.toBe(false)
++    if (result.crossYao) {
++      expect(result.crossYao.secondPosition).toBe(2)
++      expect(result.crossYao.secondRatio).toBe(1)
++      expect(result.crossYao.narrative).toContain('九二')
++    }
++  })
++
++  it('does NOT trigger when both ratios are very low (second < 0.3)', () => {
++    const yao = makeYao()
++    // Pick 1 from yao 2 (1/5=0.2) and 1 from yao 5 (1/4=0.25). Top=0.25, second=0.2.
++    // second/top = 0.2/0.25 = 0.8 ≥ 0.8 ✓, but second=0.2 < 0.3 → NOT triggered.
++    const selected = new Set(['2-a', '5-a'])
++    const result = scoreYao(yao, selected)
++    expect(result.crossYao).toBe(false)
++  })
++
++  it('does NOT trigger when second ratio is well below top×0.8', () => {
++    const yao = makeYao()
++    // Yao 5 all checked (4/4=1.0), yao 3 only 1 checked (1/4=0.25).
++    // 0.25 / 1.0 = 0.25 < 0.8 → no trigger.
++    const selected = new Set(['5-a', '5-b', '5-c', '5-d', '3-a'])
++    const result = scoreYao(yao, selected)
++    expect(result.topPosition).toBe(5)
++    expect(result.crossYao).toBe(false)
++  })
++
++  it('threshold constants are exported and have expected values', () => {
++    expect(CROSS_YAO_RATIO_THRESHOLD).toBe(0.8)
++    expect(CROSS_YAO_MIN_SECOND_RATIO).toBe(0.3)
++  })
++})
++
++describe('scoreYao — edge cases', () => {
++  it('empty selection → all ratios 0, topPosition 1, no cross-yao', () => {
++    const result = scoreYao(makeYao(), new Set())
++    expect(result.topRatio).toBe(0)
++    expect(result.topPosition).toBe(1)
++    expect(result.crossYao).toBe(false)
++    for (const s of result.scores) {
++      expect(s.hits).toBe(0)
++      expect(s.ratio).toBe(0)
++    }
++  })
++
++  it('selection containing strings that match no indicator → all ratios 0', () => {
++    const result = scoreYao(makeYao(), new Set(['nonexistent-1', 'nonexistent-2']))
++    expect(result.topRatio).toBe(0)
++    expect(result.crossYao).toBe(false)
++  })
++
++  it('is deterministic: same logical input → same output regardless of Set insertion order', () => {
++    const yao = makeYao()
++    const a = new Set<string>()
++    a.add('2-a')
++    a.add('5-c')
++    a.add('3-b')
++    const b = new Set<string>()
++    b.add('3-b')
++    b.add('5-c')
++    b.add('2-a')
++    const ra = scoreYao(yao, a)
++    const rb = scoreYao(yao, b)
++    expect(ra).toEqual(rb)
++  })
++
++  it('handles a yao whose indicators contain duplicates (defensive)', () => {
++    const yao = makeYao()
++    // Mutate yao 1's indicators to contain a duplicate
++    yao[0] = { ...yao[0], indicators: ['1-a', '1-a', '1-b'] }
++    // Selecting both unique indicators → hits 2, total 2 (dedup), ratio 1
++    const result = scoreYao(yao, new Set(['1-a', '1-b']))
++    const s1 = result.scores.find((s) => s.position === 1)!
++    expect(s1.total).toBe(2)
++    expect(s1.hits).toBe(2)
++    expect(s1.ratio).toBe(1)
++  })
++
++  it('yao with empty indicators array → ratio 0, no division by zero', () => {
++    const yao = makeYao()
++    yao[2] = { ...yao[2], indicators: [] }
++    const result = scoreYao(yao, new Set(['2-a']))
++    const s3 = result.scores.find((s) => s.position === 3)!
++    expect(s3.total).toBe(0)
++    expect(s3.hits).toBe(0)
++    expect(s3.ratio).toBe(0)
++    expect(Number.isFinite(s3.ratio)).toBe(true)
++  })
++})
+diff --git a/app/hexagram/[id]/page.tsx b/app/hexagram/[id]/page.tsx
+index df7e3a9..91c734b 100644
+--- a/app/hexagram/[id]/page.tsx
++++ b/app/hexagram/[id]/page.tsx
+@@ -7,6 +7,7 @@ import { ClassicalText } from '@/components/hexagram/ClassicalText'
+ import { InterpretationSection } from '@/components/hexagram/InterpretationSection'
+ import { SituationMapping } from '@/components/hexagram/SituationMapping'
+ import { YaoTimeline } from '@/components/hexagram/YaoTimeline'
++import { YaoLocator } from '@/components/yao-locator/YaoLocator'
+ import { ActionSummary } from '@/components/hexagram/ActionSummary'
+ import { RelatedHexagrams } from '@/components/hexagram/RelatedHexagrams'
+ import { FloatingBackBar } from '@/components/hexagram/FloatingBackBar'
+@@ -53,6 +54,9 @@ export default async function HexagramDetailPage({ params, searchParams }: Props
+         <ClassicalText hexagram={hexagram} />
+         <InterpretationSection hexagram={hexagram} />
+         <SituationMapping hexagram={hexagram} />
++        <section className="py-12">
++          <YaoLocator yao={hexagram.yao} hexagramName={hexagram.name.chinese} />
++        </section>
+         <YaoTimeline hexagram={hexagram} highlightPhase={highlightPhase} />
+         <ActionSummary hexagram={hexagram} />
+         <RelatedHexagrams hexagram={hexagram} />
+diff --git a/components/MatchCard.tsx b/components/MatchCard.tsx
+index 16f7b91..805c15d 100644
+--- a/components/MatchCard.tsx
++++ b/components/MatchCard.tsx
+@@ -5,6 +5,7 @@ import { ChevronDown } from 'lucide-react'
+ import type { MatchResult, Yao } from '@/lib/types'
+ import { HexagramSymbol } from './HexagramSymbol'
+ import { SmoothExpand } from './SmoothExpand'
++import { YaoLocator } from './yao-locator/YaoLocator'
+ import { useCountUp, useScrollReveal } from '@/hooks/useAnimations'
+ import Link from 'next/link'
+ 
+@@ -119,15 +120,18 @@ export function MatchCard({ match, rank }: Props) {
+           </Section>
+ 
+           <Section label="六爻 · 事之六阶" icon="爻">
+-            <div className="space-y-2">
+-              {hexagram.yao.map((y) => (
+-                <YaoRow
+-                  key={y.position}
+-                  yao={y}
+-                  open={openYao === y.position}
+-                  onToggle={() => setOpenYao(openYao === y.position ? null : y.position)}
+-                />
+-              ))}
++            <div className="space-y-4">
++              {rank === 1 && <YaoLocator yao={hexagram.yao} hexagramName={hexagram.name.chinese} />}
++              <div className="space-y-2">
++                {hexagram.yao.map((y) => (
++                  <YaoRow
++                    key={y.position}
++                    yao={y}
++                    open={openYao === y.position}
++                    onToggle={() => setOpenYao(openYao === y.position ? null : y.position)}
++                  />
++                ))}
++              </div>
+             </div>
+           </Section>
+ 
+diff --git a/components/yao-locator/IndicatorChecklist.tsx b/components/yao-locator/IndicatorChecklist.tsx
+new file mode 100644
+index 0000000..26385f3
+--- /dev/null
++++ b/components/yao-locator/IndicatorChecklist.tsx
+@@ -0,0 +1,62 @@
++'use client'
++
++import type { Yao } from '@/lib/types'
++
++type Props = {
++  yao: Yao[]
++  selected: Set<string>
++  onToggle: (indicator: string) => void
++  onClear: () => void
++}
++
++export function IndicatorChecklist({ yao, selected, onToggle, onClear }: Props) {
++  const sorted = [...yao].sort((a, b) => a.position - b.position)
++  return (
++    <div className="space-y-5">
++      <div className="flex items-center justify-between text-xs text-[var(--color-ink-400)] font-serif">
++        <span>勾选所有「与你当下处境相符」的描述（已选 {selected.size} 条）</span>
++        {selected.size > 0 && (
++          <button
++            type="button"
++            onClick={onClear}
++            className="text-[var(--color-vermillion)] hover:underline"
++          >
++            清空
++          </button>
++        )}
++      </div>
++      {sorted.map((y) => (
++        <fieldset key={y.position} className="border border-[var(--color-ink-100)] rounded p-4">
++          <legend className="px-2 font-serif text-sm">
++            <span className="text-[var(--color-ink-900)] font-bold">{y.name}</span>
++            <span className="ml-2 text-[var(--color-ink-400)] italic">{y.text}</span>
++          </legend>
++          <ul className="space-y-2 mt-2">
++            {y.indicators.map((ind) => {
++              const checked = selected.has(ind)
++              return (
++                <li key={ind}>
++                  <label className="flex items-start gap-2 cursor-pointer text-sm leading-relaxed">
++                    <input
++                      type="checkbox"
++                      checked={checked}
++                      onChange={() => onToggle(ind)}
++                      className="mt-1 shrink-0 accent-[var(--color-vermillion)]"
++                    />
++                    <span
++                      className={
++                        checked ? 'text-[var(--color-ink-900)]' : 'text-[var(--color-ink-600)]'
++                      }
++                    >
++                      {ind}
++                    </span>
++                  </label>
++                </li>
++              )
++            })}
++          </ul>
++        </fieldset>
++      ))}
++    </div>
++  )
++}
+diff --git a/components/yao-locator/LocatorResult.tsx b/components/yao-locator/LocatorResult.tsx
+new file mode 100644
+index 0000000..6e87119
+--- /dev/null
++++ b/components/yao-locator/LocatorResult.tsx
+@@ -0,0 +1,142 @@
++'use client'
++
++import { useState } from 'react'
++import type { Yao } from '@/lib/types'
++import type { LocatorResult as LocatorResultType } from '@/lib/yao-locator'
++
++type Props = {
++  result: LocatorResultType
++  yao: Yao[]
++  onReset: () => void
++}
++
++export function LocatorResult({ result, yao, onReset }: Props) {
++  const topYao = yao.find((y) => y.position === result.topPosition)
++  const [showScenario, setShowScenario] = useState(false)
++  const topPct = Math.round(result.topRatio * 100)
++
++  return (
++    <div className="space-y-6">
++      <div>
++        <div className="text-xs text-[var(--color-ink-400)] font-serif mb-2 tracking-widest">
++          你最可能处在
++        </div>
++        <div className="flex items-baseline gap-3">
++          <span className="font-serif text-3xl font-bold text-[var(--color-ink-900)]">
++            {topYao?.name ?? `第 ${result.topPosition} 爻`}
++          </span>
++          <span className="text-[var(--color-gold)] font-serif text-xl tabular-nums">
++            {topPct}%
++          </span>
++        </div>
++      </div>
++
++      <div className="space-y-1.5">
++        {result.scores.map((s) => {
++          const pct = Math.round(s.ratio * 100)
++          const isTop = s.position === result.topPosition && result.topRatio > 0
++          return (
++            <div key={s.position} className="flex items-center gap-3 text-xs font-serif">
++              <span
++                className={
++                  isTop
++                    ? 'text-[var(--color-vermillion)] font-bold w-12 shrink-0'
++                    : 'text-[var(--color-ink-400)] w-12 shrink-0'
++                }
++              >
++                {s.yaoName}
++              </span>
++              <div className="flex-1 h-2 bg-[var(--color-paper)] rounded overflow-hidden border border-[var(--color-ink-100)]">
++                <div
++                  className={
++                    isTop
++                      ? 'h-full bg-[var(--color-vermillion)]'
++                      : 'h-full bg-[var(--color-ink-300)]'
++                  }
++                  style={{
++                    width: `${pct}%`,
++                    transition: 'width 0.6s cubic-bezier(0.16,1,0.3,1)',
++                  }}
++                />
++              </div>
++              <span
++                className={
++                  isTop
++                    ? 'text-[var(--color-vermillion)] w-10 text-right tabular-nums'
++                    : 'text-[var(--color-ink-400)] w-10 text-right tabular-nums'
++                }
++              >
++                {pct}%
++              </span>
++            </div>
++          )
++        })}
++      </div>
++
++      {result.crossYao && (
++        <div className="border-l-2 border-[var(--color-gold)] pl-3 py-1 text-sm text-[var(--color-ink-600)] font-serif leading-relaxed">
++          {result.crossYao.narrative}
++        </div>
++      )}
++
++      {topYao && result.topRatio > 0 && (
++        <div className="border-t border-[var(--color-ink-100)] pt-5 space-y-4">
++          <div>
++            <div className="text-[10px] tracking-widest text-[var(--color-ink-400)] font-serif mb-1.5">
++              义理释读
++            </div>
++            <p className="text-sm leading-relaxed text-[var(--color-ink-800)] font-serif">
++              {topYao.modernReading}
++            </p>
++          </div>
++
++          <div>
++            <button
++              type="button"
++              onClick={() => setShowScenario((v) => !v)}
++              className="text-xs text-[var(--color-vermillion)] hover:underline font-serif"
++            >
++              {showScenario ? '收起典型场景' : '展开典型场景'}
++            </button>
++            {showScenario && (
++              <p className="mt-2 text-sm leading-relaxed text-[var(--color-ink-600)] font-serif italic">
++                {topYao.scenario}
++              </p>
++            )}
++          </div>
++
++          <div>
++            <div className="text-[10px] tracking-widest text-[var(--color-ink-400)] font-serif mb-2">
++              可执行建议
++            </div>
++            <ul className="space-y-1.5">
++              {topYao.actionable.map((a, i) => (
++                <li
++                  key={i}
++                  className="flex gap-2 items-start text-sm text-[var(--color-ink-800)] font-serif leading-relaxed"
++                >
++                  <span className="text-[var(--color-vermillion)] mt-0.5 text-xs shrink-0">●</span>
++                  <span>{a}</span>
++                </li>
++              ))}
++            </ul>
++          </div>
++        </div>
++      )}
++
++      {result.topRatio === 0 && (
++        <div className="text-sm text-[var(--color-ink-400)] font-serif">
++          你没勾选任何条目，无法定位。
++        </div>
++      )}
++
++      <button
++        type="button"
++        onClick={onReset}
++        className="text-xs text-[var(--color-ink-400)] hover:text-[var(--color-vermillion)] hover:underline font-serif"
++      >
++        ← 重新选择
++      </button>
++    </div>
++  )
++}
+diff --git a/components/yao-locator/YaoLocator.tsx b/components/yao-locator/YaoLocator.tsx
+new file mode 100644
+index 0000000..41e0de3
+--- /dev/null
++++ b/components/yao-locator/YaoLocator.tsx
+@@ -0,0 +1,75 @@
++'use client'
++
++import { useState } from 'react'
++import type { Yao } from '@/lib/types'
++import { scoreYao } from '@/lib/yao-locator'
++import { IndicatorChecklist } from './IndicatorChecklist'
++import { LocatorResult } from './LocatorResult'
++
++type Props = {
++  yao: Yao[]
++  hexagramName: string
++}
++
++export function YaoLocator({ yao, hexagramName }: Props) {
++  const [selected, setSelected] = useState<Set<string>>(new Set())
++  const [submitted, setSubmitted] = useState(false)
++
++  function toggle(indicator: string) {
++    setSelected((prev) => {
++      const next = new Set(prev)
++      if (next.has(indicator)) next.delete(indicator)
++      else next.add(indicator)
++      return next
++    })
++  }
++
++  function clear() {
++    setSelected(new Set())
++  }
++
++  function submit() {
++    if (selected.size === 0) return
++    setSubmitted(true)
++  }
++
++  function reset() {
++    setSubmitted(false)
++  }
++
++  const result = submitted ? scoreYao(yao, selected) : null
++
++  return (
++    <section className="card-classical rounded-lg p-5 md:p-6 space-y-5">
++      <header>
++        <div className="text-[10px] tracking-widest text-[var(--color-vermillion)] font-serif mb-1">
++          阶段定位
++        </div>
++        <h3 className="font-serif text-lg text-[var(--color-ink-900)] font-bold">
++          你在「{hexagramName}」的第几阶？
++        </h3>
++        <p className="text-xs text-[var(--color-ink-400)] font-serif mt-1 leading-relaxed">
++          爻位是流动的——同一卦的六阶段对应的建议截然不同。勾选与你当下处境相符的描述，得出你最可能所处的爻位。
++        </p>
++      </header>
++
++      {!submitted ? (
++        <>
++          <IndicatorChecklist yao={yao} selected={selected} onToggle={toggle} onClear={clear} />
++          <div className="flex items-center justify-end pt-2 border-t border-[var(--color-ink-100)]">
++            <button
++              type="button"
++              disabled={selected.size === 0}
++              onClick={submit}
++              className="px-4 py-2 text-sm font-serif rounded border border-[var(--color-ink-900)] text-[var(--color-ink-900)] hover:bg-[var(--color-ink-900)] hover:text-[var(--color-paper)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--color-ink-900)]"
++            >
++              定位 →
++            </button>
++          </div>
++        </>
++      ) : (
++        result && <LocatorResult result={result} yao={yao} onReset={reset} />
++      )}
++    </section>
++  )
++}
+diff --git a/docs/superpowers/plans/2026-05-24-yao-locator.md b/docs/superpowers/plans/2026-05-24-yao-locator.md
+new file mode 100644
+index 0000000..4fd9ab7
+--- /dev/null
++++ b/docs/superpowers/plans/2026-05-24-yao-locator.md
+@@ -0,0 +1,578 @@
++# Yao Locator Implementation Plan
++
++> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
++
++**Goal:** Build a transparent, deterministic phase-locator questionnaire that maps a user's self-selected indicators onto the 6 yao of a matched hexagram, integrated into both the `MatchCard` (rank 1 only) and the `/hexagram/[id]` detail page.
++
++**Architecture:** A single pure scoring function in `lib/yao-locator.ts` + three React components under `components/yao-locator/`. No new data, no API, no persistence. TDD against the pure function. Component tests skipped to avoid adding RTL — UI verified by build + manual smoke.
++
++**Tech Stack:** TypeScript, React 19, Tailwind CSS 4, Vitest. Reuses existing CSS variables and `font-serif`/`font-sans` conventions.
++
++---
++
++## File Map
++
++| Action | Path                                            | Responsibility                               |
++| ------ | ----------------------------------------------- | -------------------------------------------- |
++| Create | `lib/yao-locator.ts`                            | `scoreYao` pure function + types             |
++| Create | `__tests__/yao-locator.test.ts`                 | TDD: 9 cases for `scoreYao`                  |
++| Create | `components/yao-locator/YaoLocator.tsx`         | Container: state + submit toggle             |
++| Create | `components/yao-locator/IndicatorChecklist.tsx` | Grouped multi-select checklist               |
++| Create | `components/yao-locator/LocatorResult.tsx`      | 6-yao bars + top-1 detail + cross-yao banner |
++| Modify | `components/MatchCard.tsx`                      | Render `<YaoLocator>` when `rank === 1`      |
++| Modify | `app/hexagram/[id]/page.tsx`                    | Render `<YaoLocator>` before `<YaoTimeline>` |
++
++---
++
++### Task 1: Pure scoring logic (TDD)
++
++**Files:**
++
++- Create: `lib/yao-locator.ts`
++- Create: `__tests__/yao-locator.test.ts`
++
++- [ ] **Step 1.1: Write failing tests for `scoreYao`**
++
++Create `__tests__/yao-locator.test.ts` with the cases enumerated in the design (basic, ratio fairness, tiebreak, cross-yao thresholds, all-zero, determinism, dedup).
++
++- [ ] **Step 1.2: Run and confirm RED**
++
++```
++npm run test -- --run __tests__/yao-locator.test.ts
++```
++
++Expected: all tests fail with `Cannot find module '@/lib/yao-locator'`.
++
++- [ ] **Step 1.3: Implement minimal `scoreYao`**
++
++In `lib/yao-locator.ts`:
++
++```ts
++import type { Yao } from './types'
++
++export type YaoScore = {
++  position: 1 | 2 | 3 | 4 | 5 | 6
++  yaoName: string
++  hits: number
++  total: number
++  ratio: number
++}
++
++export type LocatorResult = {
++  scores: YaoScore[]
++  topPosition: 1 | 2 | 3 | 4 | 5 | 6
++  topRatio: number
++  crossYao:
++    | false
++    | {
++        secondPosition: 1 | 2 | 3 | 4 | 5 | 6
++        secondRatio: number
++        narrative: string
++      }
++}
++
++export const CROSS_YAO_RATIO_THRESHOLD = 0.8
++export const CROSS_YAO_MIN_SECOND_RATIO = 0.3
++
++export function scoreYao(yao: Yao[], selected: Set<string>): LocatorResult {
++  const scores: YaoScore[] = [...yao]
++    .sort((a, b) => a.position - b.position)
++    .map((y) => {
++      const uniqueIndicators = Array.from(new Set(y.indicators))
++      const hits = uniqueIndicators.filter((ind) => selected.has(ind)).length
++      const total = uniqueIndicators.length
++      const ratio = total === 0 ? 0 : hits / total
++      return { position: y.position, yaoName: y.name, hits, total, ratio }
++    })
++
++  // Find top: max ratio, tiebreak by higher position
++  let topIdx = 0
++  for (let i = 1; i < scores.length; i++) {
++    const a = scores[i]
++    const b = scores[topIdx]
++    if (a.ratio > b.ratio || (a.ratio === b.ratio && a.position > b.position)) {
++      topIdx = i
++    }
++  }
++  const top = scores[topIdx]
++
++  // Cross-yao: best other yao by ratio (tiebreak by higher position again)
++  let secondIdx = -1
++  for (let i = 0; i < scores.length; i++) {
++    if (i === topIdx) continue
++    if (secondIdx === -1) {
++      secondIdx = i
++      continue
++    }
++    const a = scores[i]
++    const b = scores[secondIdx]
++    if (a.ratio > b.ratio || (a.ratio === b.ratio && a.position > b.position)) {
++      secondIdx = i
++    }
++  }
++
++  let crossYao: LocatorResult['crossYao'] = false
++  if (secondIdx >= 0 && top.ratio > 0) {
++    const second = scores[secondIdx]
++    if (
++      second.ratio >= CROSS_YAO_MIN_SECOND_RATIO &&
++      second.ratio >= top.ratio * CROSS_YAO_RATIO_THRESHOLD
++    ) {
++      crossYao = {
++        secondPosition: second.position,
++        secondRatio: second.ratio,
++        narrative: `你也明显落在「${second.yaoName}」——这种「跨爻」通常意味着你正处在阶段过渡期，建议同时参照两爻的提示。`,
++      }
++    }
++  }
++
++  return {
++    scores,
++    topPosition: top.position,
++    topRatio: top.ratio,
++    crossYao,
++  }
++}
++```
++
++- [ ] **Step 1.4: Run and confirm GREEN**
++
++```
++npm run test -- --run __tests__/yao-locator.test.ts
++```
++
++Expected: 9/9 pass.
++
++- [ ] **Step 1.5: Commit**
++
++```
++git add lib/yao-locator.ts __tests__/yao-locator.test.ts
++git commit -m "feat(yao-locator): add deterministic scoreYao with cross-yao detection"
++```
++
++---
++
++### Task 2: `IndicatorChecklist` component
++
++**Files:** Create: `components/yao-locator/IndicatorChecklist.tsx`
++
++- [ ] **Step 2.1: Write component**
++
++```tsx
++'use client'
++
++import type { Yao } from '@/lib/types'
++
++type Props = {
++  yao: Yao[]
++  selected: Set<string>
++  onToggle: (indicator: string) => void
++  onClear: () => void
++}
++
++export function IndicatorChecklist({ yao, selected, onToggle, onClear }: Props) {
++  const sorted = [...yao].sort((a, b) => a.position - b.position)
++  return (
++    <div className="space-y-5">
++      <div className="flex items-center justify-between text-xs text-[var(--color-ink-400)] font-serif">
++        <span>勾选所有「与你当下处境相符」的描述（已选 {selected.size} 条）</span>
++        {selected.size > 0 && (
++          <button
++            type="button"
++            onClick={onClear}
++            className="text-[var(--color-vermillion)] hover:underline"
++          >
++            清空
++          </button>
++        )}
++      </div>
++      {sorted.map((y) => (
++        <fieldset key={y.position} className="border border-[var(--color-ink-100)] rounded p-4">
++          <legend className="px-2 font-serif text-sm">
++            <span className="text-[var(--color-ink-900)] font-bold">{y.name}</span>
++            <span className="ml-2 text-[var(--color-ink-400)] italic">{y.text}</span>
++          </legend>
++          <ul className="space-y-2 mt-2">
++            {y.indicators.map((ind) => {
++              const checked = selected.has(ind)
++              return (
++                <li key={ind}>
++                  <label className="flex items-start gap-2 cursor-pointer text-sm leading-relaxed">
++                    <input
++                      type="checkbox"
++                      checked={checked}
++                      onChange={() => onToggle(ind)}
++                      className="mt-1 shrink-0 accent-[var(--color-vermillion)]"
++                    />
++                    <span
++                      className={
++                        checked ? 'text-[var(--color-ink-900)]' : 'text-[var(--color-ink-600)]'
++                      }
++                    >
++                      {ind}
++                    </span>
++                  </label>
++                </li>
++              )
++            })}
++          </ul>
++        </fieldset>
++      ))}
++    </div>
++  )
++}
++```
++
++- [ ] **Step 2.2: Commit**
++
++```
++git add components/yao-locator/IndicatorChecklist.tsx
++git commit -m "feat(yao-locator): IndicatorChecklist component (grouped checklist)"
++```
++
++---
++
++### Task 3: `LocatorResult` component
++
++**Files:** Create: `components/yao-locator/LocatorResult.tsx`
++
++- [ ] **Step 3.1: Write component**
++
++```tsx
++'use client'
++
++import { useState } from 'react'
++import type { Yao } from '@/lib/types'
++import type { LocatorResult } from '@/lib/yao-locator'
++
++type Props = {
++  result: LocatorResult
++  yao: Yao[]
++  onReset: () => void
++}
++
++export function LocatorResult({ result, yao, onReset }: Props) {
++  const topYao = yao.find((y) => y.position === result.topPosition)
++  const [showScenario, setShowScenario] = useState(false)
++  const topPct = Math.round(result.topRatio * 100)
++
++  return (
++    <div className="space-y-6">
++      <div>
++        <div className="text-xs text-[var(--color-ink-400)] font-serif mb-2 tracking-widest">
++          你最可能处在
++        </div>
++        <div className="flex items-baseline gap-3">
++          <span className="font-serif text-3xl font-bold text-[var(--color-ink-900)]">
++            {topYao?.name ?? `第${result.topPosition}爻`}
++          </span>
++          <span className="text-[var(--color-gold)] font-serif text-xl tabular-nums">
++            {topPct}%
++          </span>
++        </div>
++      </div>
++
++      <div className="space-y-1.5">
++        {result.scores.map((s) => {
++          const pct = Math.round(s.ratio * 100)
++          const isTop = s.position === result.topPosition
++          return (
++            <div key={s.position} className="flex items-center gap-3 text-xs font-serif">
++              <span
++                className={
++                  isTop
++                    ? 'text-[var(--color-vermillion)] font-bold w-12 shrink-0'
++                    : 'text-[var(--color-ink-400)] w-12 shrink-0'
++                }
++              >
++                {s.yaoName}
++              </span>
++              <div className="flex-1 h-2 bg-[var(--color-paper)] rounded overflow-hidden border border-[var(--color-ink-100)]">
++                <div
++                  className={
++                    isTop
++                      ? 'h-full bg-[var(--color-vermillion)]'
++                      : 'h-full bg-[var(--color-ink-300)]'
++                  }
++                  style={{
++                    width: `${pct}%`,
++                    transition: 'width 0.6s cubic-bezier(0.16,1,0.3,1)',
++                  }}
++                />
++              </div>
++              <span
++                className={
++                  isTop
++                    ? 'text-[var(--color-vermillion)] w-10 text-right tabular-nums'
++                    : 'text-[var(--color-ink-400)] w-10 text-right tabular-nums'
++                }
++              >
++                {pct}%
++              </span>
++            </div>
++          )
++        })}
++      </div>
++
++      {result.crossYao && (
++        <div className="border-l-2 border-[var(--color-gold)] pl-3 py-1 text-sm text-[var(--color-ink-600)] font-serif leading-relaxed">
++          {result.crossYao.narrative}
++        </div>
++      )}
++
++      {topYao && result.topRatio > 0 && (
++        <div className="border-t border-[var(--color-ink-100)] pt-5 space-y-4">
++          <div>
++            <div className="text-[10px] tracking-widest text-[var(--color-ink-400)] font-serif mb-1.5">
++              义理释读
++            </div>
++            <p className="text-sm leading-relaxed text-[var(--color-ink-800)] font-serif">
++              {topYao.modernReading}
++            </p>
++          </div>
++
++          <div>
++            <button
++              type="button"
++              onClick={() => setShowScenario((v) => !v)}
++              className="text-xs text-[var(--color-vermillion)] hover:underline font-serif"
++            >
++              {showScenario ? '收起典型场景' : '展开典型场景'}
++            </button>
++            {showScenario && (
++              <p className="mt-2 text-sm leading-relaxed text-[var(--color-ink-600)] font-serif italic">
++                {topYao.scenario}
++              </p>
++            )}
++          </div>
++
++          <div>
++            <div className="text-[10px] tracking-widest text-[var(--color-ink-400)] font-serif mb-2">
++              可执行建议
++            </div>
++            <ul className="space-y-1.5">
++              {topYao.actionable.map((a, i) => (
++                <li
++                  key={i}
++                  className="flex gap-2 items-start text-sm text-[var(--color-ink-800)] font-serif leading-relaxed"
++                >
++                  <span className="text-[var(--color-vermillion)] mt-0.5 text-xs shrink-0">●</span>
++                  <span>{a}</span>
++                </li>
++              ))}
++            </ul>
++          </div>
++        </div>
++      )}
++
++      {result.topRatio === 0 && (
++        <div className="text-sm text-[var(--color-ink-400)] font-serif">
++          你没勾选任何条目，无法定位。
++        </div>
++      )}
++
++      <button
++        type="button"
++        onClick={onReset}
++        className="text-xs text-[var(--color-ink-400)] hover:text-[var(--color-vermillion)] hover:underline font-serif"
++      >
++        ← 重新选择
++      </button>
++    </div>
++  )
++}
++```
++
++- [ ] **Step 3.2: Commit**
++
++```
++git add components/yao-locator/LocatorResult.tsx
++git commit -m "feat(yao-locator): LocatorResult component (bars + top-1 detail)"
++```
++
++---
++
++### Task 4: `YaoLocator` container
++
++**Files:** Create: `components/yao-locator/YaoLocator.tsx`
++
++- [ ] **Step 4.1: Write container**
++
++```tsx
++'use client'
++
++import { useState } from 'react'
++import type { Yao } from '@/lib/types'
++import { scoreYao } from '@/lib/yao-locator'
++import { IndicatorChecklist } from './IndicatorChecklist'
++import { LocatorResult } from './LocatorResult'
++
++type Props = {
++  yao: Yao[]
++  hexagramName: string
++}
++
++export function YaoLocator({ yao, hexagramName }: Props) {
++  const [selected, setSelected] = useState<Set<string>>(new Set())
++  const [submitted, setSubmitted] = useState(false)
++
++  function toggle(indicator: string) {
++    setSelected((prev) => {
++      const next = new Set(prev)
++      if (next.has(indicator)) next.delete(indicator)
++      else next.add(indicator)
++      return next
++    })
++  }
++
++  function clear() {
++    setSelected(new Set())
++  }
++
++  function submit() {
++    if (selected.size === 0) return
++    setSubmitted(true)
++  }
++
++  function reset() {
++    setSubmitted(false)
++  }
++
++  const result = submitted ? scoreYao(yao, selected) : null
++
++  return (
++    <section className="card-classical rounded-lg p-5 md:p-6 space-y-5">
++      <header>
++        <div className="text-[10px] tracking-widest text-[var(--color-vermillion)] font-serif mb-1">
++          阶段定位
++        </div>
++        <h3 className="font-serif text-lg text-[var(--color-ink-900)] font-bold">
++          你在「{hexagramName}」的第几阶？
++        </h3>
++        <p className="text-xs text-[var(--color-ink-400)] font-serif mt-1 leading-relaxed">
++          爻位是流动的——同一卦的六阶段对应的建议截然不同。勾选与你当下处境相符的描述，得出你最可能所处的爻位。
++        </p>
++      </header>
++
++      {!submitted ? (
++        <>
++          <IndicatorChecklist yao={yao} selected={selected} onToggle={toggle} onClear={clear} />
++          <div className="flex items-center justify-end pt-2 border-t border-[var(--color-ink-100)]">
++            <button
++              type="button"
++              disabled={selected.size === 0}
++              onClick={submit}
++              className="px-4 py-2 text-sm font-serif rounded border border-[var(--color-ink-900)] text-[var(--color-ink-900)] hover:bg-[var(--color-ink-900)] hover:text-[var(--color-paper)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--color-ink-900)]"
++            >
++              定位 →
++            </button>
++          </div>
++        </>
++      ) : (
++        result && <LocatorResult result={result} yao={yao} onReset={reset} />
++      )}
++    </section>
++  )
++}
++```
++
++- [ ] **Step 4.2: Commit**
++
++```
++git add components/yao-locator/YaoLocator.tsx
++git commit -m "feat(yao-locator): YaoLocator container component"
++```
++
++---
++
++### Task 5: Integrate into `MatchCard`
++
++**Files:** Modify: `components/MatchCard.tsx`
++
++- [ ] **Step 5.1: Import + insert**
++
++In the file, add the import:
++
++```tsx
++import { YaoLocator } from './yao-locator/YaoLocator'
++```
++
++In the body, find the `<Section label="六爻 · 事之六阶" icon="爻">` and insert `<YaoLocator>` immediately before the `<div className="space-y-2">` (the yao list), gated by `rank === 1`.
++
++- [ ] **Step 5.2: Commit**
++
++```
++git add components/MatchCard.tsx
++git commit -m "feat(yao-locator): integrate YaoLocator into MatchCard (rank 1 only)"
++```
++
++---
++
++### Task 6: Integrate into `/hexagram/[id]` page
++
++**Files:** Modify: `app/hexagram/[id]/page.tsx`
++
++- [ ] **Step 6.1: Import + insert**
++
++Add the import for `YaoLocator`, then render it immediately before `<YaoTimeline />`, wrapped in the same `ScrollRevealSection` pattern used by surrounding sections (verify by reading the file).
++
++- [ ] **Step 6.2: Commit**
++
++```
++git add app/hexagram/[id]/page.tsx
++git commit -m "feat(yao-locator): integrate YaoLocator into hexagram detail page"
++```
++
++---
++
++### Task 7: Verify
++
++- [ ] **Step 7.1: Run lint**
++
++```
++npm run lint
++```
++
++Expected: no errors.
++
++- [ ] **Step 7.2: Run typecheck**
++
++```
++npm run typecheck
++```
++
++Expected: no errors.
++
++- [ ] **Step 7.3: Run tests**
++
++```
++npm run test
++```
++
++Expected: all tests pass (existing + 9 new).
++
++- [ ] **Step 7.4: Run build**
++
++```
++npm run build
++```
++
++Expected: build succeeds.
++
++- [ ] **Step 7.5: Push + open PR**
++
++```
++git push -u origin devin/<branch>
++```
++
++Then use `git_create_pr` after `fetch_pr_template`.
++
++---
++
++## Self-Review
++
++- **Spec coverage:** scoreYao algorithm, threshold constants, 6-bar UI, top-1 detail, cross-yao banner, both integration points, no persistence — all covered.
++- **No placeholders:** all components have full code; tests enumerate all 9 cases.
++- **TDD:** Task 1 is RED→GREEN→commit before any component is written.
++- **Frequent commits:** 6 commits across 6 logical units.
++- **YAGNI:** no localStorage, no RTL, no random / Date, no Hexagram type changes, no new deps.
+diff --git a/docs/superpowers/specs/2026-05-24-yao-locator-design.md b/docs/superpowers/specs/2026-05-24-yao-locator-design.md
+new file mode 100644
+index 0000000..17ae7c4
+--- /dev/null
++++ b/docs/superpowers/specs/2026-05-24-yao-locator-design.md
+@@ -0,0 +1,194 @@
++# 爻位定位问卷 — Yao Locator
++
++## 设计哲学
++
++> 爻位是流动的，不是命中注定的标签。  
++> 工具的任务是把用户的「自我观察」与「卦的阶段刻度」对齐，而不是替用户拍板。
++
++义理派立场延续到这里：
++
++- 不引入随机性（同样勾选 → 同样输出）
++- 透明可解释（每条 indicator 显示属于哪一爻；不藏算法）
++- 鼓励「跨爻」诊断（卡在两阶段之间，本身就是有价值的信号）
++
++## 用户画像与动机
++
++用户已经匹配到一卦（如乾），点开 MatchCard 或进入卦详情页，想回答一个问题：
++
++> **「这卦我懂了——但我具体在六阶段的哪一阶？」**
++
++爻辞和 actionable 高度阶段相关：处在初九（潜龙勿用）的人若读到上九（亢龙有悔）的建议会用错药。
++
++## 范围（In Scope）
++
++1. 一个可复用的问卷组件，输入一卦的 `yao[]`，输出 6 爻的得分排名。
++2. 显式分组：按爻名展示该爻的 `indicators`，用户多选。
++3. 结果区：6 爻得分横向条形图 + Top 1 详读（modernReading / scenario / actionable）+ 跨爻提示（次高 ≥ Top 1 × 0.8 时触发）。
++4. 在 `MatchCard` 顶卦（rank 1）里默认展示该问卷入口；在 `/hexagram/[id]` 详情页的 `YaoTimeline` 之前展示。
++5. 纯客户端逻辑，无 API。
++6. 测试覆盖：`scoreYao` 纯函数的 TDD 单元测试 + 组件渲染/交互测试（vitest）。
++
++## 范围外（Out of Scope，留给后续 PR）
++
++- ❌ 持久化（localStorage / 服务端）— 留给「征」模块统一做
++- ❌ 跨卦的通用阶段定位器（不绑定具体卦）— 工程量大，独立 PR
++- ❌ 「盲选模式」开关 — 默认透明版本先发布，看反馈再加
++- ❌ 把问卷结果回写到 matcher（提升 phase 特征精度）— 独立 PR
++
++## 算法
++
++### 数据来源
++
++每爻已有的 `indicators: string[]`（3-5 条）。无需修改 `Hexagram` 类型，无需新增内容。
++
++### 评分函数
++
++```ts
++type YaoScore = {
++  position: 1 | 2 | 3 | 4 | 5 | 6
++  yaoName: string // "初九" / "九二" / ...
++  hits: number // 用户勾选的数量
++  total: number // 该爻 indicators 总数
++  ratio: number // hits / total，0-1
++}
++
++type LocatorResult = {
++  scores: YaoScore[] // 按 position 升序（1→6），便于按时间线渲染
++  topPosition: 1 | 2 | 3 | 4 | 5 | 6
++  topRatio: number
++  crossYao:
++    | false
++    | {
++        secondPosition: 1 | 2 | 3 | 4 | 5 | 6
++        secondRatio: number
++        narrative: string // "你也明显落在九四——这种『跨爻』通常意味着你正在过渡"
++      }
++}
++
++function scoreYao(yao: Yao[], selectedIndicators: Set<string>): LocatorResult
++```
++
++**关键规则：**
++
++1. `ratio = hits / total` —— 用比例而非绝对数，避免「indicator 多的爻不公平占优」。
++2. **Top 1**：`ratio` 最高者；并列时取 `position` 较高者（因为后期的爻通常代表更明确的当下；可在测试里固化此约定）。
++3. **Cross-yao**：仅当次高 `ratio ≥ topRatio × 0.8` 且次高 `ratio ≥ 0.3` 时触发（避免在所有人都只勾一两条时假阳性）。
++4. **全 0 输入**：不应该发生（UI 禁用提交按钮），但函数必须容错——返回 `topPosition` = 1，所有 `ratio` = 0。
++5. **完全平局**：UI 允许，逻辑按 (2) 规则破平局；Top 1 显示横幅「你在 N、M 爻势均力敌——重新审视你最近 1-2 周的具体行为」。
++
++### 确定性
++
++- `selectedIndicators` 用 `Set<string>` 输入，遍历 yao 时按 `position` 升序——避免 Set 迭代顺序泄漏。
++- 不使用 `Math.random`、`Date.now`、`crypto`。
++
++## 组件结构
++
++```
++components/yao-locator/
++├── YaoLocator.tsx          # 容器：状态 + 提交 + 切换"问卷/结果"视图
++├── IndicatorChecklist.tsx  # 显式分组的多选清单
++└── LocatorResult.tsx       # 6 爻条形图 + Top 1 详读 + 跨爻提示
++```
++
++### `<YaoLocator yao={hexagram.yao} hexagramName={hexagram.name.chinese} />`
++
++- 内部 state：`selected: Set<string>`、`submitted: boolean`
++- 未提交 → 渲染 `IndicatorChecklist`；点「定位」按钮（`selected.size === 0` 时禁用）
++- 已提交 → 渲染 `LocatorResult`（传入 `scoreYao` 的结果 + 完整 `yao[]` 供 Top 1 详读）；底部「重新选择」按钮回到未提交
++
++### `<IndicatorChecklist yao={...} selected onToggle />`
++
++- 6 个 `<fieldset>`，每个标题是 `爻名 + 爻辞（小字 italic）`
++- 每条 indicator 是一个 `<label>` 包裹 `<input type="checkbox">` + 短文
++- 顶部一行操作：「全清」「随机示例（仅在 dev 模式）」← 后者只作为测试便利
++
++### `<LocatorResult result yao />`
++
++- 顶部：6 条横向 bar，每条标注爻名 + 命中率 %（按 position 升序排列，对应「时间线」），最高那条朱砂高亮
++- 跨爻提示行（如有）
++- 下面：Top 1 详读 = `yao.modernReading` + `yao.scenario`（折叠/展开）+ `yao.actionable` 列表
++- 底部：「重新选择」
++
++## 集成
++
++### 在 `components/MatchCard.tsx`
++
++- 仅在 `rank === 1`（用户最关心的那一卦）默认渲染 `<YaoLocator>`，放在「六爻 · 事之六阶」Section 内部、`YaoRow` 列表上方
++- rank 2/3 不展示，避免噪音
++
++### 在 `app/hexagram/[id]/page.tsx`（详情页）
++
++- 已有的 `YaoTimeline` 组件保持不变
++- 在 `YaoTimeline` 之前插一个 Section「定位你的阶段」，渲染 `<YaoLocator>`
++- 如 `YaoLocator` 提交后，可通过 prop callback 把 `topPosition` 传给 `YaoTimeline` 自动高亮对应爻——v1 不实现，留 TODO
++
++## 视觉
++
++- 复用现有 CSS 变量（`--color-ink-*`、`--color-vermillion`、`--color-gold`、`--color-paper`）
++- 字体：UI chrome `font-sans`；爻名/爻辞 `font-serif`
++- 不引入新动画；横向 bar 用纯 CSS width 过渡即可
++- 兼容现有 `card-classical` 容器风格
++
++## 数据模型变更
++
++**无。** 复用 `Yao.indicators`、`Yao.name`、`Yao.text`、`Yao.modernReading`、`Yao.scenario`、`Yao.actionable`。
++
++## 测试计划（TDD）
++
++`__tests__/yao-locator.test.ts`（先写，红 → 绿 → 重构）：
++
++1. `scoreYao` 基础：单一爻全勾 → 该爻 ratio = 1，其他 = 0，topPosition 正确
++2. `scoreYao` 比例公平：A 爻有 5 条 indicators 勾中 3，B 爻有 3 条全勾——B 胜（ratio 1.0 > 0.6）
++3. `scoreYao` 破平局：两爻 ratio 完全相等 → 取 position 较高者
++4. `scoreYao` 跨爻触发：Top 1 ratio = 0.5，次高 = 0.45，次高 ≥ 0.5 × 0.8 = 0.4 → 触发
++5. `scoreYao` 跨爻不触发：Top 1 = 1.0，次高 = 0.5（虽然 ≥ 0.5 × 0.8 = 0.4，但次高 < 0.3 阈值？修正：放弃次高门槛，仅用 0.8 比率门槛；测试调整）→ 触发
++6. `scoreYao` 跨爻不触发：Top 1 = 0.2，次高 = 0.15（次高 < 0.3 → 不触发，避免"少量勾选"导致假阳性）
++7. `scoreYao` 全 0：所有 ratio = 0，topPosition = 1，crossYao = false
++8. `scoreYao` 确定性：同样输入（包括同样的 Set 内容但插入顺序不同）→ 同样输出
++9. `scoreYao` indicator 字符串重复（理论上数据中不应出现，但要稳健）：去重不影响结果
++
++组件测试（轻量，vitest + RTL 可选——如果项目未引入 RTL，则只测纯渲染快照 + props 透传，避免引新依赖）：
++
++10. `YaoLocator` 渲染时显示 6 个 fieldset，每个标题是爻名
++11. 未勾选任何条目时「定位」按钮 disabled
++12. 勾选 → 点提交 → 显示 `LocatorResult`
++13. 「重新选择」回到问卷视图，原选择仍保留（用户可微调）
++
++## 文件清单
++
++新增：
++
++| 文件                                            | 说明              |
++| ----------------------------------------------- | ----------------- |
++| `lib/yao-locator.ts`                            | `scoreYao` 纯函数 |
++| `components/yao-locator/YaoLocator.tsx`         | 容器组件          |
++| `components/yao-locator/IndicatorChecklist.tsx` | 多选清单          |
++| `components/yao-locator/LocatorResult.tsx`      | 结果展示          |
++| `__tests__/yao-locator.test.ts`                 | TDD 测试          |
++
++修改：
++
++| 文件                         | 改动                                 |
++| ---------------------------- | ------------------------------------ |
++| `components/MatchCard.tsx`   | rank === 1 时插入 `<YaoLocator>`     |
++| `app/hexagram/[id]/page.tsx` | `YaoTimeline` 之前插「定位你的阶段」 |
++
++## 不做的事（YAGNI 显式列出）
++
++- ❌ localStorage 持久化
++- ❌ 提交结果回写到 matcher
++- ❌ 把 Top 1 自动高亮到 `YaoTimeline`（留 TODO）
++- ❌ 盲选模式开关
++- ❌ 跨卦通用阶段定位器
++- ❌ 「不太相符 / 非常相符」的多档权重（v1 用二值勾选；后续如有需求再加）
++- ❌ A11y 全套（基础语义化 `<fieldset>/<legend>/<label>` 已够；不引入 ARIA 增强）
++
++## 成功标准
++
++1. 在乾卦（content 已完整）上跑通：勾选若干 indicators → 提交 → 看到 6 爻条形图 + Top 1 详读
++2. `npm run test` 全绿，新增测试 ≥ 9 个
++3. `npm run lint`、`npm run typecheck` 全绿
++4. `npm run build` 成功
++5. MatchCard 顶卦展开后，问卷出现在「六爻 · 事之六阶」上方
++6. 卦详情页 `/hexagram/1` 在 `YaoTimeline` 之前出现「定位你的阶段」区块
++7. 跨爻提示按 0.8 比率门槛 + 次高 ≥ 0.3 阈值正确触发
+diff --git a/lib/yao-locator.ts b/lib/yao-locator.ts
+new file mode 100644
+index 0000000..396fa79
+--- /dev/null
++++ b/lib/yao-locator.ts
+@@ -0,0 +1,101 @@
++/**
++ * 爻位定位器 — 把用户对 indicators 的勾选映射到 6 爻得分排名
++ *
++ * 设计原则：
++ * - 确定性：同样输入 → 同样输出，遍历顺序固定（按 position 升序）
++ * - 比例公平：用 hits/total 而非绝对 hits，避免 indicator 多的爻不公平占优
++ * - 破平局：ratio 相等时取 position 较高者（后期爻通常代表更明确的当下）
++ * - 跨爻识别：仅当次高 ratio ≥ top × 0.8 且 ≥ 0.3 时触发，避免"少量勾选"假阳性
++ */
++
++import type { Yao } from './types'
++
++export type YaoScore = {
++  position: 1 | 2 | 3 | 4 | 5 | 6
++  yaoName: string
++  hits: number
++  total: number
++  /** hits / total，0-1；total 为 0 时返回 0 */
++  ratio: number
++}
++
++export type LocatorResult = {
++  /** 按 position 升序（1→6），便于按时间线渲染 */
++  scores: YaoScore[]
++  topPosition: 1 | 2 | 3 | 4 | 5 | 6
++  topRatio: number
++  crossYao:
++    | false
++    | {
++        secondPosition: 1 | 2 | 3 | 4 | 5 | 6
++        secondRatio: number
++        narrative: string
++      }
++}
++
++export const CROSS_YAO_RATIO_THRESHOLD = 0.8
++export const CROSS_YAO_MIN_SECOND_RATIO = 0.3
++
++export function scoreYao(yao: Yao[], selected: Set<string>): LocatorResult {
++  const scores: YaoScore[] = [...yao]
++    .sort((a, b) => a.position - b.position)
++    .map((y) => {
++      const uniqueIndicators = Array.from(new Set(y.indicators))
++      const total = uniqueIndicators.length
++      const hits = uniqueIndicators.filter((ind) => selected.has(ind)).length
++      const ratio = total === 0 ? 0 : hits / total
++      return { position: y.position, yaoName: y.name, hits, total, ratio }
++    })
++
++  // Top: highest ratio; tiebreak by higher position
++  let topIdx = 0
++  for (let i = 1; i < scores.length; i++) {
++    const a = scores[i]
++    const b = scores[topIdx]
++    if (a.ratio > b.ratio || (a.ratio === b.ratio && a.position > b.position)) {
++      topIdx = i
++    }
++  }
++  const top = scores[topIdx]
++
++  // Second best: same rule, excluding top
++  let secondIdx = -1
++  for (let i = 0; i < scores.length; i++) {
++    if (i === topIdx) continue
++    if (secondIdx === -1) {
++      secondIdx = i
++      continue
++    }
++    const a = scores[i]
++    const b = scores[secondIdx]
++    if (a.ratio > b.ratio || (a.ratio === b.ratio && a.position > b.position)) {
++      secondIdx = i
++    }
++  }
++
++  let crossYao: LocatorResult['crossYao'] = false
++  if (secondIdx >= 0 && top.ratio > 0) {
++    const second = scores[secondIdx]
++    if (
++      second.ratio >= CROSS_YAO_MIN_SECOND_RATIO &&
++      second.ratio >= top.ratio * CROSS_YAO_RATIO_THRESHOLD
++    ) {
++      crossYao = {
++        secondPosition: second.position,
++        secondRatio: second.ratio,
++        narrative: `你也明显落在「${second.yaoName}」——这种「跨爻」通常意味着你正处在阶段过渡期，建议同时参照两爻的提示。`,
++      }
++    }
++  }
++
++  // Convention: when nothing matches, default topPosition to 1 (lowest),
++  // not whichever yao won the position-based tiebreak among all-zero scores.
++  const topPosition: 1 | 2 | 3 | 4 | 5 | 6 = top.ratio === 0 ? 1 : top.position
++
++  return {
++    scores,
++    topPosition,
++    topRatio: top.ratio,
++    crossYao,
++  }
++}

@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-microsoft-windows-rs-pr4468",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 4468,
+    "headSha": "d1fa624ebaae9aef203a06639acadf8f9764266d",
+    "baseSha": "79bbafa2ab5db6835dd815ab0bd8823fe12020df",
+    "title": "bindgen: drop needless `Option<&[T]>::as_deref()` and tag near-`approx_constant` float consts",
+    "body": "What's this all about?\n\nTwo independent code-gen fixes in the spirit of #4467 that remove clippy warnings from generated bindings without per-crate `clippy::all` allows.\n\n- **`clippy::needless_option_as_deref`.** `CppMethod::write_args` emitted `name.as_deref().map_or(...)` for every optional slice argument. For `Option<&[T]>` (shared, input slices) `as_deref()` returns the same type, tripping the lint. The rewrite drops `.as_deref()` and consumes the `Copy` `Option<&[T]>` directly via `map_or`. For `Option<&mut [T]>` (output slices) `as_deref()` does real work (`&mut [T]` → `&[T]`), so it's preserved — gated on `param.is_input()`. Applies to `ArrayFixed` / `ArrayRelativeLen` / `ArrayRelativeByteLen` / `ArrayRelativePtr` plumbing.\n\n  ```rust\n  // before\n  quote! { #name.as_deref().map_or(core::ptr::null(), |slice| slice.as_ptr()) }\n  // after (input slice only; the &mut [T] branch keeps as_deref)\n  quote! { #name.map_or(core::ptr::null(), |slice| slice.as_ptr()) }\n  ```\n\n- **`clippy::approx_constant`.** New `ValueExt::is_approx_constant` flags `F32`/`F64` values within `1e-4` relative error of any `core::f64::consts` math constant (`PI`, `E`, `TAU`, `SQRT_2`, …). Both constant emitters (`CppConst::write` and the inline-in-struct emitter in `cpp_struct.rs`) prefix the `pub const` with `#[allow(clippy::approx_constant)]` when it fires — currently `X3DAUDIO_PI` and `X3DAUDIO_2PI`.\n\nRegenerated `windows`, `windows-sys`, and the webview sample with `cargo run -p tool_bindings`; 324/324 bindgen fixtures unchanged. Net: 103 files, +770 / −915.\n\n### Plan items not in this PR\n- **Item 3** (`clippy::too_many_arguments`): the per-`fn` `#[allow]` is a one-liner in the three method/fn writers, but it would attach to several thousand Win32 functions — better as its own PR.\n- **Item 1** (call-site `useless_transmute`): the return-position sites already gate on `is_copyable` post-#4467; remaining unconditional argument-position transmutes (`ParamHint::Blittable`, `ParamHint::None`, array-pointer plumbing) need per-`ParamHint`/`Type` analysis with a large regen.\n- **Items 2 & 4** (`useless_conversion`, `unwrap_or_default`): on inspection, no actual triggering sites exist. `Err(err) => err.into()` goes through `From<Error> for HRESULT` (publishes thread error info); `bool.into()` → `BOOL`; `Result<()>.into()` → `HRESULT` — none are self-conversions. The only emitted `unwrap_or` shape is `Option<T>::unwrap_or(core::mem::zeroed())`, which is not `Default::default()`.",
+    "author": "Copilot",
+    "headRef": "copilot/improve-code-gen-to-avoid-clippy-warnings",
+    "repository": "microsoft/windows-rs"
+  },
+  "diffRef": {
+    "repository": "microsoft/windows-rs",
+    "headSha": "d1fa624ebaae9aef203a06639acadf8f9764266d",
+    "baseSha": "79bbafa2ab5db6835dd815ab0bd8823fe12020df"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/copilot-workspace/copilot-workspace-microsoft-windows-rs-pr4468.diff",
+  "vendoredAt": "2026-05-24T04:28:34.838Z",
+  "collectedAt": "2026-05-24T04:28:34.838Z"
+}

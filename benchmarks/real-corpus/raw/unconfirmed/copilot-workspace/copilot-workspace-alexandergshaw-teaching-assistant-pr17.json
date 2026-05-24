@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-alexandergshaw-teaching-assistant-pr17",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 17,
+    "headSha": "4d2222d88964027bbb75fa94b17c20e7791658d3",
+    "baseSha": "f10a69c584f7df4f6d787556f5c8c95a78d9e75b",
+    "title": "Add inline field editing with copy/lock/pencil icons to all LLM preview modals",
+    "body": "LLM preview modals (lesson plan and syllabus) had no way to edit individual generated fields without regenerating. Copy and lock icons were also missing from lesson plan fields.\n\n## Changes\n\n**New `PencilIcon` component** — pencil SVG consistent with existing icon set.\n\n**New state & helpers**\n- `editingLessonField` / `lessonFieldDraft` — tracks which lesson field is being edited and its draft value (one field at a time)\n- `lockedLessonFields: Set<string>` — per-field lock state for lesson plan\n- `editingSyllabusSection` / `syllabusSectionDraft` — same pattern for syllabus sections\n- `saveLessonFieldEdit(key)` — dispatches draft to the appropriate state slice based on field key (e.g. `\"slide-2\"` → updates `lessonPlanPreview.slides[2]`)\n\n**Syllabus preview** — pencil icon added next to existing copy + lock buttons; clicking opens an inline `<textarea>` that writes back to `sectionContents[i]` on save.\n\n**Lesson plan preview** — copy + lock + pencil icons added to every editable unit across all four tabs:\n\n| Tab | Editable units |\n|---|---|\n| Header | Presentation title |\n| Intro | \"Where This Fits\", \"Key Terms\" |\n| Slides | Each slide (first line = title, remaining lines = bullets) |\n| Assignment | Overview, each step (first line = title), Tools list, Deliverables list |\n| Rubric | Raw rubric text |\n\n**New CSS classes** — `fieldLabelRow`, `fieldEditWrap`, `fieldEditArea`, `fieldEditActions`, `fieldEditSaveBtn`, `fieldEditCancelBtn` — reuses existing token variables and button styles for consistency.\n\nEdits persist into the same state objects used by download/export, so any manual changes are reflected in exported files.",
+    "author": "Copilot",
+    "headRef": "copilot/add-edit-icons-to-preview-modals",
+    "repository": "alexandergshaw/teaching-assistant"
+  },
+  "diffRef": {
+    "repository": "alexandergshaw/teaching-assistant",
+    "headSha": "4d2222d88964027bbb75fa94b17c20e7791658d3",
+    "baseSha": "f10a69c584f7df4f6d787556f5c8c95a78d9e75b"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-alexandergshaw-teaching-assistant-pr17.diff",
+  "vendoredAt": "2026-05-24T03:05:48.487Z",
+  "collectedAt": "2026-05-24T03:05:48.487Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-ProteoWizard-pwiz-pr4210",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 4210,
+    "headSha": "f110bd4c1ab0207c4a53b85693efdc46a09b6421",
+    "baseSha": "d348697df2a5a7bc779012ae06c4073f9f89604f",
+    "title": "Fix IndexOutOfRangeException in AreaCV 2D histogram heat map (issue #4209)",
+    "body": "## Summary\n- Fixed IndexOutOfRangeException when AreaCV histogram max frequency equals 1\n- Guarded heat map scale calculations against degenerate Math.Log(1) = 0 condition\n- Added array bounds clamping to prevent negative indices from NaN conversions\n- Created regression test to verify fix and prevent future occurrences\n\n## Root Cause\nWhen the maximum histogram bin frequency was exactly 1, `Math.Log(1) = 0` caused `fullScale = +Infinity`. In discrete legend mode, the color remapping calculation `0 * +Infinity = NaN`, and `(int)NaN` produces `int.MinValue` on .NET Framework, leading to array bounds violation in `_heatMapColors[colorIndex]`.\n\n## Test Plan\n- [x] Added regression test `TestHeatMapCrashRegression` integrated into existing `TestAreaCVHistograms`\n- [x] Verified existing `TestAreaCVHistograms` functionality unchanged\n- [x] Verified related `ClusteredHeatMapTest` functionality unchanged\n- [x] All tests pass with the fix applied\n\nSee ai/todos/active/TODO-20260514_areacv_heatmap_index.md\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+    "author": "bspratt",
+    "headRef": "Skyline/work/20260514_areacv_heatmap_index",
+    "repository": "ProteoWizard/pwiz"
+  },
+  "diffRef": {
+    "repository": "ProteoWizard/pwiz",
+    "headSha": "f110bd4c1ab0207c4a53b85693efdc46a09b6421",
+    "baseSha": "d348697df2a5a7bc779012ae06c4073f9f89604f"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-ProteoWizard-pwiz-pr4210.diff",
+  "vendoredAt": "2026-05-24T03:09:13.693Z",
+  "collectedAt": "2026-05-24T03:09:13.693Z"
+}

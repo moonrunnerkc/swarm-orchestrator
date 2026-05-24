@@ -1,0 +1,3263 @@
+diff --git a/agent-runtime/README.md b/agent-runtime/README.md
+new file mode 100644
+index 000000000..15a6ff7c8
+--- /dev/null
++++ b/agent-runtime/README.md
+@@ -0,0 +1,156 @@
++# agent-runtime
++
++**Agent Deck is the missing cockpit layer.**
++
++This directory is the shared monorepo for the Agent Deck runtime system. It provides a
++*canonical brain* (agents / skills / memory / MCP) and three runtime adapters:
++
++| Adapter | Purpose |
++|---------|---------|
++| `opencode/` | Primary coding-agent runtime (OpenCode) |
++| `aider/` | Focused file-editing / code-patch runtime (Aider) |
++| `pi/` | Experimental / custom coding-agent runtime (Pi) |
++
++Agent Deck itself (`agent-deck/`) is the cockpit that manages all three sessions,
++worktrees, conductors, watchers, and MCP servers.
++
++---
++
++## Architecture
++
++```
++You
++ └─► Agent Deck cockpit   (agent-deck/)
++      ├─► OpenCode session  (opencode/)
++      ├─► Aider session     (aider/)
++      └─► Pi session        (pi/)
++            │
++            └─► shared/
++                 ├── agents/    ← canonical agent prompts
++                 ├── skills/    ← reusable skill packs
++                 ├── memory/    ← scratchpad / decisions / glossary
++                 └── mcp/       ← MCP server definitions
++```
++
++### The four agents
++
++| Agent | Role |
++|-------|------|
++| **Planner** | Breaks goals into ordered tasks; owns the roadmap |
++| **Implementer** | Writes and edits code; handles the inner loop |
++| **Reviewer** | Checks code quality, docs, risk, and correctness |
++| **PI** | Principal Investigator — research, specs, product intelligence |
++
++---
++
++## Quick start
++
++```sh
++# 1. Sync shared agents/skills into each adapter folder
++bash scripts/sync-skills.sh
++
++# 2. Launch Agent Deck cockpit
++bash scripts/launch-deck.sh
++
++# 3. (Optional) Launch individual runtimes
++bash scripts/run-opencode.sh
++bash scripts/run-aider.sh
++bash scripts/run-pi.sh
++
++# 4. (Optional) Launch everything at once
++bash scripts/run-all.sh
++```
++
++---
++
++## Directory reference
++
++```
++agent-runtime/
++├── README.md                 ← you are here
++├── shared/
++│   ├── agents/               ← canonical agent prompts (.md)
++│   ├── skills/               ← shared skill packs
++│   ├── memory/               ← scratchpad, decisions, glossary
++│   └── mcp/                  ← MCP server definitions & README
++├── opencode/
++│   ├── README.md
++│   ├── opencode.config.json  ← OpenCode config
++│   ├── agents/               ← copied from shared/agents by sync-skills.sh
++│   ├── skills/               ← copied from shared/skills by sync-skills.sh
++│   └── workflows/            ← OpenCode workflow templates
++├── aider/
++│   ├── README.md
++│   ├── aider.conf.yml        ← Aider config
++│   ├── prompts/              ← aider prompt files
++│   ├── skills/               ← copied from shared/skills by sync-skills.sh
++│   └── scripts/
++│       └── aider-run.sh
++├── pi/
++│   ├── README.md
++│   ├── AGENTS.md             ← Pi agent definitions
++│   ├── prompts/
++│   ├── skills/               ← copied from shared/skills by sync-skills.sh
++│   └── scripts/
++│       └── pi-run.sh
++├── agent-deck/
++│   ├── README.md
++│   ├── config.toml           ← Agent Deck config
++│   ├── worktree-setup.sh     ← sets up git worktrees per session
++│   └── conductors/
++│       └── README.md
++└── scripts/
++    ├── sync-skills.sh        ← copy shared → adapter folders
++    ├── run-opencode.sh
++    ├── run-aider.sh
++    ├── run-pi.sh
++    ├── launch-deck.sh
++    └── run-all.sh
++```
++
++---
++
++## How to extend
++
++### Add a new agent prompt
++
++1. Create `shared/agents/<name>.md` following the template in any existing agent file.
++2. Run `bash scripts/sync-skills.sh` to push it into all adapter folders.
++
++### Add a new skill
++
++1. Create a folder under `shared/skills/<category>/` with a `README.md` and any
++   supporting files.
++2. Run `bash scripts/sync-skills.sh`.
++
++### Register an MCP server
++
++Edit `shared/mcp/README.md` (or add a JSON/TOML definition there) and update
++`opencode/opencode.config.json` accordingly.
++
++### Add a new runtime adapter
++
++1. Create a new top-level folder (e.g. `codex/`).
++2. Copy the `pi/` structure as a starting point.
++3. Update `scripts/sync-skills.sh` to include the new adapter.
++4. Update `scripts/run-all.sh`.
++
++---
++
++## Install Agent Deck
++
++```sh
++# Linux / WSL (one-liner)
++curl -fsSL https://raw.githubusercontent.com/asheshgoplani/agent-deck/main/install.sh | bash
++
++# Then launch
++agent-deck
++```
++
++See the [Agent Deck docs](https://agent-deck.com) for Homebrew / Go install paths.
++
++---
++
++## License
++
++See the repository root `LICENSE` file.
+diff --git a/agent-runtime/agent-deck/README.md b/agent-runtime/agent-deck/README.md
+new file mode 100644
+index 000000000..95430800f
+--- /dev/null
++++ b/agent-runtime/agent-deck/README.md
+@@ -0,0 +1,53 @@
++# Agent Deck Config
++
++This directory contains the Agent Deck cockpit configuration for the agent-runtime
++system. Agent Deck is the mission-control layer that sits above all runtime adapters.
++
++## Files
++
++| File | Purpose |
++|------|---------|
++| `README.md` | This file |
++| `config.toml` | Agent Deck configuration |
++| `worktree-setup.sh` | Sets up git worktrees so agents can work in parallel |
++| `conductors/README.md` | Documentation for persistent conductor agents |
++
++## Setup
++
++1. Install Agent Deck:
++   ```sh
++   curl -fsSL https://raw.githubusercontent.com/asheshgoplani/agent-deck/main/install.sh | bash
++   ```
++2. Edit `config.toml` to match your environment.
++3. (Optional) Run `worktree-setup.sh` to create per-agent git worktrees:
++   ```sh
++   bash worktree-setup.sh
++   ```
++4. Launch Agent Deck:
++   ```sh
++   bash ../scripts/launch-deck.sh
++   # or simply:
++   agent-deck
++   ```
++
++## Adding sessions via Agent Deck CLI
++
++```sh
++cd agent-runtime
++
++# Add each runtime as an Agent Deck session
++agent-deck add opencode -c opencode
++agent-deck add aider    -c aider
++agent-deck add pi       -c "sh pi/scripts/pi-run.sh"
++```
++
++## Conductors
++
++See `conductors/README.md` for how to set up persistent supervisor agents.
++
++## Notes
++
++- `config.toml` is a placeholder. Adapt it to the Agent Deck config schema for your
++  installed version (run `agent-deck config --help` for options).
++- The `.env` file at `agent-runtime/` root (if present) is loaded automatically by
++  the launch script; it is never committed.
+diff --git a/agent-runtime/agent-deck/conductors/README.md b/agent-runtime/agent-deck/conductors/README.md
+new file mode 100644
+index 000000000..d608b4469
+--- /dev/null
++++ b/agent-runtime/agent-deck/conductors/README.md
+@@ -0,0 +1,51 @@
++# Conductors
++
++A **conductor** is a persistent supervisor agent in Agent Deck. It watches one or
++more sessions, coordinates handoffs between agents, and keeps the overall workflow
++moving without manual intervention.
++
++## What conductors do
++
++- Monitor session outputs for completion signals or errors.
++- Trigger the next agent in a workflow pipeline.
++- Escalate to a human when an agent is blocked.
++- Maintain a shared task queue (backed by `shared/memory/scratchpad.md`).
++
++## Adding a conductor
++
++1. Create a conductor config file in this directory (e.g. `pipeline-conductor.toml`).
++2. Reference it in `agent-deck/config.toml`:
++   ```toml
++   [[conductors]]
++   name   = "pipeline"
++   config = "./agent-deck/conductors/pipeline-conductor.toml"
++   ```
++3. Start Agent Deck — conductors are launched automatically.
++
++## Example conductor config (placeholder)
++
++```toml
++# pipeline-conductor.toml
++name = "pipeline"
++
++[[watch]]
++session = "planner"
++on_complete = "implementer"   # hand off to implementer when planner finishes
++
++[[watch]]
++session = "implementer"
++on_complete = "reviewer"      # hand off to reviewer when implementer finishes
++
++[[watch]]
++session = "reviewer"
++on_approve  = "done"          # mark pipeline done on reviewer approval
++on_reject   = "implementer"   # send back to implementer on rejection
++```
++
++## Notes
++
++- Conductor config format depends on your Agent Deck version.
++  Run `agent-deck conductor --help` for the current schema.
++- Conductors are optional — Agent Deck works perfectly well in manual mode.
++- See the [Agent Deck conductors docs](https://agent-deck.com/docs/conductors) for
++  the full feature reference.
+diff --git a/agent-runtime/agent-deck/config.toml b/agent-runtime/agent-deck/config.toml
+new file mode 100644
+index 000000000..64d931631
+--- /dev/null
++++ b/agent-runtime/agent-deck/config.toml
+@@ -0,0 +1,53 @@
++# Agent Deck configuration
++# Reference: https://agent-deck.com/docs/config
++#
++# This is a placeholder config. Adapt to the Agent Deck config schema for your
++# installed version. Run `agent-deck config --help` for available options.
++
++[general]
++# workspace = "~/Workspace/AIW/agent-runtime"
++# theme = "dark"
++# log_level = "info"
++
++[sessions]
++# Define sessions that Agent Deck manages.
++# Each session has a name, working directory, and start command.
++
++[[sessions.list]]
++name    = "opencode"
++dir     = "./opencode"
++command = "opencode"
++# conductor = false
++
++[[sessions.list]]
++name    = "aider"
++dir     = "./aider"
++command = "aider --config aider.conf.yml"
++# conductor = false
++
++[[sessions.list]]
++name    = "pi"
++dir     = "./pi"
++command = "sh scripts/pi-run.sh"
++# conductor = false
++
++[worktrees]
++# Enable git worktrees so agents can work in parallel branches safely.
++# enabled = true
++# base_branch = "main"
++# worktree_dir = ".worktrees"
++
++[mcp]
++# Global MCP server settings.
++# Individual MCP servers are configured per runtime (e.g. opencode.config.json).
++# shared_config = "./shared/mcp"
++
++[docker]
++# Docker sandbox settings (optional).
++# enabled = false
++# image = "ghcr.io/agent-deck/sandbox:latest"
++
++[remote]
++# Remote instance settings (optional).
++# host = ""
++# port = 0
+diff --git a/agent-runtime/agent-deck/worktree-setup.sh b/agent-runtime/agent-deck/worktree-setup.sh
+new file mode 100755
+index 000000000..8db3344f0
+--- /dev/null
++++ b/agent-runtime/agent-deck/worktree-setup.sh
+@@ -0,0 +1,51 @@
++#!/bin/sh
++# worktree-setup.sh — create git worktrees for each agent session
++# Allows Planner, Implementer, Reviewer, and PI to work in parallel on separate
++# branches without interfering with each other.
++#
++# Usage: sh agent-deck/worktree-setup.sh [base-branch]
++# Default base branch: main
++set -eu
++
++BASE_BRANCH="${1:-main}"
++REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
++WORKTREE_DIR="$REPO_ROOT/.worktrees"
++
++echo "==> Setting up agent worktrees under $WORKTREE_DIR"
++echo "    Base branch: $BASE_BRANCH"
++
++# Ensure the worktree directory exists
++mkdir -p "$WORKTREE_DIR"
++
++# List of agent worktrees to create
++AGENTS="planner implementer reviewer pi"
++
++for AGENT in $AGENTS; do
++  BRANCH="agent/$AGENT"
++  TARGET="$WORKTREE_DIR/$AGENT"
++
++  if [ -d "$TARGET" ]; then
++    echo "  [skip] worktree '$AGENT' already exists at $TARGET"
++    continue
++  fi
++
++  # Create the branch if it doesn't exist
++  cd "$REPO_ROOT"
++  if ! git show-ref --verify --quiet "refs/heads/$BRANCH"; then
++    echo "  [create] branch $BRANCH from $BASE_BRANCH"
++    git branch "$BRANCH" "$BASE_BRANCH"
++  fi
++
++  echo "  [create] worktree $TARGET on branch $BRANCH"
++  git worktree add "$TARGET" "$BRANCH"
++done
++
++echo ""
++echo "==> Worktrees created:"
++git worktree list
++echo ""
++echo "Tip: each agent should cd into its worktree before making changes."
++echo "  Planner:     $WORKTREE_DIR/planner"
++echo "  Implementer: $WORKTREE_DIR/implementer"
++echo "  Reviewer:    $WORKTREE_DIR/reviewer"
++echo "  PI:          $WORKTREE_DIR/pi"
+diff --git a/agent-runtime/aider/README.md b/agent-runtime/aider/README.md
+new file mode 100644
+index 000000000..b6e2a2fcc
+--- /dev/null
++++ b/agent-runtime/aider/README.md
+@@ -0,0 +1,61 @@
++# Aider Adapter
++
++This directory contains the Aider runtime adapter for the agent-runtime system.
++
++## What is Aider?
++
++[Aider](https://aider.chat) is a focused file-editing and code-patch AI coding tool.
++It works directly with your git repository, making precise edits and committing them
++with meaningful messages. It is particularly well-suited for the Implementer agent role.
++
++## Directory structure
++
++```
++aider/
++├── README.md          ← this file
++├── aider.conf.yml     ← Aider configuration
++├── prompts/           ← aider prompt / system message files
++├── skills/            ← skill packs (copied from shared/skills by sync-skills.sh)
++└── scripts/
++    └── aider-run.sh   ← convenience launch script
++```
++
++## Setup
++
++1. Install Aider:
++   ```sh
++   pip install aider-chat
++   # or
++   brew install aider
++   ```
++2. Sync shared assets:
++   ```sh
++   bash ../scripts/sync-skills.sh
++   ```
++3. Set your API key:
++   ```sh
++   export ANTHROPIC_API_KEY=sk-ant-...
++   # or OPENAI_API_KEY, GEMINI_API_KEY, etc.
++   ```
++4. Run:
++   ```sh
++   bash scripts/aider-run.sh
++   # or
++   bash ../scripts/run-aider.sh
++   ```
++
++## Configuration
++
++Edit `aider.conf.yml` to change the model, enable/disable auto-commits, set the
++read-only files list, etc.
++
++## Adding prompts
++
++Place custom system message files (`.md`) in `prompts/`. Reference them from
++`aider.conf.yml` via the `system-prompt` or `read` keys.
++
++## Notes
++
++- Skills in `skills/` are auto-synced from `shared/skills/`. Do not edit them here.
++- Aider commits changes automatically by default. Set `auto-commits: false` in
++  `aider.conf.yml` to review before committing.
+diff --git a/agent-runtime/aider/agents/implementer.md b/agent-runtime/aider/agents/implementer.md
+new file mode 100644
+index 000000000..6770742a2
+--- /dev/null
++++ b/agent-runtime/aider/agents/implementer.md
+@@ -0,0 +1,49 @@
++# Agent: Implementer
++
++## Role
++
++The Implementer writes, edits, and refactors code. It is the inner-loop execution engine
++of the system — it takes tasks from the Planner and turns them into working code.
++
++## Responsibilities
++
++- Read and understand the task definition from the Planner.
++- Write or edit code to satisfy the task's acceptance criteria.
++- Write accompanying unit/integration tests.
++- Commit changes with meaningful commit messages.
++- Communicate blockers or scope changes to the Planner immediately.
++
++## Persona
++
++You are a senior software engineer. You write clean, idiomatic, well-tested code.
++You follow the conventions of the existing codebase. You do not gold-plate; you
++implement exactly what is asked and no more.
++
++## Output format
++
++For each implementation session, produce:
++
++```
++## Task reference
++<task number and title from Planner>
++
++## What I did
++<brief narrative>
++
++## Files changed
++- path/to/file.ext — <reason>
++
++## Tests added / modified
++- path/to/test_file.ext
++
++## Open items / follow-ups
++- <item>
++```
++
++## Rules
++
++- Always check existing code patterns before introducing a new approach.
++- Never commit secrets or credentials.
++- Write tests before or alongside implementation (TDD preferred).
++- If a task is too large to complete in one session, split it and update the Planner.
++- When in doubt about the approach, ask the Reviewer before committing.
+diff --git a/agent-runtime/aider/agents/pi.md b/agent-runtime/aider/agents/pi.md
+new file mode 100644
+index 000000000..6bb8cfc07
+--- /dev/null
++++ b/agent-runtime/aider/agents/pi.md
+@@ -0,0 +1,59 @@
++# Agent: PI (Principal Investigator)
++
++## Role
++
++The PI is the research and product intelligence agent. It investigates unknowns,
++synthesises external information, and produces specifications and design docs that
++the Planner and Implementer can act on.
++
++## Responsibilities
++
++- Research technologies, APIs, libraries, and prior art.
++- Write feature specifications, ADRs (Architecture Decision Records), and RFCs.
++- Evaluate trade-offs and produce recommendations.
++- Maintain the `shared/memory/` knowledge base (decisions, glossary).
++- Answer "how should we do X?" questions before implementation begins.
++
++## Persona
++
++You are a principal engineer and product researcher. You are thorough, precise, and
++evidence-based. You cite sources. You write for an audience of engineers, not managers.
++You distinguish clearly between facts, opinions, and hypotheses.
++
++## Output format
++
++For each investigation, produce:
++
++```
++## Investigation: <topic>
++
++### Question
++<the question being answered>
++
++### Findings
++- <finding> [source: <url or ref>]
++
++### Trade-offs
++| Option | Pros | Cons |
++|--------|------|------|
++| A      | …    | …    |
++| B      | …    | …    |
++
++### Recommendation
++<your recommendation and rationale>
++
++### Open questions
++- <question that remains unresolved>
++
++### Memory updates
++- decisions.md: <new decision to record>
++- glossary.md: <new term to add>
++```
++
++## Rules
++
++- Always cite sources for external claims.
++- Record important decisions in `shared/memory/decisions.md`.
++- Add new domain terms to `shared/memory/glossary.md`.
++- Avoid premature recommendations — gather evidence first.
++- Escalate architectural decisions to the Planner for task generation.
+diff --git a/agent-runtime/aider/agents/planner.md b/agent-runtime/aider/agents/planner.md
+new file mode 100644
+index 000000000..a0d050dd5
+--- /dev/null
++++ b/agent-runtime/aider/agents/planner.md
+@@ -0,0 +1,49 @@
++# Agent: Planner
++
++## Role
++
++The Planner is responsible for breaking high-level goals into concrete, ordered tasks.
++It owns the roadmap and communicates priorities to all other agents.
++
++## Responsibilities
++
++- Analyse incoming requirements and identify unknowns.
++- Decompose work into discrete, testable tasks.
++- Maintain a prioritised task list (backlog → in-progress → done).
++- Detect and surface blockers early.
++- Coordinate handoffs between Implementer, Reviewer, and PI.
++
++## Persona
++
++You are a meticulous technical project planner. You ask clarifying questions before
++committing to a plan. You express plans as numbered lists with clear acceptance criteria.
++You do not write code; you write tasks.
++
++## Output format
++
++For each planning session, produce:
++
++```
++## Goal
++<one-sentence goal>
++
++## Context
++<any relevant background>
++
++## Tasks
++1. [ ] <task> — owner: <Implementer|Reviewer|PI> — priority: <high|medium|low>
++2. [ ] …
++
++## Open questions
++- <question> → needs answer from <agent|human>
++
++## Done criteria
++- <criterion>
++```
++
++## Rules
++
++- Never start implementation work yourself.
++- Always ask for clarification when acceptance criteria are ambiguous.
++- Keep tasks small enough to complete in one agent session (~30 min of work).
++- Flag risks explicitly with `⚠️ RISK:` prefix.
+diff --git a/agent-runtime/aider/agents/reviewer.md b/agent-runtime/aider/agents/reviewer.md
+new file mode 100644
+index 000000000..4e6ab473c
+--- /dev/null
++++ b/agent-runtime/aider/agents/reviewer.md
+@@ -0,0 +1,51 @@
++# Agent: Reviewer
++
++## Role
++
++The Reviewer checks code quality, documentation, correctness, and risk. It is the
++quality gate before any work is considered done.
++
++## Responsibilities
++
++- Review diffs produced by the Implementer.
++- Check for correctness, test coverage, security issues, and style violations.
++- Review documentation and README updates for accuracy.
++- Approve or request changes with clear, actionable feedback.
++- Escalate security or architectural concerns to the Planner.
++
++## Persona
++
++You are a careful, thorough code reviewer with a security mindset. You give
++constructive, specific feedback. You do not nitpick style unless it violates
++project conventions. You distinguish between blockers and suggestions.
++
++## Output format
++
++For each review session, produce:
++
++```
++## Review of: <task/PR reference>
++
++### Summary
++<one-paragraph assessment>
++
++### Blockers (must fix before merge)
++- [ ] <file>:<line> — <issue> — <suggested fix>
++
++### Suggestions (nice to have)
++- [ ] <file>:<line> — <suggestion>
++
++### Security notes
++- <any security-relevant observations>
++
++### Verdict
++APPROVE | REQUEST CHANGES | NEEDS DISCUSSION
++```
++
++## Rules
++
++- Always look at the test coverage first — insufficient tests are a blocker.
++- Flag any hardcoded secrets, credentials, or API keys immediately.
++- Do not approve code that removes or weakens existing tests without justification.
++- If you cannot understand what a piece of code does, that is a documentation blocker.
++- Separate "must fix" from "optional improvement" clearly.
+diff --git a/agent-runtime/aider/aider.conf.yml b/agent-runtime/aider/aider.conf.yml
+new file mode 100644
+index 000000000..81d07219d
+--- /dev/null
++++ b/agent-runtime/aider/aider.conf.yml
+@@ -0,0 +1,38 @@
++# Aider configuration
++# Reference: https://aider.chat/docs/config/aider_conf.html
++#
++# Copy this file to .aider.conf.yml in your project root, or keep it here and
++# pass it explicitly: aider --config aider/aider.conf.yml
++
++# --- Model ---
++# model: claude-3-5-sonnet-20241022
++# openai-api-key: ${OPENAI_API_KEY}
++# anthropic-api-key: ${ANTHROPIC_API_KEY}
++
++# --- Editor model (for smaller edits) ---
++# editor-model: claude-3-haiku-20240307
++
++# --- Git behaviour ---
++auto-commits: true          # commit after each successful edit
++dirty-commits: false        # don't commit if working tree is dirty before start
++# attribute-author: false   # don't add "Co-authored-by: aider" to commits
++
++# --- Context ---
++# read:                     # files to include as read-only context
++#   - shared/memory/decisions.md
++#   - shared/memory/glossary.md
++
++# --- Output ---
++pretty: true
++stream: true
++# dark-mode: true
++
++# --- Lint / test ---
++# lint-cmd: "golangci-lint run"
++# test-cmd: "go test ./..."
++# auto-lint: true
++# auto-test: true
++
++# --- Misc ---
++# show-model-warnings: true
++# map-tokens: 1024
+diff --git a/agent-runtime/aider/prompts/README.md b/agent-runtime/aider/prompts/README.md
+new file mode 100644
+index 000000000..f7a528733
+--- /dev/null
++++ b/agent-runtime/aider/prompts/README.md
+@@ -0,0 +1,24 @@
++# Aider Prompts
++
++Place custom system message or prompt template files (`.md`) here.
++
++These are referenced from `aider.conf.yml` via the `read` or `system-prompt` keys,
++or passed directly on the command line with `--read prompts/<file>.md`.
++
++## Provided prompts
++
++_None yet — add your own here._
++
++## Example: using a prompt file
++
++```sh
++aider --config aider.conf.yml --read prompts/implementer-context.md
++```
++
++Or add to `aider.conf.yml`:
++
++```yaml
++read:
++  - prompts/implementer-context.md
++  - ../shared/memory/decisions.md
++```
+diff --git a/agent-runtime/aider/scripts/aider-run.sh b/agent-runtime/aider/scripts/aider-run.sh
+new file mode 100755
+index 000000000..6c2bdcc66
+--- /dev/null
++++ b/agent-runtime/aider/scripts/aider-run.sh
+@@ -0,0 +1,22 @@
++#!/bin/sh
++# aider-run.sh — launch Aider with the agent-runtime config
++# Usage: sh aider/scripts/aider-run.sh [aider args...]
++set -eu
++
++SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
++AIDER_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
++RUNTIME_DIR="$(cd "$AIDER_DIR/.." && pwd)"
++
++# Sync shared assets before launching
++sh "$RUNTIME_DIR/scripts/sync-skills.sh"
++
++# Check Aider is installed
++if ! command -v aider > /dev/null 2>&1; then
++  echo "ERROR: aider not found. Install with: pip install aider-chat" >&2
++  exit 1
++fi
++
++cd "$AIDER_DIR"
++
++echo "==> Starting Aider from $AIDER_DIR"
++exec aider --config aider.conf.yml "$@"
+diff --git a/agent-runtime/aider/skills/.gitkeep b/agent-runtime/aider/skills/.gitkeep
+new file mode 100644
+index 000000000..e69de29bb
+diff --git a/agent-runtime/aider/skills/README.md b/agent-runtime/aider/skills/README.md
+new file mode 100644
+index 000000000..0bcdf2b53
+--- /dev/null
++++ b/agent-runtime/aider/skills/README.md
+@@ -0,0 +1,44 @@
++# Shared Skills
++
++This directory contains reusable skill packs shared across all runtime adapters.
++
++## Structure
++
++```
++skills/
++├── README.md       ← this file
++├── memory/         ← memory management skills
++├── code/           ← code generation / editing skills
++├── repo/           ← git / repo management skills
++└── qa/             ← quality assurance / testing skills
++```
++
++## What is a skill?
++
++A skill is a packaged, reusable capability. Each skill folder contains:
++
++- `README.md` — describes what the skill does and how to invoke it
++- One or more prompt template files (`.md`)
++- Optional supporting scripts or config fragments
++
++## How skills are distributed
++
++Run `bash scripts/sync-skills.sh` from the `agent-runtime/` root to copy the
++contents of this directory into each adapter's `skills/` folder. The sync is a
++plain file copy (no symlinks) so it works on any platform.
++
++## Adding a skill
++
++1. Create a new folder under the appropriate category (or add a new category folder).
++2. Add a `README.md` explaining the skill's purpose, inputs, and expected outputs.
++3. Add prompt template(s) as `.md` files.
++4. Run `bash scripts/sync-skills.sh`.
++
++## Skill categories
++
++| Category | Purpose |
++|----------|---------|
++| `memory/` | Read/write scratchpad, decisions, glossary |
++| `code/` | Code generation, refactoring, explanation |
++| `repo/` | Git operations, PR creation, branch management |
++| `qa/` | Test generation, test review, coverage analysis |
+diff --git a/agent-runtime/aider/skills/code/README.md b/agent-runtime/aider/skills/code/README.md
+new file mode 100644
+index 000000000..dfba65586
+--- /dev/null
++++ b/agent-runtime/aider/skills/code/README.md
+@@ -0,0 +1,44 @@
++# Skill: code
++
++Code generation, editing, refactoring, and explanation skills.
++
++## Prompts
++
++### generate-function
++
++```
++Write a {{language}} function named {{name}} that:
++- Accepts: {{inputs}}
++- Returns: {{output}}
++- Behaviour: {{description}}
++Follow the conventions in the existing codebase.
++Include a docstring and unit tests.
++```
++
++### explain-code
++
++```
++Explain the following code in plain English.
++Describe what it does, any edge cases it handles, and any potential issues:
++
++{{code}}
++```
++
++### refactor
++
++```
++Refactor the following code to improve {{goal}} (e.g. readability, performance, testability).
++Do not change the external behaviour.
++Explain each change you make:
++
++{{code}}
++```
++
++### fix-bug
++
++```
++The following code has a bug described as: {{bug_description}}
++Fix the bug and explain what caused it:
++
++{{code}}
++```
+diff --git a/agent-runtime/aider/skills/memory/README.md b/agent-runtime/aider/skills/memory/README.md
+new file mode 100644
+index 000000000..bd20930de
+--- /dev/null
++++ b/agent-runtime/aider/skills/memory/README.md
+@@ -0,0 +1,37 @@
++# Skill: memory
++
++Read from and write to the shared memory files (scratchpad, decisions, glossary).
++
++## Prompts
++
++### read-scratchpad
++
++```
++Read the current contents of shared/memory/scratchpad.md and summarise the active context.
++```
++
++### write-scratchpad
++
++```
++Append the following note to shared/memory/scratchpad.md under "Active context":
++{{note}}
++```
++
++### record-decision
++
++```
++Add a new entry to shared/memory/decisions.md using the decision template.
++Fill in the fields as follows:
++- Title: {{title}}
++- Context: {{context}}
++- Decision: {{decision}}
++- Rationale: {{rationale}}
++```
++
++### add-glossary-term
++
++```
++Add the following term to shared/memory/glossary.md:
++- Term: {{term}}
++- Definition: {{definition}}
++```
+diff --git a/agent-runtime/aider/skills/qa/README.md b/agent-runtime/aider/skills/qa/README.md
+new file mode 100644
+index 000000000..fb36962c3
+--- /dev/null
++++ b/agent-runtime/aider/skills/qa/README.md
+@@ -0,0 +1,50 @@
++# Skill: qa
++
++Quality assurance and testing skills — test generation, review, and coverage analysis.
++
++## Prompts
++
++### generate-tests
++
++```
++Write {{test_framework}} tests for the following code.
++Cover: happy path, edge cases, and error conditions.
++{{code}}
++```
++
++### review-test-coverage
++
++```
++Review the test file below and identify:
++1. Untested code paths
++2. Weak assertions (e.g. assertTrue(true))
++3. Missing edge cases
++4. Any tests that are brittle or hard to maintain
++
++{{test_code}}
++```
++
++### write-test-plan
++
++```
++Write a test plan for the following feature:
++{{feature_description}}
++
++Include:
++- Unit tests (what functions/methods to test)
++- Integration tests (what interactions to test)
++- Edge cases
++- Performance considerations (if any)
++```
++
++### analyze-failure
++
++```
++A test is failing with the following output:
++{{test_output}}
++
++The relevant code is:
++{{code}}
++
++Diagnose the failure and suggest a fix.
++```
+diff --git a/agent-runtime/aider/skills/repo/README.md b/agent-runtime/aider/skills/repo/README.md
+new file mode 100644
+index 000000000..e10c7116b
+--- /dev/null
++++ b/agent-runtime/aider/skills/repo/README.md
+@@ -0,0 +1,47 @@
++# Skill: repo
++
++Git repository management skills — branching, committing, and PR workflows.
++
++## Prompts
++
++### create-branch
++
++```
++Create a new git branch named {{branch_name}} from {{base_branch}}.
++Use a conventional name format: <type>/<short-description>
++(e.g. feat/add-login, fix/null-pointer, chore/update-deps)
++```
++
++### write-commit-message
++
++```
++Write a conventional commit message for the following change:
++{{diff_summary}}
++
++Format: <type>(<scope>): <short description>
++Types: feat, fix, docs, style, refactor, test, chore
++Keep the subject line under 72 characters.
++```
++
++### create-pr-description
++
++```
++Write a pull request description for the following change:
++- Branch: {{branch}}
++- Summary of changes: {{summary}}
++- Related issue (if any): {{issue}}
++
++Include: What, Why, How, and Testing sections.
++```
++
++### review-diff
++
++```
++Review the following git diff and identify:
++1. Any bugs or logic errors
++2. Missing tests
++3. Security concerns
++4. Style violations
++
++{{diff}}
++```
+diff --git a/agent-runtime/opencode/README.md b/agent-runtime/opencode/README.md
+new file mode 100644
+index 000000000..8992c593a
+--- /dev/null
++++ b/agent-runtime/opencode/README.md
+@@ -0,0 +1,52 @@
++# OpenCode Adapter
++
++This directory contains the OpenCode runtime adapter for the agent-runtime system.
++
++## What is OpenCode?
++
++[OpenCode](https://opencode.ai) is the primary AI coding-agent runtime. It provides
++a terminal and API interface for running LLM-powered coding sessions with support for
++MCP servers, skills, multi-session workflows, and local/remote providers.
++
++## Directory structure
++
++```
++opencode/
++├── README.md               ← this file
++├── opencode.config.json    ← OpenCode configuration
++├── agents/                 ← agent prompts (copied from shared/agents by sync-skills.sh)
++├── skills/                 ← skill packs (copied from shared/skills by sync-skills.sh)
++└── workflows/              ← OpenCode workflow templates
++```
++
++## Setup
++
++1. Install OpenCode (see https://opencode.ai for instructions).
++2. Sync shared assets:
++   ```sh
++   bash ../scripts/sync-skills.sh
++   ```
++3. Configure your provider API keys in `opencode.config.json` (or via environment
++   variables — see the OpenCode docs).
++4. Run:
++   ```sh
++   bash ../scripts/run-opencode.sh
++   ```
++
++## Configuration
++
++Edit `opencode.config.json` to:
++- Set your LLM provider and model.
++- Register MCP servers (see `shared/mcp/README.md`).
++- Point to the `agents/` and `skills/` directories.
++
++## Adding workflows
++
++Place OpenCode workflow template files (`.json` or `.yaml`) in `workflows/`.
++See the [OpenCode workflow docs](https://opencode.ai/docs/workflows) for the format.
++
++## Notes
++
++- Agent prompt files in `agents/` are auto-synced from `shared/agents/`.
++  Edit the originals in `shared/agents/` — do not edit the copies here directly.
++- The same applies to `skills/`.
+diff --git a/agent-runtime/opencode/agents/.gitkeep b/agent-runtime/opencode/agents/.gitkeep
+new file mode 100644
+index 000000000..e69de29bb
+diff --git a/agent-runtime/opencode/agents/implementer.md b/agent-runtime/opencode/agents/implementer.md
+new file mode 100644
+index 000000000..6770742a2
+--- /dev/null
++++ b/agent-runtime/opencode/agents/implementer.md
+@@ -0,0 +1,49 @@
++# Agent: Implementer
++
++## Role
++
++The Implementer writes, edits, and refactors code. It is the inner-loop execution engine
++of the system — it takes tasks from the Planner and turns them into working code.
++
++## Responsibilities
++
++- Read and understand the task definition from the Planner.
++- Write or edit code to satisfy the task's acceptance criteria.
++- Write accompanying unit/integration tests.
++- Commit changes with meaningful commit messages.
++- Communicate blockers or scope changes to the Planner immediately.
++
++## Persona
++
++You are a senior software engineer. You write clean, idiomatic, well-tested code.
++You follow the conventions of the existing codebase. You do not gold-plate; you
++implement exactly what is asked and no more.
++
++## Output format
++
++For each implementation session, produce:
++
++```
++## Task reference
++<task number and title from Planner>
++
++## What I did
++<brief narrative>
++
++## Files changed
++- path/to/file.ext — <reason>
++
++## Tests added / modified
++- path/to/test_file.ext
++
++## Open items / follow-ups
++- <item>
++```
++
++## Rules
++
++- Always check existing code patterns before introducing a new approach.
++- Never commit secrets or credentials.
++- Write tests before or alongside implementation (TDD preferred).
++- If a task is too large to complete in one session, split it and update the Planner.
++- When in doubt about the approach, ask the Reviewer before committing.
+diff --git a/agent-runtime/opencode/agents/pi.md b/agent-runtime/opencode/agents/pi.md
+new file mode 100644
+index 000000000..6bb8cfc07
+--- /dev/null
++++ b/agent-runtime/opencode/agents/pi.md
+@@ -0,0 +1,59 @@
++# Agent: PI (Principal Investigator)
++
++## Role
++
++The PI is the research and product intelligence agent. It investigates unknowns,
++synthesises external information, and produces specifications and design docs that
++the Planner and Implementer can act on.
++
++## Responsibilities
++
++- Research technologies, APIs, libraries, and prior art.
++- Write feature specifications, ADRs (Architecture Decision Records), and RFCs.
++- Evaluate trade-offs and produce recommendations.
++- Maintain the `shared/memory/` knowledge base (decisions, glossary).
++- Answer "how should we do X?" questions before implementation begins.
++
++## Persona
++
++You are a principal engineer and product researcher. You are thorough, precise, and
++evidence-based. You cite sources. You write for an audience of engineers, not managers.
++You distinguish clearly between facts, opinions, and hypotheses.
++
++## Output format
++
++For each investigation, produce:
++
++```
++## Investigation: <topic>
++
++### Question
++<the question being answered>
++
++### Findings
++- <finding> [source: <url or ref>]
++
++### Trade-offs
++| Option | Pros | Cons |
++|--------|------|------|
++| A      | …    | …    |
++| B      | …    | …    |
++
++### Recommendation
++<your recommendation and rationale>
++
++### Open questions
++- <question that remains unresolved>
++
++### Memory updates
++- decisions.md: <new decision to record>
++- glossary.md: <new term to add>
++```
++
++## Rules
++
++- Always cite sources for external claims.
++- Record important decisions in `shared/memory/decisions.md`.
++- Add new domain terms to `shared/memory/glossary.md`.
++- Avoid premature recommendations — gather evidence first.
++- Escalate architectural decisions to the Planner for task generation.
+diff --git a/agent-runtime/opencode/agents/planner.md b/agent-runtime/opencode/agents/planner.md
+new file mode 100644
+index 000000000..a0d050dd5
+--- /dev/null
++++ b/agent-runtime/opencode/agents/planner.md
+@@ -0,0 +1,49 @@
++# Agent: Planner
++
++## Role
++
++The Planner is responsible for breaking high-level goals into concrete, ordered tasks.
++It owns the roadmap and communicates priorities to all other agents.
++
++## Responsibilities
++
++- Analyse incoming requirements and identify unknowns.
++- Decompose work into discrete, testable tasks.
++- Maintain a prioritised task list (backlog → in-progress → done).
++- Detect and surface blockers early.
++- Coordinate handoffs between Implementer, Reviewer, and PI.
++
++## Persona
++
++You are a meticulous technical project planner. You ask clarifying questions before
++committing to a plan. You express plans as numbered lists with clear acceptance criteria.
++You do not write code; you write tasks.
++
++## Output format
++
++For each planning session, produce:
++
++```
++## Goal
++<one-sentence goal>
++
++## Context
++<any relevant background>
++
++## Tasks
++1. [ ] <task> — owner: <Implementer|Reviewer|PI> — priority: <high|medium|low>
++2. [ ] …
++
++## Open questions
++- <question> → needs answer from <agent|human>
++
++## Done criteria
++- <criterion>
++```
++
++## Rules
++
++- Never start implementation work yourself.
++- Always ask for clarification when acceptance criteria are ambiguous.
++- Keep tasks small enough to complete in one agent session (~30 min of work).
++- Flag risks explicitly with `⚠️ RISK:` prefix.
+diff --git a/agent-runtime/opencode/agents/reviewer.md b/agent-runtime/opencode/agents/reviewer.md
+new file mode 100644
+index 000000000..4e6ab473c
+--- /dev/null
++++ b/agent-runtime/opencode/agents/reviewer.md
+@@ -0,0 +1,51 @@
++# Agent: Reviewer
++
++## Role
++
++The Reviewer checks code quality, documentation, correctness, and risk. It is the
++quality gate before any work is considered done.
++
++## Responsibilities
++
++- Review diffs produced by the Implementer.
++- Check for correctness, test coverage, security issues, and style violations.
++- Review documentation and README updates for accuracy.
++- Approve or request changes with clear, actionable feedback.
++- Escalate security or architectural concerns to the Planner.
++
++## Persona
++
++You are a careful, thorough code reviewer with a security mindset. You give
++constructive, specific feedback. You do not nitpick style unless it violates
++project conventions. You distinguish between blockers and suggestions.
++
++## Output format
++
++For each review session, produce:
++
++```
++## Review of: <task/PR reference>
++
++### Summary
++<one-paragraph assessment>
++
++### Blockers (must fix before merge)
++- [ ] <file>:<line> — <issue> — <suggested fix>
++
++### Suggestions (nice to have)
++- [ ] <file>:<line> — <suggestion>
++
++### Security notes
++- <any security-relevant observations>
++
++### Verdict
++APPROVE | REQUEST CHANGES | NEEDS DISCUSSION
++```
++
++## Rules
++
++- Always look at the test coverage first — insufficient tests are a blocker.
++- Flag any hardcoded secrets, credentials, or API keys immediately.
++- Do not approve code that removes or weakens existing tests without justification.
++- If you cannot understand what a piece of code does, that is a documentation blocker.
++- Separate "must fix" from "optional improvement" clearly.
+diff --git a/agent-runtime/opencode/opencode.config.json b/agent-runtime/opencode/opencode.config.json
+new file mode 100644
+index 000000000..fb8fce391
+--- /dev/null
++++ b/agent-runtime/opencode/opencode.config.json
+@@ -0,0 +1,39 @@
++{
++  "$schema": "https://opencode.ai/config.schema.json",
++  "provider": {
++    "model": "claude-3-5-sonnet-20241022",
++    "apiKey": "${ANTHROPIC_API_KEY}"
++  },
++  "agentsDir": "./agents",
++  "skillsDir": "./skills",
++  "mcpServers": {
++    "filesystem": {
++      "command": "npx",
++      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
++      "enabled": true
++    },
++    "git": {
++      "command": "npx",
++      "args": ["-y", "@modelcontextprotocol/server-git", "--repository", "."],
++      "enabled": true
++    }
++  },
++  "sessions": {
++    "planner": {
++      "agent": "planner",
++      "description": "Breaks goals into ordered tasks"
++    },
++    "implementer": {
++      "agent": "implementer",
++      "description": "Writes and edits code"
++    },
++    "reviewer": {
++      "agent": "reviewer",
++      "description": "Reviews code quality and correctness"
++    },
++    "pi": {
++      "agent": "pi",
++      "description": "Research and product intelligence"
++    }
++  }
++}
+diff --git a/agent-runtime/opencode/skills/.gitkeep b/agent-runtime/opencode/skills/.gitkeep
+new file mode 100644
+index 000000000..e69de29bb
+diff --git a/agent-runtime/opencode/skills/README.md b/agent-runtime/opencode/skills/README.md
+new file mode 100644
+index 000000000..0bcdf2b53
+--- /dev/null
++++ b/agent-runtime/opencode/skills/README.md
+@@ -0,0 +1,44 @@
++# Shared Skills
++
++This directory contains reusable skill packs shared across all runtime adapters.
++
++## Structure
++
++```
++skills/
++├── README.md       ← this file
++├── memory/         ← memory management skills
++├── code/           ← code generation / editing skills
++├── repo/           ← git / repo management skills
++└── qa/             ← quality assurance / testing skills
++```
++
++## What is a skill?
++
++A skill is a packaged, reusable capability. Each skill folder contains:
++
++- `README.md` — describes what the skill does and how to invoke it
++- One or more prompt template files (`.md`)
++- Optional supporting scripts or config fragments
++
++## How skills are distributed
++
++Run `bash scripts/sync-skills.sh` from the `agent-runtime/` root to copy the
++contents of this directory into each adapter's `skills/` folder. The sync is a
++plain file copy (no symlinks) so it works on any platform.
++
++## Adding a skill
++
++1. Create a new folder under the appropriate category (or add a new category folder).
++2. Add a `README.md` explaining the skill's purpose, inputs, and expected outputs.
++3. Add prompt template(s) as `.md` files.
++4. Run `bash scripts/sync-skills.sh`.
++
++## Skill categories
++
++| Category | Purpose |
++|----------|---------|
++| `memory/` | Read/write scratchpad, decisions, glossary |
++| `code/` | Code generation, refactoring, explanation |
++| `repo/` | Git operations, PR creation, branch management |
++| `qa/` | Test generation, test review, coverage analysis |
+diff --git a/agent-runtime/opencode/skills/code/README.md b/agent-runtime/opencode/skills/code/README.md
+new file mode 100644
+index 000000000..dfba65586
+--- /dev/null
++++ b/agent-runtime/opencode/skills/code/README.md
+@@ -0,0 +1,44 @@
++# Skill: code
++
++Code generation, editing, refactoring, and explanation skills.
++
++## Prompts
++
++### generate-function
++
++```
++Write a {{language}} function named {{name}} that:
++- Accepts: {{inputs}}
++- Returns: {{output}}
++- Behaviour: {{description}}
++Follow the conventions in the existing codebase.
++Include a docstring and unit tests.
++```
++
++### explain-code
++
++```
++Explain the following code in plain English.
++Describe what it does, any edge cases it handles, and any potential issues:
++
++{{code}}
++```
++
++### refactor
++
++```
++Refactor the following code to improve {{goal}} (e.g. readability, performance, testability).
++Do not change the external behaviour.
++Explain each change you make:
++
++{{code}}
++```
++
++### fix-bug
++
++```
++The following code has a bug described as: {{bug_description}}
++Fix the bug and explain what caused it:
++
++{{code}}
++```
+diff --git a/agent-runtime/opencode/skills/memory/README.md b/agent-runtime/opencode/skills/memory/README.md
+new file mode 100644
+index 000000000..bd20930de
+--- /dev/null
++++ b/agent-runtime/opencode/skills/memory/README.md
+@@ -0,0 +1,37 @@
++# Skill: memory
++
++Read from and write to the shared memory files (scratchpad, decisions, glossary).
++
++## Prompts
++
++### read-scratchpad
++
++```
++Read the current contents of shared/memory/scratchpad.md and summarise the active context.
++```
++
++### write-scratchpad
++
++```
++Append the following note to shared/memory/scratchpad.md under "Active context":
++{{note}}
++```
++
++### record-decision
++
++```
++Add a new entry to shared/memory/decisions.md using the decision template.
++Fill in the fields as follows:
++- Title: {{title}}
++- Context: {{context}}
++- Decision: {{decision}}
++- Rationale: {{rationale}}
++```
++
++### add-glossary-term
++
++```
++Add the following term to shared/memory/glossary.md:
++- Term: {{term}}
++- Definition: {{definition}}
++```
+diff --git a/agent-runtime/opencode/skills/qa/README.md b/agent-runtime/opencode/skills/qa/README.md
+new file mode 100644
+index 000000000..fb36962c3
+--- /dev/null
++++ b/agent-runtime/opencode/skills/qa/README.md
+@@ -0,0 +1,50 @@
++# Skill: qa
++
++Quality assurance and testing skills — test generation, review, and coverage analysis.
++
++## Prompts
++
++### generate-tests
++
++```
++Write {{test_framework}} tests for the following code.
++Cover: happy path, edge cases, and error conditions.
++{{code}}
++```
++
++### review-test-coverage
++
++```
++Review the test file below and identify:
++1. Untested code paths
++2. Weak assertions (e.g. assertTrue(true))
++3. Missing edge cases
++4. Any tests that are brittle or hard to maintain
++
++{{test_code}}
++```
++
++### write-test-plan
++
++```
++Write a test plan for the following feature:
++{{feature_description}}
++
++Include:
++- Unit tests (what functions/methods to test)
++- Integration tests (what interactions to test)
++- Edge cases
++- Performance considerations (if any)
++```
++
++### analyze-failure
++
++```
++A test is failing with the following output:
++{{test_output}}
++
++The relevant code is:
++{{code}}
++
++Diagnose the failure and suggest a fix.
++```
+diff --git a/agent-runtime/opencode/skills/repo/README.md b/agent-runtime/opencode/skills/repo/README.md
+new file mode 100644
+index 000000000..e10c7116b
+--- /dev/null
++++ b/agent-runtime/opencode/skills/repo/README.md
+@@ -0,0 +1,47 @@
++# Skill: repo
++
++Git repository management skills — branching, committing, and PR workflows.
++
++## Prompts
++
++### create-branch
++
++```
++Create a new git branch named {{branch_name}} from {{base_branch}}.
++Use a conventional name format: <type>/<short-description>
++(e.g. feat/add-login, fix/null-pointer, chore/update-deps)
++```
++
++### write-commit-message
++
++```
++Write a conventional commit message for the following change:
++{{diff_summary}}
++
++Format: <type>(<scope>): <short description>
++Types: feat, fix, docs, style, refactor, test, chore
++Keep the subject line under 72 characters.
++```
++
++### create-pr-description
++
++```
++Write a pull request description for the following change:
++- Branch: {{branch}}
++- Summary of changes: {{summary}}
++- Related issue (if any): {{issue}}
++
++Include: What, Why, How, and Testing sections.
++```
++
++### review-diff
++
++```
++Review the following git diff and identify:
++1. Any bugs or logic errors
++2. Missing tests
++3. Security concerns
++4. Style violations
++
++{{diff}}
++```
+diff --git a/agent-runtime/opencode/workflows/README.md b/agent-runtime/opencode/workflows/README.md
+new file mode 100644
+index 000000000..80969c7d6
+--- /dev/null
++++ b/agent-runtime/opencode/workflows/README.md
+@@ -0,0 +1,27 @@
++# OpenCode Workflows
++
++Place OpenCode workflow template files here.
++
++A workflow is a multi-step sequence of agent actions that OpenCode can execute
++automatically. See the [OpenCode docs](https://opencode.ai/docs/workflows) for
++the workflow file format.
++
++## Example workflow structure
++
++```json
++{
++  "name": "feature-workflow",
++  "steps": [
++    { "agent": "pi",          "task": "Research and spec the feature" },
++    { "agent": "planner",     "task": "Break the spec into tasks" },
++    { "agent": "implementer", "task": "Implement the tasks" },
++    { "agent": "reviewer",    "task": "Review the implementation" }
++  ]
++}
++```
++
++## Adding workflows
++
++1. Create a `.json` or `.yaml` file in this directory.
++2. Reference the agent names defined in `opencode.config.json`.
++3. Run the workflow with: `opencode workflow run <name>`
+diff --git a/agent-runtime/pi/AGENTS.md b/agent-runtime/pi/AGENTS.md
+new file mode 100644
+index 000000000..6ae0a6667
+--- /dev/null
++++ b/agent-runtime/pi/AGENTS.md
+@@ -0,0 +1,55 @@
++# AGENTS.md — Pi Agent Definitions
++
++This file defines the agents available in the Pi runtime for this project.
++Adapt the format to match your Pi distribution's expected schema.
++
++---
++
++## Agent: PI (Principal Investigator)
++
++**Description**: Research and product intelligence agent. Investigates unknowns,
++synthesises external information, and produces specifications.
++
++**System prompt file**: `prompts/pi-system.md`
++
++**Capabilities**:
++- Web research and synthesis
++- Specification and RFC writing
++- Architecture Decision Records (ADRs)
++- Trade-off analysis
++- Knowledge base maintenance (`shared/memory/`)
++
++**Model**: claude-3-5-sonnet-20241022 (or configured provider)
++
++---
++
++## Agent: Planner
++
++**Description**: Breaks goals into ordered, testable tasks. Owns the roadmap.
++
++**System prompt file**: `../shared/agents/planner.md`
++
++---
++
++## Agent: Implementer
++
++**Description**: Writes, edits, and refactors code.
++
++**System prompt file**: `../shared/agents/implementer.md`
++
++---
++
++## Agent: Reviewer
++
++**Description**: Reviews code, documentation, and correctness.
++
++**System prompt file**: `../shared/agents/reviewer.md`
++
++---
++
++## Notes
++
++- This file follows a Pi-compatible format. Check your Pi version for the exact schema.
++- System prompt paths are relative to this file's location (`pi/`).
++- To add a new agent, copy one of the blocks above and update the fields.
++- Run `bash scripts/pi-run.sh --list-agents` to verify Pi reads this file correctly.
+diff --git a/agent-runtime/pi/README.md b/agent-runtime/pi/README.md
+new file mode 100644
+index 000000000..183c8ad73
+--- /dev/null
++++ b/agent-runtime/pi/README.md
+@@ -0,0 +1,54 @@
++# Pi Adapter
++
++This directory contains the Pi coding-agent runtime adapter for the agent-runtime system.
++
++## What is Pi?
++
++Pi is an experimental, extensible coding-agent runtime. It is designed to be
++customised and extended — making it ideal for novel agent configurations, research,
++and specialised workflows that don't fit neatly into OpenCode or Aider.
++
++In this system, Pi is used for the **PI (Principal Investigator)** agent role:
++research, specification writing, and product intelligence.
++
++## Directory structure
++
++```
++pi/
++├── README.md      ← this file
++├── AGENTS.md      ← Pi agent definitions (Pi-native format)
++├── prompts/       ← Pi prompt templates
++├── skills/        ← skill packs (copied from shared/skills by sync-skills.sh)
++└── scripts/
++    └── pi-run.sh  ← convenience launch script
++```
++
++## Setup
++
++1. Install Pi (see your Pi distribution or `pi-mono` for installation instructions).
++2. Sync shared assets:
++   ```sh
++   bash ../scripts/sync-skills.sh
++   ```
++3. Set your API key:
++   ```sh
++   export ANTHROPIC_API_KEY=sk-ant-...
++   ```
++4. Run:
++   ```sh
++   bash scripts/pi-run.sh
++   # or
++   bash ../scripts/run-pi.sh
++   ```
++
++## Configuration
++
++Edit `AGENTS.md` to define Pi agent personas and capabilities.
++Add prompt templates to `prompts/` and reference them from `AGENTS.md`.
++
++## Notes
++
++- Skills in `skills/` are auto-synced from `shared/skills/`. Do not edit them here.
++- Pi's exact configuration format depends on the Pi distribution you are using.
++  The files here are placeholders — adapt them to your Pi version.
++- See `shared/agents/pi.md` for the canonical PI agent prompt.
+diff --git a/agent-runtime/pi/agents/.gitkeep b/agent-runtime/pi/agents/.gitkeep
+new file mode 100644
+index 000000000..e69de29bb
+diff --git a/agent-runtime/pi/agents/implementer.md b/agent-runtime/pi/agents/implementer.md
+new file mode 100644
+index 000000000..6770742a2
+--- /dev/null
++++ b/agent-runtime/pi/agents/implementer.md
+@@ -0,0 +1,49 @@
++# Agent: Implementer
++
++## Role
++
++The Implementer writes, edits, and refactors code. It is the inner-loop execution engine
++of the system — it takes tasks from the Planner and turns them into working code.
++
++## Responsibilities
++
++- Read and understand the task definition from the Planner.
++- Write or edit code to satisfy the task's acceptance criteria.
++- Write accompanying unit/integration tests.
++- Commit changes with meaningful commit messages.
++- Communicate blockers or scope changes to the Planner immediately.
++
++## Persona
++
++You are a senior software engineer. You write clean, idiomatic, well-tested code.
++You follow the conventions of the existing codebase. You do not gold-plate; you
++implement exactly what is asked and no more.
++
++## Output format
++
++For each implementation session, produce:
++
++```
++## Task reference
++<task number and title from Planner>
++
++## What I did
++<brief narrative>
++
++## Files changed
++- path/to/file.ext — <reason>
++
++## Tests added / modified
++- path/to/test_file.ext
++
++## Open items / follow-ups
++- <item>
++```
++
++## Rules
++
++- Always check existing code patterns before introducing a new approach.
++- Never commit secrets or credentials.
++- Write tests before or alongside implementation (TDD preferred).
++- If a task is too large to complete in one session, split it and update the Planner.
++- When in doubt about the approach, ask the Reviewer before committing.
+diff --git a/agent-runtime/pi/agents/pi.md b/agent-runtime/pi/agents/pi.md
+new file mode 100644
+index 000000000..6bb8cfc07
+--- /dev/null
++++ b/agent-runtime/pi/agents/pi.md
+@@ -0,0 +1,59 @@
++# Agent: PI (Principal Investigator)
++
++## Role
++
++The PI is the research and product intelligence agent. It investigates unknowns,
++synthesises external information, and produces specifications and design docs that
++the Planner and Implementer can act on.
++
++## Responsibilities
++
++- Research technologies, APIs, libraries, and prior art.
++- Write feature specifications, ADRs (Architecture Decision Records), and RFCs.
++- Evaluate trade-offs and produce recommendations.
++- Maintain the `shared/memory/` knowledge base (decisions, glossary).
++- Answer "how should we do X?" questions before implementation begins.
++
++## Persona
++
++You are a principal engineer and product researcher. You are thorough, precise, and
++evidence-based. You cite sources. You write for an audience of engineers, not managers.
++You distinguish clearly between facts, opinions, and hypotheses.
++
++## Output format
++
++For each investigation, produce:
++
++```
++## Investigation: <topic>
++
++### Question
++<the question being answered>
++
++### Findings
++- <finding> [source: <url or ref>]
++
++### Trade-offs
++| Option | Pros | Cons |
++|--------|------|------|
++| A      | …    | …    |
++| B      | …    | …    |
++
++### Recommendation
++<your recommendation and rationale>
++
++### Open questions
++- <question that remains unresolved>
++
++### Memory updates
++- decisions.md: <new decision to record>
++- glossary.md: <new term to add>
++```
++
++## Rules
++
++- Always cite sources for external claims.
++- Record important decisions in `shared/memory/decisions.md`.
++- Add new domain terms to `shared/memory/glossary.md`.
++- Avoid premature recommendations — gather evidence first.
++- Escalate architectural decisions to the Planner for task generation.
+diff --git a/agent-runtime/pi/agents/planner.md b/agent-runtime/pi/agents/planner.md
+new file mode 100644
+index 000000000..a0d050dd5
+--- /dev/null
++++ b/agent-runtime/pi/agents/planner.md
+@@ -0,0 +1,49 @@
++# Agent: Planner
++
++## Role
++
++The Planner is responsible for breaking high-level goals into concrete, ordered tasks.
++It owns the roadmap and communicates priorities to all other agents.
++
++## Responsibilities
++
++- Analyse incoming requirements and identify unknowns.
++- Decompose work into discrete, testable tasks.
++- Maintain a prioritised task list (backlog → in-progress → done).
++- Detect and surface blockers early.
++- Coordinate handoffs between Implementer, Reviewer, and PI.
++
++## Persona
++
++You are a meticulous technical project planner. You ask clarifying questions before
++committing to a plan. You express plans as numbered lists with clear acceptance criteria.
++You do not write code; you write tasks.
++
++## Output format
++
++For each planning session, produce:
++
++```
++## Goal
++<one-sentence goal>
++
++## Context
++<any relevant background>
++
++## Tasks
++1. [ ] <task> — owner: <Implementer|Reviewer|PI> — priority: <high|medium|low>
++2. [ ] …
++
++## Open questions
++- <question> → needs answer from <agent|human>
++
++## Done criteria
++- <criterion>
++```
++
++## Rules
++
++- Never start implementation work yourself.
++- Always ask for clarification when acceptance criteria are ambiguous.
++- Keep tasks small enough to complete in one agent session (~30 min of work).
++- Flag risks explicitly with `⚠️ RISK:` prefix.
+diff --git a/agent-runtime/pi/agents/reviewer.md b/agent-runtime/pi/agents/reviewer.md
+new file mode 100644
+index 000000000..4e6ab473c
+--- /dev/null
++++ b/agent-runtime/pi/agents/reviewer.md
+@@ -0,0 +1,51 @@
++# Agent: Reviewer
++
++## Role
++
++The Reviewer checks code quality, documentation, correctness, and risk. It is the
++quality gate before any work is considered done.
++
++## Responsibilities
++
++- Review diffs produced by the Implementer.
++- Check for correctness, test coverage, security issues, and style violations.
++- Review documentation and README updates for accuracy.
++- Approve or request changes with clear, actionable feedback.
++- Escalate security or architectural concerns to the Planner.
++
++## Persona
++
++You are a careful, thorough code reviewer with a security mindset. You give
++constructive, specific feedback. You do not nitpick style unless it violates
++project conventions. You distinguish between blockers and suggestions.
++
++## Output format
++
++For each review session, produce:
++
++```
++## Review of: <task/PR reference>
++
++### Summary
++<one-paragraph assessment>
++
++### Blockers (must fix before merge)
++- [ ] <file>:<line> — <issue> — <suggested fix>
++
++### Suggestions (nice to have)
++- [ ] <file>:<line> — <suggestion>
++
++### Security notes
++- <any security-relevant observations>
++
++### Verdict
++APPROVE | REQUEST CHANGES | NEEDS DISCUSSION
++```
++
++## Rules
++
++- Always look at the test coverage first — insufficient tests are a blocker.
++- Flag any hardcoded secrets, credentials, or API keys immediately.
++- Do not approve code that removes or weakens existing tests without justification.
++- If you cannot understand what a piece of code does, that is a documentation blocker.
++- Separate "must fix" from "optional improvement" clearly.
+diff --git a/agent-runtime/pi/prompts/README.md b/agent-runtime/pi/prompts/README.md
+new file mode 100644
+index 000000000..46a7d2cde
+--- /dev/null
++++ b/agent-runtime/pi/prompts/README.md
+@@ -0,0 +1,26 @@
++# Pi Prompts
++
++Place Pi-native prompt template files (`.md`) here.
++
++These are referenced from `AGENTS.md` via the `System prompt file` field.
++
++## Provided prompts
++
++_None yet — add your own here._
++
++## Example: PI agent system prompt file
++
++Create `prompts/pi-system.md` with content like:
++
++```markdown
++You are the PI (Principal Investigator) agent. Your role is to research
++unknowns, synthesise information, and produce actionable specifications.
++
++Always cite sources. Record decisions in shared/memory/decisions.md.
++```
++
++Then in `AGENTS.md` set:
++
++```
++**System prompt file**: prompts/pi-system.md
++```
+diff --git a/agent-runtime/pi/scripts/pi-run.sh b/agent-runtime/pi/scripts/pi-run.sh
+new file mode 100755
+index 000000000..b2341d2d7
+--- /dev/null
++++ b/agent-runtime/pi/scripts/pi-run.sh
+@@ -0,0 +1,32 @@
++#!/bin/sh
++# pi-run.sh — launch the Pi coding-agent runtime
++# Usage: sh pi/scripts/pi-run.sh [pi args...]
++#
++# NOTE: This is a placeholder script. Replace the `pi` command below with the
++# actual invocation for your Pi distribution (e.g. `bun run pi`, `node pi/index.js`,
++# `python -m pi`, etc.).
++set -eu
++
++SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
++PI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
++RUNTIME_DIR="$(cd "$PI_DIR/.." && pwd)"
++
++# Sync shared assets before launching
++sh "$RUNTIME_DIR/scripts/sync-skills.sh"
++
++# Check Pi is installed
++# Replace 'pi' below with the actual binary/command for your Pi distribution.
++if ! command -v pi > /dev/null 2>&1; then
++  echo "ERROR: 'pi' command not found." >&2
++  echo "Install your Pi distribution and ensure it is on PATH." >&2
++  echo "Common options:" >&2
++  echo "  bun install -g pi" >&2
++  echo "  npm install -g @badlogic/pi" >&2
++  exit 1
++fi
++
++cd "$PI_DIR"
++
++echo "==> Starting Pi from $PI_DIR"
++# Replace the command below with the correct invocation for your Pi version:
++exec pi --agents AGENTS.md "$@"
+diff --git a/agent-runtime/pi/skills/.gitkeep b/agent-runtime/pi/skills/.gitkeep
+new file mode 100644
+index 000000000..e69de29bb
+diff --git a/agent-runtime/pi/skills/README.md b/agent-runtime/pi/skills/README.md
+new file mode 100644
+index 000000000..0bcdf2b53
+--- /dev/null
++++ b/agent-runtime/pi/skills/README.md
+@@ -0,0 +1,44 @@
++# Shared Skills
++
++This directory contains reusable skill packs shared across all runtime adapters.
++
++## Structure
++
++```
++skills/
++├── README.md       ← this file
++├── memory/         ← memory management skills
++├── code/           ← code generation / editing skills
++├── repo/           ← git / repo management skills
++└── qa/             ← quality assurance / testing skills
++```
++
++## What is a skill?
++
++A skill is a packaged, reusable capability. Each skill folder contains:
++
++- `README.md` — describes what the skill does and how to invoke it
++- One or more prompt template files (`.md`)
++- Optional supporting scripts or config fragments
++
++## How skills are distributed
++
++Run `bash scripts/sync-skills.sh` from the `agent-runtime/` root to copy the
++contents of this directory into each adapter's `skills/` folder. The sync is a
++plain file copy (no symlinks) so it works on any platform.
++
++## Adding a skill
++
++1. Create a new folder under the appropriate category (or add a new category folder).
++2. Add a `README.md` explaining the skill's purpose, inputs, and expected outputs.
++3. Add prompt template(s) as `.md` files.
++4. Run `bash scripts/sync-skills.sh`.
++
++## Skill categories
++
++| Category | Purpose |
++|----------|---------|
++| `memory/` | Read/write scratchpad, decisions, glossary |
++| `code/` | Code generation, refactoring, explanation |
++| `repo/` | Git operations, PR creation, branch management |
++| `qa/` | Test generation, test review, coverage analysis |
+diff --git a/agent-runtime/pi/skills/code/README.md b/agent-runtime/pi/skills/code/README.md
+new file mode 100644
+index 000000000..dfba65586
+--- /dev/null
++++ b/agent-runtime/pi/skills/code/README.md
+@@ -0,0 +1,44 @@
++# Skill: code
++
++Code generation, editing, refactoring, and explanation skills.
++
++## Prompts
++
++### generate-function
++
++```
++Write a {{language}} function named {{name}} that:
++- Accepts: {{inputs}}
++- Returns: {{output}}
++- Behaviour: {{description}}
++Follow the conventions in the existing codebase.
++Include a docstring and unit tests.
++```
++
++### explain-code
++
++```
++Explain the following code in plain English.
++Describe what it does, any edge cases it handles, and any potential issues:
++
++{{code}}
++```
++
++### refactor
++
++```
++Refactor the following code to improve {{goal}} (e.g. readability, performance, testability).
++Do not change the external behaviour.
++Explain each change you make:
++
++{{code}}
++```
++
++### fix-bug
++
++```
++The following code has a bug described as: {{bug_description}}
++Fix the bug and explain what caused it:
++
++{{code}}
++```
+diff --git a/agent-runtime/pi/skills/memory/README.md b/agent-runtime/pi/skills/memory/README.md
+new file mode 100644
+index 000000000..bd20930de
+--- /dev/null
++++ b/agent-runtime/pi/skills/memory/README.md
+@@ -0,0 +1,37 @@
++# Skill: memory
++
++Read from and write to the shared memory files (scratchpad, decisions, glossary).
++
++## Prompts
++
++### read-scratchpad
++
++```
++Read the current contents of shared/memory/scratchpad.md and summarise the active context.
++```
++
++### write-scratchpad
++
++```
++Append the following note to shared/memory/scratchpad.md under "Active context":
++{{note}}
++```
++
++### record-decision
++
++```
++Add a new entry to shared/memory/decisions.md using the decision template.
++Fill in the fields as follows:
++- Title: {{title}}
++- Context: {{context}}
++- Decision: {{decision}}
++- Rationale: {{rationale}}
++```
++
++### add-glossary-term
++
++```
++Add the following term to shared/memory/glossary.md:
++- Term: {{term}}
++- Definition: {{definition}}
++```
+diff --git a/agent-runtime/pi/skills/qa/README.md b/agent-runtime/pi/skills/qa/README.md
+new file mode 100644
+index 000000000..fb36962c3
+--- /dev/null
++++ b/agent-runtime/pi/skills/qa/README.md
+@@ -0,0 +1,50 @@
++# Skill: qa
++
++Quality assurance and testing skills — test generation, review, and coverage analysis.
++
++## Prompts
++
++### generate-tests
++
++```
++Write {{test_framework}} tests for the following code.
++Cover: happy path, edge cases, and error conditions.
++{{code}}
++```
++
++### review-test-coverage
++
++```
++Review the test file below and identify:
++1. Untested code paths
++2. Weak assertions (e.g. assertTrue(true))
++3. Missing edge cases
++4. Any tests that are brittle or hard to maintain
++
++{{test_code}}
++```
++
++### write-test-plan
++
++```
++Write a test plan for the following feature:
++{{feature_description}}
++
++Include:
++- Unit tests (what functions/methods to test)
++- Integration tests (what interactions to test)
++- Edge cases
++- Performance considerations (if any)
++```
++
++### analyze-failure
++
++```
++A test is failing with the following output:
++{{test_output}}
++
++The relevant code is:
++{{code}}
++
++Diagnose the failure and suggest a fix.
++```
+diff --git a/agent-runtime/pi/skills/repo/README.md b/agent-runtime/pi/skills/repo/README.md
+new file mode 100644
+index 000000000..e10c7116b
+--- /dev/null
++++ b/agent-runtime/pi/skills/repo/README.md
+@@ -0,0 +1,47 @@
++# Skill: repo
++
++Git repository management skills — branching, committing, and PR workflows.
++
++## Prompts
++
++### create-branch
++
++```
++Create a new git branch named {{branch_name}} from {{base_branch}}.
++Use a conventional name format: <type>/<short-description>
++(e.g. feat/add-login, fix/null-pointer, chore/update-deps)
++```
++
++### write-commit-message
++
++```
++Write a conventional commit message for the following change:
++{{diff_summary}}
++
++Format: <type>(<scope>): <short description>
++Types: feat, fix, docs, style, refactor, test, chore
++Keep the subject line under 72 characters.
++```
++
++### create-pr-description
++
++```
++Write a pull request description for the following change:
++- Branch: {{branch}}
++- Summary of changes: {{summary}}
++- Related issue (if any): {{issue}}
++
++Include: What, Why, How, and Testing sections.
++```
++
++### review-diff
++
++```
++Review the following git diff and identify:
++1. Any bugs or logic errors
++2. Missing tests
++3. Security concerns
++4. Style violations
++
++{{diff}}
++```
+diff --git a/agent-runtime/scripts/launch-deck.sh b/agent-runtime/scripts/launch-deck.sh
+new file mode 100755
+index 000000000..d530ee660
+--- /dev/null
++++ b/agent-runtime/scripts/launch-deck.sh
+@@ -0,0 +1,26 @@
++#!/bin/sh
++# launch-deck.sh — launch Agent Deck cockpit pointed at this runtime
++# Usage: sh scripts/launch-deck.sh [agent-deck args...]
++set -eu
++
++SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
++RUNTIME_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
++
++# Load .env if present (never committed)
++if [ -f "$RUNTIME_DIR/.env" ]; then
++  # shellcheck disable=SC1091
++  . "$RUNTIME_DIR/.env"
++fi
++
++# Check Agent Deck is installed
++if ! command -v agent-deck > /dev/null 2>&1; then
++  echo "ERROR: agent-deck not found." >&2
++  echo "Install with:" >&2
++  echo "  curl -fsSL https://raw.githubusercontent.com/asheshgoplani/agent-deck/main/install.sh | bash" >&2
++  exit 1
++fi
++
++cd "$RUNTIME_DIR"
++echo "==> Launching Agent Deck from $RUNTIME_DIR"
++echo "    Config: agent-deck/config.toml"
++exec agent-deck --config agent-deck/config.toml "$@"
+diff --git a/agent-runtime/scripts/run-aider.sh b/agent-runtime/scripts/run-aider.sh
+new file mode 100755
+index 000000000..85eb407ff
+--- /dev/null
++++ b/agent-runtime/scripts/run-aider.sh
+@@ -0,0 +1,26 @@
++#!/bin/sh
++# run-aider.sh — launch the Aider runtime adapter
++# Usage: sh scripts/run-aider.sh [aider args...]
++set -eu
++
++SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
++RUNTIME_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
++
++# Load .env if present (never committed)
++if [ -f "$RUNTIME_DIR/.env" ]; then
++  # shellcheck disable=SC1091
++  . "$RUNTIME_DIR/.env"
++fi
++
++# Sync shared assets
++sh "$SCRIPT_DIR/sync-skills.sh"
++
++# Check Aider is installed
++if ! command -v aider > /dev/null 2>&1; then
++  echo "ERROR: aider not found. Install with: pip install aider-chat" >&2
++  exit 1
++fi
++
++cd "$RUNTIME_DIR/aider"
++echo "==> Starting Aider from $RUNTIME_DIR/aider"
++exec aider --config aider.conf.yml "$@"
+diff --git a/agent-runtime/scripts/run-all.sh b/agent-runtime/scripts/run-all.sh
+new file mode 100755
+index 000000000..d22ad3e9f
+--- /dev/null
++++ b/agent-runtime/scripts/run-all.sh
+@@ -0,0 +1,66 @@
++#!/bin/sh
++# run-all.sh — sync shared assets and launch all three runtime adapters in the
++# background, then launch Agent Deck in the foreground.
++#
++# Usage: sh scripts/run-all.sh
++# Stop with Ctrl-C (Agent Deck will exit; background adapters must be stopped
++# manually or via Agent Deck's session manager).
++set -eu
++
++SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
++RUNTIME_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
++
++# Load .env if present (never committed)
++if [ -f "$RUNTIME_DIR/.env" ]; then
++  # shellcheck disable=SC1091
++  . "$RUNTIME_DIR/.env"
++fi
++
++echo "==> Syncing shared assets"
++sh "$SCRIPT_DIR/sync-skills.sh"
++
++echo ""
++echo "==> Starting runtime adapters in the background"
++
++# OpenCode (background)
++if command -v opencode > /dev/null 2>&1; then
++  cd "$RUNTIME_DIR/opencode"
++  opencode &
++  OPENCODE_PID=$!
++  echo "    OpenCode started (PID $OPENCODE_PID)"
++else
++  echo "    [skip] opencode not found on PATH"
++fi
++
++# Aider (background)
++if command -v aider > /dev/null 2>&1; then
++  cd "$RUNTIME_DIR/aider"
++  aider --config aider.conf.yml &
++  AIDER_PID=$!
++  echo "    Aider started (PID $AIDER_PID)"
++else
++  echo "    [skip] aider not found on PATH"
++fi
++
++# Pi (background)
++if command -v pi > /dev/null 2>&1; then
++  cd "$RUNTIME_DIR/pi"
++  pi --agents AGENTS.md &
++  PI_PID=$!
++  echo "    Pi started (PID $PI_PID)"
++else
++  echo "    [skip] pi not found on PATH"
++fi
++
++echo ""
++echo "==> Launching Agent Deck (foreground)"
++cd "$RUNTIME_DIR"
++
++if command -v agent-deck > /dev/null 2>&1; then
++  exec agent-deck --config agent-deck/config.toml
++else
++  echo "ERROR: agent-deck not found." >&2
++  echo "Install with:" >&2
++  echo "  curl -fsSL https://raw.githubusercontent.com/asheshgoplani/agent-deck/main/install.sh | bash" >&2
++  exit 1
++fi
+diff --git a/agent-runtime/scripts/run-opencode.sh b/agent-runtime/scripts/run-opencode.sh
+new file mode 100755
+index 000000000..76932e05d
+--- /dev/null
++++ b/agent-runtime/scripts/run-opencode.sh
+@@ -0,0 +1,26 @@
++#!/bin/sh
++# run-opencode.sh — launch the OpenCode runtime adapter
++# Usage: sh scripts/run-opencode.sh [opencode args...]
++set -eu
++
++SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
++RUNTIME_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
++
++# Load .env if present (never committed)
++if [ -f "$RUNTIME_DIR/.env" ]; then
++  # shellcheck disable=SC1091
++  . "$RUNTIME_DIR/.env"
++fi
++
++# Sync shared assets
++sh "$SCRIPT_DIR/sync-skills.sh"
++
++# Check OpenCode is installed
++if ! command -v opencode > /dev/null 2>&1; then
++  echo "ERROR: opencode not found. See https://opencode.ai for installation." >&2
++  exit 1
++fi
++
++cd "$RUNTIME_DIR/opencode"
++echo "==> Starting OpenCode from $RUNTIME_DIR/opencode"
++exec opencode "$@"
+diff --git a/agent-runtime/scripts/run-pi.sh b/agent-runtime/scripts/run-pi.sh
+new file mode 100755
+index 000000000..9a070a925
+--- /dev/null
++++ b/agent-runtime/scripts/run-pi.sh
+@@ -0,0 +1,31 @@
++#!/bin/sh
++# run-pi.sh — launch the Pi coding-agent runtime adapter
++# Usage: sh scripts/run-pi.sh [pi args...]
++#
++# NOTE: Replace the `pi` invocation below with the correct command for your
++# Pi distribution (e.g. `bun run pi`, `node pi/index.js`, etc.).
++set -eu
++
++SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
++RUNTIME_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
++
++# Load .env if present (never committed)
++if [ -f "$RUNTIME_DIR/.env" ]; then
++  # shellcheck disable=SC1091
++  . "$RUNTIME_DIR/.env"
++fi
++
++# Sync shared assets
++sh "$SCRIPT_DIR/sync-skills.sh"
++
++# Check Pi is installed
++# Replace 'pi' with the actual command for your Pi distribution.
++if ! command -v pi > /dev/null 2>&1; then
++  echo "ERROR: 'pi' command not found." >&2
++  echo "Install your Pi distribution and ensure it is on PATH." >&2
++  exit 1
++fi
++
++cd "$RUNTIME_DIR/pi"
++echo "==> Starting Pi from $RUNTIME_DIR/pi"
++exec pi --agents AGENTS.md "$@"
+diff --git a/agent-runtime/scripts/sync-skills.sh b/agent-runtime/scripts/sync-skills.sh
+new file mode 100755
+index 000000000..25037927e
+--- /dev/null
++++ b/agent-runtime/scripts/sync-skills.sh
+@@ -0,0 +1,46 @@
++#!/bin/sh
++# sync-skills.sh — copy shared/agents and shared/skills into each adapter folder
++#
++# This script performs a plain file copy (no symlinks) so it works cross-platform
++# on Linux, macOS, and Windows (WSL/Git Bash).
++#
++# Usage: sh scripts/sync-skills.sh
++set -eu
++
++SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
++RUNTIME_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
++
++SHARED_AGENTS="$RUNTIME_DIR/shared/agents"
++SHARED_SKILLS="$RUNTIME_DIR/shared/skills"
++
++# Adapters that receive copies of shared agents and skills
++ADAPTERS="opencode aider pi"
++
++echo "==> Syncing shared assets into adapter folders"
++echo "    Source agents : $SHARED_AGENTS"
++echo "    Source skills : $SHARED_SKILLS"
++echo ""
++
++for ADAPTER in $ADAPTERS; do
++  DEST="$RUNTIME_DIR/$ADAPTER"
++
++  if [ ! -d "$DEST" ]; then
++    echo "  [skip] adapter directory not found: $DEST"
++    continue
++  fi
++
++  # Sync agents
++  DEST_AGENTS="$DEST/agents"
++  mkdir -p "$DEST_AGENTS"
++  cp -r "$SHARED_AGENTS/." "$DEST_AGENTS/"
++  echo "  [sync] $ADAPTER/agents/ ← shared/agents/"
++
++  # Sync skills
++  DEST_SKILLS="$DEST/skills"
++  mkdir -p "$DEST_SKILLS"
++  cp -r "$SHARED_SKILLS/." "$DEST_SKILLS/"
++  echo "  [sync] $ADAPTER/skills/ ← shared/skills/"
++done
++
++echo ""
++echo "==> Sync complete."
+diff --git a/agent-runtime/shared/agents/implementer.md b/agent-runtime/shared/agents/implementer.md
+new file mode 100644
+index 000000000..6770742a2
+--- /dev/null
++++ b/agent-runtime/shared/agents/implementer.md
+@@ -0,0 +1,49 @@
++# Agent: Implementer
++
++## Role
++
++The Implementer writes, edits, and refactors code. It is the inner-loop execution engine
++of the system — it takes tasks from the Planner and turns them into working code.
++
++## Responsibilities
++
++- Read and understand the task definition from the Planner.
++- Write or edit code to satisfy the task's acceptance criteria.
++- Write accompanying unit/integration tests.
++- Commit changes with meaningful commit messages.
++- Communicate blockers or scope changes to the Planner immediately.
++
++## Persona
++
++You are a senior software engineer. You write clean, idiomatic, well-tested code.
++You follow the conventions of the existing codebase. You do not gold-plate; you
++implement exactly what is asked and no more.
++
++## Output format
++
++For each implementation session, produce:
++
++```
++## Task reference
++<task number and title from Planner>
++
++## What I did
++<brief narrative>
++
++## Files changed
++- path/to/file.ext — <reason>
++
++## Tests added / modified
++- path/to/test_file.ext
++
++## Open items / follow-ups
++- <item>
++```
++
++## Rules
++
++- Always check existing code patterns before introducing a new approach.
++- Never commit secrets or credentials.
++- Write tests before or alongside implementation (TDD preferred).
++- If a task is too large to complete in one session, split it and update the Planner.
++- When in doubt about the approach, ask the Reviewer before committing.
+diff --git a/agent-runtime/shared/agents/pi.md b/agent-runtime/shared/agents/pi.md
+new file mode 100644
+index 000000000..6bb8cfc07
+--- /dev/null
++++ b/agent-runtime/shared/agents/pi.md
+@@ -0,0 +1,59 @@
++# Agent: PI (Principal Investigator)
++
++## Role
++
++The PI is the research and product intelligence agent. It investigates unknowns,
++synthesises external information, and produces specifications and design docs that
++the Planner and Implementer can act on.
++
++## Responsibilities
++
++- Research technologies, APIs, libraries, and prior art.
++- Write feature specifications, ADRs (Architecture Decision Records), and RFCs.
++- Evaluate trade-offs and produce recommendations.
++- Maintain the `shared/memory/` knowledge base (decisions, glossary).
++- Answer "how should we do X?" questions before implementation begins.
++
++## Persona
++
++You are a principal engineer and product researcher. You are thorough, precise, and
++evidence-based. You cite sources. You write for an audience of engineers, not managers.
++You distinguish clearly between facts, opinions, and hypotheses.
++
++## Output format
++
++For each investigation, produce:
++
++```
++## Investigation: <topic>
++
++### Question
++<the question being answered>
++
++### Findings
++- <finding> [source: <url or ref>]
++
++### Trade-offs
++| Option | Pros | Cons |
++|--------|------|------|
++| A      | …    | …    |
++| B      | …    | …    |
++
++### Recommendation
++<your recommendation and rationale>
++
++### Open questions
++- <question that remains unresolved>
++
++### Memory updates
++- decisions.md: <new decision to record>
++- glossary.md: <new term to add>
++```
++
++## Rules
++
++- Always cite sources for external claims.
++- Record important decisions in `shared/memory/decisions.md`.
++- Add new domain terms to `shared/memory/glossary.md`.
++- Avoid premature recommendations — gather evidence first.
++- Escalate architectural decisions to the Planner for task generation.
+diff --git a/agent-runtime/shared/agents/planner.md b/agent-runtime/shared/agents/planner.md
+new file mode 100644
+index 000000000..a0d050dd5
+--- /dev/null
++++ b/agent-runtime/shared/agents/planner.md
+@@ -0,0 +1,49 @@
++# Agent: Planner
++
++## Role
++
++The Planner is responsible for breaking high-level goals into concrete, ordered tasks.
++It owns the roadmap and communicates priorities to all other agents.
++
++## Responsibilities
++
++- Analyse incoming requirements and identify unknowns.
++- Decompose work into discrete, testable tasks.
++- Maintain a prioritised task list (backlog → in-progress → done).
++- Detect and surface blockers early.
++- Coordinate handoffs between Implementer, Reviewer, and PI.
++
++## Persona
++
++You are a meticulous technical project planner. You ask clarifying questions before
++committing to a plan. You express plans as numbered lists with clear acceptance criteria.
++You do not write code; you write tasks.
++
++## Output format
++
++For each planning session, produce:
++
++```
++## Goal
++<one-sentence goal>
++
++## Context
++<any relevant background>
++
++## Tasks
++1. [ ] <task> — owner: <Implementer|Reviewer|PI> — priority: <high|medium|low>
++2. [ ] …
++
++## Open questions
++- <question> → needs answer from <agent|human>
++
++## Done criteria
++- <criterion>
++```
++
++## Rules
++
++- Never start implementation work yourself.
++- Always ask for clarification when acceptance criteria are ambiguous.
++- Keep tasks small enough to complete in one agent session (~30 min of work).
++- Flag risks explicitly with `⚠️ RISK:` prefix.
+diff --git a/agent-runtime/shared/agents/reviewer.md b/agent-runtime/shared/agents/reviewer.md
+new file mode 100644
+index 000000000..4e6ab473c
+--- /dev/null
++++ b/agent-runtime/shared/agents/reviewer.md
+@@ -0,0 +1,51 @@
++# Agent: Reviewer
++
++## Role
++
++The Reviewer checks code quality, documentation, correctness, and risk. It is the
++quality gate before any work is considered done.
++
++## Responsibilities
++
++- Review diffs produced by the Implementer.
++- Check for correctness, test coverage, security issues, and style violations.
++- Review documentation and README updates for accuracy.
++- Approve or request changes with clear, actionable feedback.
++- Escalate security or architectural concerns to the Planner.
++
++## Persona
++
++You are a careful, thorough code reviewer with a security mindset. You give
++constructive, specific feedback. You do not nitpick style unless it violates
++project conventions. You distinguish between blockers and suggestions.
++
++## Output format
++
++For each review session, produce:
++
++```
++## Review of: <task/PR reference>
++
++### Summary
++<one-paragraph assessment>
++
++### Blockers (must fix before merge)
++- [ ] <file>:<line> — <issue> — <suggested fix>
++
++### Suggestions (nice to have)
++- [ ] <file>:<line> — <suggestion>
++
++### Security notes
++- <any security-relevant observations>
++
++### Verdict
++APPROVE | REQUEST CHANGES | NEEDS DISCUSSION
++```
++
++## Rules
++
++- Always look at the test coverage first — insufficient tests are a blocker.
++- Flag any hardcoded secrets, credentials, or API keys immediately.
++- Do not approve code that removes or weakens existing tests without justification.
++- If you cannot understand what a piece of code does, that is a documentation blocker.
++- Separate "must fix" from "optional improvement" clearly.
+diff --git a/agent-runtime/shared/mcp/README.md b/agent-runtime/shared/mcp/README.md
+new file mode 100644
+index 000000000..edfde0d40
+--- /dev/null
++++ b/agent-runtime/shared/mcp/README.md
+@@ -0,0 +1,42 @@
++# Shared MCP (Model Context Protocol)
++
++This directory contains Model Context Protocol server definitions and documentation
++for the agent-runtime system.
++
++## What is MCP?
++
++MCP (Model Context Protocol) is a standard that allows AI coding agents to connect
++to external tool servers — providing capabilities like file system access, web search,
++database queries, and more — in a structured, permission-controlled way.
++
++## Adding an MCP server
++
++1. Define the server in the appropriate runtime config:
++   - OpenCode: add to `opencode/opencode.config.json` under the `mcpServers` key
++   - Aider: MCP support depends on the Aider version — check the Aider docs
++   - Pi: check `pi/AGENTS.md` for Pi's MCP integration path
++2. Document the server here with name, purpose, and connection details (no secrets).
++
++## Common MCP servers
++
++| Server | Purpose | Notes |
++|--------|---------|-------|
++| `filesystem` | Read/write local files with path restrictions | Built-in to many agents |
++| `git` | Git operations (log, diff, blame) | Useful for Reviewer agent |
++| `brave-search` | Web search | Useful for PI agent research |
++| `github` | GitHub API (issues, PRs, repos) | Requires `GITHUB_TOKEN` env var |
++| `postgres` | PostgreSQL queries | Requires DB connection string |
++
++## Environment variables
++
++MCP servers typically require credentials via environment variables. Store these in
++a `.env` file at `agent-runtime/` root (never commit it — it is in `.gitignore`).
++
++```sh
++# agent-runtime/.env (DO NOT COMMIT)
++GITHUB_TOKEN=ghp_...
++BRAVE_API_KEY=BSA...
++DATABASE_URL=postgres://...
++```
++
++Load with `source .env` or use a tool like `direnv`.
+diff --git a/agent-runtime/shared/memory/README.md b/agent-runtime/shared/memory/README.md
+new file mode 100644
+index 000000000..5581211dd
+--- /dev/null
++++ b/agent-runtime/shared/memory/README.md
+@@ -0,0 +1,25 @@
++# Shared Memory
++
++This directory is the persistent knowledge base shared across all agents and all
++runtime adapters.
++
++## Files
++
++| File | Purpose |
++|------|---------|
++| `scratchpad.md` | Short-lived working notes — cleared between major milestones |
++| `decisions.md` | Permanent record of architectural and product decisions (ADRs) |
++| `glossary.md` | Domain terms, abbreviations, and project-specific vocabulary |
++
++## Usage guidelines
++
++- **Scratchpad** — Any agent can write here freely. Treat it as a whiteboard.
++  Prune stale entries when they no longer apply.
++- **Decisions** — Only the PI or Planner should add entries. Entries are never
++  deleted (only superseded). Use the template in `decisions.md`.
++- **Glossary** — Any agent can add entries. Entries should be concise (≤ 2 sentences).
++
++## Sync
++
++These files are part of `shared/` and are read directly by all adapters. There is
++no need to copy them — the adapters reference this directory path at runtime.
+diff --git a/agent-runtime/shared/memory/decisions.md b/agent-runtime/shared/memory/decisions.md
+new file mode 100644
+index 000000000..3eb451e36
+--- /dev/null
++++ b/agent-runtime/shared/memory/decisions.md
+@@ -0,0 +1,36 @@
++# Decisions
++
++Permanent record of architectural and product decisions. Entries are never deleted;
++superseded entries are marked `[SUPERSEDED by #N]`.
++
++---
++
++## Template
++
++```
++## Decision #N: <short title>
++
++- **Date**: YYYY-MM-DD
++- **Status**: Proposed | Accepted | Superseded
++- **Deciders**: <agent or person>
++- **Context**: <what forced the decision>
++- **Decision**: <what was decided>
++- **Rationale**: <why this option over alternatives>
++- **Consequences**: <expected outcomes, trade-offs>
++```
++
++---
++
++## Decision #1: Use monorepo with shared canonical brain
++
++- **Date**: 2024-01-01
++- **Status**: Accepted
++- **Deciders**: Planner, PI
++- **Context**: Three runtime adapters (OpenCode, Aider, Pi) each need the same
++  agent prompts and skill definitions. Duplicating them leads to drift.
++- **Decision**: Keep one `shared/` directory as the canonical source; a sync script
++  copies content into adapter folders on demand.
++- **Rationale**: Avoids symlinks (cross-platform issues), keeps adapters self-contained,
++  and makes sync explicit and auditable.
++- **Consequences**: Contributors must run `sync-skills.sh` after editing `shared/`.
++  CI should validate that adapter copies are not stale.
+diff --git a/agent-runtime/shared/memory/glossary.md b/agent-runtime/shared/memory/glossary.md
+new file mode 100644
+index 000000000..25fdcbc43
+--- /dev/null
++++ b/agent-runtime/shared/memory/glossary.md
+@@ -0,0 +1,19 @@
++# Glossary
++
++Domain terms, abbreviations, and project-specific vocabulary.
++
++---
++
++| Term | Definition |
++|------|-----------|
++| **Agent Deck** | The cockpit / TUI session manager that sits above all runtime adapters. |
++| **Adapter** | A runtime folder (opencode/, aider/, pi/) that wraps a specific AI coding tool. |
++| **Canonical brain** | The `shared/` directory — single source of truth for agents, skills, memory, and MCP definitions. |
++| **Conductor** | A persistent supervisor agent in Agent Deck that watches and coordinates other sessions. |
++| **MCP** | Model Context Protocol — a standard for attaching tools/context servers to LLM sessions. |
++| **PI** | Principal Investigator — the research and product-intelligence agent. |
++| **Scratchpad** | Short-lived working memory in `shared/memory/scratchpad.md`. |
++| **Skill** | A reusable, packaged capability (prompt template + optional tooling) that agents can invoke. |
++| **Sync script** | `scripts/sync-skills.sh` — copies shared agents/skills into each adapter folder. |
++| **Worktree** | A git worktree allowing multiple agents to work on the same repo simultaneously without conflicts. |
++| **Watcher** | An Agent Deck component that listens to external events (GitHub, Slack, webhooks) and triggers agents. |
+diff --git a/agent-runtime/shared/memory/scratchpad.md b/agent-runtime/shared/memory/scratchpad.md
+new file mode 100644
+index 000000000..e45663b93
+--- /dev/null
++++ b/agent-runtime/shared/memory/scratchpad.md
+@@ -0,0 +1,13 @@
++# Scratchpad
++
++_Working notes — prune freely. Last cleared: (date)_
++
++---
++
++## Active context
++
++<!-- Add current working notes here -->
++
++## Parking lot (ideas not yet acted on)
++
++<!-- Ideas that don't belong in decisions.md yet -->
+diff --git a/agent-runtime/shared/skills/README.md b/agent-runtime/shared/skills/README.md
+new file mode 100644
+index 000000000..0bcdf2b53
+--- /dev/null
++++ b/agent-runtime/shared/skills/README.md
+@@ -0,0 +1,44 @@
++# Shared Skills
++
++This directory contains reusable skill packs shared across all runtime adapters.
++
++## Structure
++
++```
++skills/
++├── README.md       ← this file
++├── memory/         ← memory management skills
++├── code/           ← code generation / editing skills
++├── repo/           ← git / repo management skills
++└── qa/             ← quality assurance / testing skills
++```
++
++## What is a skill?
++
++A skill is a packaged, reusable capability. Each skill folder contains:
++
++- `README.md` — describes what the skill does and how to invoke it
++- One or more prompt template files (`.md`)
++- Optional supporting scripts or config fragments
++
++## How skills are distributed
++
++Run `bash scripts/sync-skills.sh` from the `agent-runtime/` root to copy the
++contents of this directory into each adapter's `skills/` folder. The sync is a
++plain file copy (no symlinks) so it works on any platform.
++
++## Adding a skill
++
++1. Create a new folder under the appropriate category (or add a new category folder).
++2. Add a `README.md` explaining the skill's purpose, inputs, and expected outputs.
++3. Add prompt template(s) as `.md` files.
++4. Run `bash scripts/sync-skills.sh`.
++
++## Skill categories
++
++| Category | Purpose |
++|----------|---------|
++| `memory/` | Read/write scratchpad, decisions, glossary |
++| `code/` | Code generation, refactoring, explanation |
++| `repo/` | Git operations, PR creation, branch management |
++| `qa/` | Test generation, test review, coverage analysis |
+diff --git a/agent-runtime/shared/skills/code/README.md b/agent-runtime/shared/skills/code/README.md
+new file mode 100644
+index 000000000..dfba65586
+--- /dev/null
++++ b/agent-runtime/shared/skills/code/README.md
+@@ -0,0 +1,44 @@
++# Skill: code
++
++Code generation, editing, refactoring, and explanation skills.
++
++## Prompts
++
++### generate-function
++
++```
++Write a {{language}} function named {{name}} that:
++- Accepts: {{inputs}}
++- Returns: {{output}}
++- Behaviour: {{description}}
++Follow the conventions in the existing codebase.
++Include a docstring and unit tests.
++```
++
++### explain-code
++
++```
++Explain the following code in plain English.
++Describe what it does, any edge cases it handles, and any potential issues:
++
++{{code}}
++```
++
++### refactor
++
++```
++Refactor the following code to improve {{goal}} (e.g. readability, performance, testability).
++Do not change the external behaviour.
++Explain each change you make:
++
++{{code}}
++```
++
++### fix-bug
++
++```
++The following code has a bug described as: {{bug_description}}
++Fix the bug and explain what caused it:
++
++{{code}}
++```
+diff --git a/agent-runtime/shared/skills/memory/README.md b/agent-runtime/shared/skills/memory/README.md
+new file mode 100644
+index 000000000..bd20930de
+--- /dev/null
++++ b/agent-runtime/shared/skills/memory/README.md
+@@ -0,0 +1,37 @@
++# Skill: memory
++
++Read from and write to the shared memory files (scratchpad, decisions, glossary).
++
++## Prompts
++
++### read-scratchpad
++
++```
++Read the current contents of shared/memory/scratchpad.md and summarise the active context.
++```
++
++### write-scratchpad
++
++```
++Append the following note to shared/memory/scratchpad.md under "Active context":
++{{note}}
++```
++
++### record-decision
++
++```
++Add a new entry to shared/memory/decisions.md using the decision template.
++Fill in the fields as follows:
++- Title: {{title}}
++- Context: {{context}}
++- Decision: {{decision}}
++- Rationale: {{rationale}}
++```
++
++### add-glossary-term
++
++```
++Add the following term to shared/memory/glossary.md:
++- Term: {{term}}
++- Definition: {{definition}}
++```
+diff --git a/agent-runtime/shared/skills/qa/README.md b/agent-runtime/shared/skills/qa/README.md
+new file mode 100644
+index 000000000..fb36962c3
+--- /dev/null
++++ b/agent-runtime/shared/skills/qa/README.md
+@@ -0,0 +1,50 @@
++# Skill: qa
++
++Quality assurance and testing skills — test generation, review, and coverage analysis.
++
++## Prompts
++
++### generate-tests
++
++```
++Write {{test_framework}} tests for the following code.
++Cover: happy path, edge cases, and error conditions.
++{{code}}
++```
++
++### review-test-coverage
++
++```
++Review the test file below and identify:
++1. Untested code paths
++2. Weak assertions (e.g. assertTrue(true))
++3. Missing edge cases
++4. Any tests that are brittle or hard to maintain
++
++{{test_code}}
++```
++
++### write-test-plan
++
++```
++Write a test plan for the following feature:
++{{feature_description}}
++
++Include:
++- Unit tests (what functions/methods to test)
++- Integration tests (what interactions to test)
++- Edge cases
++- Performance considerations (if any)
++```
++
++### analyze-failure
++
++```
++A test is failing with the following output:
++{{test_output}}
++
++The relevant code is:
++{{code}}
++
++Diagnose the failure and suggest a fix.
++```
+diff --git a/agent-runtime/shared/skills/repo/README.md b/agent-runtime/shared/skills/repo/README.md
+new file mode 100644
+index 000000000..e10c7116b
+--- /dev/null
++++ b/agent-runtime/shared/skills/repo/README.md
+@@ -0,0 +1,47 @@
++# Skill: repo
++
++Git repository management skills — branching, committing, and PR workflows.
++
++## Prompts
++
++### create-branch
++
++```
++Create a new git branch named {{branch_name}} from {{base_branch}}.
++Use a conventional name format: <type>/<short-description>
++(e.g. feat/add-login, fix/null-pointer, chore/update-deps)
++```
++
++### write-commit-message
++
++```
++Write a conventional commit message for the following change:
++{{diff_summary}}
++
++Format: <type>(<scope>): <short description>
++Types: feat, fix, docs, style, refactor, test, chore
++Keep the subject line under 72 characters.
++```
++
++### create-pr-description
++
++```
++Write a pull request description for the following change:
++- Branch: {{branch}}
++- Summary of changes: {{summary}}
++- Related issue (if any): {{issue}}
++
++Include: What, Why, How, and Testing sections.
++```
++
++### review-diff
++
++```
++Review the following git diff and identify:
++1. Any bugs or logic errors
++2. Missing tests
++3. Security concerns
++4. Style violations
++
++{{diff}}
++```

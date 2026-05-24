@@ -1,0 +1,26 @@
+{
+  "id": "devin-elbitapmoC-loz_site-pr6",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 6,
+    "headSha": "4bd6e0e151df858f1223b091b33cf63ed43241dc",
+    "baseSha": "287e860e430bda8c605650c12439a95a72c28749",
+    "title": "fix: onboarding flow — Hebrew name screen no longer hidden by agreement redirect",
+    "body": "## Summary\n\nFixes the onboarding flow where the Hebrew name screen was immediately covered by the agreement/bylaws page after signup.\n\n**Root cause:** After signup, Clerk redirects to `/onboarding` (Hebrew name form). But `AuthGuard` detects `hasAgreedToTerms === false` and immediately redirects to `/agreement`, hiding the Hebrew name form before the user can interact with it.\n\n**Fix:**\n1. **AuthGuard** — exempt `/onboarding` from the `hasAgreedToTerms` redirect (same pattern as the existing `/agreement` exemption)\n2. **OnboardingPage** — after saving Hebrew name (or skipping), redirect to `/agreement` instead of home, so users complete both steps in order\n3. **SignUpPage** — email/password signup now redirects to `/onboarding` consistently (previously went to `/`, while OAuth already went to `/onboarding`)\n\n**New signup flow:** Signup → `/onboarding` (Hebrew name) → `/agreement` (terms & bylaws) → `/` (home)\n\n## Review & Testing Checklist for Human\n\n- [ ] **Sign up with a new account** — verify you see the Hebrew name form first, then the agreement page after saving/skipping\n- [ ] **Skip the Hebrew name** — verify it still proceeds to the agreement page (not home)\n- [ ] **Existing users** — verify signing in as an existing user who has already agreed to terms does NOT show onboarding or agreement pages\n\n### Notes\n- No Convex function changes — this is purely frontend routing logic\n- The `/onboarding` route is already in the `PROTECTED_PREFIXES` list, so it still requires authentication\n- Build passes with zero TypeScript errors\n\nLink to Devin session: https://app.devin.ai/sessions/0a8f38d55ce2431ab17ad9708b8c14a3\nRequested by: @elbitapmoC",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779589407-fix-onboarding-flow",
+    "repository": "elbitapmoC/loz_site"
+  },
+  "diffRef": {
+    "repository": "elbitapmoC/loz_site",
+    "headSha": "4bd6e0e151df858f1223b091b33cf63ed43241dc",
+    "baseSha": "287e860e430bda8c605650c12439a95a72c28749"
+  },
+  "vendoredDiffPath": "devin/devin-elbitapmoC-loz_site-pr6.diff",
+  "vendoredAt": "2026-05-24T03:04:06.742Z",
+  "collectedAt": "2026-05-24T03:04:06.742Z"
+}

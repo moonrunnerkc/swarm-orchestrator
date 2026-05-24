@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Replaces Jinja placeholders in three byte-identical instruction templates (`openhands/app_server/integrations/templates/resolver/{jira,jira_dc,linear}/<name>_instructions.j2`) with literal angle-bracket examples: `{{ issue_key }}-{{ description_in_kebab_case }}` becomes `<ISSUE-KEY>-<short-description-in-kebab-case>` and `[{{ issue_key }}] {{ pr_title }}` becomes `[<ISSUE-KEY>] <title>`. The PR body correctly identifies that the views render these templates with no context (`instructions_template.render()` with no args), so the unfilled placeholders collapsed to empty strings in the agent's system message; the literal-text replacement makes the convention readable regardless of render context. Each of the three templates receives the exact same two-line change, consistent with the body's claim that they are byte-identical copies. Pure prompt-template cleanup with no behavior change risk.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T14:00:00.000Z"
+}

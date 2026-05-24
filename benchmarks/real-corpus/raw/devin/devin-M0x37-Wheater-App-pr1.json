@@ -1,0 +1,26 @@
+{
+  "id": "devin-M0x37-Wheater-App-pr1",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "1cb8ab141fbd53b9869c3c0d948aa269b87627bd",
+    "baseSha": "923f03084e21b2d2094f426ed6ae37d743d66157",
+    "title": "fix: resolve 11 bugs found during code review",
+    "body": "## Summary\n\nFixes 11 bugs discovered during a thorough code review of the weather app. Changes span API calls, UI components, state management, types, and utilities.\n\n### Critical Fixes\n1. **`reverseGeocode` used non-existent Open-Meteo `/reverse` endpoint** — Replaced with Nominatim reverse geocoding API. Also wrapped the call in `handleUseDeviceLocation` with its own try/catch so that device coordinates are never discarded when reverse geocoding fails.\n2. **`HourlyRow` midnight (hour 0) showed start-of-day data** — Now filters to today's entries and looks for tomorrow's 00:00 for the midnight column.\n3. **`TimeOfDayGrid` NIGHT period marked as \"past\" during daytime** — Fixed `isPast` logic to use period end times instead of representative midpoint hours.\n4. **`getCurrentHour` used browser timezone** — Now accepts an optional timezone parameter and uses `toLocaleString` with the weather location's timezone.\n\n### Moderate Fixes\n5. **`LocationHeader` flashed \"NO RESULTS FOUND\" during debounce** — Added `hasSearched` flag to suppress the message until a search has actually completed.\n6. **Incomplete WMO weather codes** — Added 13 missing codes (drizzle, freezing rain, snow grains, showers, hail variants) so the UI no longer shows \"Unknown ?\" for valid weather conditions.\n7. **Race condition in location search** — Added sequence counter to discard stale API responses that arrive after a newer query.\n8. **`CurrentWeather.time` type mismatch** — Made `time` optional in the interface to match the validation which already allowed `undefined`.\n\n### Minor Fixes\n9. **Dead code removed** — Removed unused `isToday`, `getTodayDateString`, and `getTemperatureTrend` exports.\n10. **Stale cache never cleaned** — Added cleanup of expired weather cache entries from `localStorage` on save.\n11. **`isNativePlatform()` called redundantly** — Cached the result in a local variable in `getDeviceCoordinates`.\n\n## Review & Testing Checklist for Human\n- [ ] Test the \"Use device location\" button in both web and Android — verify it resolves a city name via Nominatim, and falls back to \"Current Location\" gracefully if reverse geocoding fails\n- [ ] Open the \"Today\" tab and verify the midnight column shows data for tonight's 00:00, not this morning's 00:00\n- [ ] Open the \"Now\" tab and check that the NIGHT row in \"TIME OF DAY\" is not dimmed/past during daytime hours\n- [ ] Search for a location in a different timezone (e.g. Tokyo from a European browser) and verify the \"past\" highlighting in TimeOfDayGrid matches the remote timezone\n- [ ] Type quickly in location search and verify \"NO RESULTS FOUND\" doesn't flash before results load\n\n### Notes\n- All pre-existing lint errors remain unchanged; this PR introduces zero new lint/type errors and fixes one pre-existing `preserve-caught-error`.\n- TypeScript build (`tsc -b`) passes cleanly.\n\nLink to Devin session: https://app.devin.ai/sessions/f6c75d564bc041188d34105902065d9f\nRequested by: @M0x37",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779576062-fix-all-bugs",
+    "repository": "M0x37/Wheater-App"
+  },
+  "diffRef": {
+    "repository": "M0x37/Wheater-App",
+    "headSha": "1cb8ab141fbd53b9869c3c0d948aa269b87627bd",
+    "baseSha": "923f03084e21b2d2094f426ed6ae37d743d66157"
+  },
+  "vendoredDiffPath": "devin/devin-M0x37-Wheater-App-pr1.diff",
+  "vendoredAt": "2026-05-24T03:04:58.069Z",
+  "collectedAt": "2026-05-24T03:04:58.069Z"
+}

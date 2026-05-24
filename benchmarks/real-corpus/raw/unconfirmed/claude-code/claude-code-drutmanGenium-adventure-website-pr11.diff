@@ -1,0 +1,858 @@
+diff --git a/app/layout.tsx b/app/layout.tsx
+index 05f819d..c569dfb 100644
+--- a/app/layout.tsx
++++ b/app/layout.tsx
+@@ -3,6 +3,7 @@ import type { Metadata } from "next"
+ import { Montserrat, Lato } from "next/font/google"
+ import { Analytics } from "@vercel/analytics/next"
+ import { LanguageProvider } from "@/contexts/language-context"
++import { AuthProvider } from "@/contexts/auth-context"
+ import { ScrollToTop } from "@/components/scroll-to-top"
+ import "./globals.css"
+ 
+@@ -52,7 +53,9 @@ export default function RootLayout({
+     <html lang="es">
+       <body className={`${montserrat.variable} ${lato.variable} font-sans antialiased`}>
+         <ScrollToTop />
+-        <LanguageProvider>{children}</LanguageProvider>
++        <LanguageProvider>
++          <AuthProvider>{children}</AuthProvider>
++        </LanguageProvider>
+         <Analytics />
+       </body>
+     </html>
+diff --git a/app/login/page.tsx b/app/login/page.tsx
+new file mode 100644
+index 0000000..c0ffbbe
+--- /dev/null
++++ b/app/login/page.tsx
+@@ -0,0 +1,20 @@
++import { Navigation } from "@/components/navigation"
++import { Footer } from "@/components/footer"
++import { LoginForm } from "@/components/login-form"
++
++export const metadata = {
++  title: "Iniciar sesión — Patagonia Trekking",
++  description: "Iniciá sesión en tu cuenta de Patagonia Trekking para gestionar tus reservas.",
++}
++
++export default function LoginPage() {
++  return (
++    <main className="min-h-screen">
++      <Navigation />
++      <div className="pt-16">
++        <LoginForm />
++      </div>
++      <Footer />
++    </main>
++  )
++}
+diff --git a/app/register/page.tsx b/app/register/page.tsx
+new file mode 100644
+index 0000000..53e164d
+--- /dev/null
++++ b/app/register/page.tsx
+@@ -0,0 +1,20 @@
++import { Navigation } from "@/components/navigation"
++import { Footer } from "@/components/footer"
++import { RegisterForm } from "@/components/register-form"
++
++export const metadata = {
++  title: "Crear cuenta — Patagonia Trekking",
++  description: "Creá tu cuenta en Patagonia Trekking para reservar tu próxima aventura.",
++}
++
++export default function RegisterPage() {
++  return (
++    <main className="min-h-screen">
++      <Navigation />
++      <div className="pt-16">
++        <RegisterForm />
++      </div>
++      <Footer />
++    </main>
++  )
++}
+diff --git a/components/login-form.tsx b/components/login-form.tsx
+new file mode 100644
+index 0000000..3941cf0
+--- /dev/null
++++ b/components/login-form.tsx
+@@ -0,0 +1,178 @@
++"use client"
++
++import type React from "react"
++import { useState } from "react"
++import Link from "next/link"
++import { useRouter } from "next/navigation"
++import { Badge } from "@/components/ui/badge"
++import { Button } from "@/components/ui/button"
++import { Card } from "@/components/ui/card"
++import { Input } from "@/components/ui/input"
++import { Label } from "@/components/ui/label"
++import { LogIn, Eye, EyeOff } from "lucide-react"
++import { useAuth } from "@/contexts/auth-context"
++import { useLanguage } from "@/contexts/language-context"
++
++export function LoginForm() {
++  const { login } = useAuth()
++  const { t } = useLanguage()
++  const router = useRouter()
++
++  const [formData, setFormData] = useState({ email: "", password: "" })
++  const [errors, setErrors] = useState<Record<string, string>>({})
++  const [generalError, setGeneralError] = useState("")
++  const [isSubmitting, setIsSubmitting] = useState(false)
++  const [showPassword, setShowPassword] = useState(false)
++
++  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
++    const { name, value } = e.target
++    setFormData((prev) => ({ ...prev, [name]: value }))
++    if (errors[name]) {
++      setErrors((prev) => {
++        const next = { ...prev }
++        delete next[name]
++        return next
++      })
++    }
++    if (generalError) setGeneralError("")
++  }
++
++  const validate = (): boolean => {
++    const newErrors: Record<string, string> = {}
++
++    if (!formData.email.trim()) {
++      newErrors.email = t("El email es obligatorio.", "Email is required.")
++    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
++      newErrors.email = t("Ingresá un email válido.", "Enter a valid email.")
++    }
++
++    if (!formData.password) {
++      newErrors.password = t("La contraseña es obligatoria.", "Password is required.")
++    }
++
++    setErrors(newErrors)
++    return Object.keys(newErrors).length === 0
++  }
++
++  const handleSubmit = async (e: React.FormEvent) => {
++    e.preventDefault()
++    if (!validate()) return
++
++    setIsSubmitting(true)
++    setGeneralError("")
++
++    const result = await login(formData.email, formData.password)
++
++    if (result.success) {
++      router.push("/")
++    } else {
++      setGeneralError(result.error || t("Error al iniciar sesión", "Login failed"))
++    }
++
++    setIsSubmitting(false)
++  }
++
++  return (
++    <section className="py-20 px-4 min-h-screen bg-background">
++      <div className="max-w-md mx-auto">
++        <div className="text-center mb-8">
++          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20">
++            {t("Acceso", "Login")}
++          </Badge>
++          <h1 className="text-3xl md:text-4xl font-bold mb-2">
++            {t("Iniciá sesión", "Sign in")}
++          </h1>
++          <p className="text-muted-foreground">
++            {t(
++              "Accedé a tu cuenta para gestionar tus reservas",
++              "Access your account to manage your bookings"
++            )}
++          </p>
++        </div>
++
++        <Card className="p-8 border-2">
++          <form onSubmit={handleSubmit} className="space-y-6">
++            {generalError && (
++              <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">
++                {generalError}
++              </div>
++            )}
++
++            <div className="space-y-2">
++              <Label htmlFor="email">Email *</Label>
++              <Input
++                id="email"
++                name="email"
++                type="email"
++                placeholder="juan@ejemplo.com"
++                value={formData.email}
++                onChange={handleChange}
++                autoComplete="email"
++              />
++              {errors.email && (
++                <p className="text-sm text-destructive">{errors.email}</p>
++              )}
++            </div>
++
++            <div className="space-y-2">
++              <Label htmlFor="password">{t("Contraseña", "Password")} *</Label>
++              <div className="relative">
++                <Input
++                  id="password"
++                  name="password"
++                  type={showPassword ? "text" : "password"}
++                  placeholder="••••••"
++                  value={formData.password}
++                  onChange={handleChange}
++                  autoComplete="current-password"
++                />
++                <Button
++                  type="button"
++                  variant="ghost"
++                  size="icon"
++                  className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
++                  onClick={() => setShowPassword(!showPassword)}
++                >
++                  {showPassword ? (
++                    <EyeOff className="h-4 w-4 text-muted-foreground" />
++                  ) : (
++                    <Eye className="h-4 w-4 text-muted-foreground" />
++                  )}
++                  <span className="sr-only">
++                    {showPassword ? t("Ocultar contraseña", "Hide password") : t("Mostrar contraseña", "Show password")}
++                  </span>
++                </Button>
++              </div>
++              {errors.password && (
++                <p className="text-sm text-destructive">{errors.password}</p>
++              )}
++            </div>
++
++            <Button
++              type="submit"
++              size="lg"
++              className="w-full bg-primary text-primary-foreground"
++              disabled={isSubmitting}
++            >
++              {isSubmitting ? (
++                t("Iniciando sesión...", "Signing in...")
++              ) : (
++                <>
++                  <LogIn className="mr-2 h-5 w-5" />
++                  {t("Iniciar sesión", "Sign in")}
++                </>
++              )}
++            </Button>
++          </form>
++
++          <div className="mt-6 text-center text-sm text-muted-foreground">
++            {t("¿No tenés cuenta?", "Don't have an account?")}{" "}
++            <Link href="/register" className="text-primary font-medium hover:underline">
++              {t("Registrate", "Sign up")}
++            </Link>
++          </div>
++        </Card>
++      </div>
++    </section>
++  )
++}
+diff --git a/components/navigation.tsx b/components/navigation.tsx
+index 460061a..7053f91 100644
+--- a/components/navigation.tsx
++++ b/components/navigation.tsx
+@@ -2,14 +2,24 @@
+ 
+ import { useState } from "react"
+ import Link from "next/link"
+-import { Menu, X, Globe } from "lucide-react"
++import { useRouter } from "next/navigation"
++import { Menu, X, Globe, User, LogOut } from "lucide-react"
+ import { Button } from "@/components/ui/button"
+ import { useLanguage } from "@/contexts/language-context"
++import { useAuth } from "@/contexts/auth-context"
+ import { createWhatsAppHref } from "@/lib/whatsapp"
+ 
+ export function Navigation() {
+   const [isOpen, setIsOpen] = useState(false)
+   const { language, toggleLanguage } = useLanguage()
++  const { user, logout } = useAuth()
++  const router = useRouter()
++
++  const handleLogout = async () => {
++    await logout()
++    setIsOpen(false)
++    router.push("/")
++  }
+ 
+   const navItems =
+     language === "es"
+@@ -58,10 +68,35 @@ export function Navigation() {
+                 </Link>
+               )
+             ))}
+-            <Button variant="ghost" size="icon" onClick={toggleLanguage} className="ml-auto">
++            <Button variant="ghost" size="icon" onClick={toggleLanguage}>
+               <Globe className="h-5 w-5" />
+               <span className="sr-only">Change language</span>
+             </Button>
++            {user ? (
++              <div className="flex items-center gap-3">
++                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
++                  <User className="h-4 w-4" />
++                  <span>{user.firstName}</span>
++                </div>
++                <Button variant="outline" size="sm" onClick={handleLogout}>
++                  <LogOut className="h-4 w-4 mr-1" />
++                  {language === "es" ? "Salir" : "Logout"}
++                </Button>
++              </div>
++            ) : (
++              <div className="flex items-center gap-2">
++                <Link href="/login">
++                  <Button variant="ghost" size="sm">
++                    {language === "es" ? "Iniciar sesión" : "Sign in"}
++                  </Button>
++                </Link>
++                <Link href="/register">
++                  <Button size="sm" className="bg-primary text-primary-foreground">
++                    {language === "es" ? "Registrarse" : "Sign up"}
++                  </Button>
++                </Link>
++              </div>
++            )}
+           </div>
+ 
+           {/* Mobile menu button */}
+@@ -103,6 +138,40 @@ export function Navigation() {
+                 </Link>
+               )
+             ))}
++            <div className="border-t border-border mt-2 pt-2">
++              {user ? (
++                <>
++                  <div className="px-3 py-2 text-sm font-medium text-foreground flex items-center gap-2">
++                    <User className="h-4 w-4" />
++                    {user.firstName} {user.lastName}
++                  </div>
++                  <button
++                    onClick={handleLogout}
++                    className="w-full text-left px-3 py-2 text-base font-medium text-destructive hover:bg-accent rounded-md transition-colors flex items-center gap-2"
++                  >
++                    <LogOut className="h-4 w-4" />
++                    {language === "es" ? "Cerrar sesión" : "Log out"}
++                  </button>
++                </>
++              ) : (
++                <>
++                  <Link
++                    href="/login"
++                    className="block px-3 py-2 text-base font-medium text-blue-600 hover:text-primary hover:bg-accent rounded-md transition-colors"
++                    onClick={() => setIsOpen(false)}
++                  >
++                    {language === "es" ? "Iniciar sesión" : "Sign in"}
++                  </Link>
++                  <Link
++                    href="/register"
++                    className="block px-3 py-2 text-base font-medium text-primary hover:bg-accent rounded-md transition-colors"
++                    onClick={() => setIsOpen(false)}
++                  >
++                    {language === "es" ? "Registrarse" : "Sign up"}
++                  </Link>
++                </>
++              )}
++            </div>
+           </div>
+         </div>
+       )}
+diff --git a/components/register-form.tsx b/components/register-form.tsx
+new file mode 100644
+index 0000000..91dc282
+--- /dev/null
++++ b/components/register-form.tsx
+@@ -0,0 +1,303 @@
++"use client"
++
++import type React from "react"
++import { useState } from "react"
++import Link from "next/link"
++import { useRouter } from "next/navigation"
++import { Badge } from "@/components/ui/badge"
++import { Button } from "@/components/ui/button"
++import { Card } from "@/components/ui/card"
++import { Input } from "@/components/ui/input"
++import { Label } from "@/components/ui/label"
++import { UserPlus, Eye, EyeOff } from "lucide-react"
++import { useAuth } from "@/contexts/auth-context"
++import { useLanguage } from "@/contexts/language-context"
++
++export function RegisterForm() {
++  const { register } = useAuth()
++  const { t } = useLanguage()
++  const router = useRouter()
++
++  const [formData, setFormData] = useState({
++    firstName: "",
++    lastName: "",
++    email: "",
++    password: "",
++    confirmPassword: "",
++    phone: "",
++  })
++  const [errors, setErrors] = useState<Record<string, string>>({})
++  const [generalError, setGeneralError] = useState("")
++  const [isSubmitting, setIsSubmitting] = useState(false)
++  const [showPassword, setShowPassword] = useState(false)
++  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
++
++  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
++    const { name, value } = e.target
++    setFormData((prev) => ({ ...prev, [name]: value }))
++    if (errors[name]) {
++      setErrors((prev) => {
++        const next = { ...prev }
++        delete next[name]
++        return next
++      })
++    }
++    if (generalError) setGeneralError("")
++  }
++
++  const validate = (): boolean => {
++    const newErrors: Record<string, string> = {}
++
++    if (!formData.firstName.trim()) {
++      newErrors.firstName = t("El nombre es obligatorio.", "First name is required.")
++    }
++
++    if (!formData.lastName.trim()) {
++      newErrors.lastName = t("El apellido es obligatorio.", "Last name is required.")
++    }
++
++    if (!formData.email.trim()) {
++      newErrors.email = t("El email es obligatorio.", "Email is required.")
++    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
++      newErrors.email = t("Ingresá un email válido.", "Enter a valid email.")
++    }
++
++    if (!formData.password) {
++      newErrors.password = t("La contraseña es obligatoria.", "Password is required.")
++    } else if (formData.password.length < 6) {
++      newErrors.password = t(
++        "La contraseña debe tener al menos 6 caracteres.",
++        "Password must be at least 6 characters."
++      )
++    }
++
++    if (!formData.confirmPassword) {
++      newErrors.confirmPassword = t(
++        "Confirmá tu contraseña.",
++        "Please confirm your password."
++      )
++    } else if (formData.password !== formData.confirmPassword) {
++      newErrors.confirmPassword = t(
++        "Las contraseñas no coinciden.",
++        "Passwords do not match."
++      )
++    }
++
++    setErrors(newErrors)
++    return Object.keys(newErrors).length === 0
++  }
++
++  const handleSubmit = async (e: React.FormEvent) => {
++    e.preventDefault()
++    if (!validate()) return
++
++    setIsSubmitting(true)
++    setGeneralError("")
++
++    const result = await register({
++      firstName: formData.firstName,
++      lastName: formData.lastName,
++      email: formData.email,
++      password: formData.password,
++      phone: formData.phone || undefined,
++    })
++
++    if (result.success) {
++      router.push("/")
++    } else {
++      setGeneralError(result.error || t("Error al crear la cuenta", "Registration failed"))
++    }
++
++    setIsSubmitting(false)
++  }
++
++  return (
++    <section className="py-20 px-4 min-h-screen bg-background">
++      <div className="max-w-md mx-auto">
++        <div className="text-center mb-8">
++          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20">
++            {t("Registro", "Register")}
++          </Badge>
++          <h1 className="text-3xl md:text-4xl font-bold mb-2">
++            {t("Creá tu cuenta", "Create your account")}
++          </h1>
++          <p className="text-muted-foreground">
++            {t(
++              "Registrate para reservar tu próxima aventura",
++              "Sign up to book your next adventure"
++            )}
++          </p>
++        </div>
++
++        <Card className="p-8 border-2">
++          <form onSubmit={handleSubmit} className="space-y-6">
++            {generalError && (
++              <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">
++                {generalError}
++              </div>
++            )}
++
++            <div className="grid grid-cols-2 gap-4">
++              <div className="space-y-2">
++                <Label htmlFor="firstName">{t("Nombre", "First name")} *</Label>
++                <Input
++                  id="firstName"
++                  name="firstName"
++                  placeholder="Juan"
++                  value={formData.firstName}
++                  onChange={handleChange}
++                  autoComplete="given-name"
++                />
++                {errors.firstName && (
++                  <p className="text-sm text-destructive">{errors.firstName}</p>
++                )}
++              </div>
++
++              <div className="space-y-2">
++                <Label htmlFor="lastName">{t("Apellido", "Last name")} *</Label>
++                <Input
++                  id="lastName"
++                  name="lastName"
++                  placeholder="Pérez"
++                  value={formData.lastName}
++                  onChange={handleChange}
++                  autoComplete="family-name"
++                />
++                {errors.lastName && (
++                  <p className="text-sm text-destructive">{errors.lastName}</p>
++                )}
++              </div>
++            </div>
++
++            <div className="space-y-2">
++              <Label htmlFor="email">Email *</Label>
++              <Input
++                id="email"
++                name="email"
++                type="email"
++                placeholder="juan@ejemplo.com"
++                value={formData.email}
++                onChange={handleChange}
++                autoComplete="email"
++              />
++              {errors.email && (
++                <p className="text-sm text-destructive">{errors.email}</p>
++              )}
++            </div>
++
++            <div className="space-y-2">
++              <Label htmlFor="phone">{t("Teléfono", "Phone")}</Label>
++              <Input
++                id="phone"
++                name="phone"
++                type="tel"
++                placeholder="+54 9 11 2345-6789"
++                value={formData.phone}
++                onChange={handleChange}
++                autoComplete="tel"
++              />
++            </div>
++
++            <div className="space-y-2">
++              <Label htmlFor="password">{t("Contraseña", "Password")} *</Label>
++              <div className="relative">
++                <Input
++                  id="password"
++                  name="password"
++                  type={showPassword ? "text" : "password"}
++                  placeholder="••••••"
++                  value={formData.password}
++                  onChange={handleChange}
++                  autoComplete="new-password"
++                />
++                <Button
++                  type="button"
++                  variant="ghost"
++                  size="icon"
++                  className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
++                  onClick={() => setShowPassword(!showPassword)}
++                >
++                  {showPassword ? (
++                    <EyeOff className="h-4 w-4 text-muted-foreground" />
++                  ) : (
++                    <Eye className="h-4 w-4 text-muted-foreground" />
++                  )}
++                  <span className="sr-only">
++                    {showPassword ? t("Ocultar contraseña", "Hide password") : t("Mostrar contraseña", "Show password")}
++                  </span>
++                </Button>
++              </div>
++              {errors.password && (
++                <p className="text-sm text-destructive">{errors.password}</p>
++              )}
++              <p className="text-xs text-muted-foreground">
++                {t("Mínimo 6 caracteres", "At least 6 characters")}
++              </p>
++            </div>
++
++            <div className="space-y-2">
++              <Label htmlFor="confirmPassword">
++                {t("Confirmar contraseña", "Confirm password")} *
++              </Label>
++              <div className="relative">
++                <Input
++                  id="confirmPassword"
++                  name="confirmPassword"
++                  type={showConfirmPassword ? "text" : "password"}
++                  placeholder="••••••"
++                  value={formData.confirmPassword}
++                  onChange={handleChange}
++                  autoComplete="new-password"
++                />
++                <Button
++                  type="button"
++                  variant="ghost"
++                  size="icon"
++                  className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
++                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
++                >
++                  {showConfirmPassword ? (
++                    <EyeOff className="h-4 w-4 text-muted-foreground" />
++                  ) : (
++                    <Eye className="h-4 w-4 text-muted-foreground" />
++                  )}
++                  <span className="sr-only">
++                    {showConfirmPassword
++                      ? t("Ocultar contraseña", "Hide password")
++                      : t("Mostrar contraseña", "Show password")}
++                  </span>
++                </Button>
++              </div>
++              {errors.confirmPassword && (
++                <p className="text-sm text-destructive">{errors.confirmPassword}</p>
++              )}
++            </div>
++
++            <Button
++              type="submit"
++              size="lg"
++              className="w-full bg-primary text-primary-foreground"
++              disabled={isSubmitting}
++            >
++              {isSubmitting ? (
++                t("Creando cuenta...", "Creating account...")
++              ) : (
++                <>
++                  <UserPlus className="mr-2 h-5 w-5" />
++                  {t("Crear cuenta", "Create account")}
++                </>
++              )}
++            </Button>
++          </form>
++
++          <div className="mt-6 text-center text-sm text-muted-foreground">
++            {t("¿Ya tenés cuenta?", "Already have an account?")}{" "}
++            <Link href="/login" className="text-primary font-medium hover:underline">
++              {t("Iniciá sesión", "Sign in")}
++            </Link>
++          </div>
++        </Card>
++      </div>
++    </section>
++  )
++}
+diff --git a/contexts/auth-context.tsx b/contexts/auth-context.tsx
+new file mode 100644
+index 0000000..2f649e8
+--- /dev/null
++++ b/contexts/auth-context.tsx
+@@ -0,0 +1,141 @@
++"use client"
++
++import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
++import type { AuthUser } from "@/lib/types"
++
++const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
++
++// SECURITY: Auth tokens are no longer stored in localStorage (vulnerable to XSS).
++// Instead, this client relies on the backend issuing an httpOnly, Secure, SameSite
++// cookie via the Set-Cookie response header on /api/auth/login, /api/auth/register,
++// and clearing it on /api/auth/logout. All auth requests use `credentials: "include"`
++// so the browser transmits the cookie automatically without exposing it to JS.
++//
++// Backend requirement: the /api/auth/{login,register,logout,me} endpoints must
++// set/clear an httpOnly cookie (e.g. `Set-Cookie: auth_token=...; HttpOnly; Secure;
++// SameSite=Lax; Path=/`). If the backend has not been updated to do so, sessions
++// will not persist — that is the intended fail-closed behavior of this fix.
++const AUTH_FETCH_INIT: RequestInit = { credentials: "include" }
++
++type AuthContextType = {
++  user: AuthUser | null
++  isLoading: boolean
++  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
++  register: (data: {
++    firstName: string
++    lastName: string
++    email: string
++    password: string
++    phone?: string
++  }) => Promise<{ success: boolean; error?: string }>
++  logout: () => Promise<void>
++}
++
++const AuthContext = createContext<AuthContextType | undefined>(undefined)
++
++export function AuthProvider({ children }: { children: ReactNode }) {
++  const [user, setUser] = useState<AuthUser | null>(null)
++  const [isLoading, setIsLoading] = useState(true)
++
++  // Check for existing session on mount by hitting /me with the httpOnly cookie.
++  useEffect(() => {
++    fetch(`${API_URL}/api/auth/me`, AUTH_FETCH_INIT)
++      .then((res) => {
++        if (res.ok) return res.json()
++        throw new Error("Invalid session")
++      })
++      .then((data) => {
++        setUser(data.user)
++      })
++      .catch(() => {
++        // No active session — leave user null.
++      })
++      .finally(() => {
++        setIsLoading(false)
++      })
++  }, [])
++
++  const login = useCallback(async (email: string, password: string) => {
++    try {
++      const res = await fetch(`${API_URL}/api/auth/login`, {
++        ...AUTH_FETCH_INIT,
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify({ email, password }),
++      })
++
++      const data = await res.json()
++
++      if (!res.ok) {
++        return { success: false, error: data.error || "Error al iniciar sesión" }
++      }
++
++      // The backend is expected to set an httpOnly auth cookie in this response.
++      // Do NOT persist data.token in JS-accessible storage.
++      setUser(data.user)
++      return { success: true }
++    } catch {
++      return { success: false, error: "Error de conexión con el servidor" }
++    }
++  }, [])
++
++  const register = useCallback(
++    async (registerData: {
++      firstName: string
++      lastName: string
++      email: string
++      password: string
++      phone?: string
++    }) => {
++      try {
++        const res = await fetch(`${API_URL}/api/auth/register`, {
++          ...AUTH_FETCH_INIT,
++          method: "POST",
++          headers: { "Content-Type": "application/json" },
++          body: JSON.stringify(registerData),
++        })
++
++        const data = await res.json()
++
++        if (!res.ok) {
++          return { success: false, error: data.error || "Error al crear la cuenta" }
++        }
++
++        // The backend is expected to set an httpOnly auth cookie in this response.
++        // Do NOT persist data.token in JS-accessible storage.
++        setUser(data.user)
++        return { success: true }
++      } catch {
++        return { success: false, error: "Error de conexión con el servidor" }
++      }
++    },
++    []
++  )
++
++  const logout = useCallback(async () => {
++    try {
++      // Backend should clear the httpOnly cookie via Set-Cookie with Max-Age=0.
++      await fetch(`${API_URL}/api/auth/logout`, {
++        ...AUTH_FETCH_INIT,
++        method: "POST",
++      })
++    } catch {
++      // Ignore logout errors
++    }
++    setUser(null)
++  }, [])
++
++  return (
++    <AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
++      {children}
++    </AuthContext.Provider>
++  )
++}
++
++export function useAuth() {
++  const context = useContext(AuthContext)
++  if (context === undefined) {
++    throw new Error("useAuth must be used within an AuthProvider")
++  }
++  return context
++}
+diff --git a/lib/types.ts b/lib/types.ts
+index 3998223..524cf9c 100644
+--- a/lib/types.ts
++++ b/lib/types.ts
+@@ -95,3 +95,30 @@ export interface ContactRequest {
+   subject: string
+   message: string
+ }
++
++export interface AuthUser {
++  id: string
++  firstName: string
++  lastName: string
++  email: string
++  phone: string
++}
++
++export interface LoginRequest {
++  email: string
++  password: string
++}
++
++export interface RegisterRequest {
++  firstName: string
++  lastName: string
++  email: string
++  password: string
++  phone?: string
++}
++
++export interface AuthResponse {
++  message: string
++  token: string
++  user: AuthUser
++}

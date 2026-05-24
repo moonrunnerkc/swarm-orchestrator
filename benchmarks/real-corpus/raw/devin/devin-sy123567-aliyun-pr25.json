@@ -1,0 +1,26 @@
+{
+  "id": "devin-sy123567-aliyun-pr25",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 25,
+    "headSha": "589528a6288ec3c1656148bb0442130dc29c58dc",
+    "baseSha": "770892d7d18efbf2991fdabaf7d7a8ee978471ad",
+    "title": "评分架构优化：全面参数化（44项） + 市场自适应机会成本",
+    "body": "## Summary\n\n将 `scoring.py` 中所有硬编码魔数提取至 `config.py`，新增 44 个可配置参数，覆盖接单/等待/空驶评分全链路。同时引入**市场自适应机会成本**机制，根据可见货源密度动态调节时间成本权重。\n\n### 主要变更\n\n**1. 全面参数化（44个新配置参数）**\n| 类别 | 典型参数 | 说明 |\n|------|----------|------|\n| 接单评分 | `WAITING_PENALTY_RATIO`, `AVOID_CATEGORY_DEFAULT_PENALTY` | 装货等待折算、品类回避罚金 |\n| 距离限制 | `DISTANCE_LIMIT_HARD_RATIO`, `DISTANCE_LIMIT_OVER_PENALTY_COEFF` | 超距硬阻拦/软惩罚阈值 |\n| 高价值熟货 | `PREFERRED_CARGO_HIGH_VALUE_THRESHOLD`, `*_ACTIVE_MULTIPLIER` | 5000元阈值、活跃窗倍数 |\n| 定时事件 | `TIMED_EVENT_EARLY_APPROACH_AWAY_KM`, `*_RATIO` | 早期靠近/远离距离和比例 |\n| 每日休息 | `DAILY_REST_TIGHT_RATIO`, `DAILY_REST_TIGHT_MULTIPLIER` | 余量判断和惩罚系数 |\n| 月度休息 | `MONTHLY_DAY_OFF_URGENCY_*`, `*_LATE_MONTH_COEFF` | urgency阈值和后半月系数 |\n| 收入效率 | `INCOME_EFFICIENCY_THRESHOLD_RATIO`, `*_AVG_WORK_HOURS` | 效率触发比例和工作时间 |\n| 未来价值 | `FUTURE_VALUE_HORIZON_*`, `*_HOUR_SIGNAL_WEIGHT` | 时间窗口和模式权重 |\n| 回家规则 | `HOME_RULE_TIGHT_SLACK_MINUTES`, `HOME_RULE_REPO_TIGHT_SLACK_MINUTES` | 裕量阈值参数化 |\n| 空驶评分 | `DEADHEAD_OVERCAP_SOFT_PENALTY`, `PREFERRED_CARGO_NEARBY_KM` | cap超限和近距判断 |\n| 自适应权重 | `ADAPTIVE_WEIGHT_MONTH_END_*`, `*_PREF_RISK_*`, `*_SCARCE_*` | 各状态权重缩放 |\n| 市场自适应 | `MARKET_OPP_COST_LOW/HIGH_*` | 货源密度驱动的成本调节 |\n\n**2. 市场自适应机会成本（新功能）**\n- 货源稀缺（≤3个可见）：`time_cost` 权重 ×0.6，避免焦虑性空驶\n- 货源充裕（≥15个可见）：`time_cost` 权重 ×1.3，促进快速决策\n- 与现有夜间/月末/稀缺自适应权重叠加，形成完整的市场感知\n\n**3. 设计原则**\n- 所有参数均有中文 docstring，说明用途和默认值来源\n- 默认值与修改前行为完全一致（行为等价重构 + 新功能）\n- 换数据集时只需调整 `config.py`，无需修改评分逻辑代码\n\n## Review & Testing Checklist for Human\n\n- [ ] **验证参数默认值一致性**：对比 `config.py` 新增参数与 `scoring.py` 原硬编码值，确认默认值相同\n- [ ] **运行 31 天仿真**：`cd demo/server && python main.py`，然后 `python demo/calc_monthly_income.py`，验证 total_net_income 不低于基线\n- [ ] **偏好惩罚检查**：确认 total_preference_penalty 未显著增长\n- [ ] **参数调优测试**：尝试修改 `MARKET_OPP_COST_LOW_RATIO` / `MARKET_OPP_COST_HIGH_RATIO` 观察收益变化\n- [ ] **数据集切换测试**：如有其他数据集，替换 `server/data/` 后验证无硬编码报错\n\n### 测试计划\n1. 运行完整仿真 2-3 次取平均值（LLM 有 ~¥360 方差）\n2. 比较 net_income 和 preference_penalty 两个维度\n3. 调整 `MARKET_OPP_COST_*` 参数观察敏感性\n\n### Notes\n- 行为等价变更（参数化）与新功能（市场自适应）分离清晰，可独立回退\n- 参数搜索结果 `param_search_results.json` 表明最优 `opp_cost_per_min=1.0`，市场自适应机制在此基础上做细粒度调节\n\nLink to Devin session: https://app.devin.ai/sessions/2aeec93c562946ceb1dec632982f84f3\nRequested by: @sy123567",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779589583-scoring-optimization",
+    "repository": "sy123567/aliyun"
+  },
+  "diffRef": {
+    "repository": "sy123567/aliyun",
+    "headSha": "589528a6288ec3c1656148bb0442130dc29c58dc",
+    "baseSha": "770892d7d18efbf2991fdabaf7d7a8ee978471ad"
+  },
+  "vendoredDiffPath": "devin/devin-sy123567-aliyun-pr25.diff",
+  "vendoredAt": "2026-05-24T03:04:06.132Z",
+  "collectedAt": "2026-05-24T03:04:06.132Z"
+}

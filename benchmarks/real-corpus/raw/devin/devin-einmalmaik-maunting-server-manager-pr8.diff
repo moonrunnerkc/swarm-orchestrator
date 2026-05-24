@@ -1,0 +1,137 @@
+diff --git a/backend/games/base.py b/backend/games/base.py
+index 34464bd..ea74050 100644
+--- a/backend/games/base.py
++++ b/backend/games/base.py
+@@ -172,6 +172,10 @@ def default_volume_binds(server) -> list[VolumeBind]:
+ # Kuratiertes, gepflegtes SteamCMD-Image. Eine Pin auf einen festen Tag erfolgt
+ # in einer Folge-Phase (Phase 5 wird Image+Tag pro Plugin-Egg konfigurierbar).
+ STEAMCMD_IMAGE = "cm2network/steamcmd:root"
++# Pfad des steamcmd-Wrappers im Image. Explizit setzen, damit unsere Pipeline
++# nicht vom Image-Default-Entrypoint abhängt (manche Tags haben keinen).
++STEAMCMD_ENTRYPOINT = "/home/steam/steamcmd/steamcmd.sh"
++STEAMCMD_WORKDIR = "/home/steam/steamcmd"
+ 
+ 
+ def run_steamcmd_install(
+@@ -205,6 +209,12 @@ def run_steamcmd_install(
+         command=cmd,
+         volumes=[VolumeBind(install_dir, CONTAINER_DATA_DIR, read_only=False)],
+         user=f"{uid}:{gid}",
++        entrypoint=STEAMCMD_ENTRYPOINT,
++        workdir=STEAMCMD_WORKDIR,
++        # SteamCMD legt Cache/Auth in $HOME ab. Auf /data umleiten, damit der
++        # Cache zwischen Runs erhalten bleibt und keine Permission-Probleme
++        # mit /home/steam (root-owned) entstehen.
++        env={"HOME": CONTAINER_DATA_DIR},
+         timeout=3600,
+     )
+ 
+@@ -247,6 +257,9 @@ def run_steamcmd_workshop_download(
+         command=cmd,
+         volumes=[VolumeBind(install_dir, CONTAINER_DATA_DIR, read_only=False)],
+         user=f"{uid}:{gid}",
++        entrypoint=STEAMCMD_ENTRYPOINT,
++        workdir=STEAMCMD_WORKDIR,
++        env={"HOME": CONTAINER_DATA_DIR},
+         timeout=3600,
+     )
+     out = (result.get("stdout") or "") + (result.get("stderr") or "")
+diff --git a/backend/services/docker_service.py b/backend/services/docker_service.py
+index ba16cdb..bb10103 100644
+--- a/backend/services/docker_service.py
++++ b/backend/services/docker_service.py
+@@ -270,11 +270,16 @@ def run_ephemeral(
+     env: dict[str, str] | None = None,
+     user: str | None = None,
+     workdir: str | None = None,
++    entrypoint: str | None = None,
+     timeout: int = 1800,
+ ) -> dict:
+     """Führt ein einmaliges `docker run --rm`-Kommando aus (für SteamCMD-Installs etc.).
+ 
+     Blockiert bis der Container beendet ist (oder Timeout).
++
++    `entrypoint` setzt `--entrypoint <path>`, wenn das Image keinen passenden
++    Default-Entrypoint hat (z. B. `cm2network/steamcmd:root` startet bash und
++    erwartet ein Skript-Argument).
+     """
+     args: list[str] = ["run", "--rm"]
+     args.extend(_HARDENING_FLAGS)
+@@ -283,6 +288,10 @@ def run_ephemeral(
+         args.extend(["--user", user])
+     if workdir:
+         args.extend(["--workdir", workdir])
++    if entrypoint:
++        # --entrypoint MUSS vor dem Image stehen, sonst macht Docker daraus
++        # einen CMD-Override.
++        args.extend(["--entrypoint", entrypoint])
+     if env:
+         for key, value in env.items():
+             args.extend(["-e", f"{key}={value}"])
+diff --git a/backend/tests/test_docker_service.py b/backend/tests/test_docker_service.py
+index 8fcfc30..d71d71e 100644
+--- a/backend/tests/test_docker_service.py
++++ b/backend/tests/test_docker_service.py
+@@ -157,3 +157,62 @@ def test_steamcmd_args_passed_through(self):
+         assert "--rm" in args
+         assert "--cap-drop=ALL" in args
+         assert "+app_update" in args[-1] or any("+app_update" in a for a in args)
++
++    def test_entrypoint_override_lands_before_image(self):
++        """--entrypoint MUSS vor dem Image stehen, sonst override't Docker den CMD."""
++        with patch.object(docker_service, "_check_docker", return_value=True), \
++             patch.object(docker_service, "_run_docker") as mock_run:
++            mock_run.return_value = {"ok": True, "stdout": "", "stderr": ""}
++            docker_service.run_ephemeral(
++                image="cm2network/steamcmd:root",
++                command=["+quit"],
++                volumes=[],
++                env={"HOME": "/data"},
++                user="1000:1000",
++                workdir="/home/steam/steamcmd",
++                entrypoint="/home/steam/steamcmd/steamcmd.sh",
++            )
++        args = mock_run.call_args.args[0]
++        # --entrypoint <path> als getrennte Argumente (Docker-Syntax)
++        entry_idx = args.index("--entrypoint")
++        assert args[entry_idx + 1] == "/home/steam/steamcmd/steamcmd.sh"
++        # MUSS vor dem Image stehen
++        image_idx = args.index("cm2network/steamcmd:root")
++        assert entry_idx < image_idx
++        # HOME-Env ist drin
++        assert any(a == "HOME=/data" for a in args)
++
++
++class TestSteamCMDHelpers:
++    """Stellt sicher, dass run_steamcmd_install/workshop_download den Entrypoint
++    explizit setzen — sonst krachen die Calls beim Bug, den der User gesehen hat
++    (`exec: \"+force_install_dir\": executable file not found`)."""
++
++    def test_steamcmd_install_uses_entrypoint_and_home(self, tmp_path):
++        from games.base import STEAMCMD_ENTRYPOINT, STEAMCMD_WORKDIR, run_steamcmd_install
++
++        with patch("games.base.docker_service.run_ephemeral") as mock_eph:
++            mock_eph.return_value = {"ok": True, "stdout": "ok", "stderr": ""}
++            run_steamcmd_install(server_id=1, install_dir=str(tmp_path), app_id="223350")
++
++        kwargs = mock_eph.call_args.kwargs
++        assert kwargs["entrypoint"] == STEAMCMD_ENTRYPOINT
++        assert kwargs["workdir"] == STEAMCMD_WORKDIR
++        assert kwargs["env"].get("HOME") == "/data"
++        # Command beginnt mit den Steam-Args, nicht mit dem Entrypoint
++        assert kwargs["command"][0] == "+force_install_dir"
++
++    def test_workshop_download_uses_entrypoint_and_home(self, tmp_path):
++        from games.base import STEAMCMD_ENTRYPOINT, STEAMCMD_WORKDIR, run_steamcmd_workshop_download
++
++        with patch("games.base.docker_service.run_ephemeral") as mock_eph:
++            mock_eph.return_value = {"ok": True, "stdout": "ok", "stderr": ""}
++            run_steamcmd_workshop_download(
++                server_id=1, install_dir=str(tmp_path), workshop_app_id="221100", workshop_item_id="12345"
++            )
++
++        kwargs = mock_eph.call_args.kwargs
++        assert kwargs["entrypoint"] == STEAMCMD_ENTRYPOINT
++        assert kwargs["workdir"] == STEAMCMD_WORKDIR
++        assert kwargs["env"].get("HOME") == "/data"
++        assert "+workshop_download_item" in kwargs["command"]

@@ -1,0 +1,170 @@
+diff --git a/docs/solutions/architecture-patterns/agent-native-parity-audit-workflow-2026-05-10.md b/docs/solutions/architecture-patterns/agent-native-parity-audit-workflow-2026-05-10.md
+index 17b214748..171e3ee41 100644
+--- a/docs/solutions/architecture-patterns/agent-native-parity-audit-workflow-2026-05-10.md
++++ b/docs/solutions/architecture-patterns/agent-native-parity-audit-workflow-2026-05-10.md
+@@ -62,9 +62,23 @@ Address quick wins and action parity first, then structural.
+ 
+ ### Step 3: Add each tool (four-part pattern)
+ 
+-Every Rebecca tool requires exactly four coordinated changes in `artifacts/api-server/src/chat/rebecca-tools.ts`. Missing any one breaks typecheck or the CI parity guard.
++Every Rebecca tool requires exactly four coordinated changes. Since the
++2026-05-10 file split, the parts live in **three different files** under
++`artifacts/api-server/src/chat/` (plus a doc edit). Missing any one breaks
++typecheck or the CI parity guard.
+ 
+-**Part A — Tool schema** (in the `getRebeccaTools()` array):
++| Part | File | Symbol |
++|---|---|---|
++| A — Tool schema | `rebecca-tool-defs-<domain>.ts` (re-exported via `rebecca-tool-definitions.ts`) | `getRebeccaTools()` array entry |
++| B — Dispatch case | `rebecca-tool-dispatch.ts` | `dispatchRebeccaTool()` switch |
++| C — Implementation | `rebecca-tool-impls-<domain>.ts` | `tool*()` function |
++| D — Parity row | `docs/discipline/agent-native-parity-map.md` | Markdown table row |
++
++Pick `<domain>` from the existing impl files: `property`, `scenario`, `deck`,
++`slide-factory`, `iris`, `kb`, `admin`. If a tool spans two domains, prefer
++the impl file where most of its data lives and add an import to the dispatch.
++
++**Part A — Tool schema** (in the appropriate `rebecca-tool-defs-<domain>.ts`):
+ ```typescript
+ {
+   name: "get_global_assumptions",
+@@ -80,7 +94,9 @@ case "get_global_assumptions":
+   return await toolGetGlobalAssumptions(ctx);
+ ```
+ 
+-**Part C — Implementation function**:
++**Part C — Implementation function** (in `rebecca-tool-impls-admin.ts` for this
++example; pick the impl file matching the dispatch case's domain). `ToolContext`
++and `DataChangedEntry` are imported from `./rebecca-tool-types`:
+ ```typescript
+ async function toolGetGlobalAssumptions(
+   ctx: ToolContext,
+@@ -104,7 +120,7 @@ Verify all four before committing — the CI test (`parity-map-coverage.test.ts`
+ 
+ When a tool emits a `dataChanged` with an `entityType` not already in the union, three additional changes are required:
+ 
+-**In `rebecca-tools.ts` — extend the union** (~line 38):
++**In `rebecca-tool-types.ts` — extend the `DataChangedEntry` union**:
+ ```typescript
+ export type DataChangedEntry = {
+   entityType: "property" | "scenario" | ... | "company" | "market_rate";
+@@ -112,7 +128,7 @@ export type DataChangedEntry = {
+ };
+ ```
+ 
+-**In `RebeccaPanel.tsx` — add handler in BOTH SSE blocks**. There are two blocks (one per streaming mode, ~lines 467 and 637). Both must be updated or one mode leaves the UI stale:
++**In `RebeccaPanel.tsx` — add handler in BOTH SSE blocks**. There are two blocks (one per streaming mode, currently ~lines 468 and 662 — search for `entry.entityType === "property"` to locate them). Both must be updated or one mode leaves the UI stale:
+ ```typescript
+ } else if (entry.entityType === "company") {
+   queryClient.invalidateQueries({ queryKey: ["/api/admin/companies"] });
+diff --git a/docs/solutions/architecture-patterns/rebecca-agent-native-architecture-2026-05-09.md b/docs/solutions/architecture-patterns/rebecca-agent-native-architecture-2026-05-09.md
+index 7462b4362..a1d3e3b01 100644
+--- a/docs/solutions/architecture-patterns/rebecca-agent-native-architecture-2026-05-09.md
++++ b/docs/solutions/architecture-patterns/rebecca-agent-native-architecture-2026-05-09.md
+@@ -1,6 +1,7 @@
+ ---
+ title: "Rebecca Agent-Native Architecture — As Built (Wave 0 + Full Tool Registry)"
+ date: 2026-05-09
++last_updated: 2026-05-10
+ category: architecture-patterns
+ module: rebecca-agent-native-architecture
+ problem_type: architecture_pattern
+@@ -52,6 +53,13 @@ stream. The prior doc had seven specific inaccuracies that are corrected here:
+ 
+ ## Guidance
+ 
++> **2026-05-10 update — file split.** A file-splitting sprint broke the
++> monolithic `chat/rebecca-tools.ts` and `routes/chat.ts` into focused domain
++> modules. `chat/rebecca-tools.ts` is now a thin re-export barrel — all
++> `import { … } from "../chat/rebecca-tools"` callers continue to resolve
++> identically. The file paths called out below have been updated to point at
++> the new homes for navigation; behavior is unchanged.
++
+ ### Type layer (`artifacts/api-server/src/chat/tool-types.ts`)
+ 
+ Three types power the tool system:
+@@ -80,9 +88,13 @@ export interface LlmResult {
+ ```
+ 
+ The `executor` field from the old proposal does not exist. Tool implementation lives in
+-`dispatchRebeccaTool()`, a `switch` statement in `chat/rebecca-tools.ts`.
++`dispatchRebeccaTool()`, a `switch` statement in `chat/rebecca-tool-dispatch.ts`,
++which delegates to per-domain implementation modules (`rebecca-tool-impls-property.ts`,
++`rebecca-tool-impls-scenario.ts`, `rebecca-tool-impls-deck.ts`,
++`rebecca-tool-impls-slide-factory.ts`, `rebecca-tool-impls-iris.ts`,
++`rebecca-tool-impls-kb.ts`, `rebecca-tool-impls-admin.ts`).
+ 
+-### DataChangedEntry union (`artifacts/api-server/src/chat/rebecca-tools.ts`)
++### DataChangedEntry union (`artifacts/api-server/src/chat/rebecca-tool-types.ts`)
+ 
+ Every mutating tool returns an optional `DataChangedEntry` that the agentic loop
+ accumulates and emits on the SSE `done` payload:
+@@ -91,14 +103,15 @@ accumulates and emits on the SSE `done` payload:
+ export type DataChangedEntry = {
+   entityType: "property" | "scenario" | "slide_factory_run" | "analyst_table"
+             | "lb_deck_config" | "kb_entry" | "global_assumptions" | "research_job"
+-            | "iris_run" | "iris_gap" | "data_source" | "compliance_run";
++            | "iris_run" | "iris_gap" | "data_source" | "compliance_run"
++            | "company" | "market_rate" | "property_finder" | "service_template";
+   entityId: number;  // always a number, never a string
+ };
+ ```
+ 
+ `chat.ts` defines a narrower local alias for the three entity types it creates directly
+-(`property | scenario | slide_factory_run`); the full 12-type union is in
+-`rebecca-tools.ts`.
++(`property | scenario | slide_factory_run`); the full 16-type union is in
++`rebecca-tool-types.ts`.
+ 
+ ### `callLlm()` return contract
+ 
+@@ -111,7 +124,7 @@ and `stopReason: "tool_use"`. When it produces a text response it has `text` and
+ ### Provider function-calling wire formats
+ 
+ All four supported providers differ in how tools are declared and how results are fed
+-back. The `appendToolResults()` helper in `chat.ts` handles the per-provider
++back. The `appendToolResults()` helper in `routes/chat-sse.ts` handles the per-provider
+ serialization:
+ 
+ | Provider | Tool declaration key | Tool-call detection | Result feed-back format |
+@@ -125,7 +138,7 @@ When `tools` are active, `callLlmStream()` delegates to the non-streaming `callL
+ and emits the full text as one token. Streaming only resumes on the final text-only
+ turn (no tools passed on the last depth iteration).
+ 
+-### The agentic loop (`runAgenticLoop` in `artifacts/api-server/src/routes/chat.ts`)
++### The agentic loop (`runAgenticLoop` in `artifacts/api-server/src/routes/chat-loop.ts`)
+ 
+ ```
+ MAX_TOOL_DEPTH = 4
+@@ -195,8 +208,10 @@ full mapping:
+ 
+ ### Tool registry
+ 
+-`getRebeccaTools()` in `chat/rebecca-tools.ts` returns 50+ `ToolParam` entries.
+-`dispatchRebeccaTool()` is a `switch` statement with a case for each. Categories:
++`getRebeccaTools()` in `chat/rebecca-tool-definitions.ts` (assembled from
++per-domain `rebecca-tool-defs-*.ts` files) returns 70+ `ToolParam` entries.
++`dispatchRebeccaTool()` in `chat/rebecca-tool-dispatch.ts` is a `switch` statement
++with a case for each. Categories:
+ 
+ | Category | Tools |
+ |---|---|
+@@ -378,9 +393,16 @@ toast({
+ 
+ ## Related
+ 
+-- `artifacts/api-server/src/routes/chat.ts` — `runAgenticLoop`, `callLlm`, `callLlmStream`, `appendToolResults`, `executeTool`, `MAX_TOOL_DEPTH`
++- `artifacts/api-server/src/routes/chat-loop.ts` — `runAgenticLoop`, `MAX_TOOL_DEPTH`, `executeTool`
++- `artifacts/api-server/src/routes/chat-llm.ts` — `callLlm`, `callLlmStream`
++- `artifacts/api-server/src/routes/chat-sse.ts` — `appendToolResults`, SSE event helpers
++- `artifacts/api-server/src/routes/chat.ts` — `POST /api/chat` handler that wires the above (plus chat-prompt-builder, chat-context, chat-prompts, chat-settings, chat-sources, chat-conversation, chat-conversations, chat-insight)
+ - `artifacts/api-server/src/chat/tool-types.ts` — `ToolParam`, `ToolCall`, `LlmResult`
+-- `artifacts/api-server/src/chat/rebecca-tools.ts` — `getRebeccaTools()`, `dispatchRebeccaTool()`, `DataChangedEntry`
++- `artifacts/api-server/src/chat/rebecca-tool-types.ts` — `DataChangedEntry`, `ToolContext`, arg validators (`requireNumericArg`, `requireObjectArg`, `requireAdminCtx`)
++- `artifacts/api-server/src/chat/rebecca-tool-definitions.ts` — `getRebeccaTools()` (assembled from per-domain `rebecca-tool-defs-*.ts`)
++- `artifacts/api-server/src/chat/rebecca-tool-dispatch.ts` — `dispatchRebeccaTool()` switch
++- `artifacts/api-server/src/chat/rebecca-tool-impls-*.ts` — per-domain tool implementations (property, scenario, deck, slide-factory, iris, kb, admin)
++- `artifacts/api-server/src/chat/rebecca-tools.ts` — thin re-export barrel; preserves existing import paths
+ - `artifacts/hospitality-business-portal/src/components/rebecca/RebeccaPanel.tsx` — SSE event handling, `dataChanged` invalidation, tool step indicators, `BACKGROUND_TOOL_LABELS`
+ - `docs/discipline/agent-native-parity-map.md` — Canonical record of tool coverage vs UI actions; all ✅ as of Wave 0
+ - `docs/solutions/architecture-patterns/rebecca-agent-native-architecture-2026-05-05.md` — Superseded: the proposed design before implementation

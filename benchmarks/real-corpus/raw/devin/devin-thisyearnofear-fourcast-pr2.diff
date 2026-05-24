@@ -1,0 +1,4318 @@
+diff --git a/.npmrc b/.npmrc
+new file mode 100644
+index 0000000..521a9f7
+--- /dev/null
++++ b/.npmrc
+@@ -0,0 +1 @@
++legacy-peer-deps=true
+diff --git a/app/agent/page.js b/app/agent/page.js
+index 7f8577f..2be93c6 100644
+--- a/app/agent/page.js
++++ b/app/agent/page.js
+@@ -46,17 +46,6 @@ export default function AgentPage() {
+     ? 'bg-slate-900/60 border-white/20'
+     : 'bg-white/60 border-black/20';
+ 
+-  if (isLoadingWeather) {
+-    return (
+-      <div className="w-screen h-screen flex items-center justify-center bg-black">
+-        <div className="flex flex-col items-center">
+-          <div className="w-12 h-12 border-4 border-current/30 border-t-current rounded-full animate-spin text-white mb-4" />
+-          <p className="text-white font-light">Loading...</p>
+-        </div>
+-      </div>
+-    );
+-  }
+-
+   return (
+     <div className="min-h-screen relative">
+       {/* 3D Scene Background */}
+diff --git a/app/components/PageNav.js b/app/components/PageNav.js
+index a740a94..3949675 100644
+--- a/app/components/PageNav.js
++++ b/app/components/PageNav.js
+@@ -52,7 +52,7 @@ export default function PageNav({ currentPage, isNight, secondaryNav = [] }) {
+       onboardId: "agent"
+     },
+     { 
+-      name: "You", 
++      name: "Positions", 
+       href: "/positions", 
+       icon: "💼",
+       description: "Your positions & reputation",
+@@ -113,34 +113,36 @@ export default function PageNav({ currentPage, isNight, secondaryNav = [] }) {
+         ))}
+       </div>
+ 
+-      {/* Mobile Navigation - Icon only */}
++      {/* Mobile Navigation - Icon + label */}
+       <div className="flex sm:hidden items-center gap-1">
+         {primaryNav.map((item) => (
+           <Link
+             key={item.name}
+             href={item.href}
+             data-onboard={item.onboardId}
+-            className={`flex items-center justify-center w-10 h-10 rounded-lg text-lg transition-all ${
++            className={`flex flex-col items-center justify-center w-12 h-12 rounded-lg transition-all ${
+               isActive(item.href)
+                 ? `${activeBgClass}`
+                 : `${glassClass} opacity-70`
+             }`}
+             aria-label={item.name}
+           >
+-            <span>{item.icon}</span>
++            <span className="text-base leading-none">{item.icon}</span>
++            <span className={`text-[8px] mt-0.5 font-medium ${textColor} leading-none`}>{item.name}</span>
+           </Link>
+         ))}
+         {/* Labs icon on mobile */}
+         <Link
+           href="/labs"
+-          className={`flex items-center justify-center w-9 h-9 rounded-lg text-base transition-all ${
++          className={`flex flex-col items-center justify-center w-11 h-12 rounded-lg transition-all ${
+             isActive('/labs')
+               ? `${activeBgClass}`
+               : `${glassClass} opacity-50`
+           }`}
+           aria-label="Labs"
+         >
+-          <span>🧪</span>
++          <span className="text-base leading-none">🧪</span>
++          <span className={`text-[8px] mt-0.5 font-medium ${textColor} leading-none`}>Labs</span>
+         </Link>
+       </div>
+     </nav>
+diff --git a/app/labs/page.js b/app/labs/page.js
+index 340f584..5970127 100644
+--- a/app/labs/page.js
++++ b/app/labs/page.js
+@@ -95,17 +95,6 @@ export default function LabsPage() {
+     ? 'bg-slate-900/60 border-white/20'
+     : 'bg-white/60 border-black/20';
+ 
+-  if (isLoadingWeather) {
+-    return (
+-      <div className="w-screen h-screen flex items-center justify-center bg-black">
+-        <div className="flex flex-col items-center">
+-          <div className="w-12 h-12 border-4 border-current/30 border-t-current rounded-full animate-spin text-white mb-4" />
+-          <p className="text-white font-light">Loading...</p>
+-        </div>
+-      </div>
+-    );
+-  }
+-
+   return (
+     <div className="min-h-screen relative">
+       {/* 3D Scene Background */}
+diff --git a/app/layout.js b/app/layout.js
+index 4e08b33..7acf0b2 100644
+--- a/app/layout.js
++++ b/app/layout.js
+@@ -34,7 +34,7 @@ export default function RootLayout({ children }) {
+                 <span className="text-slate-700 text-[10px]">·</span>
+                 <Link href="/agent" className="text-[12px] text-slate-500 hover:text-slate-300 transition-colors no-underline">Agent</Link>
+                 <span className="text-slate-700 text-[10px]">·</span>
+-                <Link href="/positions" className="text-[12px] text-slate-500 hover:text-slate-300 transition-colors no-underline">You</Link>
++                <Link href="/positions" className="text-[12px] text-slate-500 hover:text-slate-300 transition-colors no-underline">Positions</Link>
+                 <span className="text-slate-700 text-[10px]">·</span>
+                 <Link href="/labs" className="text-[12px] text-slate-500 hover:text-slate-300 transition-colors no-underline">🧪 Labs</Link>
+                 <span className="text-slate-700 text-[10px]">·</span>
+diff --git a/app/markets/components.js b/app/markets/components.js
+new file mode 100644
+index 0000000..5a80c51
+--- /dev/null
++++ b/app/markets/components.js
+@@ -0,0 +1,1980 @@
++'use client';
++
++import React, { useState, useEffect } from "react";
++import { useChainConnections } from "@/hooks/useChainConnections";
++import { arbitrageService } from "@/services/arbitrageService";
++import { CHAINS } from "@/constants/appConstants";
++import { getRecommendationExplanation } from "@/utils/chainUtils";
++import EmptyMarketState from "@/components/EmptyMarketState";
++import BottomSheet from "@/components/BottomSheet";
++import EvidenceBlock from "@/components/EvidenceBlock";
++
++// Sports Tab Component - Date-First Design
++export function SportsTabContent({
++  markets,
++  isLoading,
++  error,
++  filters,
++  setFilters,
++  dateRange,
++  setDateRange,
++  minVolume,
++  setMinVolume,
++  onAnalyze,
++  isNight,
++  textColor,
++  cardBgColor,
++  expandedMarketId,
++  setExpandedMarketId,
++  analysis,
++  isAnalyzing,
++  selectedMarket,
++  onPublishSignal,
++  analysisMode,
++  fetchMarkets,
++  chains,
++  canPublish,
++  setShowOrderPanel,
++  setSelectedMarketForOrder,
++  setSelectedKalshiMarket,
++  setOrderSide,
++  setSelectedArbitrage,
++  agentBrierScore,
++  calibrationScore,
++}) {
++  const dateRangeLabels = {
++    today: "Today",
++    tomorrow: "Tomorrow",
++    "this-week": "This Week",
++    later: "Later",
++  };
++
++  return (
++    <div className="space-y-6">
++      {/* Compact Filter Bar */}
++      <div
++        className={`${cardBgColor} backdrop-blur-xl border rounded-3xl p-3 space-y-2`}
++      >
++        {/* Event Type */}
++        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
++          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
++            Event Type
++          </label>
++          <select
++            value={filters.eventType}
++            onChange={(e) =>
++              setFilters((prev) => ({ ...prev, eventType: e.target.value }))
++            }
++            className={`flex-1 px-3 py-2 text-sm rounded-lg border ${isNight
++              ? "bg-white/10 border-white/20 text-white"
++              : "bg-black/10 border-black/20 text-black"
++              }`}
++          >
++            <option value="Soccer">⚽ Soccer</option>
++            <option value="NFL">🏈 NFL</option>
++            <option value="F1">🏎️ Formula 1</option>
++            <option value="all">All Sports</option>
++          </select>
++        </div>
++
++        {/* Date Range Tabs */}
++        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
++          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
++            When
++          </label>
++          <div className="flex gap-1 flex-wrap">
++            {Object.entries(dateRangeLabels).map(([key, label]) => (
++              <button
++                key={key}
++                onClick={() => setDateRange(key)}
++                className={`px-3 py-1.5 text-xs rounded-lg border transition-all font-light ${dateRange === key
++                  ? isNight
++                    ? "bg-blue-500/30 text-white border-blue-400/40"
++                    : "bg-blue-400/30 text-black border-blue-500/40"
++                  : isNight
++                    ? "bg-white/10 hover:bg-white/20 text-white/70 border-white/20"
++                    : "bg-black/10 hover:bg-black/20 text-black/70 border-black/20"
++                  }`}
++              >
++                {label}
++              </button>
++            ))}
++          </div>
++        </div>
++
++        {/* Min Volume */}
++        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
++          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
++            Min Volume
++          </label>
++          <select
++            value={String(minVolume)}
++            onChange={(e) => setMinVolume(parseInt(e.target.value))}
++            className={`flex-1 px-3 py-2 text-sm rounded-lg border ${isNight
++              ? "bg-white/10 border-white/20 text-white"
++              : "bg-black/10 border-black/20 text-black"
++              }`}
++          >
++            <option value="10000">$10k+</option>
++            <option value="50000">$50k+</option>
++            <option value="100000">$100k+</option>
++          </select>
++        </div>
++
++        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
++          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
++            Confidence
++          </label>
++          <select
++            value={String(filters.confidence)}
++            onChange={(e) =>
++              setFilters((prev) => ({ ...prev, confidence: e.target.value }))
++            }
++            className={`flex-1 px-3 py-2 text-sm rounded-lg border ${isNight
++              ? "bg-white/10 border-white/20 text-white"
++              : "bg-black/10 border-black/20 text-black"
++              }`}
++          >
++            <option value="all">All</option>
++            <option value="HIGH">High</option>
++            <option value="MEDIUM">Medium</option>
++            <option value="LOW">Low</option>
++          </select>
++        </div>
++
++        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
++          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
++            Include Futures
++          </label>
++          <button
++            onClick={() =>
++              setFilters((prev) => ({
++                ...prev,
++                includeFutures: !prev.includeFutures,
++              }))
++            }
++            className={`inline-flex items-center w-12 h-6 rounded-full border transition-all ${filters.includeFutures
++              ? isNight
++                ? "bg-green-500/40 border-green-400/40"
++                : "bg-green-400/30 border-green-500/40"
++              : isNight
++                ? "bg-white/10 border-white/20"
++                : "bg-black/10 border-black/20"
++              }`}
++          >
++            <span
++              className={`inline-block w-5 h-5 rounded-full bg-white/80 transform transition-transform ${filters.includeFutures ? "translate-x-6" : "translate-x-1"
++                }`}
++            />
++          </button>
++        </div>
++      </div>
++
++      {dateRange === "later" && (
++        <div
++          className={`mt-2 ${cardBgColor} backdrop-blur-xl border rounded-3xl p-3`}
++        >
++          <p className={`text-xs ${textColor} opacity-80`}>
++            Weather-based analysis becomes less reliable beyond ~14 days.
++          </p>
++        </div>
++      )}
++
++      {/* Markets List */}
++      {isLoading && (
++        <div className="flex items-center justify-center py-12">
++          <div
++            className={`w-6 h-6 border-2 ${isNight
++              ? "border-white/30 border-t-white"
++              : "border-black/30 border-t-black"
++              } rounded-full animate-spin`}
++          ></div>
++          <span className={`ml-3 ${textColor} opacity-70`}>
++            Loading markets...
++          </span>
++        </div>
++      )}
++
++      {error && (
++        <EmptyMarketState
++          category={filters.eventType}
++          message={error}
++          onSwitchCategory={(cat) => {
++            setFilters(prev => ({ ...prev, eventType: cat }));
++          }}
++        />
++      )}
++
++      {!isLoading && !error && markets && markets.length > 0 && (
++        <div className="space-y-4">
++          {markets.map((market, index) => (
++            <MarketCard
++              key={market.marketID || market.id || index}
++              market={market}
++              onAnalyze={onAnalyze}
++              isNight={isNight}
++              textColor={textColor}
++              cardBgColor={cardBgColor}
++              isExpanded={
++                expandedMarketId ===
++                (market.marketID || market.id || market.tokenID)
++              }
++              expandedMarketId={expandedMarketId}
++              setExpandedMarketId={setExpandedMarketId}
++              analysis={analysis}
++              isAnalyzing={isAnalyzing}
++              selectedMarket={selectedMarket}
++              onPublishSignal={onPublishSignal}
++              chains={chains}
++              canPublish={canPublish}
++              setShowOrderPanel={setShowOrderPanel}
++              setSelectedMarketForOrder={setSelectedMarketForOrder}
++              setSelectedKalshiMarket={setSelectedKalshiMarket}
++              setOrderSide={setOrderSide}
++              setSelectedArbitrage={setSelectedArbitrage}
++              agentBrierScore={agentBrierScore}
++              calibrationScore={calibrationScore}
++            />
++          ))}
++        </div>
++      )}
++    </div>
++  );
++}
++
++// Chain Recommendation Badge - Shows recommended action inline
++export function ChainRecommendationBadge({ recommendation, isNight }) {
++  const config = {
++    PUBLISH: {
++      icon: "🎯",
++      text: "Make Your Call",
++      color: isNight ? "bg-purple-500/20 text-purple-300 border-purple-500/30" : "bg-purple-400/20 text-purple-800 border-purple-400/30"
++    },
++    TRADE: {
++      icon: "📊",
++      text: "Place Order",
++      color: isNight ? "bg-blue-500/20 text-blue-300 border-blue-500/30" : "bg-blue-400/20 text-blue-800 border-blue-400/30"
++    },
++    BOTH: {
++      icon: "⚡",
++      text: "Call It & Trade",
++      color: isNight ? "bg-amber-500/20 text-amber-300 border-amber-500/30" : "bg-amber-400/20 text-amber-800 border-amber-400/30"
++    }
++  };
++
++  const rec = config[recommendation];
++  if (!rec) return null;
++
++  return (
++    <span className={`px-3 py-1 rounded-full font-light border ${rec.color}`}>
++      {rec.icon} {rec.text}
++    </span>
++  );
++}
++
++// Chain Action Widget - Guide user on next steps with wallet validation
++export function ChainActionWidget({
++  analysis,
++  market,
++  isNight,
++  textColor,
++  cardBgColor,
++  onPublishSignal,
++  chains,
++  setShowOrderPanel,
++  setSelectedMarketForOrder,
++}) {
++  const { switchToEvmNetwork } = useChainConnections();
++
++  if (!analysis?.chain_recommendation) return null;
++
++  const rec = analysis.chain_recommendation;
++  const shouldPublish = rec === "PUBLISH" || rec === "BOTH";
++  const shouldTrade = rec === "TRADE" || rec === "BOTH";
++
++  const publishButtonText = shouldTrade ? "Also Make Your Call" : "Make Your Call";
++  const tradeButtonText = shouldPublish ? "Also Trade" : "Place Order";
++
++  // Get explanation for why this action is recommended
++  const explanation = getRecommendationExplanation(
++    rec,
++    analysis.assessment?.confidence,
++    analysis.assessment?.odds_efficiency
++  );
++
++  // Helper to render chain action with smart wallet validation and network switching
++  const renderChainAction = (chainDef, chainState, isPrimary, buttonText, actionFn, contextMsg, needsNetworkSwitch = false, onSwitchNetwork = null) => {
++    const isDisabled = !chainState.connected || needsNetworkSwitch;
++    const buttonLabel = !chainState.connected
++      ? `Connect ${chainDef.name}`
++      : needsNetworkSwitch
++        ? `Switch to ${chainState.currentNetwork?.display || 'correct network'}`
++        : buttonText;
++
++    return (
++      <div className={`flex items-start gap-3 pb-3 border-b border-white/10 last:pb-0 last:border-0 ${isPrimary ? (isNight ? "bg-gradient-to-r from-purple-500/5 to-transparent" : "bg-gradient-to-r from-purple-400/5 to-transparent") : ""
++        } rounded px-3 py-2`}>
++        <span className="text-xl flex-shrink-0">{chainDef.icon}</span>
++        <div className="flex-1">
++          <h5 className={`text-sm font-medium ${textColor} mb-1`}>
++            {chainDef.display}
++            {isPrimary && <span className={`ml-2 text-xs opacity-60 ${isNight ? "text-amber-300" : "text-amber-700"}`}>← Recommended</span>}
++          </h5>
++          <p className={`text-xs ${textColor} opacity-60 mb-3 leading-relaxed`}>
++            {contextMsg}
++          </p>
++          {needsNetworkSwitch && chainState.currentNetwork && (
++            <p className={`text-xs mb-2 ${isNight ? "text-amber-300/70" : "text-amber-700/70"}`}>
++              Currently on: {chainState.currentNetwork.display}
++            </p>
++          )}
++          <button
++            onClick={() => {
++              if (needsNetworkSwitch && onSwitchNetwork) {
++                onSwitchNetwork();
++              } else if (chainState.connected) {
++                actionFn();
++              }
++            }}
++            disabled={isDisabled}
++            className={`px-4 py-2 rounded-lg text-xs font-light transition-all ${!isDisabled
++              ? isNight
++                ? `${chainDef.id === 'movement'
++                  ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30'
++                  : chainDef.color === 'purple'
++                    ? 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30'
++                    : 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30'}`
++                : `${chainDef.id === 'movement'
++                  ? 'bg-amber-400/20 hover:bg-amber-400/30 text-amber-800 border border-amber-400/30'
++                  : chainDef.color === 'purple'
++                    ? 'bg-purple-400/20 hover:bg-purple-400/30 text-purple-800 border border-purple-400/30'
++                    : 'bg-blue-400/20 hover:bg-blue-400/30 text-blue-800 border border-blue-400/30'}`
++              : "opacity-50 cursor-not-allowed"
++              }`}
++          >
++            {buttonLabel}
++          </button>
++        </div>
++      </div>
++    );
++  };
++
++  return (
++    <div className={`${cardBgColor} backdrop-blur-sm border rounded-xl p-5`}>
++      <h4 className={`text-xs font-light ${textColor} opacity-70 mb-4 uppercase tracking-wider`}>
++        Recommended Actions
++      </h4>
++      <div className="space-y-1">
++        {/* Explanation Header */}
++        <div className={`mb-3 p-3 rounded-lg ${isNight ? "bg-white/5 border border-white/10" : "bg-black/5 border border-black/10"}`}>
++          <p className={`text-xs ${textColor} font-medium mb-1`}>
++            {explanation.title}
++          </p>
++          <p className={`text-xs ${textColor} opacity-60`}>
++            {explanation.reason}
++          </p>
++        </div>
++
++        {shouldPublish && (
++          // Prefer Movement if available (better monetization), else Aptos
++          chains.movement.connected ? renderChainAction(
++            CHAINS.MOVEMENT,
++            chains.movement,
++            rec === "PUBLISH",
++            publishButtonText,
++            () => onPublishSignal(market, analysis),
++            "Paper trade with proof — build a verifiable track record and earn tips from the community"
++          ) : renderChainAction(
++            CHAINS.APTOS,
++            chains.aptos,
++            rec === "PUBLISH",
++            publishButtonText,
++            () => {
++              if (chains.aptos.connected) onPublishSignal(market, analysis);
++            },
++            "Paper trade with proof — every call is timestamped, immutable, and publicly verifiable"
++          )
++        )}
++
++        {shouldTrade && (
++          renderChainAction(
++            CHAINS.EVM,
++            chains.evm,
++            rec === "TRADE",
++            tradeButtonText,
++            () => {
++              if (chains.evm.connected) {
++                setSelectedMarketForOrder(market);
++                setShowOrderPanel(true);
++              }
++            },
++            analysis.assessment?.odds_efficiency === "UNDERPRICED"
++              ? "Market odds are underpriced. Place a position to capture value."
++              : "Participate in the market based on your analysis and risk tolerance.",
++            !chains.evm.isCorrectNetwork, // needsNetworkSwitch
++            !chains.evm.isCorrectNetwork ? () => switchToEvmNetwork('polygon') : null // onSwitchNetwork
++          )
++        )}
++
++        {rec === "BOTH" && (
++          <div className={`mt-4 p-3 rounded-lg ${isNight ? "bg-green-500/10 border border-green-500/20" : "bg-green-400/10 border border-green-400/20"}`}>
++            <p className={`text-xs ${textColor} leading-relaxed`}>
++              <span className="font-medium">💡 Pro Tip:</span> {explanation.benefit}
++            </p>
++          </div>
++        )}
++      </div>
++    </div>
++  );
++}
++
++// Discovery Tab Component - Date-First Design
++export function DiscoveryTabContent({
++  markets,
++  isLoading,
++  error,
++  filters,
++  setFilters,
++  dateRange,
++  setDateRange,
++  onAnalyze,
++  isNight,
++  textColor,
++  cardBgColor,
++  expandedMarketId,
++  setExpandedMarketId,
++  analysis,
++  isAnalyzing,
++  selectedMarket,
++  onPublishSignal,
++  fetchMarkets,
++  chains,
++  canPublish,
++  setShowOrderPanel,
++  setSelectedMarketForOrder,
++  setSelectedKalshiMarket,
++  setOrderSide,
++  setSelectedArbitrage,
++  agentBrierScore,
++  calibrationScore,
++}) {
++  const [showArbitrage, setShowArbitrage] = useState(false);
++
++  const dateRangeLabels = {
++    today: "Today",
++    tomorrow: "Tomorrow",
++    "this-week": "This Week",
++    later: "Later",
++  };
++
++  return (
++    <div className="space-y-6">
++      {/* Compact Filter Bar */}
++      <div
++        className={`${cardBgColor} backdrop-blur-xl border rounded-3xl p-3 space-y-2`}
++      >
++        {/* Category */}
++        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
++          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
++            Category
++          </label>
++          <select
++            value={filters.category}
++            onChange={(e) =>
++              setFilters((prev) => ({ ...prev, category: e.target.value }))
++            }
++            className={`flex-1 px-3 py-2 text-sm rounded-lg border ${isNight
++              ? "bg-white/10 border-white/20 text-white"
++              : "bg-black/10 border-black/20 text-black"
++              }`}
++          >
++            <option value="all">All Categories</option>
++            <option value="Sports">⚽ Sports</option>
++            <option value="Politics">🏛️ Politics</option>
++            <option value="Economics">📊 Economics</option>
++            <option value="Weather">🌤️ Weather</option>
++            <option value="Entertainment">🎬 Entertainment</option>
++            <option value="Crypto">₿ Crypto</option>
++            <option value="Path">🔗 Path Analysis</option>
++          </select>
++        </div>
++
++        {/* Platform */}
++        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
++          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
++            Platform
++          </label>
++          <select
++            value={filters.platform}
++            onChange={(e) =>
++              setFilters((prev) => ({ ...prev, platform: e.target.value }))
++            }
++            className={`flex-1 px-3 py-2 text-sm rounded-lg border ${isNight
++              ? "bg-white/10 border-white/20 text-white"
++              : "bg-black/10 border-black/20 text-black"
++              }`}
++          >
++            <option value="all">All Platforms</option>
++            <option value="polymarket">Polymarket</option>
++            <option value="kalshi">Kalshi</option>
++          </select>
++        </div>
++
++        {/* Date Range Tabs */}
++        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
++          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
++            When
++          </label>
++          <div className="flex gap-1 flex-wrap">
++            {Object.entries(dateRangeLabels).map(([key, label]) => (
++              <button
++                key={key}
++                onClick={() => setDateRange(key)}
++                className={`px-3 py-1.5 text-xs rounded-lg border transition-all font-light ${dateRange === key
++                  ? isNight
++                    ? "bg-blue-500/30 text-white border-blue-400/40"
++                    : "bg-blue-400/30 text-black border-blue-500/40"
++                  : isNight
++                    ? "bg-white/10 hover:bg-white/20 text-white/70 border-white/20"
++                    : "bg-black/10 hover:bg-black/20 text-black/70 border-black/20"
++                  }`}
++              >
++                {label}
++              </button>
++            ))}
++          </div>
++        </div>
++
++        {/* Min Volume */}
++        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
++          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
++            Min Volume
++          </label>
++          <select
++            value={filters.minVolume}
++            onChange={(e) =>
++              setFilters((prev) => ({ ...prev, minVolume: e.target.value }))
++            }
++            className={`flex-1 px-3 py-2 text-sm rounded-lg border ${isNight
++              ? "bg-white/10 border-white/20 text-white"
++              : "bg-black/10 border-black/20 text-black"
++              }`}
++          >
++            <option value="10000">$10k+</option>
++            <option value="50000">$50k+</option>
++            <option value="100000">$100k+</option>
++          </select>
++        </div>
++
++        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
++          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
++            Confidence
++          </label>
++          <select
++            value={filters.confidence}
++            onChange={(e) =>
++              setFilters((prev) => ({ ...prev, confidence: e.target.value }))
++            }
++            className={`flex-1 px-3 py-2 text-sm rounded-lg border ${isNight
++              ? "bg-white/10 border-white/20 text-white"
++              : "bg-black/10 border-black/20 text-black"
++              }`}
++          >
++            <option value="all">All</option>
++            <option value="HIGH">High</option>
++            <option value="MEDIUM">Medium</option>
++            <option value="LOW">Low</option>
++          </select>
++        </div>
++
++        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
++          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
++            Include Futures
++          </label>
++          <button
++            onClick={() =>
++              setFilters((prev) => ({
++                ...prev,
++                includeFutures: !prev.includeFutures,
++              }))
++            }
++            className={`inline-flex items-center w-12 h-6 rounded-full border transition-all ${filters.includeFutures
++              ? isNight
++                ? "bg-green-500/40 border-green-400/40"
++                : "bg-green-400/30 border-green-500/40"
++              : isNight
++                ? "bg-white/10 border-white/20"
++                : "bg-black/10 border-black/20"
++              }`}
++          >
++            <span
++              className={`inline-block w-5 h-5 rounded-full bg-white/80 transform transition-transform ${filters.includeFutures ? "translate-x-6" : "translate-x-1"
++                }`}
++            />
++          </button>
++        </div>
++      </div>
++
++      {/* Arbitrage Opportunities Banner */}
++      {!isLoading &&
++        markets &&
++        markets.length > 0 &&
++        (() => {
++          const opportunities = arbitrageService.detectOpportunities(markets);
++
++          if (opportunities.count > 0) {
++            return (
++              <div
++                className={`${cardBgColor} backdrop-blur-xl border rounded-3xl p-4`}
++              >
++                <div className="flex items-center justify-between mb-3">
++                  <div className="flex items-center gap-2">
++                    <span className="text-2xl">⚡</span>
++                    <div>
++                      <h3 className={`text-sm font-medium ${textColor}`}>
++                        {opportunities.count} Arbitrage Opportunit
++                        {opportunities.count === 1 ? "y" : "ies"} Detected
++                      </h3>
++                      <p className={`text-xs ${textColor} opacity-60`}>
++                        Price discrepancies between Polymarket and Kalshi
++                      </p>
++                    </div>
++                  </div>
++                  <button
++                    onClick={() => setShowArbitrage(!showArbitrage)}
++                    className={`px-3 py-1.5 text-xs rounded-lg border transition-all ${showArbitrage
++                      ? isNight
++                        ? "bg-blue-500/30 text-white border-blue-400/40"
++                        : "bg-blue-400/30 text-black border-blue-500/40"
++                      : isNight
++                        ? "bg-white/10 hover:bg-white/20 text-white/70 border-white/20"
++                        : "bg-black/10 hover:bg-black/20 text-black/70 border-black/20"
++                      }`}
++                  >
++                    {showArbitrage ? "Hide" : "Show"} Details
++                  </button>
++                </div>
++
++                {showArbitrage && (
++                  <div className="space-y-2 mt-3 pt-3 border-t border-white/10">
++                    {(opportunities?.opportunities || []).slice(0, 5).map((opp, idx) => (
++                      <div
++                        key={idx}
++                        className={`p-3 rounded-lg border ${isNight
++                          ? "bg-white/5 border-white/10"
++                          : "bg-black/5 border-black/10"
++                          }`}
++                      >
++                        <div className="flex items-start justify-between gap-3">
++                          <div className="flex-1">
++                            <p
++                              className={`text-xs ${textColor} font-medium mb-1`}
++                            >
++                              {opp.polymarket.title.substring(0, 60)}...
++                            </p>
++                            <div className="flex gap-2 text-xs">
++                              <span
++                                className={`px-2 py-0.5 rounded ${isNight
++                                  ? "bg-blue-900/40 text-blue-300"
++                                  : "bg-blue-100 text-blue-700"
++                                  }`}
++                              >
++                                Polymarket: {opp.arbitrage.market1Odds}%
++                              </span>
++                              <span
++                                className={`px-2 py-0.5 rounded ${isNight
++                                  ? "bg-emerald-900/40 text-emerald-300"
++                                  : "bg-emerald-100 text-emerald-700"
++                                  }`}
++                              >
++                                Kalshi: {opp.arbitrage.market2Odds}%
++                              </span>
++                            </div>
++                          </div>
++                          <div className="text-right">
++                            <div
++                              className={`text-lg font-bold ${isNight ? "text-yellow-300" : "text-yellow-600"
++                                }`}
++                            >
++                              {opp.arbitrage.priceDiff}%
++                            </div>
++                            <div className={`text-xs ${textColor} opacity-60`}>
++                              spread
++                            </div>
++                            <button
++                              onClick={() => setSelectedArbitrage(opp)}
++                              className={`mt-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-tight transition-all ${
++                                isNight
++                                  ? "bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30"
++                                  : "bg-green-500/10 hover:bg-green-500/20 text-green-700 border border-green-500/20"
++                              }`}
++                            >
++                              Capture Spread
++                            </button>
++                          </div>
++                        </div>
++                      </div>
++                    ))}
++                  </div>
++                )}
++              </div>
++            );
++          }
++          return null;
++        })()}
++
++      {/* Markets List */}
++      {isLoading && (
++        <div className="flex items-center justify-center py-12">
++          <div
++            className={`w-6 h-6 border-2 ${isNight
++              ? "border-white/30 border-t-white"
++              : "border-black/30 border-t-black"
++              } rounded-full animate-spin`}
++          ></div>
++          <span className={`ml-3 ${textColor} opacity-70`}>
++            Loading markets...
++          </span>
++        </div>
++      )}
++
++      {error && (
++        <EmptyMarketState
++          category={filters.category}
++          message={error}
++          onSwitchCategory={(cat) => {
++            setFilters(prev => ({ ...prev, category: cat }));
++          }}
++        />
++      )}
++
++      {!isLoading &&
++        !error &&
++        markets &&
++        markets.length > 0 &&
++        (() => {
++          // Apply client-side filters
++          let filteredMarkets =
++            filters.platform === "all"
++              ? markets
++              : markets.filter(
++                (m) => (m.platform || "polymarket") === filters.platform
++              );
++
++          // Category filter for Path Analysis (special client-side flag)
++          if (filters.category === "Path") {
++            filteredMarkets = filteredMarkets.filter(m => m.isPathDependent);
++          }
++
++          return filteredMarkets.length > 0 ? (
++            <div className="space-y-4">
++              {filteredMarkets.map((market, index) => (
++                <MarketCard
++                  key={market.marketID || market.id || index}
++                  market={market}
++                  onAnalyze={onAnalyze}
++                  isNight={isNight}
++                  textColor={textColor}
++                  cardBgColor={cardBgColor}
++                  isExpanded={
++                    expandedMarketId ===
++                    (market.marketID || market.id || market.tokenID)
++                  }
++                  expandedMarketId={expandedMarketId}
++                  setExpandedMarketId={setExpandedMarketId}
++                  analysis={analysis}
++                  isAnalyzing={isAnalyzing}
++                  selectedMarket={selectedMarket}
++                  onPublishSignal={onPublishSignal}
++                  chains={chains}
++                  canPublish={canPublish}
++                  setShowOrderPanel={setShowOrderPanel}
++                  setSelectedMarketForOrder={setSelectedMarketForOrder}
++                  setSelectedKalshiMarket={setSelectedKalshiMarket}
++                  setOrderSide={setOrderSide}
++                  setSelectedArbitrage={setSelectedArbitrage}
++                  agentBrierScore={agentBrierScore}
++                  calibrationScore={calibrationScore}
++                />
++              ))}
++            </div>
++          ) : (
++            <div
++              className={`${cardBgColor} backdrop-blur-xl border rounded-3xl p-6 text-center`}
++            >
++              <p className={`${textColor} opacity-90`}>
++                No {filters.platform === "kalshi" ? "Kalshi" : "Polymarket"}{" "}
++                markets found. Try selecting "All Platforms" or adjusting other
++                filters.
++              </p>
++            </div>
++          );
++        })()}
++    </div>
++  );
++}
++
++// Shared Market Card Component
++export function MarketCard({
++  market,
++  onAnalyze,
++  isNight,
++  textColor,
++  cardBgColor,
++  isExpanded,
++  expandedMarketId,
++  setExpandedMarketId,
++  analysis,
++  isAnalyzing,
++  selectedMarket,
++  onPublishSignal,
++  chains,
++  canPublish,
++  setShowOrderPanel,
++  setSelectedMarketForOrder,
++  setSelectedKalshiMarket,
++  setOrderSide,
++  setSelectedArbitrage,
++  agentBrierScore,
++  calibrationScore,
++}) {
++  const isHidden = expandedMarketId && !isExpanded;
++  const isCurrentMarket =
++    (selectedMarket?.marketID || selectedMarket?.id) ===
++    (market.marketID || market.id);
++
++  const platform = market.platform || "polymarket";
++  const isKalshi = platform === "kalshi";
++
++  return (
++    <>
++    {/* Inline Card (always visible when not hidden) */}
++    <div
++      className={`glass-subtle rounded-3xl transition-all duration-500 p-5 sm:p-6
++        ${isHidden
++          ? "opacity-0 pointer-events-none scale-95"
++          : "opacity-100 hover:scale-[1.01]"
++        }`}
++    >
++      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
++        <div className="flex-1 space-y-3">
++          <div className="flex items-start justify-between">
++            <h3
++              className={`text-lg font-light ${textColor} leading-relaxed tracking-wide mr-4`}
++            >
++              {market.title || market.question}
++            </h3>
++            {/* Platform & Date Badge */}
++            <div className="flex flex-col items-end gap-1">
++              <span
++                className={`flex-shrink-0 px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${isKalshi
++                  ? isNight
++                    ? "bg-emerald-900/40 text-emerald-300 border-emerald-700/50"
++                    : "bg-emerald-100 text-emerald-700 border-emerald-200"
++                  : isNight
++                    ? "bg-blue-900/40 text-blue-300 border-blue-700/50"
++                    : "bg-blue-100 text-blue-700 border-blue-200"
++                  }`}
++              >
++                {isKalshi ? "Kalshi" : "Polymarket"}
++              </span>
++              {market.resolutionDate && (
++                <span className={`text-[10px] ${textColor} opacity-40 font-light`}>
++                  Ends {new Date(market.resolutionDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
++                </span>
++              )}
++            </div>
++          </div>
++
++          {/* Market Odds Summary - NEW: Shows odds on the card! */}
++          {!isExpanded && (
++            <div className="flex items-center gap-4 py-1">
++              <button 
++                onClick={(e) => {
++                  e.stopPropagation();
++                  if (isKalshi) {
++                    setSelectedKalshiMarket(market);
++                  } else {
++                    setOrderSide("YES");
++                    setSelectedMarketForOrder(market);
++                    setShowOrderPanel(true);
++                  }
++                }}
++                className={`flex items-center gap-2 px-2 py-1 rounded-lg transition-all border ${
++                  isNight 
++                    ? "hover:bg-green-500/10 border-transparent hover:border-green-500/30" 
++                    : "hover:bg-green-500/5 border-transparent hover:border-green-500/20"
++                }`}
++              >
++                <span className={`text-[10px] font-medium ${isNight ? "text-green-400/70" : "text-green-600/70"}`}>YES</span>
++                <span className={`text-sm font-light ${textColor}`}>
++                  {market.ask ? `${(market.ask * 100).toFixed(0)}%` : "—"}
++                </span>
++              </button>
++              <button 
++                onClick={(e) => {
++                  e.stopPropagation();
++                  if (isKalshi) {
++                    setSelectedKalshiMarket(market);
++                  } else {
++                    setOrderSide("NO");
++                    setSelectedMarketForOrder(market);
++                    setShowOrderPanel(true);
++                  }
++                }}
++                className={`flex items-center gap-2 px-2 py-1 rounded-lg transition-all border ${
++                  isNight 
++                    ? "hover:bg-red-500/10 border-transparent hover:border-red-500/30" 
++                    : "hover:bg-red-500/5 border-transparent hover:border-red-500/20"
++                }`}
++              >
++                <span className={`text-[10px] font-medium ${isNight ? "text-red-400/70" : "text-red-600/70"}`}>NO</span>
++                <span className={`text-sm font-light ${textColor}`}>
++                  {market.bid ? `${(market.bid * 100).toFixed(0)}%` : "—"}
++                </span>
++              </button>
++              {/* ML Edge Preview (if analyzed) */}
++              {isCurrentMarket && analysis?.synthData?.polymarketEdge && (
++                <div className={`ml-auto flex items-center gap-1.5 px-2 py-0.5 rounded-md ${
++                  isNight ? "bg-purple-500/10 border border-purple-500/20" : "bg-purple-400/10 border border-purple-400/20"
++                }`}>
++                  <span className="text-xs">⚡</span>
++                  <span className={`text-[10px] font-medium ${isNight ? "text-purple-300" : "text-purple-700"}`}>
++                    {Math.abs(analysis.synthData.polymarketEdge.edge * 100).toFixed(1)}% EDGE
++                  </span>
++                </div>
++              )}
++            </div>
++          )}
++
++          <div className="flex flex-wrap items-center gap-2 text-xs">
++            {/* ML Ready Badge - NEW: Highlight differentiator early! */}
++            {!isCurrentMarket && market.isMLReady && (
++              <div className="relative group">
++                <span
++                  className={`px-3 py-1 rounded-full font-medium border cursor-help ${
++                    isNight
++                      ? "bg-purple-500/20 text-purple-200 border-purple-400/30"
++                      : "bg-purple-400/20 text-purple-800 border-purple-400/30"
++                  }`}
++                >
++                  🤖 ML Ready
++                </span>
++                <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${
++                  isNight ? 'bg-gray-900 text-white border border-white/20' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'
++                }`}>
++                  Quantitative analysis available via SynthData
++                  <div className={`absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 ${
++                    isNight ? 'bg-gray-900 border-r border-b border-white/20' : 'bg-white border-r border-b border-gray-200'
++                  }`}></div>
++                </div>
++              </div>
++            )}
++
++            {/* Synth ML Badge - Show when analysis uses SynthData */}
++            {isCurrentMarket && analysis?.source && (analysis.source === 'synthdata+llm' || analysis.source === 'synthdata+path') && (
++              <div className="relative group">
++                <span
++                  className={`px-3 py-1 rounded-full font-medium border cursor-help ${
++                    isNight
++                      ? "bg-purple-500/20 text-purple-200 border-purple-400/30"
++                      : "bg-purple-400/20 text-purple-800 border-purple-400/30"
++                  }`}
++                >
++                  🤖 ML
++                </span>
++                <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${
++                  isNight ? 'bg-gray-900 text-white border border-white/20' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'
++                }`}>
++                  {analysis.source === 'synthdata+path' ? 'Path-dependent ML analysis' : 'SynthData 200+ ML models'}
++                  <div className={`absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 ${
++                    isNight ? 'bg-gray-900 border-r border-b border-white/20' : 'bg-white border-r border-b border-gray-200'
++                  }`}></div>
++                </div>
++              </div>
++            )}
++            {market.volume24h !== undefined && (
++              <div className="relative group">
++                <span
++                  className={`px-3 py-1 rounded-full font-light border cursor-help ${isNight
++                    ? "bg-orange-500/10 text-orange-200 border-orange-500/20"
++                    : "bg-orange-400/10 text-orange-800 border-orange-400/20"
++                    }`}
++                >
++                  ⚡{" "}
++                  {isKalshi
++                    ? `${market.volume24h} Vol`
++                    : `$${(market.volume24h / 1000).toFixed(0)}K`}
++                </span>
++                {/* Tooltip */}
++                <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${
++                  isNight ? 'bg-gray-900 text-white border border-white/20' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'
++                }`}>
++                  24-hour trading volume
++                  <div className={`absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 ${
++                    isNight ? 'bg-gray-900 border-r border-b border-white/20' : 'bg-white border-r border-b border-gray-200'
++                  }`}></div>
++                </div>
++              </div>
++            )}
++            {market.confidence && (
++              <div className="relative group">
++                <span
++                  className={`px-3 py-1 rounded-full font-light border cursor-help ${market.confidence === "HIGH"
++                    ? isNight
++                      ? "bg-green-500/20 text-green-300 border-green-500/30"
++                      : "bg-green-400/20 text-green-800 border-green-400/30"
++                    : market.confidence === "MEDIUM"
++                      ? isNight
++                        ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/30"
++                        : "bg-yellow-400/20 text-yellow-800 border-yellow-400/30"
++                      : isNight
++                        ? "bg-red-500/20 text-red-300 border-red-500/30"
++                        : "bg-red-400/20 text-red-800 border-red-400/30"
++                    }`}
++                >
++                  {market.confidence}
++                </span>
++                {/* Tooltip */}
++                <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${
++                  isNight ? 'bg-gray-900 text-white border border-white/20' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'
++                }`}>
++                  {market.confidence === 'HIGH' ? 'High confidence prediction' : market.confidence === 'MEDIUM' ? 'Medium confidence prediction' : 'Low confidence prediction'}
++                  <div className={`absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 ${
++                    isNight ? 'bg-gray-900 border-r border-b border-white/20' : 'bg-white border-r border-b border-gray-200'
++                  }`}></div>
++                </div>
++              </div>
++            )}
++            {/* Weather Impact Indicator - Show if event has location data */}
++            {market.event_location && (
++              <div className="relative group">
++                <span
++                  className={`px-3 py-1 rounded-full font-light border cursor-help ${
++                    isNight
++                      ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/30"
++                      : "bg-cyan-400/20 text-cyan-800 border-cyan-400/30"
++                  }`}
++                >
++                  🌤️ Weather
++                </span>
++                <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${
++                  isNight ? 'bg-gray-900 text-white border border-white/20' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'
++                }`}>
++                  Event location: {market.event_location}
++                  <div className={`absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 ${
++                    isNight ? 'bg-gray-900 border-r border-b border-white/20' : 'bg-white border-r border-b border-gray-200'
++                  }`}></div>
++                </div>
++              </div>
++            )}
++            {/* AI-Ready Badge - Indicates market can be analyzed */}
++            {!isCurrentMarket && !analysis && (
++              <span
++                className={`px-3 py-1 rounded-full font-light border ${
++                  isNight
++                    ? "bg-purple-500/10 text-purple-300/60 border-purple-500/20"
++                    : "bg-purple-400/10 text-purple-700/60 border-purple-400/20"
++                }`}
++              >
++                🔍 Analyze
++              </span>
++            )}
++            {/* Quick Publish CTA - Show when ML edge detected (even in collapsed state) */}
++            {isCurrentMarket && analysis?.synthData?.polymarketEdge && Math.abs(analysis.synthData.polymarketEdge.edge) > 0.03 && (
++              <button
++                onClick={(e) => {
++                  e.stopPropagation();
++                  onPublishSignal();
++                }}
++                className={`px-3 py-1 rounded-full font-medium border transition-all hover:scale-105 ${
++                  isNight
++                    ? "bg-green-500/20 text-green-300 border-green-500/40 hover:bg-green-500/30"
++                    : "bg-green-400/20 text-green-700 border-green-500/40 hover:bg-green-400/30"
++                }`}
++              >
++                🎯 Make Your Call
++              </button>
++            )}
++            {/* Chain Recommendation Badge - Early visibility */}
++            {isCurrentMarket && analysis?.chain_recommendation && (
++              <ChainRecommendationBadge
++                recommendation={analysis.chain_recommendation}
++                isNight={isNight}
++              />
++            )}
++          </div>
++        </div>
++
++        <div className="flex-shrink-0 flex flex-wrap sm:flex-nowrap gap-2">
++          {isExpanded ? (
++            <button
++              onClick={() => setExpandedMarketId(null)}
++              aria-label="Close expanded market view"
++              className={`px-4 sm:px-6 py-3 rounded-2xl font-light text-sm transition-all border ${isNight
++                ? "bg-white/10 hover:bg-white/20 text-white border-white/20"
++                : "bg-black/10 hover:bg-black/20 text-black border-black/20"
++                }`}
++            >
++              ← Back
++            </button>
++          ) : (
++            <>
++              <button
++                onClick={() => {
++                  if (isKalshi) {
++                    setSelectedKalshiMarket(market);
++                  } else {
++                    setSelectedMarketForOrder(market);
++                    setShowOrderPanel(true);
++                  }
++                }}
++                aria-label={`${isKalshi ? 'Trade' : 'Place bet'} on ${market.title || market.question}`}
++                className={`px-4 sm:px-5 py-3 rounded-2xl font-light text-sm transition-all hover:scale-105 border ${
++                  isKalshi
++                    ? isNight
++                      ? "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-400/30"
++                      : "bg-emerald-400/20 hover:bg-emerald-400/30 text-emerald-800 border-emerald-500/30"
++                    : isNight
++                      ? "bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border-blue-400/30"
++                      : "bg-blue-400/20 hover:bg-blue-400/30 text-blue-800 border-blue-500/30"
++                }`}
++              >
++                {isKalshi ? "Trade ↗" : "📈 Bet"}
++              </button>
++              <button
++                onClick={() => onAnalyze(market, "basic")}
++                disabled={isAnalyzing}
++                aria-label={`Analyze market: ${market.title || market.question}`}
++                aria-busy={isAnalyzing && isCurrentMarket}
++                className={`px-4 sm:px-6 py-3 rounded-2xl font-light text-sm transition-all disabled:opacity-40 hover:scale-105 border ${
++                  market.isMLReady
++                    ? isNight
++                      ? "bg-gradient-to-r from-purple-600/40 to-pink-600/40 hover:from-purple-600/60 hover:to-pink-600/60 text-white border-purple-400/50 shadow-lg shadow-purple-500/20"
++                      : "bg-gradient-to-r from-purple-500/30 to-pink-500/30 hover:from-purple-500/40 hover:to-pink-500/40 text-purple-900 border-purple-500/50 shadow-lg shadow-purple-500/10"
++                    : isNight
++                      ? "bg-white/10 hover:bg-white/20 text-white border-white/20"
++                      : "bg-black/10 hover:bg-black/20 text-black border-black/20"
++                }`}
++              >
++                {isAnalyzing && isCurrentMarket ? "Analyzing..." : market.isMLReady ? "🤖 ML Analyze" : "🔍 Analyze"}
++              </button>
++            </>
++          )}
++        </div>
++      </div>
++
++      {/* Dynamic Loading State in Expanded View */}
++      {isExpanded && isAnalyzing && (
++        <LoadingAnalysisState isNight={isNight} textColor={textColor} />
++      )}
++
++      {/* Expanded Analysis View */}
++      {isExpanded && analysis && (
++        <div className="mt-8 pt-8 border-t border-white/10">
++          <h2 className={`text-2xl font-light ${textColor} mb-6`}>Analysis</h2>
++
++          <div className="space-y-4">
++            {/* SynthData ML Forecast - Show when available */}
++            {analysis?.synthData && (
++              <div className={`${cardBgColor} backdrop-blur-sm border-2 ${
++                isNight ? 'border-purple-500/30' : 'border-purple-400/30'
++              } rounded-xl p-5`}>
++                <div className="flex items-center gap-2 mb-4">
++                  <span className="text-xl">🤖</span>
++                  <h4 className={`text-sm font-medium ${textColor}`}>
++                    SynthData ML Forecast
++                  </h4>
++                  <span className={`ml-auto px-2 py-0.5 rounded text-[10px] font-medium ${
++                    isNight ? 'bg-purple-500/20 text-purple-300' : 'bg-purple-400/20 text-purple-700'
++                  }`}>
++                    200+ MODELS
++                  </span>
++                </div>
++                
++                <div className="space-y-4">
++                  {/* Current Price - Large Visual Hierarchy */}
++                  <div className="text-center pb-3 border-b border-white/10">
++                    <div className={`text-xs ${textColor} opacity-50 mb-1`}>{analysis.synthData.asset}</div>
++                    <div className={`text-4xl font-light ${textColor}`}>
++                      ${analysis.synthData.currentPrice?.toLocaleString()}
++                    </div>
++                    <div className={`text-xs ${textColor} opacity-40 mt-1`}>Current Price</div>
++                  </div>
++
++                  {/* Percentile Range with Mini Chart */}
++                  {analysis.synthData.percentiles?.p5 && analysis.synthData.percentiles?.p95 && (
++                    <div>
++                      <div className="flex justify-between items-end mb-2">
++                        <div>
++                          <div className={`text-xs ${textColor} opacity-50 mb-1`}>P5 (Bear)</div>
++                          <div className={`text-xl font-light ${isNight ? 'text-red-400' : 'text-red-600'}`}>
++                            ${analysis.synthData.percentiles.p5.toLocaleString()}
++                          </div>
++                        </div>
++                        <div className="text-right">
++                          <div className={`text-xs ${textColor} opacity-50 mb-1`}>P95 (Bull)</div>
++                          <div className={`text-xl font-light ${isNight ? 'text-green-400' : 'text-green-600'}`}>
++                            ${analysis.synthData.percentiles.p95.toLocaleString()}
++                          </div>
++                        </div>
++                      </div>
++                      
++                      {/* Percentile Visualization Bar */}
++                      <div className="relative h-2 rounded-full overflow-hidden bg-gradient-to-r from-red-500/20 via-yellow-500/20 to-green-500/20">
++                        <div 
++                          className={`absolute top-0 h-full w-1 ${isNight ? 'bg-white' : 'bg-black'} opacity-60`}
++                          style={{
++                            left: `${((analysis.synthData.currentPrice - analysis.synthData.percentiles.p5) / (analysis.synthData.percentiles.p95 - analysis.synthData.percentiles.p5)) * 100}%`
++                          }}
++                          title="Current price position"
++                        />
++                      </div>
++                      <div className={`text-xs ${textColor} opacity-40 text-center mt-1`}>
++                        Price Distribution (P5 → P95)
++                      </div>
++                    </div>
++                  )}
++                </div>
++
++                {analysis.synthData.polymarketEdge && (
++                  <div className={`mt-4 pt-4 border-t ${isNight ? 'border-white/10' : 'border-black/10'}`}>
++                    {/* Edge Detection Summary */}
++                    <div className="flex items-center justify-between mb-4">
++                      <div className="flex items-center gap-2">
++                        <span className="text-xl">⚖️</span>
++                        <h5 className={`text-sm font-medium ${textColor}`}>
++                          Edge Analysis
++                        </h5>
++                      </div>
++                      <div className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tighter ${
++                        Math.abs(analysis.synthData.polymarketEdge.edge) > 0.05
++                          ? 'bg-green-500 text-white animate-pulse'
++                          : isNight ? 'bg-white/10 text-white/70' : 'bg-black/10 text-black/70'
++                      }`}>
++                        {Math.abs(analysis.synthData.polymarketEdge.edge * 100).toFixed(1)}% {analysis.synthData.polymarketEdge.edge > 0 ? 'Undervalued' : 'Overvalued'}
++                      </div>
++                    </div>
++
++                    {/* Tug-of-War Visualizer */}
++                    <div className="relative h-10 mb-6 px-1">
++                      {/* Central Axis */}
++                      <div className={`absolute left-1/2 top-0 bottom-0 w-px ${isNight ? 'bg-white/20' : 'bg-black/20'} z-10`} />
++                      
++                      {/* Labels */}
++                      <div className="flex justify-between text-[10px] uppercase tracking-widest opacity-40 mb-1">
++                        <span>Market</span>
++                        <span>ML Fair Odds</span>
++                      </div>
++
++                      <div className="flex items-center h-4 w-full bg-black/20 rounded-full overflow-hidden">
++                        {/* Market Probability Bar (Left) */}
++                        <div 
++                          className="h-full bg-blue-500/40 transition-all duration-1000"
++                          style={{ width: `${analysis.synthData.polymarketEdge.polymarketProb * 100}%` }}
++                        />
++                        {/* ML Probability Bar (Right - overlay or different color) */}
++                        <div 
++                          className="h-full bg-purple-500 transition-all duration-1000"
++                          style={{ width: `${analysis.synthData.polymarketEdge.synthFairProb * 100}%` }}
++                        />
++                      </div>
++
++                      {/* Detailed Odds Comparison */}
++                      <div className="flex justify-between items-center mt-2">
++                        <div className="flex flex-col">
++                          <span className={`text-[10px] ${textColor} opacity-50`}>Live Price</span>
++                          <span className={`text-lg font-light ${isNight ? 'text-blue-300' : 'text-blue-700'}`}>
++                            {(analysis.synthData.polymarketEdge.polymarketProb * 100).toFixed(1)}%
++                          </span>
++                        </div>
++
++                        {/* Edge Visual Indicator */}
++                        <div className="flex flex-col items-center">
++                           <div className={`text-[10px] font-bold ${
++                             analysis.synthData.polymarketEdge.edge > 0 
++                               ? isNight ? 'text-green-400' : 'text-green-600'
++                               : isNight ? 'text-red-400' : 'text-red-600'
++                           }`}>
++                             {analysis.synthData.polymarketEdge.edge > 0 ? '▲' : '▼'} {Math.abs(analysis.synthData.polymarketEdge.edge * 100).toFixed(1)}%
++                           </div>
++                           <div className={`text-[9px] uppercase opacity-40 ${textColor}`}>ML Edge</div>
++                        </div>
++
++                        <div className="flex flex-col text-right">
++                          <span className={`text-[10px] ${textColor} opacity-50`}>Fair Value</span>
++                          <span className={`text-lg font-light ${isNight ? 'text-purple-300' : 'text-purple-700'}`}>
++                            {(analysis.synthData.polymarketEdge.synthFairProb * 100).toFixed(1)}%
++                          </span>
++                        </div>
++                      </div>
++                    </div>
++
++                    {/* Edge Detection Badge - Prominent when edge exists */}
++                    {Math.abs(analysis.synthData.polymarketEdge.edge) > 0.03 && (
++                      <div className={`flex items-center gap-3 px-3 py-3 rounded-xl ${
++                        isNight ? 'bg-green-500/10 border border-green-500/20 shadow-lg shadow-green-500/5' : 'bg-green-500/5 border border-green-500/20 shadow-md shadow-green-500/5'
++                      }`}>
++                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center text-green-500 animate-pulse">
++                          ⚡
++                        </div>
++                        <div>
++                          <p className={`text-sm font-medium ${isNight ? 'text-green-400' : 'text-green-600'}`}>
++                            Edge Detected: {Math.abs(analysis.synthData.polymarketEdge.edge * 100).toFixed(1)}%
++                          </p>
++                          <p className={`text-xs ${isNight ? 'text-white/50' : 'text-black/50'}`}>
++                            ML ensemble identifies {analysis.synthData.polymarketEdge.edge > 0 ? 'undervalued' : 'overvalued'} contract
++                          </p>
++                        </div>
++                      </div>
++                    )}
++                  </div>
++                )}
++              </div>
++            )}
++
++            {/* Market Context & Odds - Enhanced Visual Hierarchy */}
++            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
++              <div
++                className={`${cardBgColor} backdrop-blur-sm border rounded-xl p-4`}
++              >
++                <h4
++                  className={`text-xs font-light ${textColor} opacity-70 mb-3 uppercase tracking-wider`}
++                >
++                  Market Odds
++                </h4>
++                <div className="flex justify-between items-center">
++                  <div className="flex flex-col">
++                    <span className={`text-xs ${textColor} opacity-50 mb-1`}>
++                      YES
++                    </span>
++                    <span
++                      className={`text-3xl font-light ${isNight ? "text-green-400" : "text-green-600"
++                        }`}
++                    >
++                      {market.ask ? `${(market.ask * 100).toFixed(0)}%` : "N/A"}
++                    </span>
++                  </div>
++                  <div className="flex flex-col text-right">
++                    <span className={`text-xs ${textColor} opacity-50 mb-1`}>
++                      NO
++                    </span>
++                    <span
++                      className={`text-3xl font-light ${isNight ? "text-red-400" : "text-red-600"
++                        }`}
++                    >
++                      {market.bid ? `${(market.bid * 100).toFixed(0)}%` : "N/A"}
++                    </span>
++                  </div>
++                </div>
++              </div>
++
++              <div
++                className={`${cardBgColor} backdrop-blur-sm border rounded-xl p-4`}
++              >
++                <h4
++                  className={`text-xs font-light ${textColor} opacity-70 mb-3 uppercase tracking-wider`}
++                >
++                  Weather @ {analysis.weather_conditions?.location || "Venue"}
++                </h4>
++                <div className="grid grid-cols-2 gap-2 text-sm">
++                  <div className="flex items-center gap-2">
++                    <span className="opacity-60">🌡️</span>
++                    <span className={textColor}>
++                      {analysis.weather_conditions?.temperature || "N/A"}
++                    </span>
++                  </div>
++                  <div className="flex items-center gap-2">
++                    <span className="opacity-60">☁️</span>
++                    <span className={textColor}>
++                      {analysis.weather_conditions?.condition || "N/A"}
++                    </span>
++                  </div>
++                  <div className="flex items-center gap-2">
++                    <span className="opacity-60">💨</span>
++                    <span className={textColor}>
++                      {analysis.weather_conditions?.wind || "N/A"}
++                    </span>
++                  </div>
++                  <div className="flex items-center gap-2">
++                    <span className="opacity-60">💧</span>
++                    <span className={textColor}>
++                      {analysis.weather_conditions?.precipitation || "0%"}
++                    </span>
++                  </div>
++                </div>
++              </div>
++            </div>
++
++            {/* Chain Action Widget - Elevated for prominence */}
++            <ChainActionWidget
++              analysis={analysis}
++              market={market}
++              isNight={isNight}
++              textColor={textColor}
++              cardBgColor={cardBgColor}
++              onPublishSignal={onPublishSignal}
++              chains={chains}
++              setShowOrderPanel={setShowOrderPanel}
++              setSelectedMarketForOrder={setSelectedMarketForOrder}
++            />
++
++            {/* Analysis Text */}
++            <div
++              className={`${cardBgColor} backdrop-blur-sm border rounded-xl p-5`}
++            >
++              <h4
++                className={`text-xs font-light ${textColor} opacity-70 mb-2 uppercase tracking-wider`}
++              >
++                AI Reasoning
++              </h4>
++              <p
++                className={`text-base ${textColor} opacity-90 leading-relaxed font-light`}
++              >
++                {analysis.reasoning ||
++                  analysis.analysis ||
++                  "No analysis available"}
++              </p>
++
++              {/* Deep Reasoning (Thinking) Toggle */}
++              {analysis.thinking && (
++                <div className="mt-4 pt-4 border-t border-white/5">
++                  <details className="group">
++                    <summary className="flex items-center gap-2 text-xs font-light text-purple-400 cursor-pointer hover:text-purple-300 transition-colors list-none">
++                      <span className="group-open:rotate-180 transition-transform">▼</span>
++                      <span>View Deep Reasoning Process</span>
++                    </summary>
++                    <div className="mt-3 p-4 rounded-lg bg-black/40 border border-purple-500/10 text-xs font-mono text-white/50 leading-relaxed whitespace-pre-wrap">
++                      {analysis.thinking}
++                    </div>
++                  </details>
++                </div>
++              )}
++              
++              {/* Analysis Factor Badges - show which analysis types were used */}
++              {analysis.analysisTypes && analysis.analysisTypes.length > 0 && (
++                <div className="mt-3 flex flex-wrap gap-2">
++                  {analysis.analysisTypes.map((type, idx) => {
++                    const labels = {
++                      fundamental: { emoji: '📊', label: 'Fundamental' },
++                      technical: { emoji: '📈', label: 'Technical' },
++                      sentiment: { emoji: '💬', label: 'Sentiment' },
++                      weather: { emoji: '🌤️', label: 'Weather' },
++                      futures: { emoji: '📅', label: 'Futures' },
++                      news: { emoji: '📰', label: 'News' },
++                    };
++                    const info = labels[type] || { emoji: '🔍', label: type };
++                    return (
++                      <span
++                        key={idx}
++                        className={`px-2 py-1 rounded-full text-xs border ${isNight
++                          ? "bg-blue-500/10 border-blue-500/20 text-blue-300"
++                          : "bg-blue-400/10 border-blue-400/20 text-blue-700"
++                        }`}
++                      >
++                        {info.emoji} {info.label}
++                      </span>
++                    );
++                  })}
++                </div>
++              )}
++            </div>
++
++            {/* Evidence & Provenance — shows data sources, confidence methodology, counter-signals */}
++            <EvidenceBlock
++              signal={{
++                source: analysis.source || 'llm',
++                confidence: analysis.assessment?.confidence || 'LOW',
++                market_title: market.title || market.question,
++                odds_efficiency: analysis.assessment?.odds_efficiency,
++                venue: market.event_location || market.location || '',
++                timestamp: Math.floor(Date.now() / 1000),
++                synth_ml_percentile: analysis.synthData?.percentiles?.p50 != null
++                  ? Math.round(analysis.synthData.percentiles.p50)
++                  : null,
++                event_id: market.platform === 'kalshi'
++                  ? `kalshi:${market.marketID || market.id}`
++                  : `polymarket:${market.marketID || market.id}`,
++              }}
++              isNight={isNight}
++              textColor={textColor}
++              agentBrierScore={agentBrierScore}
++              calibrationScore={calibrationScore}
++              className="mb-4"
++            />
++
++            {/* Recommendation */}
++            {analysis.recommended_action && (
++              <div
++                className={`${cardBgColor} backdrop-blur-sm border rounded-xl p-5`}
++              >
++                <h4
++                  className={`text-xs font-light ${textColor} opacity-70 mb-2 uppercase tracking-wider`}
++                >
++                  Recommendation
++                </h4>
++                <p className={`text-base font-medium ${textColor}`}>
++                  {analysis.recommended_action}
++                </p>
++              </div>
++            )}
++
++            {/* Disclaimer */}
++            <div
++              className={`${cardBgColor} backdrop-blur-sm border rounded-xl p-4 ${isNight ? "border-white/10" : "border-black/10"
++                }`}
++            >
++              <div className="flex items-start gap-3">
++                <div
++                  className={`mt-0.5 w-1 h-1 rounded-full ${isNight ? "bg-white/40" : "bg-black/40"
++                    }`}
++                ></div>
++                <div>
++                  <p
++                    className={`text-xs ${textColor} opacity-60 font-light leading-relaxed`}
++                  >
++                    <span className="opacity-80">
++                      Informational purposes only.
++                    </span>{" "}
++                    This analysis is not financial advice. Weather-based
++                    predictions are probabilistic and should be combined with
++                    your own research. Trade responsibly.
++                  </p>
++                </div>
++              </div>
++            </div>
++
++            {/* Prove Your Edge - Paper Trading With Proof */}
++            <div
++              className={`${cardBgColor} backdrop-blur-sm border rounded-xl p-5`}
++            >
++              <div className="flex items-center gap-2 mb-3">
++                <span className="text-xl">🎯</span>
++                <h4 className={`text-sm font-medium ${textColor}`}>
++                  Prove Your Edge
++                </h4>
++              </div>
++              <p
++                className={`text-sm ${textColor} opacity-80 font-light leading-relaxed mb-3`}
++              >
++                Not ready to trade yet? Make your call anyway. Every prediction
++                is recorded on-chain — timestamped, immutable, and publicly
++                verifiable. Build a provable track record before risking capital.
++              </p>
++              <div className="grid grid-cols-1 gap-2">
++                <div className="flex items-start gap-2">
++                  <span className={`text-xs ${textColor} opacity-60`}>✓</span>
++                  <p className={`text-xs ${textColor} opacity-70 font-light`}>
++                    <strong className="font-medium">
++                      Paper trade with proof
++                    </strong>{" "}
++                    - No capital needed, full accountability
++                  </p>
++                </div>
++                <div className="flex items-start gap-2">
++                  <span className={`text-xs ${textColor} opacity-60`}>✓</span>
++                  <p className={`text-xs ${textColor} opacity-70 font-light`}>
++                    <strong className="font-medium">
++                      Can’t fake your record
++                    </strong>{" "}
++                    - No backdating, no deleting bad calls
++                  </p>
++                </div>
++                <div className="flex items-start gap-2">
++                  <span className={`text-xs ${textColor} opacity-60`}>✓</span>
++                  <p className={`text-xs ${textColor} opacity-70 font-light`}>
++                    <strong className="font-medium">Earn as you grow</strong> -
++                    Top analysts earn tips from the community
++                  </p>
++                </div>
++              </div>
++            </div>
++
++            {/* Wallet Connection Prompt (if not connected) */}
++            {!canPublish && (
++              <div
++                className={`${cardBgColor} backdrop-blur-sm border rounded-xl p-4 flex items-center gap-3 ${isNight ? "border-orange-400/30" : "border-orange-600/30"
++                  }`}
++              >
++                <span className="text-2xl">🎯</span>
++                <div className="flex-1">
++                  <p className={`text-sm ${textColor} font-medium mb-1`}>
++                    Connect wallet to start your track record
++                  </p>
++                  <p className={`text-xs ${textColor} opacity-70 font-light`}>
++                    Link an Aptos or Movement wallet to make your call
++                    and start building a verifiable prediction history
++                  </p>
++                </div>
++              </div>
++            )}
++
++            {/* ML Edge Detected - Prominent CTA */}
++            {analysis?.synthData?.polymarketEdge && Math.abs(analysis.synthData.polymarketEdge.edge) > 0.03 && (
++              <div className={`${cardBgColor} backdrop-blur-sm border-2 rounded-xl p-5 ${
++                isNight ? 'border-green-500/40 bg-green-500/5' : 'border-green-500/40 bg-green-500/5'
++              }`}>
++                <div className="flex items-center gap-3 mb-4">
++                  <span className="text-2xl">⚡</span>
++                  <div>
++                    <h4 className={`text-sm font-medium ${isNight ? 'text-green-400' : 'text-green-700'}`}>
++                      ML Edge Detected
++                    </h4>
++                    <p className={`text-xs ${textColor} opacity-60`}>
++                      Fair odds: {(analysis.synthData.polymarketEdge.synthFairProb * 100).toFixed(1)}% vs Market: {(analysis.synthData.polymarketEdge.polymarketProb * 100).toFixed(1)}%
++                    </p>
++                  </div>
++                </div>
++                <button
++                  onClick={onPublishSignal}
++                  className={`w-full px-6 py-4 rounded-xl font-medium text-sm transition-all ${
++                    canPublish
++                      ? isNight
++                        ? "bg-green-500/30 hover:bg-green-500/40 text-green-200 border border-green-500/50"
++                        : "bg-green-500/30 hover:bg-green-500/40 text-green-800 border border-green-500/50"
++                      : isNight
++                        ? "bg-orange-500/20 hover:bg-orange-500/30 text-orange-200 border border-orange-500/30"
++                        : "bg-orange-400/20 hover:bg-orange-400/30 text-orange-800 border border-orange-500/30"
++                  }`}
++                >
++                  {canPublish ? "🎯 Publish Signal Now" : "🔗 Connect Wallet to Publish"}
++                </button>
++              </div>
++            )}
++
++            {/* Action Buttons: Trade + Publish */}
++            <div className="flex gap-3 pt-2">
++              <button
++                onClick={() => {
++                  if (isKalshi) {
++                    setSelectedKalshiMarket(market);
++                  } else {
++                    setSelectedMarketForOrder(market);
++                    setShowOrderPanel(true);
++                  }
++                }}
++                className={`flex-1 px-6 py-3 rounded-2xl font-light text-sm transition-all border text-center ${isKalshi
++                  ? isNight
++                    ? "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-400/30"
++                    : "bg-emerald-400/20 hover:bg-emerald-400/30 text-emerald-800 border-emerald-500/30"
++                  : isNight
++                    ? "bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border-blue-400/30"
++                    : "bg-blue-400/20 hover:bg-blue-400/30 text-blue-800 border-blue-500/30"
++                  }`}
++              >
++                {isKalshi ? "Trade on Kalshi ↗" : "📈 Trade Here"}
++              </button>
++
++              {/* Hide regular publish button if edge section is shown */}
++              {!(analysis?.synthData?.polymarketEdge && Math.abs(analysis.synthData.polymarketEdge.edge) > 0.03) && (
++                <button
++                  onClick={onPublishSignal}
++                  className={`flex-1 px-6 py-3 rounded-2xl font-light text-sm transition-all border relative ${canPublish
++                    ? isNight
++                      ? "bg-green-500/20 hover:bg-green-500/30 text-green-200 border-green-400/30"
++                      : "bg-green-400/20 hover:bg-green-400/30 text-green-800 border-green-500/30"
++                    : isNight
++                      ? "bg-orange-500/20 hover:bg-orange-500/30 text-orange-200 border-orange-400/30"
++                      : "bg-orange-400/20 hover:bg-orange-400/30 text-orange-800 border-orange-500/30"
++                    }`}
++                >
++                  {canPublish
++                    ? "🎯 Make Your Call"
++                    : "🔗 Connect & Make Your Call"}
++                </button>
++              )}
++
++              {/* Share Button */}
++              <button
++                onClick={() => {
++                  const shareUrl = `${window.location.origin}/markets?share_id=${market.marketID || market.id}`;
++                  navigator.clipboard.writeText(shareUrl);
++                }}
++                className={`px-6 py-3 rounded-2xl font-light text-sm transition-all border ${isNight ? "bg-white/5 hover:bg-white/10 text-white/70 border-white/10" : "bg-black/5 hover:bg-black/10 text-black/70 border-black/10"}`}
++                title="Copy shareable link"
++              >
++                🔗
++              </button>
++            </div>
++          </div>
++        </div>
++      )}
++    </div>
++
++    {/* BottomSheet for Expanded Market Analysis */}
++    <BottomSheet
++      isOpen={isExpanded}
++      onClose={() => setExpandedMarketId(null)}
++      title={market.title || market.question}
++      isNight={isNight}
++      fullHeight={false}
++    >
++      <div className="p-6 space-y-6">
++        {/* Platform Badge */}
++        <span
++          className={`inline-flex px-3 py-1 rounded-full text-xs font-medium uppercase tracking-wider border ${isKalshi
++            ? isNight
++              ? "bg-emerald-900/40 text-emerald-300 border-emerald-700/50"
++              : "bg-emerald-100 text-emerald-700 border-emerald-200"
++            : isNight
++              ? "bg-blue-900/40 text-blue-300 border-blue-700/50"
++              : "bg-blue-100 text-blue-700 border-blue-200"
++          }`}
++        >
++          {isKalshi ? "Kalshi" : "Polymarket"}
++        </span>
++
++        {/* Dynamic Loading State */}
++        {isAnalyzing && <LoadingAnalysisState isNight={isNight} textColor={textColor} />}
++
++        {/* Analysis Content */}
++        {analysis && (
++          <div className="space-y-4">
++            {/* SynthData ML Forecast */}
++            {analysis?.synthData && (
++              <div className={`glass-subtle border-2 ${isNight ? 'border-purple-500/30' : 'border-purple-400/30'} rounded-xl p-5`}>
++                <div className="flex items-center gap-2 mb-4">
++                  <span className="text-xl">🤖</span>
++                  <h4 className={`text-sm font-medium ${textColor}`}>SynthData ML Forecast</h4>
++                  <span className={`ml-auto px-2 py-0.5 rounded text-[10px] font-medium ${isNight ? 'bg-purple-500/20 text-purple-300' : 'bg-purple-400/20 text-purple-700'}`}>
++                    200+ MODELS
++                  </span>
++                </div>
++                <div className="text-center pb-3 border-b border-white/10">
++                  <div className={`text-xs ${textColor} opacity-50 mb-1`}>{analysis.synthData.asset}</div>
++                  <div className={`text-4xl font-light ${textColor}`}>${analysis.synthData.currentPrice?.toLocaleString()}</div>
++                </div>
++              </div>
++            )}
++
++            {/* Market Odds */}
++            <div className="grid grid-cols-2 gap-4">
++              <div className={`glass-input rounded-xl p-4 text-center`}>
++                <span className={`text-xs ${textColor} opacity-50`}>YES</span>
++                <div className={`text-3xl font-light ${isNight ? "text-green-400" : "text-green-600"}`}>
++                  {market.ask ? `${(market.ask * 100).toFixed(0)}%` : "N/A"}
++                </div>
++              </div>
++              <div className={`glass-input rounded-xl p-4 text-center`}>
++                <span className={`text-xs ${textColor} opacity-50`}>NO</span>
++                <div className={`text-3xl font-light ${isNight ? "text-red-400" : "text-red-600"}`}>
++                  {market.bid ? `${(market.bid * 100).toFixed(0)}%` : "N/A"}
++                </div>
++              </div>
++            </div>
++
++            {/* Data Provenance (Evidence) */}
++            {analysis && (
++              <div className="mt-6 pt-6 border-t border-white/10">
++                <h4 className={`text-xs font-light ${textColor} opacity-40 uppercase tracking-widest mb-3`}>Data Provenance</h4>
++                <div className="flex flex-wrap gap-2">
++                  {[
++                    { name: 'Polymarket/Kalshi', icon: '🏦' },
++                    analysis.synthData ? { name: 'SynthData ML', icon: '🤖' } : null,
++                    analysis.weather_conditions ? { name: 'OpenMeteo', icon: '🌤' } : null,
++                    { name: 'Venice AI Mesh', icon: '🌐' }
++                  ].filter(Boolean).map((source) => (
++                    <div key={source.name} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
++                      <span className="text-sm">{source.icon}</span>
++                      <span className={`text-[10px] ${textColor} opacity-60 font-medium`}>{source.name}</span>
++                    </div>
++                  ))}
++                </div>
++              </div>
++            )}
++            
++            {/* AI Reasoning */}
++            <div className={`glass-subtle rounded-xl p-5`}>
++              <h4 className={`text-xs font-light ${textColor} opacity-70 mb-2 uppercase tracking-wider`}>AI Reasoning</h4>
++              <p className={`text-base ${textColor} opacity-90 leading-relaxed font-light`}>
++                {analysis.reasoning || analysis.analysis || "No analysis available"}
++              </p>
++
++              {/* Deep Reasoning (Thinking) Toggle */}
++              {analysis.thinking && (
++                <div className="mt-4 pt-4 border-t border-white/5">
++                  <details className="group">
++                    <summary className="flex items-center gap-2 text-xs font-light text-purple-400 cursor-pointer hover:text-purple-300 transition-colors list-none">
++                      <span className="group-open:rotate-180 transition-transform">▼</span>
++                      <span>View Deep Reasoning Process</span>
++                    </summary>
++                    <div className="mt-3 p-4 rounded-lg bg-black/40 border border-purple-500/10 text-xs font-mono text-white/50 leading-relaxed whitespace-pre-wrap">
++                      {analysis.thinking}
++                    </div>
++                  </details>
++                </div>
++              )}
++            </div>
++
++            {/* Action Buttons */}
++            <div className="flex gap-3 pt-2">
++              <button
++                onClick={() => {
++                  if (isKalshi) {
++                    setSelectedKalshiMarket(market);
++                  } else {
++                    setSelectedMarketForOrder(market);
++                    setShowOrderPanel(true);
++                  }
++                }}
++                className={`flex-1 px-6 py-3 rounded-2xl font-light text-sm transition-all border text-center ${isKalshi
++                  ? isNight
++                    ? "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-400/30"
++                    : "bg-emerald-400/20 hover:bg-emerald-400/30 text-emerald-800 border-emerald-500/30"
++                  : isNight
++                    ? "bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border-blue-400/30"
++                    : "bg-blue-400/20 hover:bg-blue-400/30 text-blue-800 border-blue-500/30"
++                }`}
++              >
++                {isKalshi ? "Trade on Kalshi ↗" : "📈 Trade Here"}
++              </button>
++              <button
++                onClick={onPublishSignal}
++                className={`flex-1 px-6 py-3 rounded-2xl font-light text-sm transition-all border ${canPublish
++                  ? isNight
++                    ? "bg-green-500/20 hover:bg-green-500/30 text-green-200 border-green-400/30"
++                    : "bg-green-400/20 hover:bg-green-400/30 text-green-800 border-green-500/30"
++                  : isNight
++                    ? "bg-orange-500/20 hover:bg-orange-500/30 text-orange-200 border-orange-400/30"
++                    : "bg-orange-400/20 hover:bg-orange-400/30 text-orange-800 border-orange-500/30"
++                }`}
++              >
++                {canPublish ? "🎯 Make Your Call" : "🔗 Connect & Make Your Call"}
++              </button>
++            </div>
++          </div>
++        )}
++      </div>
++    </BottomSheet>
++    </>
++  );
++}
++
++// Dynamic Loading State Component
++export function LoadingAnalysisState({ isNight, textColor }) {
++  const [step, setStep] = useState(0);
++  const [progress, setProgress] = useState(0);
++
++  const steps = [
++    {
++      icon: "🔍",
++      text: "Verifying event location",
++      sub: "Cross-referencing official schedules via web search",
++    },
++    {
++      icon: "🌤️",
++      text: "Fetching live weather data",
++      sub: "Retrieving real-time conditions and forecasts",
++    },
++    {
++      icon: "📊",
++      text: "Analyzing market efficiency",
++      sub: "Comparing weather impact vs current odds",
++    },
++    {
++      icon: "🤖",
++      text: "Generating AI insights",
++      sub: "Synthesizing comprehensive recommendation",
++    },
++  ];
++
++  useEffect(() => {
++    const stepInterval = setInterval(() => {
++      setStep((prev) => (prev + 1) % steps.length);
++    }, 2500);
++
++    const progressInterval = setInterval(() => {
++      setProgress((prev) => {
++        if (prev >= 100) return 0;
++        return prev + 1;
++      });
++    }, 100);
++
++    return () => {
++      clearInterval(stepInterval);
++      clearInterval(progressInterval);
++    };
++  }, []);
++
++  return (
++    <div 
++      className="mt-8 pt-8 border-t border-white/10 flex flex-col items-center justify-center py-12"
++      role="status"
++      aria-live="polite"
++      aria-label="Analyzing market"
++    >
++      {/* Animated Icon */}
++      <div className="relative mb-6">
++        <div
++          className={`w-16 h-16 rounded-full flex items-center justify-center text-3xl transition-all duration-500 ${isNight
++            ? "bg-white/10 backdrop-blur-sm"
++            : "bg-black/5 backdrop-blur-sm"
++            }`}
++        >
++          <span className="animate-bounce" aria-hidden="true">{steps[step].icon}</span>
++        </div>
++        <div
++          className={`absolute inset-0 rounded-full border-2 ${isNight ? "border-white/20" : "border-black/20"
++            }`}
++          style={{
++            clipPath: `polygon(0 0, ${progress}% 0, ${progress}% 100%, 0 100%)`,
++            borderColor: isNight ? "rgba(255,255,255,0.6)" : "rgba(0,0,0,0.6)",
++          }}
++          aria-hidden="true"
++        ></div>
++      </div>
++
++      {/* Step Text */}
++      <p
++        className={`${textColor} text-lg font-medium mb-2 transition-all duration-500`}
++      >
++        {steps[step].text}
++      </p>
++      <p
++        className={`text-sm ${textColor} opacity-60 font-light transition-all duration-500 text-center max-w-xs`}
++      >
++        {steps[step].sub}
++      </p>
++
++      {/* Progress Bar */}
++      <div
++        className={`w-64 h-1 rounded-full mt-6 ${isNight ? "bg-white/10" : "bg-black/10"
++          }`}
++        role="progressbar"
++        aria-valuenow={progress}
++        aria-valuemin={0}
++        aria-valuemax={100}
++      >
++        <div
++          className={`h-full rounded-full transition-all duration-100 ${isNight ? "bg-white/60" : "bg-black/60"
++            }`}
++          style={{ width: `${progress}%` }}
++        ></div>
++      </div>
++
++      {/* Step Indicators */}
++      <div className="flex gap-2 mt-6" aria-hidden="true">
++        {steps.map((s, i) => (
++          <div
++            key={i}
++            className={`flex flex-col items-center gap-1 transition-all duration-300 ${i === step ? "scale-110" : "scale-100 opacity-40"
++              }`}
++          >
++            <div
++              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${i <= step
++                ? isNight
++                  ? "bg-white/20 text-white"
++                  : "bg-black/20 text-black"
++                : isNight
++                  ? "bg-white/5 text-white/40"
++                  : "bg-black/5 text-black/40"
++                }`}
++            >
++              {s.icon}
++            </div>
++          </div>
++        ))}
++      </div>
++    </div>
++  );
++}
+diff --git a/app/markets/page.js b/app/markets/page.js
+index b8dd690..cd4bcad 100644
+--- a/app/markets/page.js
++++ b/app/markets/page.js
+@@ -1,33 +1,23 @@
+ "use client";
+ 
+-import React, { useState, useEffect, useMemo, useCallback } from "react";
++import React, { useState, useEffect, useCallback } from "react";
+ import WalletConnect from "@/app/components/WalletConnect";
+ import { useSignalPublisher } from "@/hooks/useSignalPublisher";
+ import { useChainConnections } from "@/hooks/useChainConnections";
+ import { weatherService } from "@/services/weatherService";
+-import { arbitrageService } from "@/services/arbitrageService";
+-import PageNav, { SecondaryNav, HomeLink } from "@/app/components/PageNav";
++import PageNav, { SecondaryNav } from "@/app/components/PageNav";
+ import Scene3D from "@/components/Scene3D";
+ import { useToast, ToastContainer } from "@/components/Toast";
+ import { OrderSigningPanel } from "@/components/OrderSigningPanel";
+ import KalshiOrderPanel from "@/components/KalshiOrderPanel";
+-import { CHAINS } from "@/constants/appConstants";
+-import { getChainActionGuidance, getRecommendationExplanation } from "@/utils/chainUtils";
+-import { ActiveChainIndicator } from "@/components/ActiveChainIndicator";
+-import { ChainSelector } from "@/components/ChainSelector";
+-import { SynthShowcase } from "@/components/SynthShowcase";
+ import { MarketEdgeScanner } from "@/components/MarketEdgeScanner";
+ import { ArbitrageExecutionPanel } from "@/components/ArbitrageExecutionPanel";
+ import AnalysisOptions, { useAnalysisOptions } from "@/components/AnalysisOptions";
+ import AnalysisConfigModal from "@/components/AnalysisConfigModal";
+-import EmptyMarketState from "@/components/EmptyMarketState";
+-import UnifiedConnect from "@/components/UnifiedConnect";
+-import PortfolioCard from "@/components/PortfolioCard";
+ import PricingOverlay from "@/components/PricingOverlay";
+ import ReasoningVisualizer from "@/components/ReasoningVisualizer";
+-import BottomSheet from "@/components/BottomSheet";
+-import EvidenceBlock from "@/components/EvidenceBlock";
+ import NarrativeSteps from "@/components/NarrativeSteps";
++import { SportsTabContent, DiscoveryTabContent } from "./components";
+ 
+ export default function MarketsPage() {
+   // Unified chain connection state - single source of truth
+@@ -207,7 +197,6 @@ export default function MarketsPage() {
+     platform: "all", // 'all', 'polymarket', 'kalshi'
+   });
+   const [discoveryDateRange, setDiscoveryDateRange] = useState("this-week");
+-  const [showArbitrage, setShowArbitrage] = useState(false); // Arbitrage detection toggle
+ 
+   // Track record state (Brier scores, calibration)
+   const [agentTrackStats, setAgentTrackStats] = useState(null);
+@@ -674,26 +663,10 @@ export default function MarketsPage() {
+   }, [selectedMarket, analysis, canPublish, chains, weatherData, addToast, publishToAptos]);
+ 
+   const textColor = isNight ? "text-white" : "text-black";
+-  const bgColor = "bg-black";
+   const cardBgColor = isNight
+     ? "bg-slate-900/60 border-white/20"
+     : "bg-white/60 border-black/20";
+ 
+-  if (isLoadingWeather) {
+-    return (
+-      <div
+-        className={`w-screen h-screen flex items-center justify-center ${bgColor}`}
+-      >
+-        <div className="flex flex-col items-center">
+-          <div
+-            className={`w-12 h-12 border-4 border-current/30 border-t-current rounded-full animate-spin ${textColor} mb-4`}
+-          ></div>
+-          <p className={`${textColor} font-light`}>Loading...</p>
+-        </div>
+-      </div>
+-    );
+-  }
+-
+   return (
+     <div className="min-h-screen relative">
+       {/* 3D Scene Background */}
+@@ -805,15 +778,6 @@ export default function MarketsPage() {
+               onAnalyze={openAnalyzeConfig} 
+               isNight={isNight} 
+             />
+-
+-            {/* Synth ML Showcase */}
+-            <SynthShowcase isNight={isNight} />
+-
+-            {/* Portfolio Card — track record overview */}
+-            <PortfolioCard isNight={isNight} />
+-
+-            {/* Unified chain connection */}
+-            <UnifiedConnect isNight={isNight} variant="header" />
+           </div>
+ 
+           {/* Sports Tab Content */}
+@@ -942,1982 +906,3 @@ export default function MarketsPage() {
+     </div >
+   );
+ }
+-
+-// Sports Tab Component - Date-First Design
+-function SportsTabContent({
+-  markets,
+-  isLoading,
+-  error,
+-  filters,
+-  setFilters,
+-  dateRange,
+-  setDateRange,
+-  minVolume,
+-  setMinVolume,
+-  onAnalyze,
+-  isNight,
+-  textColor,
+-  cardBgColor,
+-  expandedMarketId,
+-  setExpandedMarketId,
+-  analysis,
+-  isAnalyzing,
+-  selectedMarket,
+-  onPublishSignal,
+-  analysisMode,
+-  fetchMarkets,
+-  chains,
+-  canPublish,
+-  setShowOrderPanel,
+-  setSelectedMarketForOrder,
+-  setSelectedKalshiMarket,
+-  setOrderSide,
+-  setSelectedArbitrage,
+-  agentBrierScore,
+-  calibrationScore,
+-}) {
+-  const dateRangeLabels = {
+-    today: "Today",
+-    tomorrow: "Tomorrow",
+-    "this-week": "This Week",
+-    later: "Later",
+-  };
+-
+-  return (
+-    <div className="space-y-6">
+-      {/* Compact Filter Bar */}
+-      <div
+-        className={`${cardBgColor} backdrop-blur-xl border rounded-3xl p-3 space-y-2`}
+-      >
+-        {/* Event Type */}
+-        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+-          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
+-            Event Type
+-          </label>
+-          <select
+-            value={filters.eventType}
+-            onChange={(e) =>
+-              setFilters((prev) => ({ ...prev, eventType: e.target.value }))
+-            }
+-            className={`flex-1 px-3 py-2 text-sm rounded-lg border ${isNight
+-              ? "bg-white/10 border-white/20 text-white"
+-              : "bg-black/10 border-black/20 text-black"
+-              }`}
+-          >
+-            <option value="Soccer">⚽ Soccer</option>
+-            <option value="NFL">🏈 NFL</option>
+-            <option value="F1">🏎️ Formula 1</option>
+-            <option value="all">All Sports</option>
+-          </select>
+-        </div>
+-
+-        {/* Date Range Tabs */}
+-        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+-          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
+-            When
+-          </label>
+-          <div className="flex gap-1 flex-wrap">
+-            {Object.entries(dateRangeLabels).map(([key, label]) => (
+-              <button
+-                key={key}
+-                onClick={() => setDateRange(key)}
+-                className={`px-3 py-1.5 text-xs rounded-lg border transition-all font-light ${dateRange === key
+-                  ? isNight
+-                    ? "bg-blue-500/30 text-white border-blue-400/40"
+-                    : "bg-blue-400/30 text-black border-blue-500/40"
+-                  : isNight
+-                    ? "bg-white/10 hover:bg-white/20 text-white/70 border-white/20"
+-                    : "bg-black/10 hover:bg-black/20 text-black/70 border-black/20"
+-                  }`}
+-              >
+-                {label}
+-              </button>
+-            ))}
+-          </div>
+-        </div>
+-
+-        {/* Min Volume */}
+-        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+-          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
+-            Min Volume
+-          </label>
+-          <select
+-            value={String(minVolume)}
+-            onChange={(e) => setMinVolume(parseInt(e.target.value))}
+-            className={`flex-1 px-3 py-2 text-sm rounded-lg border ${isNight
+-              ? "bg-white/10 border-white/20 text-white"
+-              : "bg-black/10 border-black/20 text-black"
+-              }`}
+-          >
+-            <option value="10000">$10k+</option>
+-            <option value="50000">$50k+</option>
+-            <option value="100000">$100k+</option>
+-          </select>
+-        </div>
+-
+-        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+-          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
+-            Confidence
+-          </label>
+-          <select
+-            value={String(filters.confidence)}
+-            onChange={(e) =>
+-              setFilters((prev) => ({ ...prev, confidence: e.target.value }))
+-            }
+-            className={`flex-1 px-3 py-2 text-sm rounded-lg border ${isNight
+-              ? "bg-white/10 border-white/20 text-white"
+-              : "bg-black/10 border-black/20 text-black"
+-              }`}
+-          >
+-            <option value="all">All</option>
+-            <option value="HIGH">High</option>
+-            <option value="MEDIUM">Medium</option>
+-            <option value="LOW">Low</option>
+-          </select>
+-        </div>
+-
+-        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+-          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
+-            Include Futures
+-          </label>
+-          <button
+-            onClick={() =>
+-              setFilters((prev) => ({
+-                ...prev,
+-                includeFutures: !prev.includeFutures,
+-              }))
+-            }
+-            className={`inline-flex items-center w-12 h-6 rounded-full border transition-all ${filters.includeFutures
+-              ? isNight
+-                ? "bg-green-500/40 border-green-400/40"
+-                : "bg-green-400/30 border-green-500/40"
+-              : isNight
+-                ? "bg-white/10 border-white/20"
+-                : "bg-black/10 border-black/20"
+-              }`}
+-          >
+-            <span
+-              className={`inline-block w-5 h-5 rounded-full bg-white/80 transform transition-transform ${filters.includeFutures ? "translate-x-6" : "translate-x-1"
+-                }`}
+-            />
+-          </button>
+-        </div>
+-      </div>
+-
+-      {dateRange === "later" && (
+-        <div
+-          className={`mt-2 ${cardBgColor} backdrop-blur-xl border rounded-3xl p-3`}
+-        >
+-          <p className={`text-xs ${textColor} opacity-80`}>
+-            Weather-based analysis becomes less reliable beyond ~14 days.
+-          </p>
+-        </div>
+-      )}
+-
+-      {/* Markets List */}
+-      {isLoading && (
+-        <div className="flex items-center justify-center py-12">
+-          <div
+-            className={`w-6 h-6 border-2 ${isNight
+-              ? "border-white/30 border-t-white"
+-              : "border-black/30 border-t-black"
+-              } rounded-full animate-spin`}
+-          ></div>
+-          <span className={`ml-3 ${textColor} opacity-70`}>
+-            Loading markets...
+-          </span>
+-        </div>
+-      )}
+-
+-      {error && (
+-        <EmptyMarketState
+-          category={activeTab === 'sports' ? sportsFilters.eventType : discoveryFilters.category}
+-          message={error}
+-          onSwitchCategory={(cat) => {
+-            if (activeTab === 'sports') {
+-              setSportsFilters(prev => ({ ...prev, eventType: cat }));
+-            } else {
+-              setDiscoveryFilters(prev => ({ ...prev, category: cat }));
+-            }
+-            setError(null);
+-          }}
+-        />
+-      )}
+-
+-      {!isLoading && !error && markets && markets.length > 0 && (
+-        <div className="space-y-4">
+-          {markets.map((market, index) => (
+-            <MarketCard
+-              key={market.marketID || market.id || index}
+-              market={market}
+-              onAnalyze={onAnalyze}
+-              isNight={isNight}
+-              textColor={textColor}
+-              cardBgColor={cardBgColor}
+-              isExpanded={
+-                expandedMarketId ===
+-                (market.marketID || market.id || market.tokenID)
+-              }
+-              expandedMarketId={expandedMarketId}
+-              setExpandedMarketId={setExpandedMarketId}
+-              analysis={analysis}
+-              isAnalyzing={isAnalyzing}
+-              selectedMarket={selectedMarket}
+-              onPublishSignal={onPublishSignal}
+-              chains={chains}
+-              canPublish={canPublish}
+-              setShowOrderPanel={setShowOrderPanel}
+-              setSelectedMarketForOrder={setSelectedMarketForOrder}
+-              setSelectedKalshiMarket={setSelectedKalshiMarket}
+-              setOrderSide={setOrderSide}
+-              setSelectedArbitrage={setSelectedArbitrage}
+-              agentBrierScore={agentBrierScore}
+-              calibrationScore={calibrationScore}
+-            />
+-          ))}
+-        </div>
+-      )}
+-    </div>
+-  );
+-}
+-
+-// Chain Recommendation Badge - Shows recommended action inline
+-function ChainRecommendationBadge({ recommendation, isNight }) {
+-  const config = {
+-    PUBLISH: {
+-      icon: "🎯",
+-      text: "Make Your Call",
+-      color: isNight ? "bg-purple-500/20 text-purple-300 border-purple-500/30" : "bg-purple-400/20 text-purple-800 border-purple-400/30"
+-    },
+-    TRADE: {
+-      icon: "📊",
+-      text: "Place Order",
+-      color: isNight ? "bg-blue-500/20 text-blue-300 border-blue-500/30" : "bg-blue-400/20 text-blue-800 border-blue-400/30"
+-    },
+-    BOTH: {
+-      icon: "⚡",
+-      text: "Call It & Trade",
+-      color: isNight ? "bg-amber-500/20 text-amber-300 border-amber-500/30" : "bg-amber-400/20 text-amber-800 border-amber-400/30"
+-    }
+-  };
+-
+-  const rec = config[recommendation];
+-  if (!rec) return null;
+-
+-  return (
+-    <span className={`px-3 py-1 rounded-full font-light border ${rec.color}`}>
+-      {rec.icon} {rec.text}
+-    </span>
+-  );
+-}
+-
+-// Chain Action Widget - Guide user on next steps with wallet validation
+-function ChainActionWidget({
+-  analysis,
+-  market,
+-  isNight,
+-  textColor,
+-  cardBgColor,
+-  onPublishSignal,
+-  chains,
+-  setShowOrderPanel,
+-  setSelectedMarketForOrder,
+-}) {
+-  const { switchToEvmNetwork } = useChainConnections();
+-
+-  if (!analysis?.chain_recommendation) return null;
+-
+-  const rec = analysis.chain_recommendation;
+-  const shouldPublish = rec === "PUBLISH" || rec === "BOTH";
+-  const shouldTrade = rec === "TRADE" || rec === "BOTH";
+-
+-  const publishButtonText = shouldTrade ? "Also Make Your Call" : "Make Your Call";
+-  const tradeButtonText = shouldPublish ? "Also Trade" : "Place Order";
+-
+-  // Get explanation for why this action is recommended
+-  const explanation = getRecommendationExplanation(
+-    rec,
+-    analysis.assessment?.confidence,
+-    analysis.assessment?.odds_efficiency
+-  );
+-
+-  // Helper to render chain action with smart wallet validation and network switching
+-  const renderChainAction = (chainDef, chainState, isPrimary, buttonText, actionFn, contextMsg, needsNetworkSwitch = false, onSwitchNetwork = null) => {
+-    const isDisabled = !chainState.connected || needsNetworkSwitch;
+-    const buttonLabel = !chainState.connected
+-      ? `Connect ${chainDef.name}`
+-      : needsNetworkSwitch
+-        ? `Switch to ${chainState.currentNetwork?.display || 'correct network'}`
+-        : buttonText;
+-
+-    return (
+-      <div className={`flex items-start gap-3 pb-3 border-b border-white/10 last:pb-0 last:border-0 ${isPrimary ? (isNight ? "bg-gradient-to-r from-purple-500/5 to-transparent" : "bg-gradient-to-r from-purple-400/5 to-transparent") : ""
+-        } rounded px-3 py-2`}>
+-        <span className="text-xl flex-shrink-0">{chainDef.icon}</span>
+-        <div className="flex-1">
+-          <h5 className={`text-sm font-medium ${textColor} mb-1`}>
+-            {chainDef.display}
+-            {isPrimary && <span className={`ml-2 text-xs opacity-60 ${isNight ? "text-amber-300" : "text-amber-700"}`}>← Recommended</span>}
+-          </h5>
+-          <p className={`text-xs ${textColor} opacity-60 mb-3 leading-relaxed`}>
+-            {contextMsg}
+-          </p>
+-          {needsNetworkSwitch && chainState.currentNetwork && (
+-            <p className={`text-xs mb-2 ${isNight ? "text-amber-300/70" : "text-amber-700/70"}`}>
+-              Currently on: {chainState.currentNetwork.display}
+-            </p>
+-          )}
+-          <button
+-            onClick={() => {
+-              if (needsNetworkSwitch && onSwitchNetwork) {
+-                onSwitchNetwork();
+-              } else if (chainState.connected) {
+-                actionFn();
+-              }
+-            }}
+-            disabled={isDisabled}
+-            className={`px-4 py-2 rounded-lg text-xs font-light transition-all ${!isDisabled
+-              ? isNight
+-                ? `${chainDef.id === 'movement'
+-                  ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30'
+-                  : chainDef.color === 'purple'
+-                    ? 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30'
+-                    : 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30'}`
+-                : `${chainDef.id === 'movement'
+-                  ? 'bg-amber-400/20 hover:bg-amber-400/30 text-amber-800 border border-amber-400/30'
+-                  : chainDef.color === 'purple'
+-                    ? 'bg-purple-400/20 hover:bg-purple-400/30 text-purple-800 border border-purple-400/30'
+-                    : 'bg-blue-400/20 hover:bg-blue-400/30 text-blue-800 border border-blue-400/30'}`
+-              : "opacity-50 cursor-not-allowed"
+-              }`}
+-          >
+-            {buttonLabel}
+-          </button>
+-        </div>
+-      </div>
+-    );
+-  };
+-
+-  return (
+-    <div className={`${cardBgColor} backdrop-blur-sm border rounded-xl p-5`}>
+-      <h4 className={`text-xs font-light ${textColor} opacity-70 mb-4 uppercase tracking-wider`}>
+-        Recommended Actions
+-      </h4>
+-      <div className="space-y-1">
+-        {/* Explanation Header */}
+-        <div className={`mb-3 p-3 rounded-lg ${isNight ? "bg-white/5 border border-white/10" : "bg-black/5 border border-black/10"}`}>
+-          <p className={`text-xs ${textColor} font-medium mb-1`}>
+-            {explanation.title}
+-          </p>
+-          <p className={`text-xs ${textColor} opacity-60`}>
+-            {explanation.reason}
+-          </p>
+-        </div>
+-
+-        {shouldPublish && (
+-          // Prefer Movement if available (better monetization), else Aptos
+-          chains.movement.connected ? renderChainAction(
+-            CHAINS.MOVEMENT,
+-            chains.movement,
+-            rec === "PUBLISH",
+-            publishButtonText,
+-            () => onPublishSignal(market, analysis),
+-            "Paper trade with proof — build a verifiable track record and earn tips from the community"
+-          ) : renderChainAction(
+-            CHAINS.APTOS,
+-            chains.aptos,
+-            rec === "PUBLISH",
+-            publishButtonText,
+-            () => {
+-              if (chains.aptos.connected) onPublishSignal(market, analysis);
+-            },
+-            "Paper trade with proof — every call is timestamped, immutable, and publicly verifiable"
+-          )
+-        )}
+-
+-        {shouldTrade && (
+-          renderChainAction(
+-            CHAINS.EVM,
+-            chains.evm,
+-            rec === "TRADE",
+-            tradeButtonText,
+-            () => {
+-              if (chains.evm.connected) {
+-                setSelectedMarketForOrder(market);
+-                setShowOrderPanel(true);
+-              }
+-            },
+-            analysis.assessment?.odds_efficiency === "UNDERPRICED"
+-              ? "Market odds are underpriced. Place a position to capture value."
+-              : "Participate in the market based on your analysis and risk tolerance.",
+-            !chains.evm.isCorrectNetwork, // needsNetworkSwitch
+-            !chains.evm.isCorrectNetwork ? () => switchToEvmNetwork('polygon') : null // onSwitchNetwork
+-          )
+-        )}
+-
+-        {rec === "BOTH" && (
+-          <div className={`mt-4 p-3 rounded-lg ${isNight ? "bg-green-500/10 border border-green-500/20" : "bg-green-400/10 border border-green-400/20"}`}>
+-            <p className={`text-xs ${textColor} leading-relaxed`}>
+-              <span className="font-medium">💡 Pro Tip:</span> {explanation.benefit}
+-            </p>
+-          </div>
+-        )}
+-      </div>
+-    </div>
+-  );
+-}
+-
+-// Discovery Tab Component - Date-First Design
+-function DiscoveryTabContent({
+-  markets,
+-  isLoading,
+-  error,
+-  filters,
+-  setFilters,
+-  dateRange,
+-  setDateRange,
+-  onAnalyze,
+-  isNight,
+-  textColor,
+-  cardBgColor,
+-  expandedMarketId,
+-  setExpandedMarketId,
+-  analysis,
+-  isAnalyzing,
+-  selectedMarket,
+-  onPublishSignal,
+-  fetchMarkets,
+-  chains,
+-  canPublish,
+-  setShowOrderPanel,
+-  setSelectedMarketForOrder,
+-  setSelectedKalshiMarket,
+-  setOrderSide,
+-  setSelectedArbitrage,
+-  agentBrierScore,
+-  calibrationScore,
+-}) {
+-  const dateRangeLabels = {
+-    today: "Today",
+-    tomorrow: "Tomorrow",
+-    "this-week": "This Week",
+-    later: "Later",
+-  };
+-
+-  return (
+-    <div className="space-y-6">
+-      {/* Compact Filter Bar */}
+-      <div
+-        className={`${cardBgColor} backdrop-blur-xl border rounded-3xl p-3 space-y-2`}
+-      >
+-        {/* Category */}
+-        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+-          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
+-            Category
+-          </label>
+-          <select
+-            value={filters.category}
+-            onChange={(e) =>
+-              setFilters((prev) => ({ ...prev, category: e.target.value }))
+-            }
+-            className={`flex-1 px-3 py-2 text-sm rounded-lg border ${isNight
+-              ? "bg-white/10 border-white/20 text-white"
+-              : "bg-black/10 border-black/20 text-black"
+-              }`}
+-          >
+-            <option value="all">All Categories</option>
+-            <option value="Sports">⚽ Sports</option>
+-            <option value="Politics">🏛️ Politics</option>
+-            <option value="Economics">📊 Economics</option>
+-            <option value="Weather">🌤️ Weather</option>
+-            <option value="Entertainment">🎬 Entertainment</option>
+-            <option value="Crypto">₿ Crypto</option>
+-            <option value="Path">🔗 Path Analysis</option>
+-          </select>
+-        </div>
+-
+-        {/* Platform */}
+-        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+-          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
+-            Platform
+-          </label>
+-          <select
+-            value={filters.platform}
+-            onChange={(e) =>
+-              setFilters((prev) => ({ ...prev, platform: e.target.value }))
+-            }
+-            className={`flex-1 px-3 py-2 text-sm rounded-lg border ${isNight
+-              ? "bg-white/10 border-white/20 text-white"
+-              : "bg-black/10 border-black/20 text-black"
+-              }`}
+-          >
+-            <option value="all">All Platforms</option>
+-            <option value="polymarket">Polymarket</option>
+-            <option value="kalshi">Kalshi</option>
+-          </select>
+-        </div>
+-
+-        {/* Date Range Tabs */}
+-        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+-          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
+-            When
+-          </label>
+-          <div className="flex gap-1 flex-wrap">
+-            {Object.entries(dateRangeLabels).map(([key, label]) => (
+-              <button
+-                key={key}
+-                onClick={() => setDateRange(key)}
+-                className={`px-3 py-1.5 text-xs rounded-lg border transition-all font-light ${dateRange === key
+-                  ? isNight
+-                    ? "bg-blue-500/30 text-white border-blue-400/40"
+-                    : "bg-blue-400/30 text-black border-blue-500/40"
+-                  : isNight
+-                    ? "bg-white/10 hover:bg-white/20 text-white/70 border-white/20"
+-                    : "bg-black/10 hover:bg-black/20 text-black/70 border-black/20"
+-                  }`}
+-              >
+-                {label}
+-              </button>
+-            ))}
+-          </div>
+-        </div>
+-
+-        {/* Min Volume */}
+-        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+-          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
+-            Min Volume
+-          </label>
+-          <select
+-            value={filters.minVolume}
+-            onChange={(e) =>
+-              setFilters((prev) => ({ ...prev, minVolume: e.target.value }))
+-            }
+-            className={`flex-1 px-3 py-2 text-sm rounded-lg border ${isNight
+-              ? "bg-white/10 border-white/20 text-white"
+-              : "bg-black/10 border-black/20 text-black"
+-              }`}
+-          >
+-            <option value="10000">$10k+</option>
+-            <option value="50000">$50k+</option>
+-            <option value="100000">$100k+</option>
+-          </select>
+-        </div>
+-
+-        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+-          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
+-            Confidence
+-          </label>
+-          <select
+-            value={filters.confidence}
+-            onChange={(e) =>
+-              setFilters((prev) => ({ ...prev, confidence: e.target.value }))
+-            }
+-            className={`flex-1 px-3 py-2 text-sm rounded-lg border ${isNight
+-              ? "bg-white/10 border-white/20 text-white"
+-              : "bg-black/10 border-black/20 text-black"
+-              }`}
+-          >
+-            <option value="all">All</option>
+-            <option value="HIGH">High</option>
+-            <option value="MEDIUM">Medium</option>
+-            <option value="LOW">Low</option>
+-          </select>
+-        </div>
+-
+-        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+-          <label className={`${textColor} text-xs opacity-60 min-w-max`}>
+-            Include Futures
+-          </label>
+-          <button
+-            onClick={() =>
+-              setFilters((prev) => ({
+-                ...prev,
+-                includeFutures: !prev.includeFutures,
+-              }))
+-            }
+-            className={`inline-flex items-center w-12 h-6 rounded-full border transition-all ${filters.includeFutures
+-              ? isNight
+-                ? "bg-green-500/40 border-green-400/40"
+-                : "bg-green-400/30 border-green-500/40"
+-              : isNight
+-                ? "bg-white/10 border-white/20"
+-                : "bg-black/10 border-black/20"
+-              }`}
+-          >
+-            <span
+-              className={`inline-block w-5 h-5 rounded-full bg-white/80 transform transition-transform ${filters.includeFutures ? "translate-x-6" : "translate-x-1"
+-                }`}
+-            />
+-          </button>
+-        </div>
+-      </div>
+-
+-      {/* Arbitrage Opportunities Banner */}
+-      {!isLoading &&
+-        markets &&
+-        markets.length > 0 &&
+-        (() => {
+-          const opportunities = arbitrageService.detectOpportunities(markets);
+-
+-          if (opportunities.count > 0) {
+-            return (
+-              <div
+-                className={`${cardBgColor} backdrop-blur-xl border rounded-3xl p-4`}
+-              >
+-                <div className="flex items-center justify-between mb-3">
+-                  <div className="flex items-center gap-2">
+-                    <span className="text-2xl">⚡</span>
+-                    <div>
+-                      <h3 className={`text-sm font-medium ${textColor}`}>
+-                        {opportunities.count} Arbitrage Opportunit
+-                        {opportunities.count === 1 ? "y" : "ies"} Detected
+-                      </h3>
+-                      <p className={`text-xs ${textColor} opacity-60`}>
+-                        Price discrepancies between Polymarket and Kalshi
+-                      </p>
+-                    </div>
+-                  </div>
+-                  <button
+-                    onClick={() => setShowArbitrage(!showArbitrage)}
+-                    className={`px-3 py-1.5 text-xs rounded-lg border transition-all ${showArbitrage
+-                      ? isNight
+-                        ? "bg-blue-500/30 text-white border-blue-400/40"
+-                        : "bg-blue-400/30 text-black border-blue-500/40"
+-                      : isNight
+-                        ? "bg-white/10 hover:bg-white/20 text-white/70 border-white/20"
+-                        : "bg-black/10 hover:bg-black/20 text-black/70 border-black/20"
+-                      }`}
+-                  >
+-                    {showArbitrage ? "Hide" : "Show"} Details
+-                  </button>
+-                </div>
+-
+-                {showArbitrage && (
+-                  <div className="space-y-2 mt-3 pt-3 border-t border-white/10">
+-                    {(opportunities?.opportunities || []).slice(0, 5).map((opp, idx) => (
+-                      <div
+-                        key={idx}
+-                        className={`p-3 rounded-lg border ${isNight
+-                          ? "bg-white/5 border-white/10"
+-                          : "bg-black/5 border-black/10"
+-                          }`}
+-                      >
+-                        <div className="flex items-start justify-between gap-3">
+-                          <div className="flex-1">
+-                            <p
+-                              className={`text-xs ${textColor} font-medium mb-1`}
+-                            >
+-                              {opp.polymarket.title.substring(0, 60)}...
+-                            </p>
+-                            <div className="flex gap-2 text-xs">
+-                              <span
+-                                className={`px-2 py-0.5 rounded ${isNight
+-                                  ? "bg-blue-900/40 text-blue-300"
+-                                  : "bg-blue-100 text-blue-700"
+-                                  }`}
+-                              >
+-                                Polymarket: {opp.arbitrage.market1Odds}%
+-                              </span>
+-                              <span
+-                                className={`px-2 py-0.5 rounded ${isNight
+-                                  ? "bg-emerald-900/40 text-emerald-300"
+-                                  : "bg-emerald-100 text-emerald-700"
+-                                  }`}
+-                              >
+-                                Kalshi: {opp.arbitrage.market2Odds}%
+-                              </span>
+-                            </div>
+-                          </div>
+-                          <div className="text-right">
+-                            <div
+-                              className={`text-lg font-bold ${isNight ? "text-yellow-300" : "text-yellow-600"
+-                                }`}
+-                            >
+-                              {opp.arbitrage.priceDiff}%
+-                            </div>
+-                            <div className={`text-xs ${textColor} opacity-60`}>
+-                              spread
+-                            </div>
+-                            <button
+-                              onClick={() => setSelectedArbitrage(opp)}
+-                              className={`mt-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-tight transition-all ${
+-                                isNight
+-                                  ? "bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30"
+-                                  : "bg-green-500/10 hover:bg-green-500/20 text-green-700 border border-green-500/20"
+-                              }`}
+-                            >
+-                              Capture Spread
+-                            </button>
+-                          </div>
+-                        </div>
+-                      </div>
+-                    ))}
+-                  </div>
+-                )}
+-              </div>
+-            );
+-          }
+-          return null;
+-        })()}
+-
+-      {/* Markets List */}
+-      {isLoading && (
+-        <div className="flex items-center justify-center py-12">
+-          <div
+-            className={`w-6 h-6 border-2 ${isNight
+-              ? "border-white/30 border-t-white"
+-              : "border-black/30 border-t-black"
+-              } rounded-full animate-spin`}
+-          ></div>
+-          <span className={`ml-3 ${textColor} opacity-70`}>
+-            Loading markets...
+-          </span>
+-        </div>
+-      )}
+-
+-      {error && (
+-        <EmptyMarketState
+-          category={activeTab === 'sports' ? sportsFilters.eventType : discoveryFilters.category}
+-          message={error}
+-          onSwitchCategory={(cat) => {
+-            if (activeTab === 'sports') {
+-              setSportsFilters(prev => ({ ...prev, eventType: cat }));
+-            } else {
+-              setDiscoveryFilters(prev => ({ ...prev, category: cat }));
+-            }
+-            setError(null);
+-          }}
+-        />
+-      )}
+-
+-      {!isLoading &&
+-        !error &&
+-        markets &&
+-        markets.length > 0 &&
+-        (() => {
+-          // Apply client-side filters
+-          let filteredMarkets =
+-            filters.platform === "all"
+-              ? markets
+-              : markets.filter(
+-                (m) => (m.platform || "polymarket") === filters.platform
+-              );
+-
+-          // Category filter for Path Analysis (special client-side flag)
+-          if (filters.category === "Path") {
+-            filteredMarkets = filteredMarkets.filter(m => m.isPathDependent);
+-          }
+-
+-          return filteredMarkets.length > 0 ? (
+-            <div className="space-y-4">
+-              {filteredMarkets.map((market, index) => (
+-                <MarketCard
+-                  key={market.marketID || market.id || index}
+-                  market={market}
+-                  onAnalyze={onAnalyze}
+-                  isNight={isNight}
+-                  textColor={textColor}
+-                  cardBgColor={cardBgColor}
+-                  isExpanded={
+-                    expandedMarketId ===
+-                    (market.marketID || market.id || market.tokenID)
+-                  }
+-                  expandedMarketId={expandedMarketId}
+-                  setExpandedMarketId={setExpandedMarketId}
+-                  analysis={analysis}
+-                  isAnalyzing={isAnalyzing}
+-                  selectedMarket={selectedMarket}
+-                  onPublishSignal={onPublishSignal}
+-                  chains={chains}
+-                  canPublish={canPublish}
+-                  setShowOrderPanel={setShowOrderPanel}
+-                  setSelectedMarketForOrder={setSelectedMarketForOrder}
+-                  setSelectedKalshiMarket={setSelectedKalshiMarket}
+-                  setOrderSide={setOrderSide}
+-                  setSelectedArbitrage={setSelectedArbitrage}
+-                  agentBrierScore={agentBrierScore}
+-                  calibrationScore={calibrationScore}
+-                />
+-              ))}
+-            </div>
+-          ) : (
+-            <div
+-              className={`${cardBgColor} backdrop-blur-xl border rounded-3xl p-6 text-center`}
+-            >
+-              <p className={`${textColor} opacity-90`}>
+-                No {filters.platform === "kalshi" ? "Kalshi" : "Polymarket"}{" "}
+-                markets found. Try selecting "All Platforms" or adjusting other
+-                filters.
+-              </p>
+-            </div>
+-          );
+-        })()}
+-    </div>
+-  );
+-}
+-
+-// Shared Market Card Component
+-function MarketCard({
+-  market,
+-  onAnalyze,
+-  isNight,
+-  textColor,
+-  cardBgColor,
+-  isExpanded,
+-  expandedMarketId,
+-  setExpandedMarketId,
+-  analysis,
+-  isAnalyzing,
+-  selectedMarket,
+-  onPublishSignal,
+-  chains,
+-  canPublish,
+-  setShowOrderPanel,
+-  setSelectedMarketForOrder,
+-  setSelectedKalshiMarket,
+-  setOrderSide,
+-  setSelectedArbitrage,
+-  agentBrierScore,
+-  calibrationScore,
+-}) {
+-  const isHidden = expandedMarketId && !isExpanded;
+-  const isCurrentMarket =
+-    (selectedMarket?.marketID || selectedMarket?.id) ===
+-    (market.marketID || market.id);
+-
+-  const platform = market.platform || "polymarket";
+-  const isKalshi = platform === "kalshi";
+-
+-  return (
+-    <>
+-    {/* Inline Card (always visible when not hidden) */}
+-    <div
+-      className={`glass-subtle rounded-3xl transition-all duration-500 p-5 sm:p-6
+-        ${isHidden
+-          ? "opacity-0 pointer-events-none scale-95"
+-          : "opacity-100 hover:scale-[1.01]"
+-        }`}
+-    >
+-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+-        <div className="flex-1 space-y-3">
+-          <div className="flex items-start justify-between">
+-            <h3
+-              className={`text-lg font-light ${textColor} leading-relaxed tracking-wide mr-4`}
+-            >
+-              {market.title || market.question}
+-            </h3>
+-            {/* Platform & Date Badge */}
+-            <div className="flex flex-col items-end gap-1">
+-              <span
+-                className={`flex-shrink-0 px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider border ${isKalshi
+-                  ? isNight
+-                    ? "bg-emerald-900/40 text-emerald-300 border-emerald-700/50"
+-                    : "bg-emerald-100 text-emerald-700 border-emerald-200"
+-                  : isNight
+-                    ? "bg-blue-900/40 text-blue-300 border-blue-700/50"
+-                    : "bg-blue-100 text-blue-700 border-blue-200"
+-                  }`}
+-              >
+-                {isKalshi ? "Kalshi" : "Polymarket"}
+-              </span>
+-              {market.resolutionDate && (
+-                <span className={`text-[10px] ${textColor} opacity-40 font-light`}>
+-                  Ends {new Date(market.resolutionDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+-                </span>
+-              )}
+-            </div>
+-          </div>
+-
+-          {/* Market Odds Summary - NEW: Shows odds on the card! */}
+-          {!isExpanded && (
+-            <div className="flex items-center gap-4 py-1">
+-              <button 
+-                onClick={(e) => {
+-                  e.stopPropagation();
+-                  if (isKalshi) {
+-                    setSelectedKalshiMarket(market);
+-                  } else {
+-                    setOrderSide("YES");
+-                    setSelectedMarketForOrder(market);
+-                    setShowOrderPanel(true);
+-                  }
+-                }}
+-                className={`flex items-center gap-2 px-2 py-1 rounded-lg transition-all border ${
+-                  isNight 
+-                    ? "hover:bg-green-500/10 border-transparent hover:border-green-500/30" 
+-                    : "hover:bg-green-500/5 border-transparent hover:border-green-500/20"
+-                }`}
+-              >
+-                <span className={`text-[10px] font-medium ${isNight ? "text-green-400/70" : "text-green-600/70"}`}>YES</span>
+-                <span className={`text-sm font-light ${textColor}`}>
+-                  {market.ask ? `${(market.ask * 100).toFixed(0)}%` : "—"}
+-                </span>
+-              </button>
+-              <button 
+-                onClick={(e) => {
+-                  e.stopPropagation();
+-                  if (isKalshi) {
+-                    setSelectedKalshiMarket(market);
+-                  } else {
+-                    setOrderSide("NO");
+-                    setSelectedMarketForOrder(market);
+-                    setShowOrderPanel(true);
+-                  }
+-                }}
+-                className={`flex items-center gap-2 px-2 py-1 rounded-lg transition-all border ${
+-                  isNight 
+-                    ? "hover:bg-red-500/10 border-transparent hover:border-red-500/30" 
+-                    : "hover:bg-red-500/5 border-transparent hover:border-red-500/20"
+-                }`}
+-              >
+-                <span className={`text-[10px] font-medium ${isNight ? "text-red-400/70" : "text-red-600/70"}`}>NO</span>
+-                <span className={`text-sm font-light ${textColor}`}>
+-                  {market.bid ? `${(market.bid * 100).toFixed(0)}%` : "—"}
+-                </span>
+-              </button>
+-              {/* ML Edge Preview (if analyzed) */}
+-              {isCurrentMarket && analysis?.synthData?.polymarketEdge && (
+-                <div className={`ml-auto flex items-center gap-1.5 px-2 py-0.5 rounded-md ${
+-                  isNight ? "bg-purple-500/10 border border-purple-500/20" : "bg-purple-400/10 border border-purple-400/20"
+-                }`}>
+-                  <span className="text-xs">⚡</span>
+-                  <span className={`text-[10px] font-medium ${isNight ? "text-purple-300" : "text-purple-700"}`}>
+-                    {Math.abs(analysis.synthData.polymarketEdge.edge * 100).toFixed(1)}% EDGE
+-                  </span>
+-                </div>
+-              )}
+-            </div>
+-          )}
+-
+-          <div className="flex flex-wrap items-center gap-2 text-xs">
+-            {/* ML Ready Badge - NEW: Highlight differentiator early! */}
+-            {!isCurrentMarket && market.isMLReady && (
+-              <div className="relative group">
+-                <span
+-                  className={`px-3 py-1 rounded-full font-medium border cursor-help ${
+-                    isNight
+-                      ? "bg-purple-500/20 text-purple-200 border-purple-400/30"
+-                      : "bg-purple-400/20 text-purple-800 border-purple-400/30"
+-                  }`}
+-                >
+-                  🤖 ML Ready
+-                </span>
+-                <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${
+-                  isNight ? 'bg-gray-900 text-white border border-white/20' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'
+-                }`}>
+-                  Quantitative analysis available via SynthData
+-                  <div className={`absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 ${
+-                    isNight ? 'bg-gray-900 border-r border-b border-white/20' : 'bg-white border-r border-b border-gray-200'
+-                  }`}></div>
+-                </div>
+-              </div>
+-            )}
+-
+-            {/* Synth ML Badge - Show when analysis uses SynthData */}
+-            {isCurrentMarket && analysis?.source && (analysis.source === 'synthdata+llm' || analysis.source === 'synthdata+path') && (
+-              <div className="relative group">
+-                <span
+-                  className={`px-3 py-1 rounded-full font-medium border cursor-help ${
+-                    isNight
+-                      ? "bg-purple-500/20 text-purple-200 border-purple-400/30"
+-                      : "bg-purple-400/20 text-purple-800 border-purple-400/30"
+-                  }`}
+-                >
+-                  🤖 ML
+-                </span>
+-                <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${
+-                  isNight ? 'bg-gray-900 text-white border border-white/20' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'
+-                }`}>
+-                  {analysis.source === 'synthdata+path' ? 'Path-dependent ML analysis' : 'SynthData 200+ ML models'}
+-                  <div className={`absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 ${
+-                    isNight ? 'bg-gray-900 border-r border-b border-white/20' : 'bg-white border-r border-b border-gray-200'
+-                  }`}></div>
+-                </div>
+-              </div>
+-            )}
+-            {market.volume24h !== undefined && (
+-              <div className="relative group">
+-                <span
+-                  className={`px-3 py-1 rounded-full font-light border cursor-help ${isNight
+-                    ? "bg-orange-500/10 text-orange-200 border-orange-500/20"
+-                    : "bg-orange-400/10 text-orange-800 border-orange-400/20"
+-                    }`}
+-                >
+-                  ⚡{" "}
+-                  {isKalshi
+-                    ? `${market.volume24h} Vol`
+-                    : `$${(market.volume24h / 1000).toFixed(0)}K`}
+-                </span>
+-                {/* Tooltip */}
+-                <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${
+-                  isNight ? 'bg-gray-900 text-white border border-white/20' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'
+-                }`}>
+-                  24-hour trading volume
+-                  <div className={`absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 ${
+-                    isNight ? 'bg-gray-900 border-r border-b border-white/20' : 'bg-white border-r border-b border-gray-200'
+-                  }`}></div>
+-                </div>
+-              </div>
+-            )}
+-            {market.confidence && (
+-              <div className="relative group">
+-                <span
+-                  className={`px-3 py-1 rounded-full font-light border cursor-help ${market.confidence === "HIGH"
+-                    ? isNight
+-                      ? "bg-green-500/20 text-green-300 border-green-500/30"
+-                      : "bg-green-400/20 text-green-800 border-green-400/30"
+-                    : market.confidence === "MEDIUM"
+-                      ? isNight
+-                        ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/30"
+-                        : "bg-yellow-400/20 text-yellow-800 border-yellow-400/30"
+-                      : isNight
+-                        ? "bg-red-500/20 text-red-300 border-red-500/30"
+-                        : "bg-red-400/20 text-red-800 border-red-400/30"
+-                    }`}
+-                >
+-                  {market.confidence}
+-                </span>
+-                {/* Tooltip */}
+-                <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${
+-                  isNight ? 'bg-gray-900 text-white border border-white/20' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'
+-                }`}>
+-                  {market.confidence === 'HIGH' ? 'High confidence prediction' : market.confidence === 'MEDIUM' ? 'Medium confidence prediction' : 'Low confidence prediction'}
+-                  <div className={`absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 ${
+-                    isNight ? 'bg-gray-900 border-r border-b border-white/20' : 'bg-white border-r border-b border-gray-200'
+-                  }`}></div>
+-                </div>
+-              </div>
+-            )}
+-            {/* Weather Impact Indicator - Show if event has location data */}
+-            {market.event_location && (
+-              <div className="relative group">
+-                <span
+-                  className={`px-3 py-1 rounded-full font-light border cursor-help ${
+-                    isNight
+-                      ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/30"
+-                      : "bg-cyan-400/20 text-cyan-800 border-cyan-400/30"
+-                  }`}
+-                >
+-                  🌤️ Weather
+-                </span>
+-                <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${
+-                  isNight ? 'bg-gray-900 text-white border border-white/20' : 'bg-white text-gray-900 border border-gray-200 shadow-lg'
+-                }`}>
+-                  Event location: {market.event_location}
+-                  <div className={`absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 ${
+-                    isNight ? 'bg-gray-900 border-r border-b border-white/20' : 'bg-white border-r border-b border-gray-200'
+-                  }`}></div>
+-                </div>
+-              </div>
+-            )}
+-            {/* AI-Ready Badge - Indicates market can be analyzed */}
+-            {!isCurrentMarket && !analysis && (
+-              <span
+-                className={`px-3 py-1 rounded-full font-light border ${
+-                  isNight
+-                    ? "bg-purple-500/10 text-purple-300/60 border-purple-500/20"
+-                    : "bg-purple-400/10 text-purple-700/60 border-purple-400/20"
+-                }`}
+-              >
+-                🔍 Analyze
+-              </span>
+-            )}
+-            {/* Quick Publish CTA - Show when ML edge detected (even in collapsed state) */}
+-            {isCurrentMarket && analysis?.synthData?.polymarketEdge && Math.abs(analysis.synthData.polymarketEdge.edge) > 0.03 && (
+-              <button
+-                onClick={(e) => {
+-                  e.stopPropagation();
+-                  onPublishSignal();
+-                }}
+-                className={`px-3 py-1 rounded-full font-medium border transition-all hover:scale-105 ${
+-                  isNight
+-                    ? "bg-green-500/20 text-green-300 border-green-500/40 hover:bg-green-500/30"
+-                    : "bg-green-400/20 text-green-700 border-green-500/40 hover:bg-green-400/30"
+-                }`}
+-              >
+-                🎯 Make Your Call
+-              </button>
+-            )}
+-            {/* Chain Recommendation Badge - Early visibility */}
+-            {isCurrentMarket && analysis?.chain_recommendation && (
+-              <ChainRecommendationBadge
+-                recommendation={analysis.chain_recommendation}
+-                isNight={isNight}
+-              />
+-            )}
+-          </div>
+-        </div>
+-
+-        <div className="flex-shrink-0 flex flex-wrap sm:flex-nowrap gap-2">
+-          {isExpanded ? (
+-            <button
+-              onClick={() => setExpandedMarketId(null)}
+-              aria-label="Close expanded market view"
+-              className={`px-4 sm:px-6 py-3 rounded-2xl font-light text-sm transition-all border ${isNight
+-                ? "bg-white/10 hover:bg-white/20 text-white border-white/20"
+-                : "bg-black/10 hover:bg-black/20 text-black border-black/20"
+-                }`}
+-            >
+-              ← Back
+-            </button>
+-          ) : (
+-            <>
+-              <button
+-                onClick={() => {
+-                  if (isKalshi) {
+-                    setSelectedKalshiMarket(market);
+-                  } else {
+-                    setSelectedMarketForOrder(market);
+-                    setShowOrderPanel(true);
+-                  }
+-                }}
+-                aria-label={`${isKalshi ? 'Trade' : 'Place bet'} on ${market.title || market.question}`}
+-                className={`px-4 sm:px-5 py-3 rounded-2xl font-light text-sm transition-all hover:scale-105 border ${
+-                  isKalshi
+-                    ? isNight
+-                      ? "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-400/30"
+-                      : "bg-emerald-400/20 hover:bg-emerald-400/30 text-emerald-800 border-emerald-500/30"
+-                    : isNight
+-                      ? "bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border-blue-400/30"
+-                      : "bg-blue-400/20 hover:bg-blue-400/30 text-blue-800 border-blue-500/30"
+-                }`}
+-              >
+-                {isKalshi ? "Trade ↗" : "📈 Bet"}
+-              </button>
+-              <button
+-                onClick={() => onAnalyze(market, "basic")}
+-                disabled={isAnalyzing}
+-                aria-label={`Analyze market: ${market.title || market.question}`}
+-                aria-busy={isAnalyzing && isCurrentMarket}
+-                className={`px-4 sm:px-6 py-3 rounded-2xl font-light text-sm transition-all disabled:opacity-40 hover:scale-105 border ${
+-                  market.isMLReady
+-                    ? isNight
+-                      ? "bg-gradient-to-r from-purple-600/40 to-pink-600/40 hover:from-purple-600/60 hover:to-pink-600/60 text-white border-purple-400/50 shadow-lg shadow-purple-500/20"
+-                      : "bg-gradient-to-r from-purple-500/30 to-pink-500/30 hover:from-purple-500/40 hover:to-pink-500/40 text-purple-900 border-purple-500/50 shadow-lg shadow-purple-500/10"
+-                    : isNight
+-                      ? "bg-white/10 hover:bg-white/20 text-white border-white/20"
+-                      : "bg-black/10 hover:bg-black/20 text-black border-black/20"
+-                }`}
+-              >
+-                {isAnalyzing && isCurrentMarket ? "Analyzing..." : market.isMLReady ? "🤖 ML Analyze" : "🔍 Analyze"}
+-              </button>
+-            </>
+-          )}
+-        </div>
+-      </div>
+-
+-      {/* Dynamic Loading State in Expanded View */}
+-      {isExpanded && isAnalyzing && (
+-        <LoadingAnalysisState isNight={isNight} textColor={textColor} />
+-      )}
+-
+-      {/* Expanded Analysis View */}
+-      {isExpanded && analysis && (
+-        <div className="mt-8 pt-8 border-t border-white/10">
+-          <h2 className={`text-2xl font-light ${textColor} mb-6`}>Analysis</h2>
+-
+-          <div className="space-y-4">
+-            {/* SynthData ML Forecast - Show when available */}
+-            {analysis?.synthData && (
+-              <div className={`${cardBgColor} backdrop-blur-sm border-2 ${
+-                isNight ? 'border-purple-500/30' : 'border-purple-400/30'
+-              } rounded-xl p-5`}>
+-                <div className="flex items-center gap-2 mb-4">
+-                  <span className="text-xl">🤖</span>
+-                  <h4 className={`text-sm font-medium ${textColor}`}>
+-                    SynthData ML Forecast
+-                  </h4>
+-                  <span className={`ml-auto px-2 py-0.5 rounded text-[10px] font-medium ${
+-                    isNight ? 'bg-purple-500/20 text-purple-300' : 'bg-purple-400/20 text-purple-700'
+-                  }`}>
+-                    200+ MODELS
+-                  </span>
+-                </div>
+-                
+-                <div className="space-y-4">
+-                  {/* Current Price - Large Visual Hierarchy */}
+-                  <div className="text-center pb-3 border-b border-white/10">
+-                    <div className={`text-xs ${textColor} opacity-50 mb-1`}>{analysis.synthData.asset}</div>
+-                    <div className={`text-4xl font-light ${textColor}`}>
+-                      ${analysis.synthData.currentPrice?.toLocaleString()}
+-                    </div>
+-                    <div className={`text-xs ${textColor} opacity-40 mt-1`}>Current Price</div>
+-                  </div>
+-
+-                  {/* Percentile Range with Mini Chart */}
+-                  {analysis.synthData.percentiles?.p5 && analysis.synthData.percentiles?.p95 && (
+-                    <div>
+-                      <div className="flex justify-between items-end mb-2">
+-                        <div>
+-                          <div className={`text-xs ${textColor} opacity-50 mb-1`}>P5 (Bear)</div>
+-                          <div className={`text-xl font-light ${isNight ? 'text-red-400' : 'text-red-600'}`}>
+-                            ${analysis.synthData.percentiles.p5.toLocaleString()}
+-                          </div>
+-                        </div>
+-                        <div className="text-right">
+-                          <div className={`text-xs ${textColor} opacity-50 mb-1`}>P95 (Bull)</div>
+-                          <div className={`text-xl font-light ${isNight ? 'text-green-400' : 'text-green-600'}`}>
+-                            ${analysis.synthData.percentiles.p95.toLocaleString()}
+-                          </div>
+-                        </div>
+-                      </div>
+-                      
+-                      {/* Percentile Visualization Bar */}
+-                      <div className="relative h-2 rounded-full overflow-hidden bg-gradient-to-r from-red-500/20 via-yellow-500/20 to-green-500/20">
+-                        <div 
+-                          className={`absolute top-0 h-full w-1 ${isNight ? 'bg-white' : 'bg-black'} opacity-60`}
+-                          style={{
+-                            left: `${((analysis.synthData.currentPrice - analysis.synthData.percentiles.p5) / (analysis.synthData.percentiles.p95 - analysis.synthData.percentiles.p5)) * 100}%`
+-                          }}
+-                          title="Current price position"
+-                        />
+-                      </div>
+-                      <div className={`text-xs ${textColor} opacity-40 text-center mt-1`}>
+-                        Price Distribution (P5 → P95)
+-                      </div>
+-                    </div>
+-                  )}
+-                </div>
+-
+-                {analysis.synthData.polymarketEdge && (
+-                  <div className={`mt-4 pt-4 border-t ${isNight ? 'border-white/10' : 'border-black/10'}`}>
+-                    {/* Edge Detection Summary */}
+-                    <div className="flex items-center justify-between mb-4">
+-                      <div className="flex items-center gap-2">
+-                        <span className="text-xl">⚖️</span>
+-                        <h5 className={`text-sm font-medium ${textColor}`}>
+-                          Edge Analysis
+-                        </h5>
+-                      </div>
+-                      <div className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tighter ${
+-                        Math.abs(analysis.synthData.polymarketEdge.edge) > 0.05
+-                          ? 'bg-green-500 text-white animate-pulse'
+-                          : isNight ? 'bg-white/10 text-white/70' : 'bg-black/10 text-black/70'
+-                      }`}>
+-                        {Math.abs(analysis.synthData.polymarketEdge.edge * 100).toFixed(1)}% {analysis.synthData.polymarketEdge.edge > 0 ? 'Undervalued' : 'Overvalued'}
+-                      </div>
+-                    </div>
+-
+-                    {/* Tug-of-War Visualizer */}
+-                    <div className="relative h-10 mb-6 px-1">
+-                      {/* Central Axis */}
+-                      <div className={`absolute left-1/2 top-0 bottom-0 w-px ${isNight ? 'bg-white/20' : 'bg-black/20'} z-10`} />
+-                      
+-                      {/* Labels */}
+-                      <div className="flex justify-between text-[10px] uppercase tracking-widest opacity-40 mb-1">
+-                        <span>Market</span>
+-                        <span>ML Fair Odds</span>
+-                      </div>
+-
+-                      <div className="flex items-center h-4 w-full bg-black/20 rounded-full overflow-hidden">
+-                        {/* Market Probability Bar (Left) */}
+-                        <div 
+-                          className="h-full bg-blue-500/40 transition-all duration-1000"
+-                          style={{ width: `${analysis.synthData.polymarketEdge.polymarketProb * 100}%` }}
+-                        />
+-                        {/* ML Probability Bar (Right - overlay or different color) */}
+-                        <div 
+-                          className="h-full bg-purple-500 transition-all duration-1000"
+-                          style={{ width: `${analysis.synthData.polymarketEdge.synthFairProb * 100}%` }}
+-                        />
+-                      </div>
+-
+-                      {/* Detailed Odds Comparison */}
+-                      <div className="flex justify-between items-center mt-2">
+-                        <div className="flex flex-col">
+-                          <span className={`text-[10px] ${textColor} opacity-50`}>Live Price</span>
+-                          <span className={`text-lg font-light ${isNight ? 'text-blue-300' : 'text-blue-700'}`}>
+-                            {(analysis.synthData.polymarketEdge.polymarketProb * 100).toFixed(1)}%
+-                          </span>
+-                        </div>
+-
+-                        {/* Edge Visual Indicator */}
+-                        <div className="flex flex-col items-center">
+-                           <div className={`text-[10px] font-bold ${
+-                             analysis.synthData.polymarketEdge.edge > 0 
+-                               ? isNight ? 'text-green-400' : 'text-green-600'
+-                               : isNight ? 'text-red-400' : 'text-red-600'
+-                           }`}>
+-                             {analysis.synthData.polymarketEdge.edge > 0 ? '▲' : '▼'} {Math.abs(analysis.synthData.polymarketEdge.edge * 100).toFixed(1)}%
+-                           </div>
+-                           <div className={`text-[9px] uppercase opacity-40 ${textColor}`}>ML Edge</div>
+-                        </div>
+-
+-                        <div className="flex flex-col text-right">
+-                          <span className={`text-[10px] ${textColor} opacity-50`}>Fair Value</span>
+-                          <span className={`text-lg font-light ${isNight ? 'text-purple-300' : 'text-purple-700'}`}>
+-                            {(analysis.synthData.polymarketEdge.synthFairProb * 100).toFixed(1)}%
+-                          </span>
+-                        </div>
+-                      </div>
+-                    </div>
+-
+-                    {/* Edge Detection Badge - Prominent when edge exists */}
+-                    {Math.abs(analysis.synthData.polymarketEdge.edge) > 0.03 && (
+-                      <div className={`flex items-center gap-3 px-3 py-3 rounded-xl ${
+-                        isNight ? 'bg-green-500/10 border border-green-500/20 shadow-lg shadow-green-500/5' : 'bg-green-500/5 border border-green-500/20 shadow-md shadow-green-500/5'
+-                      }`}>
+-                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center text-green-500 animate-pulse">
+-                          ⚡
+-                        </div>
+-                        <div>
+-                          <p className={`text-sm font-medium ${isNight ? 'text-green-400' : 'text-green-600'}`}>
+-                            Edge Detected: {Math.abs(analysis.synthData.polymarketEdge.edge * 100).toFixed(1)}%
+-                          </p>
+-                          <p className={`text-xs ${isNight ? 'text-white/50' : 'text-black/50'}`}>
+-                            ML ensemble identifies {analysis.synthData.polymarketEdge.edge > 0 ? 'undervalued' : 'overvalued'} contract
+-                          </p>
+-                        </div>
+-                      </div>
+-                    )}
+-                  </div>
+-                )}
+-              </div>
+-            )}
+-
+-            {/* Market Context & Odds - Enhanced Visual Hierarchy */}
+-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+-              <div
+-                className={`${cardBgColor} backdrop-blur-sm border rounded-xl p-4`}
+-              >
+-                <h4
+-                  className={`text-xs font-light ${textColor} opacity-70 mb-3 uppercase tracking-wider`}
+-                >
+-                  Market Odds
+-                </h4>
+-                <div className="flex justify-between items-center">
+-                  <div className="flex flex-col">
+-                    <span className={`text-xs ${textColor} opacity-50 mb-1`}>
+-                      YES
+-                    </span>
+-                    <span
+-                      className={`text-3xl font-light ${isNight ? "text-green-400" : "text-green-600"
+-                        }`}
+-                    >
+-                      {market.ask ? `${(market.ask * 100).toFixed(0)}%` : "N/A"}
+-                    </span>
+-                  </div>
+-                  <div className="flex flex-col text-right">
+-                    <span className={`text-xs ${textColor} opacity-50 mb-1`}>
+-                      NO
+-                    </span>
+-                    <span
+-                      className={`text-3xl font-light ${isNight ? "text-red-400" : "text-red-600"
+-                        }`}
+-                    >
+-                      {market.bid ? `${(market.bid * 100).toFixed(0)}%` : "N/A"}
+-                    </span>
+-                  </div>
+-                </div>
+-              </div>
+-
+-              <div
+-                className={`${cardBgColor} backdrop-blur-sm border rounded-xl p-4`}
+-              >
+-                <h4
+-                  className={`text-xs font-light ${textColor} opacity-70 mb-3 uppercase tracking-wider`}
+-                >
+-                  Weather @ {analysis.weather_conditions?.location || "Venue"}
+-                </h4>
+-                <div className="grid grid-cols-2 gap-2 text-sm">
+-                  <div className="flex items-center gap-2">
+-                    <span className="opacity-60">🌡️</span>
+-                    <span className={textColor}>
+-                      {analysis.weather_conditions?.temperature || "N/A"}
+-                    </span>
+-                  </div>
+-                  <div className="flex items-center gap-2">
+-                    <span className="opacity-60">☁️</span>
+-                    <span className={textColor}>
+-                      {analysis.weather_conditions?.condition || "N/A"}
+-                    </span>
+-                  </div>
+-                  <div className="flex items-center gap-2">
+-                    <span className="opacity-60">💨</span>
+-                    <span className={textColor}>
+-                      {analysis.weather_conditions?.wind || "N/A"}
+-                    </span>
+-                  </div>
+-                  <div className="flex items-center gap-2">
+-                    <span className="opacity-60">💧</span>
+-                    <span className={textColor}>
+-                      {analysis.weather_conditions?.precipitation || "0%"}
+-                    </span>
+-                  </div>
+-                </div>
+-              </div>
+-            </div>
+-
+-            {/* Chain Action Widget - Elevated for prominence */}
+-            <ChainActionWidget
+-              analysis={analysis}
+-              market={market}
+-              isNight={isNight}
+-              textColor={textColor}
+-              cardBgColor={cardBgColor}
+-              onPublishSignal={onPublishSignal}
+-              chains={chains}
+-              setShowOrderPanel={setShowOrderPanel}
+-              setSelectedMarketForOrder={setSelectedMarketForOrder}
+-            />
+-
+-            {/* Analysis Text */}
+-            <div
+-              className={`${cardBgColor} backdrop-blur-sm border rounded-xl p-5`}
+-            >
+-              <h4
+-                className={`text-xs font-light ${textColor} opacity-70 mb-2 uppercase tracking-wider`}
+-              >
+-                AI Reasoning
+-              </h4>
+-              <p
+-                className={`text-base ${textColor} opacity-90 leading-relaxed font-light`}
+-              >
+-                {analysis.reasoning ||
+-                  analysis.analysis ||
+-                  "No analysis available"}
+-              </p>
+-
+-              {/* Deep Reasoning (Thinking) Toggle */}
+-              {analysis.thinking && (
+-                <div className="mt-4 pt-4 border-t border-white/5">
+-                  <details className="group">
+-                    <summary className="flex items-center gap-2 text-xs font-light text-purple-400 cursor-pointer hover:text-purple-300 transition-colors list-none">
+-                      <span className="group-open:rotate-180 transition-transform">▼</span>
+-                      <span>View Deep Reasoning Process</span>
+-                    </summary>
+-                    <div className="mt-3 p-4 rounded-lg bg-black/40 border border-purple-500/10 text-xs font-mono text-white/50 leading-relaxed whitespace-pre-wrap">
+-                      {analysis.thinking}
+-                    </div>
+-                  </details>
+-                </div>
+-              )}
+-              
+-              {/* Analysis Factor Badges - show which analysis types were used */}
+-              {analysis.analysisTypes && analysis.analysisTypes.length > 0 && (
+-                <div className="mt-3 flex flex-wrap gap-2">
+-                  {analysis.analysisTypes.map((type, idx) => {
+-                    const labels = {
+-                      fundamental: { emoji: '📊', label: 'Fundamental' },
+-                      technical: { emoji: '📈', label: 'Technical' },
+-                      sentiment: { emoji: '💬', label: 'Sentiment' },
+-                      weather: { emoji: '🌤️', label: 'Weather' },
+-                      futures: { emoji: '📅', label: 'Futures' },
+-                      news: { emoji: '📰', label: 'News' },
+-                    };
+-                    const info = labels[type] || { emoji: '🔍', label: type };
+-                    return (
+-                      <span
+-                        key={idx}
+-                        className={`px-2 py-1 rounded-full text-xs border ${isNight
+-                          ? "bg-blue-500/10 border-blue-500/20 text-blue-300"
+-                          : "bg-blue-400/10 border-blue-400/20 text-blue-700"
+-                        }`}
+-                      >
+-                        {info.emoji} {info.label}
+-                      </span>
+-                    );
+-                  })}
+-                </div>
+-              )}
+-            </div>
+-
+-            {/* Evidence & Provenance — shows data sources, confidence methodology, counter-signals */}
+-            <EvidenceBlock
+-              signal={{
+-                source: analysis.source || 'llm',
+-                confidence: analysis.assessment?.confidence || 'LOW',
+-                market_title: market.title || market.question,
+-                odds_efficiency: analysis.assessment?.odds_efficiency,
+-                venue: market.event_location || market.location || '',
+-                timestamp: Math.floor(Date.now() / 1000),
+-                synth_ml_percentile: analysis.synthData?.percentiles?.p50 != null
+-                  ? Math.round(analysis.synthData.percentiles.p50)
+-                  : null,
+-                event_id: market.platform === 'kalshi'
+-                  ? `kalshi:${market.marketID || market.id}`
+-                  : `polymarket:${market.marketID || market.id}`,
+-              }}
+-              isNight={isNight}
+-              textColor={textColor}
+-              agentBrierScore={agentBrierScore}
+-              calibrationScore={calibrationScore}
+-              className="mb-4"
+-            />
+-
+-            {/* Recommendation */}
+-            {analysis.recommended_action && (
+-              <div
+-                className={`${cardBgColor} backdrop-blur-sm border rounded-xl p-5`}
+-              >
+-                <h4
+-                  className={`text-xs font-light ${textColor} opacity-70 mb-2 uppercase tracking-wider`}
+-                >
+-                  Recommendation
+-                </h4>
+-                <p className={`text-base font-medium ${textColor}`}>
+-                  {analysis.recommended_action}
+-                </p>
+-              </div>
+-            )}
+-
+-            {/* Disclaimer */}
+-            <div
+-              className={`${cardBgColor} backdrop-blur-sm border rounded-xl p-4 ${isNight ? "border-white/10" : "border-black/10"
+-                }`}
+-            >
+-              <div className="flex items-start gap-3">
+-                <div
+-                  className={`mt-0.5 w-1 h-1 rounded-full ${isNight ? "bg-white/40" : "bg-black/40"
+-                    }`}
+-                ></div>
+-                <div>
+-                  <p
+-                    className={`text-xs ${textColor} opacity-60 font-light leading-relaxed`}
+-                  >
+-                    <span className="opacity-80">
+-                      Informational purposes only.
+-                    </span>{" "}
+-                    This analysis is not financial advice. Weather-based
+-                    predictions are probabilistic and should be combined with
+-                    your own research. Trade responsibly.
+-                  </p>
+-                </div>
+-              </div>
+-            </div>
+-
+-            {/* Prove Your Edge - Paper Trading With Proof */}
+-            <div
+-              className={`${cardBgColor} backdrop-blur-sm border rounded-xl p-5`}
+-            >
+-              <div className="flex items-center gap-2 mb-3">
+-                <span className="text-xl">🎯</span>
+-                <h4 className={`text-sm font-medium ${textColor}`}>
+-                  Prove Your Edge
+-                </h4>
+-              </div>
+-              <p
+-                className={`text-sm ${textColor} opacity-80 font-light leading-relaxed mb-3`}
+-              >
+-                Not ready to trade yet? Make your call anyway. Every prediction
+-                is recorded on-chain — timestamped, immutable, and publicly
+-                verifiable. Build a provable track record before risking capital.
+-              </p>
+-              <div className="grid grid-cols-1 gap-2">
+-                <div className="flex items-start gap-2">
+-                  <span className={`text-xs ${textColor} opacity-60`}>✓</span>
+-                  <p className={`text-xs ${textColor} opacity-70 font-light`}>
+-                    <strong className="font-medium">
+-                      Paper trade with proof
+-                    </strong>{" "}
+-                    - No capital needed, full accountability
+-                  </p>
+-                </div>
+-                <div className="flex items-start gap-2">
+-                  <span className={`text-xs ${textColor} opacity-60`}>✓</span>
+-                  <p className={`text-xs ${textColor} opacity-70 font-light`}>
+-                    <strong className="font-medium">
+-                      Can’t fake your record
+-                    </strong>{" "}
+-                    - No backdating, no deleting bad calls
+-                  </p>
+-                </div>
+-                <div className="flex items-start gap-2">
+-                  <span className={`text-xs ${textColor} opacity-60`}>✓</span>
+-                  <p className={`text-xs ${textColor} opacity-70 font-light`}>
+-                    <strong className="font-medium">Earn as you grow</strong> -
+-                    Top analysts earn tips from the community
+-                  </p>
+-                </div>
+-              </div>
+-            </div>
+-
+-            {/* Wallet Connection Prompt (if not connected) */}
+-            {!canPublish && (
+-              <div
+-                className={`${cardBgColor} backdrop-blur-sm border rounded-xl p-4 flex items-center gap-3 ${isNight ? "border-orange-400/30" : "border-orange-600/30"
+-                  }`}
+-              >
+-                <span className="text-2xl">🎯</span>
+-                <div className="flex-1">
+-                  <p className={`text-sm ${textColor} font-medium mb-1`}>
+-                    Connect wallet to start your track record
+-                  </p>
+-                  <p className={`text-xs ${textColor} opacity-70 font-light`}>
+-                    Link an Aptos or Movement wallet to make your call
+-                    and start building a verifiable prediction history
+-                  </p>
+-                </div>
+-              </div>
+-            )}
+-
+-            {/* ML Edge Detected - Prominent CTA */}
+-            {analysis?.synthData?.polymarketEdge && Math.abs(analysis.synthData.polymarketEdge.edge) > 0.03 && (
+-              <div className={`${cardBgColor} backdrop-blur-sm border-2 rounded-xl p-5 ${
+-                isNight ? 'border-green-500/40 bg-green-500/5' : 'border-green-500/40 bg-green-500/5'
+-              }`}>
+-                <div className="flex items-center gap-3 mb-4">
+-                  <span className="text-2xl">⚡</span>
+-                  <div>
+-                    <h4 className={`text-sm font-medium ${isNight ? 'text-green-400' : 'text-green-700'}`}>
+-                      ML Edge Detected
+-                    </h4>
+-                    <p className={`text-xs ${textColor} opacity-60`}>
+-                      Fair odds: {(analysis.synthData.polymarketEdge.synthFairProb * 100).toFixed(1)}% vs Market: {(analysis.synthData.polymarketEdge.polymarketProb * 100).toFixed(1)}%
+-                    </p>
+-                  </div>
+-                </div>
+-                <button
+-                  onClick={onPublishSignal}
+-                  className={`w-full px-6 py-4 rounded-xl font-medium text-sm transition-all ${
+-                    canPublish
+-                      ? isNight
+-                        ? "bg-green-500/30 hover:bg-green-500/40 text-green-200 border border-green-500/50"
+-                        : "bg-green-500/30 hover:bg-green-500/40 text-green-800 border border-green-500/50"
+-                      : isNight
+-                        ? "bg-orange-500/20 hover:bg-orange-500/30 text-orange-200 border border-orange-500/30"
+-                        : "bg-orange-400/20 hover:bg-orange-400/30 text-orange-800 border border-orange-500/30"
+-                  }`}
+-                >
+-                  {canPublish ? "🎯 Publish Signal Now" : "🔗 Connect Wallet to Publish"}
+-                </button>
+-              </div>
+-            )}
+-
+-            {/* Action Buttons: Trade + Publish */}
+-            <div className="flex gap-3 pt-2">
+-              <button
+-                onClick={() => {
+-                  if (isKalshi) {
+-                    setSelectedKalshiMarket(market);
+-                  } else {
+-                    setSelectedMarketForOrder(market);
+-                    setShowOrderPanel(true);
+-                  }
+-                }}
+-                className={`flex-1 px-6 py-3 rounded-2xl font-light text-sm transition-all border text-center ${isKalshi
+-                  ? isNight
+-                    ? "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-400/30"
+-                    : "bg-emerald-400/20 hover:bg-emerald-400/30 text-emerald-800 border-emerald-500/30"
+-                  : isNight
+-                    ? "bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border-blue-400/30"
+-                    : "bg-blue-400/20 hover:bg-blue-400/30 text-blue-800 border-blue-500/30"
+-                  }`}
+-              >
+-                {isKalshi ? "Trade on Kalshi ↗" : "📈 Trade Here"}
+-              </button>
+-
+-              {/* Hide regular publish button if edge section is shown */}
+-              {!(analysis?.synthData?.polymarketEdge && Math.abs(analysis.synthData.polymarketEdge.edge) > 0.03) && (
+-                <button
+-                  onClick={handlePublishSignal}
+-                  className={`flex-1 px-6 py-3 rounded-2xl font-light text-sm transition-all border relative ${canPublish
+-                    ? isNight
+-                      ? "bg-green-500/20 hover:bg-green-500/30 text-green-200 border-green-400/30"
+-                      : "bg-green-400/20 hover:bg-green-400/30 text-green-800 border-green-500/30"
+-                    : isNight
+-                      ? "bg-orange-500/20 hover:bg-orange-500/30 text-orange-200 border-orange-400/30"
+-                      : "bg-orange-400/20 hover:bg-orange-400/30 text-orange-800 border-orange-500/30"
+-                    }`}
+-                >
+-                  {canPublish
+-                    ? "🎯 Make Your Call"
+-                    : "🔗 Connect & Make Your Call"}
+-                </button>
+-              )}
+-
+-              {/* Share Button */}
+-              <button
+-                onClick={() => {
+-                  const shareUrl = `${window.location.origin}/markets?share_id=${market.marketID || market.id}`;
+-                  navigator.clipboard.writeText(shareUrl);
+-                  addToast("Link copied to clipboard!", "success");
+-                }}
+-                className={`px-6 py-3 rounded-2xl font-light text-sm transition-all border ${isNight ? "bg-white/5 hover:bg-white/10 text-white/70 border-white/10" : "bg-black/5 hover:bg-black/10 text-black/70 border-black/10"}`}
+-                title="Copy shareable link"
+-              >
+-                🔗
+-              </button>
+-            </div>
+-          </div>
+-        </div>
+-      )}
+-    </div>
+-
+-    {/* BottomSheet for Expanded Market Analysis */}
+-    <BottomSheet
+-      isOpen={isExpanded}
+-      onClose={() => setExpandedMarketId(null)}
+-      title={market.title || market.question}
+-      isNight={isNight}
+-      fullHeight={false}
+-    >
+-      <div className="p-6 space-y-6">
+-        {/* Platform Badge */}
+-        <span
+-          className={`inline-flex px-3 py-1 rounded-full text-xs font-medium uppercase tracking-wider border ${isKalshi
+-            ? isNight
+-              ? "bg-emerald-900/40 text-emerald-300 border-emerald-700/50"
+-              : "bg-emerald-100 text-emerald-700 border-emerald-200"
+-            : isNight
+-              ? "bg-blue-900/40 text-blue-300 border-blue-700/50"
+-              : "bg-blue-100 text-blue-700 border-blue-200"
+-          }`}
+-        >
+-          {isKalshi ? "Kalshi" : "Polymarket"}
+-        </span>
+-
+-        {/* Dynamic Loading State */}
+-        {isAnalyzing && <LoadingAnalysisState isNight={isNight} textColor={textColor} />}
+-
+-        {/* Analysis Content */}
+-        {analysis && (
+-          <div className="space-y-4">
+-            {/* SynthData ML Forecast */}
+-            {analysis?.synthData && (
+-              <div className={`glass-subtle border-2 ${isNight ? 'border-purple-500/30' : 'border-purple-400/30'} rounded-xl p-5`}>
+-                <div className="flex items-center gap-2 mb-4">
+-                  <span className="text-xl">🤖</span>
+-                  <h4 className={`text-sm font-medium ${textColor}`}>SynthData ML Forecast</h4>
+-                  <span className={`ml-auto px-2 py-0.5 rounded text-[10px] font-medium ${isNight ? 'bg-purple-500/20 text-purple-300' : 'bg-purple-400/20 text-purple-700'}`}>
+-                    200+ MODELS
+-                  </span>
+-                </div>
+-                <div className="text-center pb-3 border-b border-white/10">
+-                  <div className={`text-xs ${textColor} opacity-50 mb-1`}>{analysis.synthData.asset}</div>
+-                  <div className={`text-4xl font-light ${textColor}`}>${analysis.synthData.currentPrice?.toLocaleString()}</div>
+-                </div>
+-              </div>
+-            )}
+-
+-            {/* Market Odds */}
+-            <div className="grid grid-cols-2 gap-4">
+-              <div className={`glass-input rounded-xl p-4 text-center`}>
+-                <span className={`text-xs ${textColor} opacity-50`}>YES</span>
+-                <div className={`text-3xl font-light ${isNight ? "text-green-400" : "text-green-600"}`}>
+-                  {market.ask ? `${(market.ask * 100).toFixed(0)}%` : "N/A"}
+-                </div>
+-              </div>
+-              <div className={`glass-input rounded-xl p-4 text-center`}>
+-                <span className={`text-xs ${textColor} opacity-50`}>NO</span>
+-                <div className={`text-3xl font-light ${isNight ? "text-red-400" : "text-red-600"}`}>
+-                  {market.bid ? `${(market.bid * 100).toFixed(0)}%` : "N/A"}
+-                </div>
+-              </div>
+-            </div>
+-
+-            {/* Data Provenance (Evidence) */}
+-            {analysis && (
+-              <div className="mt-6 pt-6 border-t border-white/10">
+-                <h4 className={`text-xs font-light ${textColor} opacity-40 uppercase tracking-widest mb-3`}>Data Provenance</h4>
+-                <div className="flex flex-wrap gap-2">
+-                  {[
+-                    { name: 'Polymarket/Kalshi', icon: '🏦' },
+-                    analysis.synthData ? { name: 'SynthData ML', icon: '🤖' } : null,
+-                    analysis.weather_conditions ? { name: 'OpenMeteo', icon: '🌤' } : null,
+-                    { name: 'Venice AI Mesh', icon: '🌐' }
+-                  ].filter(Boolean).map((source) => (
+-                    <div key={source.name} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
+-                      <span className="text-sm">{source.icon}</span>
+-                      <span className={`text-[10px] ${textColor} opacity-60 font-medium`}>{source.name}</span>
+-                    </div>
+-                  ))}
+-                </div>
+-              </div>
+-            )}
+-            
+-            {/* AI Reasoning */}
+-            <div className={`glass-subtle rounded-xl p-5`}>
+-              <h4 className={`text-xs font-light ${textColor} opacity-70 mb-2 uppercase tracking-wider`}>AI Reasoning</h4>
+-              <p className={`text-base ${textColor} opacity-90 leading-relaxed font-light`}>
+-                {analysis.reasoning || analysis.analysis || "No analysis available"}
+-              </p>
+-
+-              {/* Deep Reasoning (Thinking) Toggle */}
+-              {analysis.thinking && (
+-                <div className="mt-4 pt-4 border-t border-white/5">
+-                  <details className="group">
+-                    <summary className="flex items-center gap-2 text-xs font-light text-purple-400 cursor-pointer hover:text-purple-300 transition-colors list-none">
+-                      <span className="group-open:rotate-180 transition-transform">▼</span>
+-                      <span>View Deep Reasoning Process</span>
+-                    </summary>
+-                    <div className="mt-3 p-4 rounded-lg bg-black/40 border border-purple-500/10 text-xs font-mono text-white/50 leading-relaxed whitespace-pre-wrap">
+-                      {analysis.thinking}
+-                    </div>
+-                  </details>
+-                </div>
+-              )}
+-            </div>
+-
+-            {/* Action Buttons */}
+-            <div className="flex gap-3 pt-2">
+-              <button
+-                onClick={() => {
+-                  if (isKalshi) {
+-                    setSelectedKalshiMarket(market);
+-                  } else {
+-                    setSelectedMarketForOrder(market);
+-                    setShowOrderPanel(true);
+-                  }
+-                }}
+-                className={`flex-1 px-6 py-3 rounded-2xl font-light text-sm transition-all border text-center ${isKalshi
+-                  ? isNight
+-                    ? "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-400/30"
+-                    : "bg-emerald-400/20 hover:bg-emerald-400/30 text-emerald-800 border-emerald-500/30"
+-                  : isNight
+-                    ? "bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border-blue-400/30"
+-                    : "bg-blue-400/20 hover:bg-blue-400/30 text-blue-800 border-blue-500/30"
+-                }`}
+-              >
+-                {isKalshi ? "Trade on Kalshi ↗" : "📈 Trade Here"}
+-              </button>
+-              <button
+-                onClick={onPublishSignal}
+-                className={`flex-1 px-6 py-3 rounded-2xl font-light text-sm transition-all border ${canPublish
+-                  ? isNight
+-                    ? "bg-green-500/20 hover:bg-green-500/30 text-green-200 border-green-400/30"
+-                    : "bg-green-400/20 hover:bg-green-400/30 text-green-800 border-green-500/30"
+-                  : isNight
+-                    ? "bg-orange-500/20 hover:bg-orange-500/30 text-orange-200 border-orange-400/30"
+-                    : "bg-orange-400/20 hover:bg-orange-400/30 text-orange-800 border-orange-500/30"
+-                }`}
+-              >
+-                {canPublish ? "🎯 Make Your Call" : "🔗 Connect & Make Your Call"}
+-              </button>
+-            </div>
+-          </div>
+-        )}
+-      </div>
+-    </BottomSheet>
+-    </>
+-  );
+-}
+-
+-// Dynamic Loading State Component
+-function LoadingAnalysisState({ isNight, textColor }) {
+-  const [step, setStep] = useState(0);
+-  const [progress, setProgress] = useState(0);
+-
+-  const steps = [
+-    {
+-      icon: "🔍",
+-      text: "Verifying event location",
+-      sub: "Cross-referencing official schedules via web search",
+-    },
+-    {
+-      icon: "🌤️",
+-      text: "Fetching live weather data",
+-      sub: "Retrieving real-time conditions and forecasts",
+-    },
+-    {
+-      icon: "📊",
+-      text: "Analyzing market efficiency",
+-      sub: "Comparing weather impact vs current odds",
+-    },
+-    {
+-      icon: "🤖",
+-      text: "Generating AI insights",
+-      sub: "Synthesizing comprehensive recommendation",
+-    },
+-  ];
+-
+-  useEffect(() => {
+-    const stepInterval = setInterval(() => {
+-      setStep((prev) => (prev + 1) % steps.length);
+-    }, 2500);
+-
+-    const progressInterval = setInterval(() => {
+-      setProgress((prev) => {
+-        if (prev >= 100) return 0;
+-        return prev + 1;
+-      });
+-    }, 100);
+-
+-    return () => {
+-      clearInterval(stepInterval);
+-      clearInterval(progressInterval);
+-    };
+-  }, []);
+-
+-  return (
+-    <div 
+-      className="mt-8 pt-8 border-t border-white/10 flex flex-col items-center justify-center py-12"
+-      role="status"
+-      aria-live="polite"
+-      aria-label="Analyzing market"
+-    >
+-      {/* Animated Icon */}
+-      <div className="relative mb-6">
+-        <div
+-          className={`w-16 h-16 rounded-full flex items-center justify-center text-3xl transition-all duration-500 ${isNight
+-            ? "bg-white/10 backdrop-blur-sm"
+-            : "bg-black/5 backdrop-blur-sm"
+-            }`}
+-        >
+-          <span className="animate-bounce" aria-hidden="true">{steps[step].icon}</span>
+-        </div>
+-        <div
+-          className={`absolute inset-0 rounded-full border-2 ${isNight ? "border-white/20" : "border-black/20"
+-            }`}
+-          style={{
+-            clipPath: `polygon(0 0, ${progress}% 0, ${progress}% 100%, 0 100%)`,
+-            borderColor: isNight ? "rgba(255,255,255,0.6)" : "rgba(0,0,0,0.6)",
+-          }}
+-          aria-hidden="true"
+-        ></div>
+-      </div>
+-
+-      {/* Step Text */}
+-      <p
+-        className={`${textColor} text-lg font-medium mb-2 transition-all duration-500`}
+-      >
+-        {steps[step].text}
+-      </p>
+-      <p
+-        className={`text-sm ${textColor} opacity-60 font-light transition-all duration-500 text-center max-w-xs`}
+-      >
+-        {steps[step].sub}
+-      </p>
+-
+-      {/* Progress Bar */}
+-      <div
+-        className={`w-64 h-1 rounded-full mt-6 ${isNight ? "bg-white/10" : "bg-black/10"
+-          }`}
+-        role="progressbar"
+-        aria-valuenow={progress}
+-        aria-valuemin={0}
+-        aria-valuemax={100}
+-      >
+-        <div
+-          className={`h-full rounded-full transition-all duration-100 ${isNight ? "bg-white/60" : "bg-black/60"
+-            }`}
+-          style={{ width: `${progress}%` }}
+-        ></div>
+-      </div>
+-
+-      {/* Step Indicators */}
+-      <div className="flex gap-2 mt-6" aria-hidden="true">
+-        {steps.map((s, i) => (
+-          <div
+-            key={i}
+-            className={`flex flex-col items-center gap-1 transition-all duration-300 ${i === step ? "scale-110" : "scale-100 opacity-40"
+-              }`}
+-          >
+-            <div
+-              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${i <= step
+-                ? isNight
+-                  ? "bg-white/20 text-white"
+-                  : "bg-black/20 text-black"
+-                : isNight
+-                  ? "bg-white/5 text-white/40"
+-                  : "bg-black/5 text-black/40"
+-                }`}
+-            >
+-              {s.icon}
+-            </div>
+-          </div>
+-        ))}
+-      </div>
+-    </div>
+-  );
+-}
+diff --git a/app/positions/page.js b/app/positions/page.js
+index 7bd6a25..ada7953 100644
+--- a/app/positions/page.js
++++ b/app/positions/page.js
+@@ -46,17 +46,6 @@ export default function PositionsPage() {
+     ? "bg-slate-900/60 border-white/20"
+     : "bg-white/60 border-black/20";
+ 
+-  if (isLoadingWeather) {
+-    return (
+-      <div className="w-screen h-screen flex items-center justify-center bg-black">
+-        <div className="flex flex-col items-center">
+-          <div className="w-12 h-12 border-4 border-current/30 border-t-current rounded-full animate-spin text-white mb-4" />
+-          <p className="text-white font-light">Loading...</p>
+-        </div>
+-      </div>
+-    );
+-  }
+-
+   return (
+     <div className="min-h-screen relative">
+       {/* 3D Scene Background */}
+@@ -74,10 +63,10 @@ export default function PositionsPage() {
+         <header className={`sticky top-0 z-50 border-b ${cardBgColor} backdrop-blur-md`}>
+           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex justify-between items-center">          <div>
+                             <h1 className={`text-3xl font-thin ${textColor} tracking-wide`}>
+-                                You
++                                Positions
+                             </h1>
+                             <p className={`text-sm ${textColor} opacity-60 mt-2 font-light`}>
+-                                Your positions, reputation, and performance across every market
++                                Your positions, reputation, and performance
+                             </p>
+                             {/* Narrative step — step 4: Get Scored */}
+                             <NarrativeSteps currentStep="scored" isNight={isNight} className="mt-3" />
+diff --git a/components/OnboardingTour.js b/components/OnboardingTour.js
+index fb9d987..3791530 100644
+--- a/components/OnboardingTour.js
++++ b/components/OnboardingTour.js
+@@ -7,38 +7,38 @@ export const ONBOARDING_KEY = 'fourcast_onboarding_complete';
+ const STEPS = [
+   {
+     id: 'welcome',
+-    title: 'Welcome to FourCast',
++    title: 'Welcome to Fourcast',
+     description: 'Your AI-powered prediction market companion. Discover insights, track your calls, and build a verifiable track record.',
+     icon: '🔮',
+     target: null, // Center screen
+   },
+   {
+-    id: 'crypto',
+-    title: 'Crypto Edge',
+-    description: 'ML-powered crypto prediction edges. 200+ ML models surface mispriced opportunities.',
+-    icon: '₿',
+-    target: '[data-onboard="crypto"]',
++    id: 'markets',
++    title: 'Browse & Analyze Markets',
++    description: 'Explore prediction markets from Polymarket and Kalshi. Run AI analysis with ML-backed edge detection.',
++    icon: '📊',
++    target: '[data-onboard="markets"]',
+   },
+   {
+-    id: 'sports',
+-    title: 'Sports Intelligence',
+-    description: 'Weather-aware sports market analysis. See how conditions impact the game.',
+-    icon: '⚽',
+-    target: '[data-onboard="sports"]',
++    id: 'publish',
++    title: 'Publish Signals',
++    description: 'Record your predictions on-chain. Build a provable track record and earn tips from the community.',
++    icon: '📡',
++    target: '[data-onboard="publish"]',
+   },
+   {
+-    id: 'politics',
+-    title: 'Political Forecasts',
+-    description: 'Data-driven insights into global events and political outcomes.',
+-    icon: '🏛',
+-    target: '[data-onboard="politics"]',
++    id: 'agent',
++    title: 'Agent Mode',
++    description: 'Let the AI autonomously scan markets, detect edges, and generate forecasts for you.',
++    icon: '🤖',
++    target: '[data-onboard="agent"]',
+   },
+   {
+-    id: 'weather',
+-    title: 'Weather & Markets',
+-    description: 'Predict how weather moves markets across sports, agriculture, and events.',
+-    icon: '🌤️',
+-    target: '[data-onboard="weather"]',
++    id: 'positions',
++    title: 'Your Track Record',
++    description: 'View your positions, reputation, win rate, and Brier scores across every market.',
++    icon: '💼',
++    target: '[data-onboard="positions"]',
+   },
+ ];
+ 
+diff --git a/components/PricingOverlay.js b/components/PricingOverlay.js
+index 600174a..0087e68 100644
+--- a/components/PricingOverlay.js
++++ b/components/PricingOverlay.js
+@@ -28,7 +28,8 @@ export default function PricingOverlay({ isOpen, onClose, isNight = false }) {
+   const [selectedPlan, setSelectedPlan] = useState('pro');
+   const { txState, subscribe, resetTx, subscription, isConfigured } = useSubscription();
+ 
+-  if (!isOpen) return null;
++  // Don't show pricing overlay if payment system isn't configured
++  if (!isOpen || !isConfigured) return null;
+ 
+   const textColor = isNight ? 'text-white' : 'text-black';
+   const mutedColor = isNight ? 'text-white/50' : 'text-black/50';
+diff --git a/components/ReasoningVisualizer.js b/components/ReasoningVisualizer.js
+index 55df6fd..e9102d1 100644
+--- a/components/ReasoningVisualizer.js
++++ b/components/ReasoningVisualizer.js
+@@ -99,7 +99,7 @@ export default function ReasoningVisualizer({
+                 <span className="inline-block w-8 text-left ml-1">{dots}</span>
+               </h2>
+               <p className="text-xs text-white/30 uppercase tracking-widest mt-1">
+-                Venice AI • DeepSeek-R1 • 70B
++                Venice AI • Llama 3.3 • 70B
+               </p>
+             </div>
+             <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-2xl animate-pulse">
+diff --git a/components/SearchLanding.js b/components/SearchLanding.js
+index b70bc12..23827b4 100644
+--- a/components/SearchLanding.js
++++ b/components/SearchLanding.js
+@@ -90,7 +90,6 @@ export default function SearchLanding() {
+           </div>
+         </div>
+ 
+-        {/* Try Demo — one-click, no wallet needed */}
+         {/* Try Demo — one-click, no wallet needed */}
+         <div className="mt-8 text-center">
+           <button

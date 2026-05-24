@@ -1,0 +1,26 @@
+{
+  "id": "replit-agent-icgma-basic-programming-pr1",
+  "agent": {
+    "vendor": "replit-agent",
+    "confidence": "low",
+    "source": "body=replit-agent-footer"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "f696b736de13c7a58ba58a364e6bc85b4e4c8282",
+    "baseSha": "e79c7adda862322597d4ad0f1f0819658879285f",
+    "title": "修复多页面 bug、统一导航与主题（含 9 项 fix）",
+    "body": "本 PR 把先前代码 review 中列出的 bug 和一致性问题一次性修好。\n\n  ## 必修 Bug\n  - **子页面缺汉堡按钮 → 手机端打不开导航**：snippet-gallery / prompt-engineering / python-cheatsheet / python-automation-libs 全部补回。\n  - **主题 key 不一致**：首页用 `bp-theme`，子页用 `theme`，跨页切换主题\"错位\"。统一为 `bp-theme`。\n  - **prompt-engineering.html CSS 变量错误**：`var(--bg-card)` / `var(--shadow)` 在 `index.css` 中并不存在，卡片背景失效，改回 `--card-bg` / `--card-shadow`。\n  - **当前教学周可能差一天**：`new Date('2026-02-23')` 按 UTC 解析与本地 `new Date()` 相减，东八区周一凌晨会被算成上一周。改为本地时间构造。\n  - **`huey` 示例缺 `from huey import crontab`** — 复制即 NameError。\n  - **`pyppeteer` 示例 `asyncio.get_event_loop()` 已弃用** — 改为 `asyncio.run(...)`。\n  - **`snippet-gallery` URL 正则有 bug**：字符类里 `[$-_@.&+]` 的 `$-_` 是范围匹配；简化为 `https?://\\S+`。\n  - **knowledge-graph.js renderStatus 对未知 filter 不健壮** — 加 ?? 兜底。\n\n  ## 一致性 / 重构\n  - 抽出 `nav.js`：所有子页面共享主题切换、汉堡菜单、navbar 滚动样式、回到顶部按钮、跟随系统主题、ESC 关菜单、复制按钮 with 错误处理。\n  - 各子页 `<script>` 内联块统一替换为 `<script src=\"nav.js\"></script>`。\n  - 各子页导航统一加上\"自动化库\"链接（之前只在自动化库页自己存在）。\n  - 删除 `main.js` 中带 deprecation warning 的 `window.toggleWeek` 桩代码（已无调用方）。\n  - README 仓库结构与核心文件表更新到当前真实结构。\n\n  ## 内容修订\n  - Twint 标记从\"原版已停维\"改为\"已不可用，仅作历史参考\"，避免学生踩坑。\n\n  ## 不在本 PR 范围\n  - ECharts 体积优化、字体自托管、SEO meta 在首页其实已经齐全，子页 SEO 增强可后续单独 PR。\n  - copy-btn 的代码也复用了 `nav.js` 暴露的 `window.copyCode`，行为兼容原 inline `onclick=\"copyCode(this, '...')\"`。\n\n  🤖 Generated with Replit Agent",
+    "author": "icgma",
+    "headRef": "fix/site-improvements",
+    "repository": "icgma/basic-programming"
+  },
+  "diffRef": {
+    "repository": "icgma/basic-programming",
+    "headSha": "f696b736de13c7a58ba58a364e6bc85b4e4c8282",
+    "baseSha": "e79c7adda862322597d4ad0f1f0819658879285f"
+  },
+  "vendoredDiffPath": "unconfirmed/replit-agent/replit-agent-icgma-basic-programming-pr1.diff",
+  "vendoredAt": "2026-05-24T03:14:19.817Z",
+  "collectedAt": "2026-05-24T03:14:19.817Z"
+}

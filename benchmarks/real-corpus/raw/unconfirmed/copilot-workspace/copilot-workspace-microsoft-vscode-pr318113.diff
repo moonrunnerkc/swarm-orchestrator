@@ -1,0 +1,2271 @@
+diff --git a/src/vs/platform/agentHost/node/claude/claudeAgent.ts b/src/vs/platform/agentHost/node/claude/claudeAgent.ts
+index 9399f1091e091..9cc1689b3ed16 100644
+--- a/src/vs/platform/agentHost/node/claude/claudeAgent.ts
++++ b/src/vs/platform/agentHost/node/claude/claudeAgent.ts
+@@ -17,16 +17,17 @@ import { generateUuid } from '../../../../base/common/uuid.js';
+ import { localize } from '../../../../nls.js';
+ import { IInstantiationService } from '../../../instantiation/common/instantiation.js';
+ import { ILogService } from '../../../log/common/log.js';
+-import { ISyncedCustomization } from '../../common/agentPluginManager.js';
++import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
+ import { createSchema, platformSessionSchema, schemaProperty } from '../../common/agentHostSchema.js';
+ import { ClaudePermissionMode, ClaudeSessionConfigKey, narrowClaudePermissionMode } from '../../common/claudeSessionConfigKeys.js';
+ import { createClaudeThinkingLevelSchema, isClaudeEffortLevel } from '../../common/claudeModelConfig.js';
+ import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
+ import { AgentProvider, AgentSession, AgentSignal, GITHUB_COPILOT_PROTECTED_RESOURCE, IAgent, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo } from '../../common/agentService.js';
++import { ActionType } from '../../common/state/sessionActions.js';
+ import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
+ import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
+ import { PolicyState, ProtectedResourceMetadata, type ModelSelection, type ToolDefinition } from '../../common/state/protocol/state.js';
+-import { CustomizationRef, isSubagentSession, parseSubagentSessionUri, SessionInputResponseKind, type MessageAttachment, type PendingMessage, type SessionInputAnswer, type ToolCallResult, type Turn } from '../../common/state/sessionState.js';
++import { CustomizationRef, isSubagentSession, parseSubagentSessionUri, SessionInputResponseKind, type MessageAttachment, type PendingMessage, type SessionCustomization, type SessionInputAnswer, type ToolCallResult, type Turn } from '../../common/state/sessionState.js';
+ import { IAgentConfigurationService } from '../agentConfigurationService.js';
+ import { IAgentHostGitService } from '../agentHostGitService.js';
+ import { PendingRequestRegistry } from '../../common/pendingRequestRegistry.js';
+@@ -141,6 +142,9 @@ export class ClaudeAgent extends Disposable implements IAgent {
+ 	private readonly _onDidSessionProgress = this._register(new Emitter<AgentSignal>());
+ 	readonly onDidSessionProgress = this._onDidSessionProgress.event;
+ 
++	private readonly _onDidCustomizationsChange = this._register(new Emitter<void>());
++	readonly onDidCustomizationsChange = this._onDidCustomizationsChange.event;
++
+ 	private readonly _models = observableValue<readonly IAgentModelInfo[]>(this, []);
+ 	readonly models: IObservable<readonly IAgentModelInfo[]> = this._models;
+ 
+@@ -224,6 +228,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
+ 		@IAgentHostGitService private readonly _gitService: IAgentHostGitService,
+ 		@IAgentConfigurationService private readonly _configurationService: IAgentConfigurationService,
+ 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
++		@IAgentPluginManager private readonly _pluginManager: IAgentPluginManager,
+ 	) {
+ 		super();
+ 		this._metadataStore = _instantiationService.createInstance(ClaudeSessionMetadataStore, this.id);
+@@ -364,6 +369,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
+ 		);
+ 		const entry = new ClaudeSessionEntry(session);
+ 		entry.addDisposable(session.onDidSessionProgress(signal => this._onDidSessionProgress.fire(signal)));
++		entry.addDisposable(session.onDidCustomizationsChange(() => this._onDidCustomizationsChange.fire()));
+ 		this._sessions.set(sessionId, entry);
+ 
+ 		return {
+@@ -476,6 +482,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
+ 		);
+ 		const entry = new ClaudeSessionEntry(session);
+ 		entry.addDisposable(session.onDidSessionProgress(signal => this._onDidSessionProgress.fire(signal)));
++		entry.addDisposable(session.onDidCustomizationsChange(() => this._onDidCustomizationsChange.fire()));
+ 		this._sessions.set(sessionId, entry);
+ 
+ 		const canUseTool: NonNullable<Options['canUseTool']> = (toolName, input, options) =>
+@@ -908,12 +915,75 @@ export class ClaudeAgent extends Disposable implements IAgent {
+ 		entry?.session.completeClientToolCall(toolCallId, result);
+ 	}
+ 
+-	setClientCustomizations(_session: URI, _clientId: string, _customizations: CustomizationRef[]): Promise<ISyncedCustomization[]> {
+-		throw new Error('TODO: Phase 11');
++	async setClientCustomizations(session: URI, clientId: string, customizations: CustomizationRef[]): Promise<ISyncedCustomization[]> {
++		const sessionId = AgentSession.id(session);
++		const sess = this._findAnySession(sessionId);
++		if (!sess) {
++			this._logService.warn(`[Claude:${sessionId}] setClientCustomizations: session not found`);
++			return [];
++		}
++		// Run inside the session sequencer so that a fire-and-forget
++		// `setClientCustomizations` from `AgentSideEffects` cannot race
++		// ahead of a first `sendMessage`: if `sendMessage` is already
++		// queued, the sync runs first or queues behind it; either way
++		// the materialize call reads the most recently adopted plugin
++		// set, never an empty one mid-sync.
++		return this._sessionSequencer.queue(sessionId, async () => {
++			const synced = await this._pluginManager.syncCustomizations(
++				clientId,
++				customizations,
++				status => this._fireCustomizationUpdated(session, { customization: status }),
++			);
++			sess.adoptClientCustomizations(synced);
++			return synced;
++		});
++	}
++
++	/**
++	 * Project a per-item sync result onto a `SessionCustomizationUpdated`
++	 * action and emit it on {@link onDidSessionProgress}. Lets the workbench
++	 * flip each row to `Loaded` / `Error` as the underlying
++	 * {@link IAgentPluginManager.syncCustomizations} resolves it.
++	 */
++	private _fireCustomizationUpdated(session: URI, item: ISyncedCustomization): void {
++		this._onDidSessionProgress.fire({
++			kind: 'action',
++			session,
++			action: {
++				type: ActionType.SessionCustomizationUpdated,
++				customization: item.customization.customization,
++				enabled: item.customization.enabled,
++				...(item.customization.status !== undefined ? { status: item.customization.status } : {}),
++				...(item.customization.statusMessage !== undefined ? { statusMessage: item.customization.statusMessage } : {}),
++				...(item.customization.agents !== undefined ? { agents: item.customization.agents } : {}),
++			},
++		});
++	}
++
++	setCustomizationEnabled(uri: string, enabled: boolean): void {
++		for (const entry of this._sessions.values()) {
++			entry.session.setClientCustomizationEnabled(uri, enabled);
++		}
++	}
++
++	getCustomizations(): readonly CustomizationRef[] {
++		// Provider-level customization catalogue — feeds `AgentInfo.customizations`
++		// on `RootAgentsChanged`. Should advertise host-configured plugin refs
++		// (the equivalent of Copilot's `agentHost.customizations` setting).
++		// Claude has no such surface today; returning `[]` is correct rather
++		// than aggregating client-pushed refs (those live on
++		// `activeClient.customizations` per session).
++		//
++		// TODO: when host-level customizations become a real concept for the
++		// agent host, lift `PluginController` out of `copilot/copilotAgent.ts`
++		// into a shared service so both providers consume the same configured
++		// host customization list rather than each maintaining their own.
++		return [];
+ 	}
+ 
+-	setCustomizationEnabled(_uri: string, _enabled: boolean): void {
+-		throw new Error('TODO: Phase 11');
++	async getSessionCustomizations(session: URI): Promise<readonly SessionCustomization[]> {
++		const sess = this._findAnySession(AgentSession.id(session));
++		return sess ? await sess.getSessionCustomizations() : [];
+ 	}
+ 
+ 	// #endregion
+diff --git a/src/vs/platform/agentHost/node/claude/claudeAgentSession.ts b/src/vs/platform/agentHost/node/claude/claudeAgentSession.ts
+index 33e2a8733074b..119739e3151d5 100644
+--- a/src/vs/platform/agentHost/node/claude/claudeAgentSession.ts
++++ b/src/vs/platform/agentHost/node/claude/claudeAgentSession.ts
+@@ -12,13 +12,14 @@ import { URI } from '../../../../base/common/uri.js';
+ import { IInstantiationService } from '../../../instantiation/common/instantiation.js';
+ import { ILogService } from '../../../log/common/log.js';
+ import { IAgentConfigurationService } from '../agentConfigurationService.js';
++import { ISyncedCustomization } from '../../common/agentPluginManager.js';
+ import { ClaudePermissionMode } from '../../common/claudeSessionConfigKeys.js';
+ import { ClaudeRuntimeEffortLevel, clampEffortForRuntime, resolveClaudeEffort } from '../../common/claudeModelConfig.js';
+ import { AgentSignal, IAgentSessionProjectInfo } from '../../common/agentService.js';
+ import { PendingRequestRegistry } from '../../common/pendingRequestRegistry.js';
+ import { ISessionDataService } from '../../common/sessionDataService.js';
+ import { ActionType } from '../../common/state/sessionActions.js';
+-import { PendingMessage, SessionInputAnswer, SessionInputRequest, SessionInputResponseKind, ToolCallPendingConfirmationState, type ModelSelection, type ToolDefinition } from '../../common/state/protocol/state.js';
++import { PendingMessage, SessionCustomization, SessionInputAnswer, SessionInputRequest, SessionInputResponseKind, ToolCallPendingConfirmationState, type ModelSelection, type ToolDefinition } from '../../common/state/protocol/state.js';
+ import type { ToolCallResult } from '../../common/state/sessionState.js';
+ import { IClaudeAgentSdkService } from './claudeAgentSdkService.js';
+ import { buildClientMcpServers, buildOptions } from './claudeSdkOptions.js';
+@@ -26,9 +27,12 @@ import { ClaudeSessionMetadataStore } from './claudeSessionMetadataStore.js';
+ import { convertToolCallResult } from './clientTools/claudeClientToolResult.js';
+ import { readClaudePermissionMode } from './claudeSessionPermissionMode.js';
+ import { SessionClientToolsDiff } from './clientTools/claudeSessionClientToolsModel.js';
++import { SessionClientCustomizationsDiff } from './customizations/claudeSessionClientCustomizationsModel.js';
++import { projectSessionCustomizations } from './customizations/claudeSessionCustomizationsProjector.js';
++import { ClaudeSdkCustomizationBundler } from './customizations/claudeSdkCustomizationBundler.js';
+ import { resolvePromptToContentBlocks } from './claudePromptResolver.js';
+ import { IClaudeProxyHandle } from './claudeProxyService.js';
+-import { ClaudeSdkPipeline, IRematerializer } from './claudeSdkPipeline.js';
++import { ClaudeSdkPipeline, IRematerializer, type ISdkResolvedCustomizations } from './claudeSdkPipeline.js';
+ import { SubagentRegistry } from './claudeSubagentRegistry.js';
+ import { ClaudePermissionKind } from './claudeToolDisplay.js';
+ 
+@@ -68,6 +72,7 @@ function resolveCurrentPermissionMode(
+ export class ClaudeAgentSession extends Disposable {
+ 
+ 	private _pipeline: ClaudeSdkPipeline | undefined;
++	private _sdkBundler: ClaudeSdkCustomizationBundler | undefined;
+ 
+ 	/** Pre-materialize model selection. Mutable; flows into `Options.model` on first installPipeline. */
+ 	private _provisionalModel: ModelSelection | undefined;
+@@ -145,6 +150,22 @@ export class ClaudeAgentSession extends Disposable {
+ 	 */
+ 	readonly toolDiff: SessionClientToolsDiff;
+ 
++	/**
++	 * Phase 11 — per-session **client-pushed** synced customization
++	 * snapshot + enablement map. Owns the workbench-supplied
++	 * {@link ISyncedCustomization} list, the per-URI enablement bits,
++	 * and the dirty flag drained at the next {@link send} pre-flight.
++	 * Exists from `createProvisional` onward so client-side reads /
++	 * toggles work uniformly before and after materialize.
++	 *
++	 * Server-side (SDK-discovered) customizations are NOT stored here
++	 * — they're fetched on demand from the live `Query` in
++	 * {@link getSessionCustomizations}.
++	 *
++	 * See {@link SessionClientCustomizationsDiff}.
++	 */
++	readonly clientCustomizationsDiff: SessionClientCustomizationsDiff = this._register(new SessionClientCustomizationsDiff());
++
+ 	private readonly _onDidSessionProgress = this._register(new Emitter<AgentSignal>());
+ 	readonly onDidSessionProgress: Event<AgentSignal> = this._onDidSessionProgress.event;
+ 
+@@ -172,6 +193,7 @@ export class ClaudeAgentSession extends Disposable {
+ 		this.provisionalConfig = config;
+ 		this.abortController = abortController;
+ 		this.toolDiff = this._register(toolDiff);
++		this._register(this.clientCustomizationsDiff.onDidChange(() => this._onDidCustomizationsChange.fire()));
+ 	}
+ 
+ 	/**
+@@ -208,6 +230,7 @@ export class ClaudeAgentSession extends Disposable {
+ 				canUseTool: ctx.canUseTool,
+ 				isResume: ctx.isResume,
+ 				mcpServers,
++				plugins: this.clientCustomizationsDiff.consume(),
+ 			},
+ 			ctx.proxyHandle,
+ 			data => this._logService.error(`[Claude SDK stderr] ${data}`),
+@@ -243,6 +266,15 @@ export class ClaudeAgentSession extends Disposable {
+ 		}
+ 		this._register(pipeline.onDidProduceSignal(s => this._onDidSessionProgress.fire(s)));
+ 		this._pipeline = pipeline;
++		// On-disk Open Plugin bundle for SDK-discovered customizations.
++		// The bundle directory is content-addressed by the SDK snapshot
++		// hash and lives under the plugin manager's user-data tree;
++		// disposing the bundler does NOT delete the on-disk tree (kept
++		// as a warm cache across sessions on the same workingDirectory).
++		this._sdkBundler = this._register(this._instantiationService.createInstance(
++			ClaudeSdkCustomizationBundler,
++			this.workingDirectory,
++		));
+ 
+ 		// Seed the pipeline's bijective config cache so a rebuild re-applies
+ 		// the user's last-chosen model / effort without losing the picker
+@@ -294,6 +326,7 @@ export class ClaudeAgentSession extends Disposable {
+ 						canUseTool: ctx.canUseTool,
+ 						isResume: true,
+ 						mcpServers: rebuildMcp,
++						plugins: this.clientCustomizationsDiff.consume(),
+ 					},
+ 					ctx.proxyHandle,
+ 					data => this._logService.error(`[Claude SDK stderr] ${data}`),
+@@ -304,9 +337,16 @@ export class ClaudeAgentSession extends Disposable {
+ 				return { warm: rebuildWarm, abortController: rebuildAbort };
+ 			} catch (err) {
+ 				this.toolDiff.markDirty();
++				this.clientCustomizationsDiff.markDirty();
+ 				throw err;
+ 			}
+ 		});
++
++		// Surface the SDK-resolved customization tier to the workbench.
++		// Pre-materialize, getSessionCustomizations returns only the
++		// client-pushed slice; firing here prompts the workbench to refetch
++		// and pick up the bundled `Discovered in Claude` entry.
++		this._onDidCustomizationsChange.fire();
+ 	}
+ 
+ 	/** True once {@link materialize} has installed the SDK pipeline. */
+@@ -342,10 +382,13 @@ export class ClaudeAgentSession extends Disposable {
+ 	 * Send a user prompt. Performs the per-turn pre-flight before
+ 	 * yielding to the pipeline:
+ 	 *
+-	 * - If {@link toolDiff} reports the workbench client-tool snapshot has
+-	 *   diverged from what the live `Query` was started with, yield-restart
+-	 *   so the SDK picks up the new `Options.mcpServers`. The rebind itself
+-	 *   re-applies the live `permissionMode` via the rematerializer.
++	 * - If {@link toolDiff} or {@link clientCustomizationsDiff} reports the
++	 *   live `Query` is out of sync with the workbench's view, yield-restart
++	 *   so the SDK picks up the new `Options.mcpServers` / `Options.plugins`.
++	 *   `Query.reloadPlugins()` cannot help here — the SDK's plugin URI set
++	 *   is captured at startup, so any add / remove / nonce-bump must go
++	 *   through a full rebuild. The rebind itself re-applies the live
++	 *   `permissionMode` via the rematerializer.
+ 	 * - Otherwise forward the live `permissionMode` to the bound `Query` so
+ 	 *   a `SessionConfigChanged` action that arrived between turns wins.
+ 	 *   The pipeline's bijective cache dedupes a no-op `setPermissionMode`,
+@@ -357,14 +400,32 @@ export class ClaudeAgentSession extends Disposable {
+ 	 */
+ 	async send(prompt: SDKUserMessage, turnId: string): Promise<void> {
+ 		const pipeline = this._requirePipeline();
+-		if (this.toolDiff.hasDifference) {
+-			await this.rebindForClientTools();
++		if (this.toolDiff.hasDifference || this.clientCustomizationsDiff.hasDifference) {
++			await this._rebindForSyncedState();
+ 		} else {
+ 			await pipeline.setPermissionMode(resolveCurrentPermissionMode(this._configurationService, this.sessionUri, this._permissionModeFallback));
+ 		}
+ 		return pipeline.send(prompt, turnId);
+ 	}
+ 
++	/**
++	 * Single yield-restart that covers both client-tool and
++	 * customization divergence in one trip. Drains the parked
++	 * client-tool MCP handlers (same as the original tool-only
++	 * rebind), then triggers the pipeline rebind — the rematerializer
++	 * reads `toolDiff` and `clientCustomizationsDiff.consume()` while
++	 * building the new `Options`, so the bit on each diff clears in
++	 * lockstep with the SDK actually receiving the new values. Fires
++	 * `_onDidCustomizationsChange` afterwards so the workbench
++	 * refetches `getSessionCustomizations` and picks up any newly
++	 * resolved server-side entries from the rebuilt `Query`.
++	 */
++	private async _rebindForSyncedState(): Promise<void> {
++		this._pendingClientToolCalls.rejectAll(new CancellationError());
++		await this._requirePipeline().rebindForRestart();
++		this._onDidCustomizationsChange.fire();
++	}
++
+ 	/**
+ 	 * Cancel the in-flight SDK turn. Mirrors the production reference;
+ 	 * see {@link ClaudeSdkPipeline.abort}. Also denies any parked
+@@ -536,16 +597,97 @@ export class ClaudeAgentSession extends Disposable {
+ 	}
+ 
+ 	/**
+-	 * Drive a yield-restart so the SDK picks up the new client-tool set on
+-	 * its next user request. Cancels any in-flight client-tool MCP handlers
+-	 * and resets the bridge state before swapping the {@link Query}; the
+-	 * agent's rematerializer rebuilds `Options.mcpServers` from
+-	 * {@link toolDiff} during the rebind and pins `applied` to the
+-	 * build-time snapshot via {@link SessionClientToolsDiff.build}.
++	 * Drive a yield-restart so the SDK picks up the new client-tool set
++	 * on its next user request. Public entry point for callers that need
++	 * to force a tool-only rebind; internal pre-flight goes through
++	 * {@link _rebindForSyncedState}.
+ 	 */
+ 	async rebindForClientTools(): Promise<void> {
+-		this._pendingClientToolCalls.rejectAll(new CancellationError());
+-		await this._requirePipeline().rebindForRestart();
++		await this._rebindForSyncedState();
++	}
++
++	// #endregion
++
++	// #region Phase 11 — customizations / plugins
++
++	/**
++	 * Merged fire-and-forget signal that this session's customization
++	 * surface changed. Fires from three sources:
++	 *
++	 * 1. Client-side writes (`adoptClientCustomizations` /
++	 *    `setClientCustomizationEnabled`) — via the
++	 *    {@link SessionClientCustomizationsDiff} observable wired up in the
++	 *    constructor.
++	 * 2. Materialize completes — surfaces the server-side
++	 *    (SDK-discovered) tier to the workbench for the first time.
++	 * 3. The send() pre-flight rebind completes — the rebuilt SDK's
++	 *    resolved set may have changed.
++	 *
++	 * Drives a workbench refetch of {@link getSessionCustomizations}.
++	 * Does NOT itself trigger any SDK action — the dirty bit on
++	 * {@link SessionClientCustomizationsDiff} drives plugin rebinds,
++	 * and only flips on client-side writes.
++	 */
++	private readonly _onDidCustomizationsChange = this._register(new Emitter<void>());
++	readonly onDidCustomizationsChange: Event<void> = this._onDidCustomizationsChange.event;
++
++	/**
++	 * Adopt the result of a global {@link IAgentPluginManager.syncCustomizations}
++	 * pass (**client-pushed** path). The agent owns the manager (it's
++	 * a process-wide singleton with a shared on-disk cache) and pushes
++	 * the resulting snapshot down here. Flips the client-side dirty bit
++	 * so the next {@link send} pre-flight reloads SDK plugins.
++	 */
++	adoptClientCustomizations(synced: readonly ISyncedCustomization[]): void {
++		this.clientCustomizationsDiff.model.setSyncedCustomizations(synced);
++	}
++
++	/** Toggle a **client-pushed** customization on/off for this session. */
++	setClientCustomizationEnabled(uri: string, enabled: boolean): void {
++		this.clientCustomizationsDiff.model.setEnabled(uri, enabled);
++	}
++
++	/**
++	 * Snapshot of the **client-pushed** customizations on this session.
++	 * Does NOT include server-side (SDK-discovered) entries — use
++	 * {@link getSessionCustomizations} for the merged view.
++	 */
++	getClientCustomizations(): readonly ISyncedCustomization[] {
++		return this.clientCustomizationsDiff.model.state.get().synced;
++	}
++
++	/**
++	 * Project the union of (a) **client-pushed** customizations and
++	 * (b) the **server-side** (SDK-discovered) view (commands / agents
++	 * / MCP servers, including those the SDK discovered on its own
++	 * from `~/.claude/**`) onto the protocol's
++	 * {@link SessionCustomization} surface, with the per-URI enablement
++	 * overlay applied to client-pushed entries.
++	 *
++	 * Pre-materialize sessions return only the client-pushed projection
++	 * — the SDK side has no Query to query yet. A failure to read the
++	 * SDK snapshot is warn-logged and the client-pushed projection is
++	 * still returned, so a transient SDK hiccup doesn't blank the UI.
++	 */
++	async getSessionCustomizations(): Promise<readonly SessionCustomization[]> {
++		const { synced, enablement } = this.clientCustomizationsDiff.model.state.get();
++		let bundled: SessionCustomization | undefined;
++		if (this._pipeline && this._sdkBundler) {
++			let sdk: ISdkResolvedCustomizations | undefined;
++			try {
++				sdk = await this._pipeline.snapshotResolvedCustomizations();
++			} catch (err) {
++				this._logService.warn(`[Claude:${this.sessionId}] snapshotResolvedCustomizations failed`, err);
++			}
++			if (sdk) {
++				try {
++					bundled = await this._sdkBundler.bundle(sdk);
++				} catch (err) {
++					this._logService.warn(`[Claude:${this.sessionId}] SDK bundle failed`, err);
++				}
++			}
++		}
++		return projectSessionCustomizations(synced, enablement, bundled);
+ 	}
+ 
+ 	// #endregion
+diff --git a/src/vs/platform/agentHost/node/claude/claudeSdkOptions.ts b/src/vs/platform/agentHost/node/claude/claudeSdkOptions.ts
+index 0f8f93167ae96..f6db0b1154982 100644
+--- a/src/vs/platform/agentHost/node/claude/claudeSdkOptions.ts
++++ b/src/vs/platform/agentHost/node/claude/claudeSdkOptions.ts
+@@ -32,6 +32,14 @@ export interface IBuildOptionsInput {
+ 	readonly canUseTool: NonNullable<Options['canUseTool']>;
+ 	readonly isResume: boolean;
+ 	readonly mcpServers: Record<string, McpSdkServerConfigWithInstance> | undefined;
++	/**
++	 * Local plugin directories to load at SDK startup. Projected onto
++	 * `Options.plugins` as `{ type: 'local', path }`. Omitted from the
++	 * returned options entirely when empty so the SDK keeps its default
++	 * (no plugins). Built per-session from
++	 * {@link SessionClientCustomizationsDiff.consume}.
++	 */
++	readonly plugins?: readonly URI[];
+ }
+ 
+ /**
+@@ -88,6 +96,9 @@ export async function buildOptions(
+ 			? { resume: input.sessionId }
+ 			: { sessionId: input.sessionId }),
+ 		...(input.mcpServers ? { mcpServers: input.mcpServers } : {}),
++		...(input.plugins && input.plugins.length > 0
++			? { plugins: input.plugins.map(p => ({ type: 'local' as const, path: p.fsPath })) }
++			: {}),
+ 		settingSources: ['user', 'project', 'local'],
+ 		settings: { env: settingsEnv },
+ 		systemPrompt: { type: 'preset', preset: 'claude_code' },
+diff --git a/src/vs/platform/agentHost/node/claude/claudeSdkPipeline.ts b/src/vs/platform/agentHost/node/claude/claudeSdkPipeline.ts
+index be1b9d32109e5..5ab525211393e 100644
+--- a/src/vs/platform/agentHost/node/claude/claudeSdkPipeline.ts
++++ b/src/vs/platform/agentHost/node/claude/claudeSdkPipeline.ts
+@@ -3,7 +3,7 @@
+  *  Licensed under the MIT License. See License.txt in the project root for license information.
+  *--------------------------------------------------------------------------------------------*/
+ 
+-import type { PermissionMode, Query, SDKUserMessage, WarmQuery } from '@anthropic-ai/claude-agent-sdk';
++import type { AgentInfo, McpServerStatus, PermissionMode, Query, SDKUserMessage, SlashCommand, WarmQuery } from '@anthropic-ai/claude-agent-sdk';
+ import { CancellationError, isCancellationError } from '../../../../base/common/errors.js';
+ import { Emitter, Event } from '../../../../base/common/event.js';
+ import { Disposable, IReference, toDisposable } from '../../../../base/common/lifecycle.js';
+@@ -60,7 +60,61 @@ export interface IRematerializer {
+  * Disposing the pipeline aborts the controller (terminating the SDK
+  * subprocess per `sdk.d.ts:982`) and async-disposes the WarmQuery.
+  */
++/**
++ * Snapshot of everything the SDK has currently resolved for this
++ * session. Returned by {@link ClaudeSdkPipeline.snapshotResolvedCustomizations}.
++ */
++export interface ISdkResolvedCustomizations {
++	readonly commands: readonly SlashCommand[];
++	readonly agents: readonly AgentInfo[];
++	readonly mcpServers: readonly McpServerStatus[];
++}
++
+ export class ClaudeSdkPipeline extends Disposable {
++	/**
++	 * Phase 11 — hot-swap the SDK's plugin set in place via
++	 * `Query.reloadPlugins()`. Commands / agents / mcpServers added or
++	 * removed by the new plugin set become visible to the SDK
++	 * immediately, without a session restart. Throws if the query is
++	 * not yet bound (session not materialized).
++	 */
++	async reloadPlugins(): Promise<void> {
++		const query = await this._ensureQueryBound();
++		await query.reloadPlugins();
++	}
++
++	/**
++	 * Phase 11 — snapshot the SDK's currently-resolved customization
++	 * surface (slash commands / skills, subagents, MCP servers). This
++	 * is the SDK's view of "what does this session actually have
++	 * access to right now" — covers everything the SDK loaded itself
++	 * (`~/.claude/**`, `.claude/agents/`, `settings.json` MCP) AND
++	 * anything we fed in via `Options.plugins`. The host overlays
++	 * client-side enablement separately.
++	 */
++	async snapshotResolvedCustomizations(): Promise<ISdkResolvedCustomizations> {
++		const query = await this._ensureQueryBound();
++		const [commands, agents, mcpServers] = await Promise.all([
++			query.supportedCommands(),
++			query.supportedAgents(),
++			query.mcpServerStatus(),
++		]);
++		return { commands, agents, mcpServers };
++	}
++
++	/**
++	 * Bind the SDK Query if the previous one has unwound (e.g. after a
++	 * terminal result message). Mirrors the lazy bind in {@link send}
++	 * so pre-flight helpers can call into the SDK without first having
++	 * to issue a user prompt.
++	 */
++	private async _ensureQueryBound(): Promise<Query> {
++		if (!this._query) {
++			this._query = this._warm.query(this._queue.iterable);
++			await this._replayCurrentConfig();
++		}
++		return this._query;
++	}
+ 
+ 	private _query: Query | undefined;
+ 	private _warm: WarmQuery;
+diff --git a/src/vs/platform/agentHost/node/claude/customizations/claudeSdkCustomizationBundler.ts b/src/vs/platform/agentHost/node/claude/customizations/claudeSdkCustomizationBundler.ts
+new file mode 100644
+index 0000000000000..26e2ed5b9782f
+--- /dev/null
++++ b/src/vs/platform/agentHost/node/claude/customizations/claudeSdkCustomizationBundler.ts
+@@ -0,0 +1,160 @@
++/*---------------------------------------------------------------------------------------------
++ *  Copyright (c) Microsoft Corporation. All rights reserved.
++ *  Licensed under the MIT License. See License.txt in the project root for license information.
++ *--------------------------------------------------------------------------------------------*/
++
++import { VSBuffer } from '../../../../../base/common/buffer.js';
++import { hash } from '../../../../../base/common/hash.js';
++import { Disposable } from '../../../../../base/common/lifecycle.js';
++import { URI } from '../../../../../base/common/uri.js';
++import { localize } from '../../../../../nls.js';
++import { IFileService } from '../../../../files/common/files.js';
++import { IAgentPluginManager } from '../../../common/agentPluginManager.js';
++import { CustomizationStatus, type CustomizationAgentRef, type SessionCustomization } from '../../../common/state/protocol/state.js';
++import type { ISdkResolvedCustomizations } from '../claudeSdkPipeline.js';
++
++const PLUGIN_NAME = 'claude-discovered';
++const DISPLAY_NAME = localize('claude.discovered.displayName', "Discovered in Claude");
++const DISCOVERED_DIR = 'claude-discovered';
++
++/**
++ * Synthetic URI scheme for SDK-discovered agents. Carried on the
++ * {@link SessionCustomization.agents} `CustomizationAgentRef.uri` so the
++ * workbench agent picker has a stable identifier per Claude-native agent.
++ * The scheme is not filesystem-backed; it exists only as an identity key.
++ */
++const SDK_AGENT_SCHEME = 'claude-sdk-agent';
++
++/**
++ * Bundles the Claude SDK's currently-resolved customization view
++ * (commands + agents from `Query.supportedCommands()` /
++ * `supportedAgents()` / `mcpServerStatus()`) into a synthetic on-disk
++ * [Open Plugin](https://open-plugins.com/) layout, so the workbench's
++ * plugin expander can scan it and emit per-type child items
++ * (`PromptsType.agent` / `PromptsType.skill` / `PromptsType.prompt`).
++ *
++ * Returns a single {@link SessionCustomization} with `displayName =
++ * "Discovered in Claude"` whose URI points at the on-disk bundle root.
++ * The `agents` field is populated directly from the SDK snapshot so the
++ * agent picker can list Claude-native agents without waiting on
++ * filesystem expansion.
++ *
++ * The directory is namespaced by a hash of the working directory so
++ * concurrent sessions on different folders don't collide. Repeated
++ * {@link bundle} calls with the same SDK snapshot reuse the prior
++ * bundle (nonce match) and skip the rewrite.
++ */
++export class ClaudeSdkCustomizationBundler extends Disposable {
++
++	private readonly _rootUri: URI;
++	private _lastNonce: string | undefined;
++
++	constructor(
++		workingDirectory: URI,
++		@IFileService private readonly _fileService: IFileService,
++		@IAgentPluginManager pluginManager: IAgentPluginManager,
++	) {
++		super();
++		const authority = `claude-${hash(workingDirectory.toString())}`;
++		this._rootUri = URI.joinPath(pluginManager.basePath, DISCOVERED_DIR, authority);
++	}
++
++	async bundle(snapshot: ISdkResolvedCustomizations): Promise<SessionCustomization | undefined> {
++		if (snapshot.commands.length === 0 && snapshot.agents.length === 0) {
++			return undefined;
++		}
++
++		const hashParts: string[] = [];
++		for (const agent of snapshot.agents) {
++			hashParts.push(`agent:${agent.name}\n${agent.description}\n${agent.model ?? ''}`);
++		}
++		for (const cmd of snapshot.commands) {
++			hashParts.push(`command:${cmd.name}\n${cmd.description}\n${cmd.argumentHint ?? ''}`);
++		}
++		hashParts.sort();
++		const nonce = String(hash(hashParts.join('\n')));
++
++		if (this._lastNonce !== nonce) {
++			try {
++				await this._fileService.del(this._rootUri, { recursive: true });
++			} catch {
++				// First bundle — directory may not exist.
++			}
++			// Vendor-neutral manifest path per Open Plugins spec
++			// (`.plugin/plugin.json`). `name` is the only required field
++			// and must be lowercase alphanumeric / `-` / `.` only.
++			const manifestUri = URI.joinPath(this._rootUri, '.plugin', 'plugin.json');
++			await this._fileService.writeFile(manifestUri, VSBuffer.fromString(JSON.stringify({
++				name: PLUGIN_NAME,
++				description: 'Customizations discovered by the Claude agent',
++			}, null, '\t')));
++
++			for (const agent of snapshot.agents) {
++				const fileUri = URI.joinPath(this._rootUri, 'agents', `${safeName(agent.name)}.md`);
++				await this._fileService.writeFile(fileUri, VSBuffer.fromString(agentMarkdown(agent.name, agent.description)));
++			}
++			for (const cmd of snapshot.commands) {
++				// Treat Claude slash commands as skills: each becomes its
++				// own `skills/<name>/SKILL.md` subdirectory per the Agent
++				// Skills format. Conceptually they're the same thing —
++				// a named, model-invocable capability — and the workbench
++				// buckets them under skills.
++				const dirName = safeName(cmd.name);
++				const fileUri = URI.joinPath(this._rootUri, 'skills', dirName, 'SKILL.md');
++				await this._fileService.writeFile(fileUri, VSBuffer.fromString(skillMarkdown(dirName, cmd.description, cmd.argumentHint)));
++			}
++			this._lastNonce = nonce;
++		}
++
++		const agentRefs: CustomizationAgentRef[] = snapshot.agents.map(agent => ({
++			uri: URI.from({ scheme: SDK_AGENT_SCHEME, path: `/${agent.name}` }).toString(),
++			name: agent.name,
++			description: agent.description,
++		}));
++
++		return {
++			customization: {
++				uri: this._rootUri.toString(),
++				displayName: DISPLAY_NAME,
++				description: localize('claude.discovered.description', "{0} customization(s) discovered by the Claude agent", snapshot.agents.length + snapshot.commands.length),
++				nonce,
++			},
++			enabled: true,
++			status: CustomizationStatus.Loaded,
++			agents: agentRefs,
++		};
++	}
++}
++
++function safeName(name: string): string {
++	return name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 128) || 'unnamed';
++}
++
++/**
++ * Open Plugins agent frontmatter: `name` (1-64 chars, kebab-case) and
++ * `description` (max 1024 chars). The body is the agent's system
++ * prompt; the SDK doesn't surface it, so we leave the body empty.
++ */
++function agentMarkdown(name: string, description: string): string {
++	return `---\nname: ${yamlString(name)}\ndescription: ${yamlString(truncate(description, 1024))}\n---\n`;
++}
++
++/**
++ * Agent Skills `SKILL.md` frontmatter: `name` (MUST match the
++ * containing directory name) and `description`. The SDK's
++ * `argumentHint` is rendered as a `$ARGUMENTS` usage hint in the body.
++ */
++function skillMarkdown(name: string, description: string, argumentHint: string | undefined): string {
++	const body = argumentHint ? `\nUsage: \`${argumentHint}\`\n` : '';
++	return `---\nname: ${yamlString(name)}\ndescription: ${yamlString(truncate(description, 1024))}\n---\n${body}`;
++}
++
++function yamlString(s: string): string {
++	// Quote always; escape backslashes and double quotes. Single-line: drop newlines.
++	const escaped = s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r?\n/g, ' ');
++	return `"${escaped}"`;
++}
++
++function truncate(s: string, max: number): string {
++	return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
++}
+diff --git a/src/vs/platform/agentHost/node/claude/customizations/claudeSessionClientCustomizationsModel.ts b/src/vs/platform/agentHost/node/claude/customizations/claudeSessionClientCustomizationsModel.ts
+new file mode 100644
+index 0000000000000..8596df7afe7b3
+--- /dev/null
++++ b/src/vs/platform/agentHost/node/claude/customizations/claudeSessionClientCustomizationsModel.ts
+@@ -0,0 +1,254 @@
++/*---------------------------------------------------------------------------------------------
++ *  Copyright (c) Microsoft Corporation. All rights reserved.
++ *  Licensed under the MIT License. See License.txt in the project root for license information.
++ *--------------------------------------------------------------------------------------------*/
++
++import { Event } from '../../../../../base/common/event.js';
++import { Disposable } from '../../../../../base/common/lifecycle.js';
++import { equals as arraysEqual } from '../../../../../base/common/arrays.js';
++import { URI } from '../../../../../base/common/uri.js';
++import { autorun, derivedOpts, IObservable, ISettableObservable, observableValueOpts } from '../../../../../base/common/observable.js';
++import type { ISyncedCustomization } from '../../../common/agentPluginManager.js';
++
++/**
++ * Per-session **client-pushed** customization snapshot + enablement
++ * map. "Client" here means the workbench client that called
++ * `setClientCustomizations` / `setCustomizationEnabled` — server-side
++ * (SDK-discovered) customizations live separately and are never
++ * stored in this model. The two fields travel as one value so
++ * consumers can read both with a single `.get()` and so that an
++ * update to either is observed as a single change.
++ */
++export interface ISessionCustomizationsState {
++	readonly synced: readonly ISyncedCustomization[];
++	readonly enablement: ReadonlyMap<string, boolean>;
++}
++
++const INITIAL_STATE: ISessionCustomizationsState = { synced: [], enablement: new Map() };
++
++/**
++ * Pure observable state holder for the **client-pushed**
++ * {@link ISyncedCustomization} list and the per-customization
++ * enablement map. Exposes a derived `enabledPluginPaths` view used
++ * to project `Options.plugins` at materialize / rematerialize.
++ *
++ * Server-side (SDK-discovered) customizations are NOT in scope here
++ * — they're fetched on demand from the live `Query` in
++ * `getSessionCustomizations` and never written into this
++ * model.
++ *
++ * `state` dedupes structurally-equivalent writes: a re-send of the
++ * same `(synced, enablement)` pair does NOT fire downstream
++ * subscribers. Knows nothing about diffing or the SDK — pair with
++ * {@link SessionClientCustomizationsDiff} to track "has the client-pushed
++ * snapshot changed since the last successful SDK plugin reload".
++ */
++export class SessionClientCustomizationsModel {
++
++	private readonly _state: ISettableObservable<ISessionCustomizationsState> = observableValueOpts(
++		{ owner: this, equalsFn: stateEqual },
++		INITIAL_STATE,
++	);
++	readonly state: IObservable<ISessionCustomizationsState> = this._state;
++
++	/**
++	 * Resolved local plugin paths for the currently enabled
++	 * **client-pushed** customizations. Customizations without a
++	 * `pluginDir` (still loading or failed sync) are excluded.
++	 * Default enablement is `true` — an absent entry counts as
++	 * enabled. Server-side customizations contribute nothing here.
++	 */
++	readonly enabledPluginPaths: IObservable<readonly URI[]> = derivedOpts<readonly URI[]>(
++		{ owner: this, equalsFn: (a, b) => arraysEqual(a, b, (x, y) => x.toString() === y.toString()) },
++		reader => {
++			const s = this._state.read(reader);
++			const paths: URI[] = [];
++			for (const synced of s.synced) {
++				if (!synced.pluginDir) {
++					continue;
++				}
++				const uri = synced.customization.customization.uri.toString();
++				if (s.enablement.get(uri) === false) {
++					continue;
++				}
++				paths.push(synced.pluginDir);
++			}
++			return paths;
++		},
++	);
++
++	/** Replace the client-pushed customization snapshot for this session. */
++	setSyncedCustomizations(synced: readonly ISyncedCustomization[]): void {
++		const cur = this._state.get();
++		this._state.set({ synced, enablement: cur.enablement }, undefined);
++	}
++
++	/** Toggle a client-pushed customization on/off for this session. */
++	setEnabled(uri: string, enabled: boolean): void {
++		const cur = this._state.get();
++		const current = cur.enablement.get(uri);
++		if (current === enabled || (enabled && current === undefined)) {
++			return;
++		}
++		const next = new Map(cur.enablement);
++		if (enabled) {
++			next.delete(uri);
++		} else {
++			next.set(uri, false);
++		}
++		this._state.set({ synced: cur.synced, enablement: next }, undefined);
++	}
++}
++
++/**
++ * Tracks "has the **client-pushed** customization snapshot changed
++ * since the SDK was last (re)started against it?". Subscribes to
++ * {@link SessionClientCustomizationsModel.state}, with the state
++ * observable's equalsFn structurally comparing the meaningful
++ * fields (URI list, enablement, nonce, status, user-visible
++ * metadata). Same race semantics as `SessionClientToolsDiff`: a
++ * write that lands during an in-flight rebind re-flips dirty via
++ * the autorun, so callers don't need to snapshot-compare.
++ *
++ * Why state and not just `enabledPluginPaths`: the SDK's
++ * `reloadPlugins()` is parameterless — the plugin URI set is
++ * captured into `Options.plugins` at startup and is otherwise
++ * immutable. Any meaningful change (new plugin, toggle, content
++ * refresh via nonce, metadata refresh) therefore requires the
++ * yield-restart path to take effect, so we treat every state
++ * change as SDK-relevant.
++ *
++ * Server-side (SDK-discovered) customizations are NOT tracked
++ * here — the SDK manages its own discovery lifecycle, and
++ * changes to server-side data flow to the workbench via separate
++ * event fires (post-materialize, post-rebind).
++ *
++ * On rebind throw the bit is left set — the SDK is still running
++ * with the previous plugin set, so the next sendMessage should
++ * retry.
++ */
++export class SessionClientCustomizationsDiff extends Disposable {
++
++	readonly model: SessionClientCustomizationsModel = new SessionClientCustomizationsModel();
++
++	private _dirty = false;
++	// `autorun` invokes its callback once at registration for dependency
++	// tracking. Skip that initial run so a brand-new diff doesn't
++	// report dirty before any mutation has happened.
++	private _ignoreNextFire = true;
++
++	/**
++	 * Outward fire-and-forget signal that the underlying state
++	 * changed. Derived from the observable so external listeners
++	 * (e.g. agent-level event aggregation) don't have to subscribe to
++	 * the observable directly.
++	 */
++	readonly onDidChange: Event<void> = Event.fromObservableLight(this.model.state);
++
++	constructor() {
++		super();
++		this._register(autorun(reader => {
++			this.model.state.read(reader);
++			if (this._ignoreNextFire) {
++				this._ignoreNextFire = false;
++				return;
++			}
++			this._dirty = true;
++		}));
++	}
++
++	get hasDifference(): boolean {
++		return this._dirty;
++	}
++
++	/**
++	 * Read the resolved enabled plugin paths and mark the current
++	 * snapshot as applied. A subsequent write that changes any
++	 * meaningful field re-flips dirty via the autorun. If the caller's
++	 * downstream work (e.g. SDK rebind) fails, call {@link markDirty}
++	 * to surface the stale state.
++	 */
++	consume(): readonly URI[] {
++		const paths = this.model.enabledPluginPaths.get();
++		this._dirty = false;
++		return paths;
++	}
++
++	/**
++	 * Force the dirty bit on. Use when async work that followed
++	 * {@link consume} failed and the SDK is therefore still on the
++	 * previous plugin set.
++	 */
++	markDirty(): void {
++		this._dirty = true;
++	}
++}
++
++function stateEqual(a: ISessionCustomizationsState, b: ISessionCustomizationsState): boolean {
++	return syncedListEqual(a.synced, b.synced) && enablementEqual(a.enablement, b.enablement);
++}
++
++function syncedListEqual(a: readonly ISyncedCustomization[], b: readonly ISyncedCustomization[]): boolean {
++	if (a.length !== b.length) {
++		return false;
++	}
++	for (let i = 0; i < a.length; i++) {
++		const ai = a[i].customization;
++		const bi = b[i].customization;
++		if (ai.customization.uri.toString() !== bi.customization.uri.toString()) {
++			return false;
++		}
++		if (ai.customization.nonce !== bi.customization.nonce) {
++			return false;
++		}
++		if (ai.customization.displayName !== bi.customization.displayName) {
++			return false;
++		}
++		if (ai.customization.description !== bi.customization.description) {
++			return false;
++		}
++		if (ai.enabled !== bi.enabled) {
++			return false;
++		}
++		if (ai.status !== bi.status) {
++			return false;
++		}
++		if (ai.statusMessage !== bi.statusMessage) {
++			return false;
++		}
++		if (!agentsEqual(ai.agents, bi.agents)) {
++			return false;
++		}
++		if (a[i].pluginDir?.toString() !== b[i].pluginDir?.toString()) {
++			return false;
++		}
++	}
++	return true;
++}
++
++function agentsEqual(a: readonly { name: string }[] | undefined, b: readonly { name: string }[] | undefined): boolean {
++	if (a === b) {
++		return true;
++	}
++	if (!a || !b || a.length !== b.length) {
++		return false;
++	}
++	for (let i = 0; i < a.length; i++) {
++		if (a[i].name !== b[i].name) {
++			return false;
++		}
++	}
++	return true;
++}
++
++function enablementEqual(a: ReadonlyMap<string, boolean>, b: ReadonlyMap<string, boolean>): boolean {
++	if (a.size !== b.size) {
++		return false;
++	}
++	for (const [k, v] of a) {
++		if (b.get(k) !== v) {
++			return false;
++		}
++	}
++	return true;
++}
+diff --git a/src/vs/platform/agentHost/node/claude/customizations/claudeSessionCustomizationsProjector.ts b/src/vs/platform/agentHost/node/claude/customizations/claudeSessionCustomizationsProjector.ts
+new file mode 100644
+index 0000000000000..ca2c3e65e52e7
+--- /dev/null
++++ b/src/vs/platform/agentHost/node/claude/customizations/claudeSessionCustomizationsProjector.ts
+@@ -0,0 +1,40 @@
++/*---------------------------------------------------------------------------------------------
++ *  Copyright (c) Microsoft Corporation. All rights reserved.
++ *  Licensed under the MIT License. See License.txt in the project root for license information.
++ *--------------------------------------------------------------------------------------------*/
++
++import type { ISyncedCustomization } from '../../../common/agentPluginManager.js';
++import type { SessionCustomization } from '../../../common/state/protocol/state.js';
++
++/**
++ * Project the union of (a) client-pushed customizations and
++ * (b) the on-disk discovery bundle (server-provided) onto the
++ * protocol's {@link SessionCustomization} surface.
++ *
++ * Client-pushed entries get the per-URI enablement overlay applied
++ * (`enablement.get(uri) ?? customization.enabled`). The discovery
++ * bundle is surfaced verbatim — it is a single synthetic plugin URI
++ * pointing at an on-disk Open Plugin layout (`agents/`, `skills/`,
++ * `commands/`, `rules/`) the workbench's plugin expander scans to
++ * emit per-type child items. Per-file enablement happens
++ * workbench-side; we surface only the bundle URI.
++ */
++export function projectSessionCustomizations(
++	synced: readonly ISyncedCustomization[],
++	enablement: ReadonlyMap<string, boolean>,
++	discovered: SessionCustomization | undefined,
++): readonly SessionCustomization[] {
++	const result: SessionCustomization[] = [];
++
++	for (const item of synced) {
++		const uri = item.customization.customization.uri.toString();
++		const enabled = enablement.get(uri) ?? item.customization.enabled;
++		result.push({ ...item.customization, enabled });
++	}
++
++	if (discovered) {
++		result.push(discovered);
++	}
++
++	return result;
++}
+diff --git a/src/vs/platform/agentHost/node/claude/phase11-plan.md b/src/vs/platform/agentHost/node/claude/phase11-plan.md
+new file mode 100644
+index 0000000000000..d34029fbbc589
+--- /dev/null
++++ b/src/vs/platform/agentHost/node/claude/phase11-plan.md
+@@ -0,0 +1,168 @@
++# Phase 11 — Customizations / Plugins (full surface)
++
++> Generated by super-planner. Source: `roadmap.md` (phase 11).
++> Last updated: 2026-05-21 after council-plan (GPT-5.5 + Claude Opus 4.6;
++> Codex returned a network error — 2-agent council) and structural
++> revision: per-session ownership mirroring `clientTools/`. No
++> provider-wide controller.
++
++**Status:** done (steps 1–7 implemented; full agentHost suite passes 1849/1849; tsgo clean)
++
++## Goal
++
++Wire customizations (skills + plugins) end-to-end for the Claude provider so the workbench can sync, enable, and toggle customizations against a live Claude session with the same `IAgent` surface CopilotAgent already implements. The session must accept the synced plugin paths at startup, hot-reload them between turns when possible, and only fall back to a yield-restart when the SDK-visible tool set actually diverges. Customization state lives on the session, mirroring how client tools are held.
++
++## Scope
++
++**In scope**
++
++- Replace the `TODO: Phase 11` throws in `ClaudeAgent.setClientCustomizations` and `ClaudeAgent.setCustomizationEnabled`.
++- Add the outbound surface: `onDidCustomizationsChange`, `getCustomizations()`, `getSessionCustomizations(session)`.
++- Add a `plugins` input on `IBuildOptionsInput` so `buildOptions()` projects it into `Options.plugins`.
++- **All per-session customization state — synced set, enablement map, resolved plugin paths, dirty bit — owned by `ClaudeAgentSession`**, in a new `customizations/` folder parallel to `clientTools/`.
++- Defer-and-coalesce reload at the session's `send()` pre-flight via `Query.reloadPlugins()`.
++- Tool-set divergence detection that escalates to `rebindForRestart()` only when the SDK-visible tool name set actually changes.
++- Mid-turn-race semantics: a sync or toggle that lands during a live `sendMessage` is visible on the next yield boundary, never mutating the current turn.
++
++**Out of scope**
++
++- `IAgent` API shape changes — the protocol surface is fixed.
++- A provider-wide `ClaudePluginController` class. Per the session-owned-state intent, each session is responsible for its own customizations, mirroring how `SessionClientToolsDiff` works for client tools.
++- Workbench / customizations editor UI changes.
++- SDK `initializationResult()` as a probe for `available_plugins` — useful diagnostic, not required for correctness; defer.
++- Session-discovered (on-disk) customizations (Copilot's `SessionDiscoveredEntry` pattern). Future phase.
++- Hot-swapping customizations mid-turn. SDK has no mid-turn `reloadPlugins` contract; the yield boundary is the only safe point.
++
++## Prerequisites
++
++- Phase 10 yield-restart primitive (`SessionClientToolsDiff` + `ClaudeAgentSession.rebindForClientTools()` + `ClaudeSdkPipeline.rebindForRestart()`) is the structural reference for both the per-session ownership pattern AND the restart fallback path.
++- Phase 10.5 collapsed materialization into `ClaudeAgentSession.materialize(ctx)`; the session is the natural owner of per-session customization state and the place to drain pending reloads.
++- `IAgentPluginManager` DI singleton exists at `src/vs/platform/agentHost/common/agentPluginManager.ts` and ships `syncCustomizations(clientId, customizations, progress?)`. Injected into the session via DI (not the agent), same way `IClaudeAgentSdkService` is injected into the session today.
++- SDK `Query.reloadPlugins()`, `Query.supportedCommands()`, and `Options.plugins` are available on the pinned `@anthropic-ai/claude-agent-sdk` version.
++- Workspace E2E skills available: `launch` (Playwright/CDP), `code-oss-logs`, `chat-customizations-editor`.
++
++## Approach
++
++Mirror the `clientTools/` pattern exactly. Add a sibling `customizations/` folder under `node/claude/` containing one collaborator — `SessionCustomizationsDiff` (parallel to `SessionClientToolsDiff`) — that lives on `ClaudeAgentSession` and owns: the session's synced `ISyncedCustomization[]` snapshot, the per-URI enablement map for this session, the resolved enabled local plugin paths, and a `dirty` reload flag. `ClaudeAgent` becomes a thin dispatcher: `setClientCustomizations` looks up the session and calls `session.setClientCustomizations(clientId, customizations, progress?)`; `setCustomizationEnabled` walks `_sessions` and calls `session.setCustomizationEnabled(uri, enabled)` on each. The session does the real work — sync via injected `IAgentPluginManager`, update its own enablement map, resolve enabled plugin paths, flip its own dirty bit, and fire its `onDidCustomizationsChange` event which the agent forwards through `onDidSessionProgress` (same forwarding pattern Phase 10.5 uses for `onDidSessionProgress`). `claudeSdkOptions.buildOptions` gains a `plugins` field; the session passes its own resolved paths into materialize and the rematerializer. `setCustomizationEnabled` flips the session's dirty bit; the next `send()` pre-flight runs the reload-and-compare sequence (same position as today's `toolDiff.hasDifference` check). `Query.reloadPlugins()` is the hot path; if the SDK's tool name set diverges across the reload, the session falls back to `rebindForRestart()`. The agent-level `_sessionSequencer` already serializes the toggle's effect with `sendMessage` because the reload drains from inside `send()`.
++
++## Steps
++
++1. **Add `SessionCustomizationsDiff` collaborator under a new `customizations/` folder.** Mirrors `clientTools/claudeSessionClientToolsModel.ts` shape. Owns: `syncedCustomizations: readonly ISyncedCustomization[]`, `enablement: Map<string, boolean>` (per-session), `resolveEnabledPluginPaths(): readonly URI[]` (derived view used at materialize/reload), `consume(): readonly URI[]` (clears dirty + returns current paths), and `onDidChange: Event<void>` fired on any state mutation.
++   - Files: `src/vs/platform/agentHost/node/claude/customizations/claudeSessionCustomizationsModel.ts` (new)
++   - Depends on: none
++   - Done when: model compiles with no SDK dependencies; unit tests cover sync update, enablement toggle, dirty lifecycle, event firing.
++
++2. **Add `plugins` field to `IBuildOptionsInput` and project to `Options.plugins`.** Update materialize + rematerializer call sites in the session to pass `session.customizationsDiff.consume()` so plugins are baked into SDK options on both fresh startup and yield-restart.
++   - Files: `src/vs/platform/agentHost/node/claude/claudeSdkOptions.ts`, `src/vs/platform/agentHost/node/claude/claudeAgentSession.ts`
++   - Depends on: step 1
++   - Done when: with non-empty enabled paths, `buildOptions` returns `Options.plugins` as `Record<name, { type: 'local', path }>`; empty omits the field; both materialize and the rematerializer closure pass the current snapshot.
++
++3. **Expose `reloadPlugins` + tool-name snapshot on the pipeline.** Narrow public method `reloadPluginsAndSnapshot(): Promise<ReadonlySet<string>>` that wraps `Query.reloadPlugins()` + reads the tool-name set (reload result or `Query.supportedCommands()` fallback) and returns the normalized snapshot.
++   - Files: `src/vs/platform/agentHost/node/claude/claudeSdkPipeline.ts`
++   - Depends on: none
++   - Done when: a unit test against the fake `Query` verifies `reloadPlugins` is called and the returned set matches the SDK's reported tool names.
++
++4. **Wire customizations onto the session.** Inject `IAgentPluginManager` into `ClaudeAgentSession` via DI (same pattern as `IClaudeAgentSdkService` after Phase 10.5). Add public methods:
++   - `setClientCustomizations(clientId, customizations, progress?): Promise<ISyncedCustomization[]>` — calls `pluginManager.syncCustomizations`, updates `customizationsDiff.syncedCustomizations`, returns the synced set.
++   - `setCustomizationEnabled(uri, enabled): void` — flips the per-session enablement bit; the diff recomputes enabled paths and flips dirty.
++   - `getCustomizations(): readonly ISyncedCustomization[]` — returns `customizationsDiff.syncedCustomizations`.
++   - `onDidCustomizationsChange: Event<void>` — forwards `customizationsDiff.onDidChange`.
++   - Files: `src/vs/platform/agentHost/node/claude/claudeAgentSession.ts`
++   - Depends on: step 1
++   - Done when: session compiles with the new DI dep; unit test exercises sync to enable to toggle round-trip directly on a session instance.
++
++5. **`ClaudeAgent` becomes a thin dispatcher.** Replace the four customization stubs with one-line delegations:
++   - `setClientCustomizations(session, clientId, customizations)` looks up the session via `_findAnySession(id)`, constructs a progress callback that forwards each item via `_onDidSessionProgress.fire(SessionCustomizationUpdated)`, and awaits `session.setClientCustomizations(clientId, customizations, progress)`.
++   - `setCustomizationEnabled(uri, enabled)` walks `_sessions.values()` and calls `entry.session.setCustomizationEnabled(uri, enabled)`.
++   - `getCustomizations()` aggregates the union of `session.getCustomizations()` across `_sessions.values()`, deduped by URI.
++   - `getSessionCustomizations(session)` returns `_findAnySession(id)?.getCustomizations() ?? []` (works for provisional sessions since the diff exists from `createProvisional` onward).
++   - `onDidCustomizationsChange` is an aggregated event fired when any session's `onDidCustomizationsChange` fires (subscribed via the existing `entry.addDisposable(...)` pattern that already wires per-session signals).
++   - Files: `src/vs/platform/agentHost/node/claude/claudeAgent.ts`
++   - Depends on: step 4
++   - Done when: all four outbound and two inbound surfaces work end-to-end; the `Phase 11` throws are gone.
++
++6. **Drain pending reload at `send()` pre-flight.** Inside `ClaudeAgentSession.send()`, run AFTER the existing `toolDiff.hasDifference` check: if `customizationsDiff.dirty`, capture the pre-reload tool-name snapshot from the pipeline, call `pipeline.reloadPluginsAndSnapshot()`, compare sets. If they differ, await `rebindForClientTools()` (reuse the existing restart path; the rebuild reads fresh `customizationsDiff.consume()` paths). Otherwise clear the dirty bit and continue.
++   - Files: `src/vs/platform/agentHost/node/claude/claudeAgentSession.ts`, `src/vs/platform/agentHost/node/claude/claudeSdkPipeline.ts`
++   - Depends on: steps 1, 3, 4
++   - Done when: enabling/disabling a customization without changing the tool surface triggers exactly one `reloadPlugins` and zero new `sdk.startup` calls; a toggle that adds a new tool triggers one `reloadPlugins` then one `rebindForRestart` (one additional `sdk.startup`).
++
++7. **Tests.**
++   - Files: `src/vs/platform/agentHost/test/node/customizations/claudeSessionCustomizationsModel.test.ts` (new), `src/vs/platform/agentHost/test/node/claudeAgent.test.ts` (new describe block), `src/vs/platform/agentHost/test/node/claudeSdkOptions.test.ts` (plugins field).
++   - Depends on: step 6
++   - Done when: model unit tests pass; agent tests cover `setClientCustomizations` action publishing, reload-no-restart vs reload-then-restart, provisional-session resolution, mid-turn race; options test confirms `plugins` projection.
++
++## Files to Modify or Create
++
++| Path | Change | Notes |
++|------|--------|-------|
++| `src/vs/platform/agentHost/node/claude/customizations/claudeSessionCustomizationsModel.ts` | create | Per-session synced + enablement state, parallel to `clientTools/claudeSessionClientToolsModel.ts` |
++| `src/vs/platform/agentHost/node/claude/claudeAgentSession.ts` | modify | Inject `IAgentPluginManager`; own `customizationsDiff`; implement `setClientCustomizations` / `setCustomizationEnabled` / `getCustomizations` / `onDidCustomizationsChange`; drain pending reload at `send()` pre-flight; pass plugins into materialize/rematerializer |
++| `src/vs/platform/agentHost/node/claude/claudeAgent.ts` | modify | Replace Phase 11 throws with thin delegations to the session; aggregate outbound surface |
++| `src/vs/platform/agentHost/node/claude/claudeSdkOptions.ts` | modify | `IBuildOptionsInput.plugins`; project to `Options.plugins` |
++| `src/vs/platform/agentHost/node/claude/claudeSdkPipeline.ts` | modify | Public `reloadPluginsAndSnapshot()` + tool-name snapshot helper |
++| `src/vs/platform/agentHost/test/node/customizations/claudeSessionCustomizationsModel.test.ts` | create | Model unit tests |
++| `src/vs/platform/agentHost/test/node/claudeAgent.test.ts` | modify | `setClientCustomizations` action publishing; reload-no-restart vs reload-then-restart; provisional and mid-turn |
++| `src/vs/platform/agentHost/test/node/claudeSdkOptions.test.ts` | modify | `plugins` projection into `Options.plugins` |
++| `src/vs/platform/agentHost/test/node/claudeSdkPipeline.test.ts` | modify | `reloadPluginsAndSnapshot` round-trip |
++
++## Decisions
++
++- **State location.** Both synced customizations AND enablement live on `ClaudeAgentSession` via `SessionCustomizationsDiff`. No provider-wide controller class. Mirrors how client tools are held on the session. Each session is responsible for its own customizations, matching the new architectural direction.
++- **`ClaudeAgent` role.** Thin dispatcher only. Looks up the target session by id and delegates. Aggregates outbound events / lists by iterating `_sessions`. The agent never holds customization state itself.
++- **Folder layout.** New `src/vs/platform/agentHost/node/claude/customizations/` folder parallels the existing `clientTools/` folder. One file (`claudeSessionCustomizationsModel.ts`); add more as needs emerge.
++- **Tool-set divergence detection.** Compare normalized `Set<string>` of tool names captured pre-reload vs the SDK's reported set post-reload. Stricter than the reference extension's request-time snapshot comparison and observes actual SDK state. Fallback to `Query.supportedCommands()` if `reloadPlugins` stops returning tool metadata on a future SDK version.
++- **Provisional sessions.** `customizationsDiff` exists from `ClaudeAgentSession.createProvisional()` onward, so `getCustomizations()` and `setClientCustomizations`/`setCustomizationEnabled` work uniformly before and after materialize. No special-case branching on `isPipelineReady`.
++- **No dedicated sequencer for `setCustomizationEnabled`.** The enablement write is synchronous on the session; the SDK side effect drains inside `send()` pre-flight, which already runs under the per-session sequencer. Rapid toggles coalesce naturally — only the final enablement state matters at the next send.
++- **SDK `initializationResult()` for `available_plugins`.** Not wired. `reloadPlugins` provides the same info at toggle time. Deferred as a di
++agnostic.
++- **Mid-turn-race semantics.** A sync or toggle that lands while a `sendMessage` is in flight does NOT mutate the current turn. The sync writes plugin files to disk and updates the session's diff; the toggle flips the session's enablement bit and dirty flag. The current turn keeps running with whatever plugin set the SDK already has. The next `send()` pre-flight observes the dirty bit and performs reload (or restart). Matches CONTEXT.md §M11's "no mid-turn mutation path" invariant.
++
++## Risks
++
++- **`Query.reloadPlugins()` undocumented mid-turn behavior** — mitigated by only ever calling it at the yield boundary inside `send()` pre-flight (never mid-turn).
++- **SDK version variance in `reloadPlugins` return shape** — mitigated by isolating the tool-name normalization inside `claudeSdkPipeline.reloadPluginsAndSnapshot()` with a `Query.supportedCommands()` fallback. Unit test pins both shapes.
++- **Race: sync completes during in-flight materialize** — mitigated by reading plugin paths from `session.customizationsDiff.consume()` inside `buildOptions` call sites, not capturing them earlier.
++- **Restart-vs-reload classification regresses to always-restart** — mitigated by an explicit unit test that an enablement toggle on a plugin that contributes no new tools issues `reloadPlugins` only (zero `sdk.startup` count change).
++- **Per-session enablement state diverges across sessions** — accepted by design. Each session owns its own enablement; the workbench is responsible for broadcasting toggles to every session it cares about by calling `setCustomizationEnabled(uri, enabled)`, which the agent fans out to all `_sessions`.
++
++## Verification
++
++### Unit / Integration
++
++- Unit suite per step:
++  - `./scripts/test.sh --runGlob "**/agentHost/test/**/*.test.js"`
++- Targeted Phase 11 cases:
++  - Model: sync round-trip, enable/disable toggle fires `onDidChange`, `resolveEnabledPluginPaths()` shape, `consume()` clears dirty.
++  - Options: `plugins` non-empty -> `Options.plugins` projection; empty -> field omitted.
++  - Pipeline: `reloadPluginsAndSnapshot` returns the SDK's tool names with both result-shape and `supportedCommands()` fallback paths.
++  - Session: direct `setClientCustomizations` then `setCustomizationEnabled` then read-back via `getCustomizations()`; mid-turn toggle does not mutate in-flight turn; `send()` pre-flight drains pending reload when dirty.
++  - Agent: thin dispatcher correctness — `setClientCustomizations` forwards progress as `SessionCustomizationUpdated` actions; `setCustomizationEnabled` fans out to all `_sessions`; `getCustomizations()` aggregates dedup by URI.
++
++### E2E
++
++- **Launch skill**: `launch` — Playwright/CDP automation of `./scripts/code.sh --agents`.
++- **Log skill**: `code-oss-logs` — read `agenthost.log` and per-session log.
++- **Customizations UI skill**: `chat-customizations-editor` — domain expert on the customizations editor surface.
++- **Scenario**:
++  1. Launch Code OSS with `--agents`; open a Claude session under `Local Agent Host`.
++  2. From the chat-customizations editor, add a customization with a simple skill plugin; send a turn that uses the skill; confirm via `code-oss-logs` that `agenthost.log` shows `[Claude] session ...: enableFileCheckpointing=true isResume=false` followed by a successful turn that references the plugin.
++  3. Disable the same customization; send another turn; confirm logs show `Query.reloadPlugins` (no `resume rebuild`).
++  4. Add a customization that contributes a new tool; send a turn; confirm logs show `Query.reloadPlugins` followed by `resume rebuild` (one tool-divergence restart).
++  5. Confirm dirty bit clears (no spurious second reload) and no Claude subprocess leaks (`ps aux | grep claude | grep -v grep`).
++
++### Manual
++
++- If the customization picker has UI affordances that the `launch` skill cannot reliably drive (Monaco-focus issues seen in Phase 10.5 E2E), document manual click-through with screenshots into `/tmp/code-oss-screenshots/<timestamp>/` and confirm each scenario above.
++
++## Open Questions
++
++None.
++
++## References
++
++- Roadmap: `./roadmap.md` (Phase 11)
++- Context: `./CONTEXT.md` §M6 (Customizations cluster), §M11 (hot-swap / defer-and-coalesce / restart-required taxonomy)
++- Prior plan: `./phase10.5-plan.md` (per-session ownership pattern + yield-restart primitive)
++- Reference extension: `extensions/copilot/src/extension/chatSessions/claude/node/claudeCodeAgent.ts` — `_pendingPluginReload`, `_toolsMatch`, `_setCustomizations`, `_loadPlugins`, `_destroyAndRecreateQuery`
++- CopilotAgent for IAgent surface shape only: `src/vs/platform/agentHost/node/copilot/copilotAgent.ts` lines 311, 315, 998, 1026 (note: Copilot uses a provider-wide `PluginController`; Claude deliberately diverges to per-session ownership)
++- E2E skills used: `launch`, `code-oss-logs`, `chat-customizations-editor`
+diff --git a/src/vs/platform/agentHost/node/claude/roadmap.md b/src/vs/platform/agentHost/node/claude/roadmap.md
+index 7bcdc4e28b925..f5177d2772574 100644
+--- a/src/vs/platform/agentHost/node/claude/roadmap.md
++++ b/src/vs/platform/agentHost/node/claude/roadmap.md
+@@ -97,7 +97,7 @@ Phase numbers are stable identifiers — code comments, plan files
+ do **not** renumber. The actual landing order diverges from numeric order
+ to unblock self-hosting sooner:
+ 
+-**1 → 1.5 → 2 → 3 → 4 → 5 → 6 → 9 → 13 → 7 → 8 → 10 → 10.5 → 11 → 12 → 6.5 → 14 → 15**
++**1 → 1.5 → 2 → 3 → 4 → 5 → 6 → 9 → 13 → 7 → 8 → 10 → 10.5 → 11 → 12 → 6.5 → 14 → 15 → 16**
+ 
+ Phase 13 (session restoration) is pulled forward immediately after Phase 9
+ because it unlocks two high-leverage capabilities:
+@@ -1322,6 +1322,91 @@ Exit criteria: a fresh VS Code install can use the Claude agent without
+ manually installing the SDK or setting any path. SDK upgrades arrive as
+ marketplace extension updates.
+ 
++### Phase 16 — Eager session materialization at create time
++
++**Status:** follow-up to Phase 11. Phase 11's
++`getProjectedSessionCustomizations` already returns the SDK-resolved
++customization tier when the pipeline is bound, but for provisional
++sessions it returns only the client-pushed half. The full picture —
++SDK-discovered skills (`~/.claude/skills/**`), agents (`.claude/agents/**`),
++and `~/.claude/settings.json` MCP servers — only materializes after the
++first `sendMessage`. Workbench UX wants the full list available
++immediately on `createSession` so a draft session can show its true
++capability surface before the user types.
++
++**Direction:** collapse the provisional/materialize split for the
++non-fork `createSession` path. `createSession` synchronously
++materializes (spawns the SDK subprocess, opens the proxy refcount,
++runs the metadata write, fires `onDidMaterializeSession`) before
++returning.
++
++**Why this is its own phase, not part of Phase 11.** Phase 11's
++projector and SDK snapshot work stand on their own — they make
++`getSessionCustomizations` correct *whenever* the pipeline is bound.
++The eager-materialize change rewrites the M9 lifecycle contract,
++touches the `_sessionSequencer`'s first-send branch, changes
++disposable semantics for never-used sessions, and updates CONTEXT.md.
++Coupling the two would inflate Phase 11's blast radius for no review
++benefit; landing them serially keeps each change small.
++
++**Scope:**
++
++- `ClaudeAgent.createSession` calls `_materializeProvisional(sessionId)`
++  synchronously before returning. Return value's `provisional` flag is
++  either dropped or redefined ("no on-disk transcript yet" rather than
++  "no SDK" — settle in the plan).
++- `_sessionSequencer`'s "first call materializes" branch in
++  `sendMessage` is removed; every reachable session has a live pipeline.
++- `disposeSession` for a never-sent session now tears down a live
++  subprocess (the existing teardown handles it but is no longer free —
++  audit cost).
++- Fork path (Phase 6.5, when it lands) already materializes synchronously
++  on `forkSession` return — semantics align naturally.
++- CONTEXT.md M9: revise the "Provisional sessions own no SDK
++  resources" invariant; relax the "two-phase contract is locked"
++  framing; update the lifecycle tables to reflect "creation is the
++  materialize trigger". Phase 16 owns the doc update.
++- Tests that exercise the provisional → first-send materialize race
++  (Phase 10.5 regression coverage, Phase 11 mid-turn toggle race)
++  reworked against the new contract.
++- `getSessionCustomizations` for a freshly-created session now returns
++  the full SDK-resolved + client-pushed projection without waiting on
++  a send.
++
++**Trade-offs accepted (documented for posterity):**
++
++- Drafting is no longer free — every `createSession` pays a subprocess
++  spawn, plugin sync, proxy refcount, and metadata write.
++- A draft the user cancels without sending costs the same as a session
++  that runs a turn (minus the actual model call).
++- The two-phase model (provisional → materialized) collapses into a
++  single phase for non-fork creation. Fork already materializes
++  eagerly; this aligns the two paths.
++
++**Open design points** (settle in the phase plan when scheduled):
++
++- Does `IAgentCreateSessionResult.provisional` get dropped, or
++  redefined to mean "no on-disk SDK transcript yet" (true until the
++  first message lands and the SDK persists)? Workbench callers may
++  rely on the flag for deferred-notification semantics.
++- `_onDidMaterializeSession` fires from inside `createSession`. The
++  service-layer deferred `sessionAdded` dispatch (`agentService.ts:412`)
++  must still see the event between the create and the visibility
++  window — verify ordering.
++- Failure modes: if materialization throws (proxy down, SDK install
++  broken), does `createSession` reject? Probably yes — the user has
++  no usable session anyway. Today's lazy path lets the failure surface
++  on first `sendMessage` instead; eager surfaces it earlier, which is
++  arguably better UX.
++- E2E coverage: a workbench scenario that creates a session and
++  inspects `getSessionCustomizations` *without* sending a message,
++  verifies the full SDK-resolved list is present.
++
++Exit criteria: `getSessionCustomizations(freshlyCreatedSession)`
++returns the full SDK + client-pushed projection synchronously after
++`createSession` resolves; M9 doc updated; Phase 10.5 / 11 race tests
++reworked and green.
++
+ ---
+ 
+ ## Open questions (to resolve as we go)
+diff --git a/src/vs/platform/agentHost/test/node/claudeAgent.integrationTest.ts b/src/vs/platform/agentHost/test/node/claudeAgent.integrationTest.ts
+index e70c6cee2e62f..3c2054aece261 100644
+--- a/src/vs/platform/agentHost/test/node/claudeAgent.integrationTest.ts
++++ b/src/vs/platform/agentHost/test/node/claudeAgent.integrationTest.ts
+@@ -45,13 +45,14 @@ import { InstantiationService } from '../../../instantiation/common/instantiatio
+ import { ILogService, NullLogService } from '../../../log/common/log.js';
+ import { type AgentSignal, GITHUB_COPILOT_PROTECTED_RESOURCE } from '../../common/agentService.js';
+ import { ActionType } from '../../common/state/sessionActions.js';
+-import { ResponsePartKind, ToolResultContentType } from '../../common/state/sessionState.js';
++import { ResponsePartKind, ToolResultContentType, type CustomizationRef } from '../../common/state/sessionState.js';
+ import { ISessionDataService } from '../../common/sessionDataService.js';
+ import { AgentConfigurationService, IAgentConfigurationService } from '../../node/agentConfigurationService.js';
+ import { AgentHostStateManager } from '../../node/agentHostStateManager.js';
+ import { IAgentHostGitService } from '../../node/agentHostGitService.js';
+ import { ClaudeAgent } from '../../node/claude/claudeAgent.js';
+ import { IClaudeAgentSdkService } from '../../node/claude/claudeAgentSdkService.js';
++import { IAgentPluginManager } from '../../common/agentPluginManager.js';
+ import { ClaudeProxyService, IClaudeProxyService } from '../../node/claude/claudeProxyService.js';
+ import { ICopilotApiService, type ICopilotApiServiceRequestOptions } from '../../node/shared/copilotApiService.js';
+ import { createNoopGitService, createSessionDataService } from '../common/sessionTestHelpers.js';
+@@ -576,6 +577,11 @@ suite('ClaudeAgent integration (proxy-backed)', function () {
+ 			[IClaudeProxyService, realProxy],
+ 			[ISessionDataService, createSessionDataService()],
+ 			[IClaudeAgentSdkService, sdk],
++			[IAgentPluginManager, {
++				_serviceBrand: undefined,
++				basePath: URI.from({ scheme: 'inmemory', path: '/agentPlugins' }),
++				async syncCustomizations(_clientId: string, _customizations: CustomizationRef[]) { return []; },
++			}],
+ 			[IAgentConfigurationService, configService],
+ 			[IAgentHostGitService, createNoopGitService()],
+ 		);
+@@ -700,6 +706,11 @@ suite('ClaudeAgent integration (proxy-backed)', function () {
+ 			[IClaudeProxyService, realProxy],
+ 			[ISessionDataService, createSessionDataService()],
+ 			[IClaudeAgentSdkService, sdk],
++			[IAgentPluginManager, {
++				_serviceBrand: undefined,
++				basePath: URI.from({ scheme: 'inmemory', path: '/agentPlugins' }),
++				async syncCustomizations(_clientId: string, _customizations: CustomizationRef[]) { return []; },
++			}],
+ 			[IAgentConfigurationService, configService],
+ 			[IAgentHostGitService, createNoopGitService()],
+ 		);
+@@ -753,6 +764,11 @@ suite('ClaudeAgent integration (proxy-backed)', function () {
+ 			[IClaudeProxyService, realProxy],
+ 			[ISessionDataService, createSessionDataService()],
+ 			[IClaudeAgentSdkService, sdk],
++			[IAgentPluginManager, {
++				_serviceBrand: undefined,
++				basePath: URI.from({ scheme: 'inmemory', path: '/agentPlugins' }),
++				async syncCustomizations(_clientId: string, _customizations: CustomizationRef[]) { return []; },
++			}],
+ 			[IAgentConfigurationService, configService],
+ 			[IAgentHostGitService, createNoopGitService()],
+ 		);
+diff --git a/src/vs/platform/agentHost/test/node/claudeAgent.test.ts b/src/vs/platform/agentHost/test/node/claudeAgent.test.ts
+index ab34f3c07821e..7e29c03d6f356 100644
+--- a/src/vs/platform/agentHost/test/node/claudeAgent.test.ts
++++ b/src/vs/platform/agentHost/test/node/claudeAgent.test.ts
+@@ -38,13 +38,14 @@ import { FileService } from '../../../files/common/fileService.js';
+ import { IAgentMaterializeSessionEvent, AgentSession, AgentSignal, GITHUB_COPILOT_PROTECTED_RESOURCE } from '../../common/agentService.js';
+ import { AgentFeedbackAttachmentDisplayKind } from '../../common/agentFeedbackAttachments.js';
+ import { ActionType } from '../../common/state/sessionActions.js';
+-import { MessageAttachmentKind, ResponsePartKind, SessionInputResponseKind, SessionStatus, ToolResultContentType, buildSubagentSessionUri } from '../../common/state/sessionState.js';
++import { MessageAttachmentKind, ResponsePartKind, SessionInputResponseKind, SessionStatus, ToolResultContentType, buildSubagentSessionUri, type CustomizationRef, type SessionCustomization } from '../../common/state/sessionState.js';
+ import { ISessionDataService } from '../../common/sessionDataService.js';
+ import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
+ import { ProtectedResourceMetadata, SessionInputAnswerState, SessionInputAnswerValueKind, ToolCallStatus, type SessionConfigState, type SessionInputRequest, type ToolDefinition } from '../../common/state/protocol/state.js';
+ import { IAgentHostGitService } from '../../node/agentHostGitService.js';
+ import { AgentConfigurationService, IAgentConfigurationService } from '../../node/agentConfigurationService.js';
+ import { AgentHostStateManager } from '../../node/agentHostStateManager.js';
++import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
+ import { ClaudeAgent } from '../../node/claude/claudeAgent.js';
+ import { ClaudeAgentSession } from '../../node/claude/claudeAgentSession.js';
+ import { ClaudeSessionMetadataStore } from '../../node/claude/claudeSessionMetadataStore.js';
+@@ -62,6 +63,31 @@ interface IStartCall {
+ 	readonly token: string;
+ }
+ 
++class FakeAgentPluginManager implements IAgentPluginManager {
++	declare readonly _serviceBrand: undefined;
++	readonly basePath = URI.from({ scheme: 'inmemory', path: '/agentPlugins' });
++
++	syncResult: readonly ISyncedCustomization[] | undefined;
++	syncCalls: { clientId: string; customizations: readonly CustomizationRef[] }[] = [];
++
++	async syncCustomizations(
++		clientId: string,
++		customizations: CustomizationRef[],
++		progress?: (status: SessionCustomization) => void,
++	): Promise<ISyncedCustomization[]> {
++		this.syncCalls.push({ clientId, customizations: [...customizations] });
++		if (this.syncResult) {
++			if (progress) {
++				for (const synced of this.syncResult) {
++					progress(synced.customization);
++				}
++			}
++			return [...this.syncResult];
++		}
++		return [];
++	}
++}
++
+ class FakeClaudeProxyService implements IClaudeProxyService {
+ 	declare readonly _serviceBrand: undefined;
+ 
+@@ -421,12 +447,29 @@ class FakeQuery implements AsyncGenerator<SDKMessage, void> {
+ 	setMaxThinkingTokens(): never { throw new Error('FakeQuery: setMaxThinkingTokens not modeled'); }
+ 	async applyFlagSettings(s: Settings): Promise<void> { this.recordedFlagSettings.push(s); }
+ 	initializationResult(): never { throw new Error('FakeQuery: initializationResult not modeled'); }
+-	supportedCommands(): never { throw new Error('FakeQuery: supportedCommands not modeled'); }
++
++	supportedCommands(): never {
++		return Promise.resolve([]) as never;
++	}
+ 	supportedModels(): never { throw new Error('FakeQuery: supportedModels not modeled'); }
+ 	supportedAgents(): never { throw new Error('FakeQuery: supportedAgents not modeled'); }
+ 	mcpServerStatus(): never { throw new Error('FakeQuery: mcpServerStatus not modeled'); }
+ 	getContextUsage(): never { throw new Error('FakeQuery: getContextUsage not modeled'); }
+-	reloadPlugins(): never { throw new Error('FakeQuery: reloadPlugins not modeled'); }
++	/** Phase 11 — programmable tool-name snapshot returned by `reloadPlugins()`. */
++	reloadPluginsResults: readonly string[][] = [];
++	reloadPluginsCallCount = 0;
++	reloadPlugins(): never {
++		this.reloadPluginsCallCount++;
++		const idx = Math.min(this.reloadPluginsCallCount - 1, this.reloadPluginsResults.length - 1);
++		const names = this.reloadPluginsResults[idx] ?? [];
++		return Promise.resolve({
++			commands: names.map(name => ({ name, description: '', argumentHint: '' })),
++			agents: [],
++			plugins: [],
++			mcpServers: [],
++			error_count: 0,
++		}) as never;
++	}
+ 	accountInfo(): never { throw new Error('FakeQuery: accountInfo not modeled'); }
+ 	rewindFiles(): never { throw new Error('FakeQuery: rewindFiles not modeled'); }
+ 	readFile(): never { throw new Error('FakeQuery: readFile not modeled'); }
+@@ -590,6 +633,7 @@ function createTestContext(
+ 		[IClaudeProxyService, proxy],
+ 		[ISessionDataService, sessionData],
+ 		[IClaudeAgentSdkService, sdk],
++		[IAgentPluginManager, new FakeAgentPluginManager()],
+ 		[IAgentHostGitService, createNoopGitService()],
+ 		[IAgentConfigurationService, configService],
+ 	);
+@@ -869,6 +913,7 @@ suite('ClaudeAgent', () => {
+ 			[IClaudeProxyService, proxy],
+ 			[ISessionDataService, createNullSessionDataService()],
+ 			[IClaudeAgentSdkService, new FakeClaudeAgentSdkService()],
++			[IAgentPluginManager, new FakeAgentPluginManager()],
+ 			[IAgentHostGitService, createNoopGitService()],
+ 		);
+ 		const instantiationService: IInstantiationService = disposables.add(new InstantiationService(services));
+@@ -930,6 +975,7 @@ suite('ClaudeAgent', () => {
+ 			[IClaudeProxyService, proxy],
+ 			[ISessionDataService, createNullSessionDataService()],
+ 			[IClaudeAgentSdkService, new FakeClaudeAgentSdkService()],
++			[IAgentPluginManager, new FakeAgentPluginManager()],
+ 		);
+ 		const instantiationService: IInstantiationService = disposables.add(new InstantiationService(services));
+ 		const agent = instantiationService.createInstance(ClaudeAgent);
+@@ -996,6 +1042,7 @@ suite('ClaudeAgent', () => {
+ 			[IClaudeProxyService, proxy],
+ 			[ISessionDataService, createNullSessionDataService()],
+ 			[IClaudeAgentSdkService, new FakeClaudeAgentSdkService()],
++			[IAgentPluginManager, new FakeAgentPluginManager()],
+ 		);
+ 		const instantiationService: IInstantiationService = disposables.add(new InstantiationService(services));
+ 		const agent = disposables.add(instantiationService.createInstance(ClaudeAgent));
+@@ -1927,6 +1974,7 @@ suite('ClaudeAgent', () => {
+ 			[IClaudeProxyService, proxy],
+ 			[ISessionDataService, sessionData],
+ 			[IClaudeAgentSdkService, sdk],
++			[IAgentPluginManager, new FakeAgentPluginManager()],
+ 			[IAgentHostGitService, createNoopGitService()],
+ 			[IAgentConfigurationService, configService],
+ 		);
+@@ -2525,6 +2573,7 @@ suite('ClaudeAgent', () => {
+ 			[IClaudeProxyService, new FakeClaudeProxyService()],
+ 			[ISessionDataService, sessionData],
+ 			[IClaudeAgentSdkService, sdk],
++			[IAgentPluginManager, new FakeAgentPluginManager()],
+ 		);
+ 		const instantiationService = disposables.add(new InstantiationService(services));
+ 		const agent = disposables.add(instantiationService.createInstance(ClaudeAgent));
+@@ -2594,6 +2643,7 @@ suite('ClaudeAgent', () => {
+ 			[IClaudeProxyService, new FakeClaudeProxyService()],
+ 			[ISessionDataService, sessionData],
+ 			[IClaudeAgentSdkService, sdk],
++			[IAgentPluginManager, new FakeAgentPluginManager()],
+ 		);
+ 		const instantiationService = disposables.add(new InstantiationService(services));
+ 		const agent = disposables.add(instantiationService.createInstance(ClaudeAgent));
+@@ -2676,6 +2726,7 @@ suite('ClaudeAgent', () => {
+ 			[IClaudeProxyService, new FakeClaudeProxyService()],
+ 			[ISessionDataService, createNullSessionDataService()],
+ 			[IClaudeAgentSdkService, sdk],
++			[IAgentPluginManager, new FakeAgentPluginManager()],
+ 		);
+ 		const instantiationService = disposables.add(new InstantiationService(services));
+ 		const agent = disposables.add(instantiationService.createInstance(ClaudeAgent));
+@@ -2721,6 +2772,7 @@ suite('ClaudeAgent', () => {
+ 			[IClaudeProxyService, new FakeClaudeProxyService()],
+ 			[ISessionDataService, sessionData],
+ 			[IClaudeAgentSdkService, sdk],
++			[IAgentPluginManager, new FakeAgentPluginManager()],
+ 		);
+ 		const instantiationService = disposables.add(new InstantiationService(services));
+ 		const agent = disposables.add(instantiationService.createInstance(ClaudeAgent));
+@@ -3025,6 +3077,7 @@ suite('ClaudeAgent', () => {
+ 			[IClaudeProxyService, new RecordingProxyService()],
+ 			[ISessionDataService, createNullSessionDataService()],
+ 			[IClaudeAgentSdkService, new FakeClaudeAgentSdkService()],
++			[IAgentPluginManager, new FakeAgentPluginManager()],
+ 		);
+ 		const instantiationService = disposables.add(new InstantiationService(services));
+ 		const agent = instantiationService.createInstance(ClaudeAgent);
+@@ -3074,6 +3127,7 @@ suite('ClaudeAgent', () => {
+ 			[IClaudeProxyService, proxy],
+ 			[ISessionDataService, sessionData],
+ 			[IClaudeAgentSdkService, sdk],
++			[IAgentPluginManager, new FakeAgentPluginManager()],
+ 			[IAgentHostGitService, createNoopGitService()],
+ 			[IAgentConfigurationService, configService],
+ 		);
+@@ -3427,6 +3481,7 @@ suite('ClaudeAgentSession (Phase 7 §3.2)', () => {
+ 			[ILogService, new NullLogService()],
+ 			[IAgentConfigurationService, fakeConfigService],
+ 			[IClaudeAgentSdkService, sdk],
++			[IAgentPluginManager, new FakeAgentPluginManager()],
+ 			[ISessionDataService, sessionData],
+ 		);
+ 		const instantiationService: IInstantiationService = disposables.add(new InstantiationService(services));
+@@ -4654,5 +4709,232 @@ suite('ClaudeAgent (Phase 13 — getSessionMessages)', () => {
+ 
+ // #endregion
+ 
++// #region Phase 11 — customizations / plugins
++
++suite('ClaudeAgent — Phase 11 customizations', () => {
++
++	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
++
++	function makeSyncedRef(uri: string, dir: string): ISyncedCustomization {
++		return {
++			customization: {
++				customization: { uri, displayName: uri },
++				enabled: true,
++			},
++			pluginDir: URI.file(dir),
++		};
++	}
++
++	function buildCtxWith(pluginManager: FakeAgentPluginManager): ITestContext {
++		const proxy = new FakeClaudeProxyService();
++		const api = new FakeCopilotApiService();
++		api.models = async () => [...ALL_MODELS];
++		const sdk = new FakeClaudeAgentSdkService();
++		const sessionData = new RecordingSessionDataService(createSessionDataService());
++		const logService = new NullLogService();
++		const stateManager = disposables.add(new AgentHostStateManager(logService));
++		const configService = disposables.add(new AgentConfigurationService(stateManager, logService));
++
++		const services = new ServiceCollection(
++			[ILogService, logService],
++			[ICopilotApiService, api],
++			[IClaudeProxyService, proxy],
++			[ISessionDataService, sessionData],
++			[IClaudeAgentSdkService, sdk],
++			[IAgentPluginManager, pluginManager],
++			[IAgentHostGitService, createNoopGitService()],
++			[IAgentConfigurationService, configService],
++		);
++		const instantiationService: IInstantiationService = disposables.add(new InstantiationService(services));
++		const agent = disposables.add(instantiationService.createInstance(ClaudeAgent));
++		return { agent, proxy, api, sdk, sessionData, stateManager, configService, instantiationService };
++	}
++
++	test('setClientCustomizations forwards each item as a SessionCustomizationUpdated action', async () => {
++		const pm = new FakeAgentPluginManager();
++		pm.syncResult = [makeSyncedRef('https://a', '/p/a'), makeSyncedRef('https://b', '/p/b')];
++		const { agent } = buildCtxWith(pm);
++
++		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
++		const created = await agent.createSession({ workingDirectory: URI.file('/work') });
++
++		const updates: { uri: string }[] = [];
++		disposables.add(agent.onDidSessionProgress(s => {
++			if (s.kind === 'action' && s.action.type === ActionType.SessionCustomizationUpdated) {
++				updates.push({ uri: s.action.customization.uri.toString() });
++			}
++		}));
++
++		const synced = await agent.setClientCustomizations(created.session, 'client-1', [
++			{ uri: 'https://a', displayName: 'A' },
++			{ uri: 'https://b', displayName: 'B' },
++		]);
++
++		assert.strictEqual(synced.length, 2);
++		assert.ok(updates.some(u => u === undefined ? false : u.uri.includes('a')), `expected an update for plugin a; got ${JSON.stringify(updates)}`);
++		assert.ok(updates.some(u => u === undefined ? false : u.uri.includes('b')), `expected an update for plugin b; got ${JSON.stringify(updates)}`);
++	});
++
++	test('setCustomizationEnabled fans out to every in-memory session', async () => {
++		const pm = new FakeAgentPluginManager();
++		const { agent } = buildCtxWith(pm);
++		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
++
++		const s1 = await agent.createSession({ session: AgentSession.uri('claude', 'a'), workingDirectory: URI.file('/work') });
++		const s2 = await agent.createSession({ session: AgentSession.uri('claude', 'b'), workingDirectory: URI.file('/work') });
++
++		pm.syncResult = [makeSyncedRef('https://shared', '/p/shared')];
++		await agent.setClientCustomizations(s1.session, 'c', [{ uri: 'https://shared', displayName: 'S' }]);
++		await agent.setClientCustomizations(s2.session, 'c', [{ uri: 'https://shared', displayName: 'S' }]);
++
++		// One fire per per-session diff change confirms fan-out.
++		let changes = 0;
++		disposables.add(agent.onDidCustomizationsChange(() => changes++));
++		agent.setCustomizationEnabled('https://shared', false);
++
++		assert.strictEqual(changes, 2);
++	});
++
++	test('getCustomizations returns [] — provider-level catalogue, not a cross-session aggregator', async () => {
++		const pm = new FakeAgentPluginManager();
++		const { agent } = buildCtxWith(pm);
++		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
++
++		const s1 = await agent.createSession({ session: AgentSession.uri('claude', 'one'), workingDirectory: URI.file('/work') });
++		const s2 = await agent.createSession({ session: AgentSession.uri('claude', 'two'), workingDirectory: URI.file('/work') });
++
++		pm.syncResult = [makeSyncedRef('https://shared', '/p/shared'), makeSyncedRef('https://a', '/p/a')];
++		await agent.setClientCustomizations(s1.session, 'c', []);
++		pm.syncResult = [makeSyncedRef('https://shared', '/p/shared'), makeSyncedRef('https://b', '/p/b')];
++		await agent.setClientCustomizations(s2.session, 'c', []);
++
++		// `IAgent.getCustomizations()` is the provider-level catalogue
++		// (host-configured), NOT an aggregator across sessions. Claude has
++		// no host-configured customizations today, so [] is the contract.
++		// Client-pushed refs flow through `getSessionCustomizations` instead.
++		assert.deepStrictEqual(agent.getCustomizations(), []);
++	});
++
++	test('getSessionCustomizations resolves against a provisional session', async () => {
++		const pm = new FakeAgentPluginManager();
++		pm.syncResult = [makeSyncedRef('https://a', '/p/a')];
++		const { agent } = buildCtxWith(pm);
++		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
++		const created = await agent.createSession({ workingDirectory: URI.file('/work') });
++		assert.strictEqual(created.provisional, true);
++
++		await agent.setClientCustomizations(created.session, 'c', [{ uri: 'https://a', displayName: 'A' }]);
++
++		const customizations = await agent.getSessionCustomizations!(created.session);
++		assert.strictEqual(customizations.length, 1);
++	});
++
++	test('send pre-flight: dirty customizations triggers a rebind (SDK plugin URI set is captured at startup, so any change must restart the Query)', async () => {
++		const pm = new FakeAgentPluginManager();
++		const ctx = buildCtxWith(pm);
++		const { agent, sdk } = ctx;
++		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
++		const created = await agent.createSession({ workingDirectory: URI.file('/work') });
++		const sessionId = AgentSession.id(created.session);
++
++		// Stage 2 turns and park the iterator after turn 1's `result` so
++		// `_query` stays bound (mirroring the "reuse query" pattern).
++		const advance = new DeferredPromise<void>();
++		sdk.queryAdvance = async (idx: number) => { if (idx === 2) { await advance.p; } };
++		sdk.nextQueryMessages = [
++			makeSystemInitMessage(sessionId), makeResultSuccess(sessionId),
++			makeSystemInitMessage(sessionId), makeResultSuccess(sessionId),
++		];
++		await agent.sendMessage(created.session, 'first', undefined, 'turn-1');
++		assert.strictEqual(sdk.startupCallCount, 1);
++
++		// Customization sync flips dirty; the next sendMessage's
++		// pre-flight rebinds so `Options.plugins` on the new Query
++		// includes the new path.
++		pm.syncResult = [makeSyncedRef('https://a', '/p/a')];
++		await agent.setClientCustomizations(created.session, 'c', [{ uri: 'https://a', displayName: 'A' }]);
++		const firstQuery = sdk.warmQueries[0].produced!;
++
++		const p2 = agent.sendMessage(created.session, 'second', undefined, 'turn-2');
++		await tick();
++		advance.complete();
++		await p2;
++
++		assert.deepStrictEqual({
++			reloadsOnFirstQuery: firstQuery.reloadPluginsCallCount,
++			startups: sdk.startupCallCount,
++			warmQueries: sdk.warmQueries.length,
++		}, { reloadsOnFirstQuery: 0, startups: 2, warmQueries: 2 });
++	});
++
++	test('mid-turn setCustomizationEnabled does not affect the in-flight send (race coverage)', async () => {
++		const pm = new FakeAgentPluginManager();
++		const ctx = buildCtxWith(pm);
++		const { agent, sdk } = ctx;
++		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
++		const created = await agent.createSession({ workingDirectory: URI.file('/work') });
++		const sessionId = AgentSession.id(created.session);
++
++		// Materialize, then drain the dirty bit from a customization
++		// sync so the pre-flight for the SECOND turn is clean.
++		sdk.nextQueryMessages = [
++			makeSystemInitMessage(sessionId), makeResultSuccess(sessionId),
++			makeSystemInitMessage(sessionId), makeResultSuccess(sessionId),
++		];
++		pm.syncResult = [makeSyncedRef('https://x', '/p/x')];
++		await agent.setClientCustomizations(created.session, 'c', [{ uri: 'https://x', displayName: 'X' }]);
++		await agent.sendMessage(created.session, 'first', undefined, 'turn-1');
++		const session = agent.getSessionForTesting(created.session)!;
++		// First-turn materialize consumed the dirty bit from the sync
++		// above (plugin path baked into `Options.plugins` of the
++		// startup `Query`), so the pre-flight for the second turn
++		// starts clean.
++		assert.strictEqual(session.clientCustomizationsDiff.hasDifference, false);
++
++		// Block the SECOND turn mid-iterator so a toggle can land while
++		// the SDK is mid-yield.
++		const gate = new DeferredPromise<void>();
++		sdk.queryAdvance = async (i: number) => { if (i === 2) { await gate.p; } };
++
++		const inflight = agent.sendMessage(created.session, 'second', undefined, 'turn-2');
++		await new Promise(r => setImmediate(r));
++
++		// Toggle a SYNCED customization during the in-flight turn. The
++		// diff flips dirty (state changed) but no SDK action drains
++		// during the current send — its pre-flight already passed.
++		const startupsBefore = sdk.startupCallCount;
++		agent.setCustomizationEnabled('https://x', false);
++		assert.strictEqual(session.clientCustomizationsDiff.hasDifference, true);
++		assert.strictEqual(sdk.startupCallCount, startupsBefore, 'no rebind during the in-flight turn');
++
++		gate.complete();
++		await inflight;
++	});
++
++	test('getSessionCustomizations swallows SDK snapshot failure and returns the client-pushed projection', async () => {
++		// `snapshotResolvedCustomizations` calls `supportedAgents()` and
++		// `mcpServerStatus()` in `Promise.all`; the FakeQuery throws on
++		// both. The session should warn-log and still return the
++		// client-pushed slice rather than blanking the UI.
++		const pm = new FakeAgentPluginManager();
++		pm.syncResult = [makeSyncedRef('https://a', '/p/a')];
++		const { agent, sdk } = buildCtxWith(pm);
++		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
++		const created = await agent.createSession({ workingDirectory: URI.file('/work') });
++		const sessionId = AgentSession.id(created.session);
++		sdk.nextQueryMessages = [makeSystemInitMessage(sessionId), makeResultSuccess(sessionId)];
++
++		await agent.setClientCustomizations(created.session, 'c', [{ uri: 'https://a', displayName: 'A' }]);
++		await agent.sendMessage(created.session, 'first', undefined, 'turn-1');
++
++		const customizations = await agent.getSessionCustomizations!(created.session);
++		assert.strictEqual(customizations.length, 1, 'client-pushed projection survives SDK snapshot failure');
++		assert.strictEqual(customizations[0].customization.uri, 'https://a');
++	});
++});
++
++// #endregion
++
++
+ 
+ 
+diff --git a/src/vs/platform/agentHost/test/node/claudeSdkOptions.test.ts b/src/vs/platform/agentHost/test/node/claudeSdkOptions.test.ts
+index 87d9a269de3fb..8ae44697fea3d 100644
+--- a/src/vs/platform/agentHost/test/node/claudeSdkOptions.test.ts
++++ b/src/vs/platform/agentHost/test/node/claudeSdkOptions.test.ts
+@@ -4,8 +4,10 @@
+  *--------------------------------------------------------------------------------------------*/
+ 
+ import assert from 'assert';
++import { URI } from '../../../../base/common/uri.js';
+ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
+-import { buildSubprocessEnv } from '../../node/claude/claudeSdkOptions.js';
++import { buildOptions, buildSubprocessEnv } from '../../node/claude/claudeSdkOptions.js';
++import type { IClaudeProxyHandle } from '../../node/claude/claudeProxyService.js';
+ 
+ suite('claudeSdkOptions / buildSubprocessEnv', () => {
+ 
+@@ -77,3 +79,51 @@ suite('claudeSdkOptions / buildSubprocessEnv', () => {
+ 		assert.strictEqual(env.ELECTRON_RUN_AS_NODE, '1');
+ 	});
+ });
++
++suite('claudeSdkOptions / buildOptions plugins projection', () => {
++
++	ensureNoDisposablesAreLeakedInTestSuite();
++
++	const proxyHandle: IClaudeProxyHandle = {
++		baseUrl: 'http://127.0.0.1:0',
++		nonce: 'n',
++		dispose: () => { },
++	};
++
++	function input(plugins: readonly URI[] | undefined) {
++		return {
++			sessionId: 's1',
++			workingDirectory: URI.file('/tmp/x'),
++			model: undefined,
++			abortController: new AbortController(),
++			permissionMode: 'default' as const,
++			canUseTool: async () => ({ behavior: 'allow' as const, updatedInput: {} }),
++			isResume: false,
++			mcpServers: undefined,
++			...(plugins !== undefined ? { plugins } : {}),
++		};
++	}
++
++	test('non-empty plugins project to Options.plugins as local entries', async () => {
++		const opts = await buildOptions(
++			input([URI.file('/p/a'), URI.file('/p/b')]),
++			proxyHandle,
++			() => { },
++			() => { },
++		);
++		assert.deepStrictEqual(opts.plugins, [
++			{ type: 'local', path: '/p/a' },
++			{ type: 'local', path: '/p/b' },
++		]);
++	});
++
++	test('empty plugins array omits Options.plugins', async () => {
++		const opts = await buildOptions(input([]), proxyHandle, () => { }, () => { });
++		assert.strictEqual(opts.plugins, undefined);
++	});
++
++	test('undefined plugins omits Options.plugins', async () => {
++		const opts = await buildOptions(input(undefined), proxyHandle, () => { }, () => { });
++		assert.strictEqual(opts.plugins, undefined);
++	});
++});
+diff --git a/src/vs/platform/agentHost/test/node/claudeSdkPipeline.test.ts b/src/vs/platform/agentHost/test/node/claudeSdkPipeline.test.ts
+index 53031b62fbbeb..59b4aa3d85c99 100644
+--- a/src/vs/platform/agentHost/test/node/claudeSdkPipeline.test.ts
++++ b/src/vs/platform/agentHost/test/node/claudeSdkPipeline.test.ts
+@@ -140,6 +140,52 @@ suite('ClaudeSdkPipeline', () => {
+ 
+ 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
+ 
++	suite('reloadPlugins', () => {
++
++		test('forwards to the SDK Query', async () => {
++			let reloadCallCount = 0;
++			class WarmWithReload extends FakeWarmQuery {
++				override query(_prompt: string | AsyncIterable<SDKUserMessage>): Query {
++					this.queryCallCount++;
++					const q = new ImmediatelyDoneQuery();
++					(q as unknown as { reloadPlugins: () => Promise<{ commands: { name: string }[] }> }).reloadPlugins =
++						async () => { reloadCallCount++; return { commands: [] }; };
++					return q;
++				}
++			}
++			const controller = new AbortController();
++			const warm = new WarmWithReload();
++			const fileService = disposables.add(new FileService(new NullLogService()));
++			const fs = disposables.add(new InMemoryFileSystemProvider());
++			disposables.add(fileService.registerProvider('file', fs));
++			const db = new TestSessionDatabase();
++			const dbRef: IReference<ISessionDatabase> = { object: db, dispose: () => { } };
++			const services = new ServiceCollection(
++				[ILogService, new NullLogService()],
++				[IFileService, fileService],
++				[IDiffComputeService, createZeroDiffComputeService()],
++			);
++			const inst: IInstantiationService = disposables.add(new InstantiationService(services));
++			const subagents = disposables.add(new SubagentRegistry());
++			const pipeline = disposables.add(inst.createInstance(
++				ClaudeSdkPipeline,
++				'sess-2',
++				URI.parse('claude:/sess-2'),
++				warm,
++				controller,
++				dbRef,
++				subagents,
++				undefined,
++			));
++			// Bind the query by issuing a send (iterator closes immediately).
++			pipeline.send(makePrompt('p1'), 'turn-A').catch(() => { /* expected */ });
++			await Promise.resolve();
++
++			await pipeline.reloadPlugins();
++			assert.strictEqual(reloadCallCount, 1);
++		});
++	});
++
+ 	suite('initial state', () => {
+ 
+ 		test('isResumed starts false and isAborted starts false', () => {
+diff --git a/src/vs/platform/agentHost/test/node/customizations/claudeSdkCustomizationBundler.test.ts b/src/vs/platform/agentHost/test/node/customizations/claudeSdkCustomizationBundler.test.ts
+new file mode 100644
+index 0000000000000..a81fd43c06e42
+--- /dev/null
++++ b/src/vs/platform/agentHost/test/node/customizations/claudeSdkCustomizationBundler.test.ts
+@@ -0,0 +1,167 @@
++/*---------------------------------------------------------------------------------------------
++ *  Copyright (c) Microsoft Corporation. All rights reserved.
++ *  Licensed under the MIT License. See License.txt in the project root for license information.
++ *--------------------------------------------------------------------------------------------*/
++
++import assert from 'assert';
++import { DisposableStore } from '../../../../../base/common/lifecycle.js';
++import { Schemas } from '../../../../../base/common/network.js';
++import { URI } from '../../../../../base/common/uri.js';
++import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
++import { TestInstantiationService } from '../../../../instantiation/test/common/instantiationServiceMock.js';
++import { FileService } from '../../../../files/common/fileService.js';
++import { IFileService } from '../../../../files/common/files.js';
++import { InMemoryFileSystemProvider } from '../../../../files/common/inMemoryFilesystemProvider.js';
++import { NullLogService } from '../../../../log/common/log.js';
++import { IAgentPluginManager, ISyncedCustomization } from '../../../common/agentPluginManager.js';
++import { CustomizationStatus, type CustomizationRef, type SessionCustomization } from '../../../common/state/protocol/state.js';
++import type { ISdkResolvedCustomizations } from '../../../node/claude/claudeSdkPipeline.js';
++import { ClaudeSdkCustomizationBundler } from '../../../node/claude/customizations/claudeSdkCustomizationBundler.js';
++
++suite('ClaudeSdkCustomizationBundler', () => {
++
++	const disposables = new DisposableStore();
++	let fileService: FileService;
++	let bundler: ClaudeSdkCustomizationBundler;
++	const basePath = URI.from({ scheme: Schemas.inMemory, path: '/userData' });
++	const workingDir = URI.file('/work');
++
++	setup(() => {
++		fileService = disposables.add(new FileService(new NullLogService()));
++		disposables.add(fileService.registerProvider(Schemas.inMemory, disposables.add(new InMemoryFileSystemProvider())));
++
++		const inst = disposables.add(new TestInstantiationService());
++		inst.stub(IFileService, fileService);
++		inst.stub(IAgentPluginManager, {
++			basePath,
++			syncCustomizations: async (_clientId: string, _refs: readonly CustomizationRef[]): Promise<ISyncedCustomization[]> => [],
++		} satisfies Partial<IAgentPluginManager> as unknown as IAgentPluginManager);
++		bundler = disposables.add(inst.createInstance(ClaudeSdkCustomizationBundler, workingDir));
++	});
++
++	teardown(() => disposables.clear());
++	ensureNoDisposablesAreLeakedInTestSuite();
++
++	function snapshot(overrides: Partial<ISdkResolvedCustomizations> = {}): ISdkResolvedCustomizations {
++		return {
++			commands: [],
++			agents: [],
++			mcpServers: [],
++			...overrides,
++		};
++	}
++
++	test('returns undefined when SDK snapshot has no commands or agents', async () => {
++		const result = await bundler.bundle(snapshot());
++		assert.strictEqual(result, undefined);
++	});
++
++	test('writes manifest, agent files, and skill subdirs for a snapshot with agents and commands', async () => {
++		const result = await bundler.bundle(snapshot({
++			agents: [{ name: 'planner', description: 'Plans things', model: 'claude' }],
++			commands: [{ name: 'doit', description: 'Does it', argumentHint: '<x>' }],
++		}));
++
++		assert.ok(result, 'should produce a bundle');
++		const rootUri = URI.parse(result!.customization.uri);
++		const manifest = await fileService.readFile(URI.joinPath(rootUri, '.plugin', 'plugin.json'));
++		const manifestJson = JSON.parse(manifest.value.toString());
++		assert.strictEqual(manifestJson.name, 'claude-discovered');
++		const agentFile = await fileService.readFile(URI.joinPath(rootUri, 'agents', 'planner.md'));
++		assert.match(agentFile.value.toString(), /name: "planner"/);
++		assert.match(agentFile.value.toString(), /description: "Plans things"/);
++		const skillFile = await fileService.readFile(URI.joinPath(rootUri, 'skills', 'doit', 'SKILL.md'));
++		assert.match(skillFile.value.toString(), /name: "doit"/);
++		assert.match(skillFile.value.toString(), /Usage: `<x>`/);
++	});
++
++	test('agents field is populated from the SDK snapshot with claude-sdk-agent URIs', async () => {
++		const result = await bundler.bundle(snapshot({
++			agents: [
++				{ name: 'a1', description: 'one', model: 'm' },
++				{ name: 'a2', description: 'two', model: 'm' },
++			],
++		}));
++		const agents = result!.agents!;
++		assert.deepStrictEqual(agents.map(a => a.name), ['a1', 'a2']);
++		assert.ok(agents[0].uri.startsWith('claude-sdk-agent:'));
++	});
++
++	test('repeated bundle with same snapshot is nonce-stable and does not rewrite', async () => {
++		const r1 = await bundler.bundle(snapshot({
++			agents: [{ name: 'p', description: 'd', model: 'm' }],
++		}));
++		const rootUri = URI.parse(r1!.customization.uri);
++		const agentUri = URI.joinPath(rootUri, 'agents', 'p.md');
++		const stat1 = await fileService.stat(agentUri);
++
++		const r2 = await bundler.bundle(snapshot({
++			agents: [{ name: 'p', description: 'd', model: 'm' }],
++		}));
++		assert.strictEqual(r1!.customization.nonce, r2!.customization.nonce);
++		const stat2 = await fileService.stat(agentUri);
++		assert.strictEqual(stat1.mtime, stat2.mtime, 'unchanged snapshot must not rewrite the on-disk tree');
++	});
++
++	test('changed snapshot deletes prior bundle tree before writing the new one', async () => {
++		await bundler.bundle(snapshot({
++			agents: [{ name: 'old', description: 'd', model: 'm' }],
++		}));
++		const result = await bundler.bundle(snapshot({
++			agents: [{ name: 'new', description: 'd', model: 'm' }],
++		}));
++		const rootUri = URI.parse(result!.customization.uri);
++		assert.ok(await fileService.exists(URI.joinPath(rootUri, 'agents', 'new.md')));
++		assert.ok(!(await fileService.exists(URI.joinPath(rootUri, 'agents', 'old.md'))), 'previous agent file should be deleted');
++	});
++
++	test('sanitises agent and command names — invalid chars replaced, length capped, empty falls back to "unnamed"', async () => {
++		const longName = 'a'.repeat(200);
++		const result = await bundler.bundle(snapshot({
++			agents: [
++				{ name: 'has spaces & slashes/here', description: 'd', model: 'm' },
++				{ name: longName, description: 'd', model: 'm' },
++				{ name: '!!!', description: 'd', model: 'm' },
++			],
++		}));
++		const rootUri = URI.parse(result!.customization.uri);
++		assert.ok(await fileService.exists(URI.joinPath(rootUri, 'agents', 'has_spaces___slashes_here.md')));
++		assert.ok(await fileService.exists(URI.joinPath(rootUri, 'agents', `${'a'.repeat(128)}.md`)));
++		assert.ok(await fileService.exists(URI.joinPath(rootUri, 'agents', '___.md')));
++	});
++
++	test('discoverable bundles for different working directories namespace by hash so they do not collide', async () => {
++		const inst = disposables.add(new TestInstantiationService());
++		inst.stub(IFileService, fileService);
++		inst.stub(IAgentPluginManager, {
++			basePath,
++		} satisfies Partial<IAgentPluginManager> as unknown as IAgentPluginManager);
++		const other = disposables.add(inst.createInstance(ClaudeSdkCustomizationBundler, URI.file('/other-work')));
++
++		const a = await bundler.bundle(snapshot({ agents: [{ name: 'x', description: 'd', model: 'm' }] }));
++		const b = await other.bundle(snapshot({ agents: [{ name: 'x', description: 'd', model: 'm' }] }));
++		assert.notStrictEqual(a!.customization.uri, b!.customization.uri);
++	});
++
++	test('returned SessionCustomization carries the expected shape (status Loaded, enabled true, displayName, description)', async () => {
++		const result = await bundler.bundle(snapshot({
++			agents: [{ name: 'a', description: 'd', model: 'm' }],
++			commands: [{ name: 'c', description: 'd', argumentHint: '<x>' }],
++		}));
++		assert.deepStrictEqual({
++			enabled: result!.enabled,
++			status: result!.status,
++		}, {
++			enabled: true,
++			status: CustomizationStatus.Loaded,
++		});
++		assert.ok(typeof result!.customization.displayName === 'string' && result!.customization.displayName.length > 0);
++		assert.ok(typeof result!.customization.description === 'string' && result!.customization.description!.length > 0);
++	});
++
++	// Smoke: ensure return type compiles against SessionCustomization
++	function _typeCheck(): SessionCustomization | undefined {
++		return undefined;
++	}
++	void _typeCheck;
++});
+diff --git a/src/vs/platform/agentHost/test/node/customizations/claudeSessionClientCustomizationsModel.test.ts b/src/vs/platform/agentHost/test/node/customizations/claudeSessionClientCustomizationsModel.test.ts
+new file mode 100644
+index 0000000000000..abeee59a27e70
+--- /dev/null
++++ b/src/vs/platform/agentHost/test/node/customizations/claudeSessionClientCustomizationsModel.test.ts
+@@ -0,0 +1,146 @@
++/*---------------------------------------------------------------------------------------------
++ *  Copyright (c) Microsoft Corporation. All rights reserved.
++ *  Licensed under the MIT License. See License.txt in the project root for license information.
++ *--------------------------------------------------------------------------------------------*/
++
++import assert from 'assert';
++import { URI } from '../../../../../base/common/uri.js';
++import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
++import type { ISyncedCustomization } from '../../../common/agentPluginManager.js';
++import { CustomizationStatus } from '../../../common/state/protocol/state.js';
++import { SessionClientCustomizationsDiff } from '../../../node/claude/customizations/claudeSessionClientCustomizationsModel.js';
++
++function synced(uri: string, opts: { dir?: string; enabled?: boolean; nonce?: string; displayName?: string } = {}): ISyncedCustomization {
++	return {
++		customization: {
++			customization: {
++				uri,
++				displayName: opts.displayName ?? uri,
++				...(opts.nonce !== undefined ? { nonce: opts.nonce } : {}),
++			},
++			enabled: opts.enabled ?? true,
++			status: CustomizationStatus.Loaded,
++		},
++		...(opts.dir !== undefined ? { pluginDir: URI.file(opts.dir) } : {}),
++	};
++}
++
++suite('SessionClientCustomizationsDiff', () => {
++	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
++
++	test('fresh diff: empty, not dirty, no enabled paths', () => {
++		const diff = disposables.add(new SessionClientCustomizationsDiff());
++		assert.deepStrictEqual(diff.model.state.get().synced, []);
++		assert.strictEqual(diff.hasDifference, false);
++		assert.deepStrictEqual(diff.model.enabledPluginPaths.get(), []);
++	});
++
++	test('setSyncedCustomizations flips dirty and fires onDidChange', () => {
++		const diff = disposables.add(new SessionClientCustomizationsDiff());
++		let fires = 0;
++		disposables.add(diff.onDidChange(() => fires++));
++		diff.model.setSyncedCustomizations([synced('https://a', { dir: '/p/a' })]);
++		assert.strictEqual(diff.hasDifference, true);
++		assert.strictEqual(fires, 1);
++	});
++
++	test('enabledPluginPaths excludes entries without pluginDir', () => {
++		const diff = disposables.add(new SessionClientCustomizationsDiff());
++		diff.model.setSyncedCustomizations([
++			synced('https://a', { dir: '/p/a' }),
++			synced('https://b'),
++		]);
++		assert.deepStrictEqual(diff.model.enabledPluginPaths.get().map(u => u.fsPath), ['/p/a']);
++	});
++
++	test('setEnabled(false) removes from enabled paths and flips dirty exactly when value changes', () => {
++		const diff = disposables.add(new SessionClientCustomizationsDiff());
++		diff.model.setSyncedCustomizations([synced('https://a', { dir: '/p/a' })]);
++		diff.consume();
++		assert.strictEqual(diff.hasDifference, false);
++
++		let fires = 0;
++		disposables.add(diff.onDidChange(() => fires++));
++
++		const uri = 'https://a';
++		diff.model.setEnabled(uri, false);
++		assert.deepStrictEqual(diff.model.enabledPluginPaths.get(), []);
++		assert.strictEqual(diff.hasDifference, true);
++		assert.strictEqual(fires, 1);
++
++		diff.model.setEnabled(uri, false); // no change → no fire, stays dirty
++		assert.strictEqual(fires, 1);
++	});
++
++	test('default enablement is true (absent entry counts as enabled)', () => {
++		const diff = disposables.add(new SessionClientCustomizationsDiff());
++		diff.model.setSyncedCustomizations([synced('https://a', { dir: '/p/a' })]);
++		assert.strictEqual(diff.model.enabledPluginPaths.get().length, 1);
++	});
++
++	test('setEnabled(true) is a no-op for default-enabled entries', () => {
++		const diff = disposables.add(new SessionClientCustomizationsDiff());
++		diff.model.setSyncedCustomizations([synced('https://a', { dir: '/p/a' })]);
++		diff.consume();
++		let fires = 0;
++		disposables.add(diff.onDidChange(() => fires++));
++		diff.model.setEnabled('https://a', true);
++		assert.strictEqual(fires, 0);
++		assert.strictEqual(diff.hasDifference, false);
++	});
++
++	test('consume returns current paths and clears dirty', () => {
++		const diff = disposables.add(new SessionClientCustomizationsDiff());
++		diff.model.setSyncedCustomizations([synced('https://a', { dir: '/p/a' })]);
++		const paths = diff.consume();
++		assert.strictEqual(paths.length, 1);
++		assert.strictEqual(diff.hasDifference, false);
++	});
++
++	test('markDirty re-flips after failed downstream reload', () => {
++		const diff = disposables.add(new SessionClientCustomizationsDiff());
++		diff.model.setSyncedCustomizations([synced('https://a', { dir: '/p/a' })]);
++		diff.consume();
++		assert.strictEqual(diff.hasDifference, false);
++		diff.markDirty();
++		assert.strictEqual(diff.hasDifference, true);
++	});
++
++	test('structurally-equivalent re-send is deduped (no fire, no dirty)', () => {
++		const diff = disposables.add(new SessionClientCustomizationsDiff());
++		diff.model.setSyncedCustomizations([synced('https://a', { dir: '/p/a' })]);
++		diff.consume();
++		let fires = 0;
++		disposables.add(diff.onDidChange(() => fires++));
++		diff.model.setSyncedCustomizations([synced('https://a', { dir: '/p/a' })]);
++		assert.strictEqual(fires, 0);
++		assert.strictEqual(diff.hasDifference, false);
++	});
++
++	test('toggling enablement of customization without pluginDir still flips dirty (no-restart optimisation intentionally given up: rebind is cheap and correctness > efficiency)', () => {
++		const diff = disposables.add(new SessionClientCustomizationsDiff());
++		diff.model.setSyncedCustomizations([synced('https://a')]);
++		diff.consume();
++		diff.model.setEnabled('https://a', false);
++		assert.strictEqual(diff.hasDifference, true);
++	});
++
++	test('nonce change at same URI / pluginDir flips dirty', () => {
++		const diff = disposables.add(new SessionClientCustomizationsDiff());
++		diff.model.setSyncedCustomizations([synced('https://a', { dir: '/p/a', nonce: 'v1' })]);
++		diff.consume();
++		diff.model.setSyncedCustomizations([synced('https://a', { dir: '/p/a', nonce: 'v2' })]);
++		assert.strictEqual(diff.hasDifference, true);
++	});
++
++	test('displayName change at same URI flips dirty (state observable fires for workbench refetch)', () => {
++		const diff = disposables.add(new SessionClientCustomizationsDiff());
++		diff.model.setSyncedCustomizations([synced('https://a', { dir: '/p/a', displayName: 'A' })]);
++		diff.consume();
++		let fires = 0;
++		disposables.add(diff.onDidChange(() => fires++));
++		diff.model.setSyncedCustomizations([synced('https://a', { dir: '/p/a', displayName: 'A renamed' })]);
++		assert.strictEqual(fires, 1);
++		assert.strictEqual(diff.hasDifference, true);
++	});
++});
+diff --git a/src/vs/platform/agentHost/test/node/customizations/claudeSessionCustomizationsProjector.test.ts b/src/vs/platform/agentHost/test/node/customizations/claudeSessionCustomizationsProjector.test.ts
+new file mode 100644
+index 0000000000000..ecae4400c1780
+--- /dev/null
++++ b/src/vs/platform/agentHost/test/node/customizations/claudeSessionCustomizationsProjector.test.ts
+@@ -0,0 +1,72 @@
++/*---------------------------------------------------------------------------------------------
++ *  Copyright (c) Microsoft Corporation. All rights reserved.
++ *  Licensed under the MIT License. See License.txt in the project root for license information.
++ *--------------------------------------------------------------------------------------------*/
++
++import assert from 'assert';
++import { URI } from '../../../../../base/common/uri.js';
++import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
++import type { ISyncedCustomization } from '../../../common/agentPluginManager.js';
++import { CustomizationStatus, type SessionCustomization } from '../../../common/state/protocol/state.js';
++import { projectSessionCustomizations } from '../../../node/claude/customizations/claudeSessionCustomizationsProjector.js';
++
++function client(uri: string, enabled = true): ISyncedCustomization {
++	return {
++		customization: {
++			customization: { uri, displayName: uri },
++			enabled,
++			status: CustomizationStatus.Loaded,
++		},
++	};
++}
++
++function discoveredBundle(uri: string): SessionCustomization {
++	return {
++		customization: { uri, displayName: 'VS Code Synced Data' },
++		enabled: true,
++		status: CustomizationStatus.Loaded,
++	};
++}
++
++suite('projectSessionCustomizations', () => {
++	ensureNoDisposablesAreLeakedInTestSuite();
++
++	test('returns only client-pushed entries when no discovery bundle', () => {
++		const result = projectSessionCustomizations([client('https://a')], new Map(), undefined);
++		assert.strictEqual(result.length, 1);
++		assert.strictEqual(result[0].customization.uri.toString(), 'https://a');
++		assert.strictEqual(result[0].enabled, true);
++	});
++
++	test('overlays enablement map on client-pushed entries', () => {
++		const result = projectSessionCustomizations(
++			[client('https://a'), client('https://b')],
++			new Map([['https://a', false]]),
++			undefined,
++		);
++		assert.strictEqual(result.find(c => c.customization.uri.toString() === 'https://a')?.enabled, false);
++		assert.strictEqual(result.find(c => c.customization.uri.toString() === 'https://b')?.enabled, true);
++	});
++
++	test('appends the discovery bundle verbatim', () => {
++		const bundleUri = URI.file('/tmp/host-discovery/x').toString();
++		const result = projectSessionCustomizations(
++			[client('https://a')],
++			new Map(),
++			discoveredBundle(bundleUri),
++		);
++		assert.strictEqual(result.length, 2);
++		assert.strictEqual(result[1].customization.uri.toString(), bundleUri);
++		assert.strictEqual(result[1].enabled, true);
++	});
++
++	test('discovery bundle enablement is not overlaid from the map', () => {
++		const bundleUri = URI.file('/tmp/host-discovery/x').toString();
++		const result = projectSessionCustomizations(
++			[],
++			new Map([[bundleUri, false]]),
++			discoveredBundle(bundleUri),
++		);
++		assert.strictEqual(result[0].enabled, true);
++	});
++});

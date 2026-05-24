@@ -1,0 +1,241 @@
+diff --git a/README.md b/README.md
+index ff530d0..f714aa4 100644
+--- a/README.md
++++ b/README.md
+@@ -21,6 +21,10 @@ Reins is a security control layer for AI agents — it inspects every action an
+ 
+ If you're an engineer who wants to write your own policies, you probably want [pegasi-ai/reins](https://github.com/pegasi-ai/reins) directly.
+ 
++## What's here today
++
++- [`docs/when-blocked.md`](./docs/when-blocked.md) — runbook for "Reins blocked my agent, what do I do?" Read this one first if you are a non-technical user.
++
+ ## Status
+ 
+ Early-stage scaffold. The full structure (skills, policies, docs, install scripts) is being built out one focused PR at a time. Check the PR list to see what's in flight.
+diff --git a/docs/when-blocked.md b/docs/when-blocked.md
+new file mode 100644
+index 0000000..96e3735
+--- /dev/null
++++ b/docs/when-blocked.md
+@@ -0,0 +1,220 @@
++# I got blocked. What now?
++
++You asked your AI agent to do something. Instead of doing it, you got a message
++that mentions **Reins** and the word **blocked**. This page tells you what
++that means and what to do next, in plain language.
++
++If you have never heard of Reins before, read the one-paragraph version first:
++
++> Reins is the safety layer your organization installed around your AI agent.
++> Before the agent runs a command, edits a file, or calls an outside service,
++> Reins checks the action against a list of rules. If the action looks
++> dangerous or irreversible, Reins stops it. You then get to decide whether
++> to approve it, change the request, or walk away.
++
++That is it. Reins is a referee, not a punishment.
++
++---
++
++## Step 1 — Read the block message
++
++Every block from Reins looks roughly like this:
++
++> **Reins blocked this action [SEVERITY]:** *short description*
++> **Rule:** *which rule fired*
++>
++> *One sentence about what the rule protects against.*
++>
++> **Alternatives:** *a safer way to get what you wanted.*
++
++Four pieces of information are in there. Find each one:
++
++| Piece | What it tells you |
++|-------|-------------------|
++| **Severity** | How serious Reins thinks this is. `CRITICAL` cannot be overridden locally. `HIGH` / `MEDIUM` usually can, with approval. |
++| **Rule** | The specific pattern that matched. The first place a teammate will look when you ask "should this be allowed?". |
++| **Why** | Why the rule exists. Usually a one-line description of the harm it prevents. |
++| **Alternatives** | A safer command or approach that gets you the same result. Try this first. |
++
++The exact wording above comes from the Reins skill itself
++([source](https://github.com/pegasi-ai/reins/blob/main/plugin/skills/reins/SKILL.md)).
++Your agent is required to surface those four pieces every time.
++
++---
++
++## Step 2 — Pick the path that matches your situation
++
++### Path A — "Oh, that was a mistake, I'll do it differently"
++
++Most blocks fall here. The agent will already suggest a safer alternative —
++take it.
++
++Examples of common rewrites:
++
++- `rm -rf /` (delete everything) → `rm -rf /path/to/the/one/folder/I/meant`
++  (delete a specific folder)
++- `DELETE FROM users` (delete every row) → `DELETE FROM users WHERE id = 42`
++  (delete one row)
++- `git push --force` (overwrite shared history) → `git push --force-with-lease`
++  (overwrite only if no one else has pushed)
++
++Tell the agent the new wording. You are done. No ticket, no email.
++
++### Path B — "I really do need to do this — it's part of my job"
++
++Some blocks are not mistakes. A database admin really does need to truncate
++a staging table. A release engineer really does need to force-push to a
++rebase branch. Reins handles this with an **approval token**.
++
++Here is what happens:
++
++1. The agent sees `[HIGH]` or similar (anything not `CRITICAL`).
++2. Reins generates a one-time approval token that looks like
++   `CONFIRM-AB12CD` — six uppercase characters after the dash.
++   (Token format defined in
++   [`src/core/Arbitrator.ts`](https://github.com/pegasi-ai/reins/blob/main/src/core/Arbitrator.ts).)
++3. You approve in your chat or terminal:
++
++   ```
++   /approve CONFIRM-AB12CD
++   ```
++
++   Or, if you change your mind:
++
++   ```
++   /deny CONFIRM-AB12CD
++   ```
++
++4. Reins records the approval in the audit log (see Step 4) and lets the
++   action through that one time.
++
++**The token is single-use and tied to that exact action.** Re-running a
++similar command later will block again and produce a new token. This is
++intentional. It means an approval from this morning cannot quietly authorize
++a different destructive command this afternoon.
++
++If the block was `CRITICAL`, there is no approval flow available. `CRITICAL`
++rules are set by your org admin (in Reins Cloud) and cannot be locally
++overridden — even with a token. Go to Path C.
++
++### Path C — "I think Reins is wrong, or I cannot override it"
++
++Two sub-cases:
++
++**C.1 — You believe the rule is misconfigured.** A rule that fires too often,
++or fires on something harmless, is a bug to file — not a wall to climb.
++
++1. Run `reins audit -n 5` in your terminal. This shows the last five
++   decisions Reins made and the exact rule that fired. Copy that output.
++2. Send it to whoever administers Reins for your team. (If you do not know,
++   ask in your team's `#it` or `#security` channel — your admin will have
++   shared the contact during rollout. See
++   [`admin-rollout.md`](./admin-rollout.md) once that doc exists.)
++3. They can adjust the rule in Reins Cloud, and the change reaches your
++   machine on the next policy refresh.
++
++**C.2 — The block is `CRITICAL` and you genuinely need that action.**
++This is rare and intentional. `CRITICAL` rules are things like
++`rm -rf /` (delete the entire computer), writes to
++`/etc/passwd` (change who can log in), or writes to `~/.ssh` (steal login
++keys). Your admin set those because there is no business reason for an
++agent to do them.
++
++If you really do have a business reason — for example, you are
++provisioning a new machine and need to write to `/etc/passwd` once —
++do it manually, not through the agent. Reins is meant to guard the
++*agent*, not block the human.
++
++---
++
++## Step 3 — Do NOT try to "trick" the block
++
++Do not rephrase the same command to slip past Reins. Examples of
++rephrasing that you should not do, and the agent itself is instructed
++not to do
++([source](https://github.com/pegasi-ai/reins/blob/main/plugin/skills/reins/SKILL.md)):
++
++- Splitting `rm -rf /` into two commands that achieve the same effect.
++- Base64-encoding a blocked SQL statement and decoding it inside a shell pipe.
++- Writing a small script that does the blocked thing, then running the script.
++
++If you find yourself doing this, stop. Either the block is correct (Path A)
++or the rule needs adjusting (Path C.1). Bypass attempts also show up in
++the audit log, which your security team reviews.
++
++---
++
++## Step 4 — Check the audit log (optional, but useful)
++
++Reins keeps an append-only log of every decision — allowed, warned, blocked,
++approved — at:
++
++```
++~/.openclaw/reins/decisions.jsonl
++```
++
++Each line is one decision, in JSON. The Reins skill documents the exact
++shape; here is the example it gives
++([source](https://github.com/pegasi-ai/reins/blob/main/plugin/skills/reins/SKILL.md)):
++
++```json
++{"timestamp":"2026-04-15T22:39:42Z","module":"Shell","method":"bash","decision":"BLOCKED","reason":"critical: rm -rf /","tool":"Bash","decisionTime":12}
++```
++
++You usually do not need to read the raw file. Two friendlier commands:
++
++- `reins audit -n 20` — last twenty decisions, formatted.
++- `reins stats` — running totals of allowed / blocked / approved.
++
++The log is append-only on purpose. You cannot edit a past decision out of
++it. That is what makes it useful to a compliance reviewer later.
++
++---
++
++## What gets blocked, in one table
++
++For the curious — these are the categories Reins enforces today, copied
++from its skill file ([source](https://github.com/pegasi-ai/reins/blob/main/plugin/skills/reins/SKILL.md)).
++
++| Surface | What Reins watches for |
++|---------|------------------------|
++| **Shell commands** | Always blocks: `rm -rf /`, `mkfs`, `dd` to a disk device, fork bombs. Blocks but lets you override: `DROP TABLE`, `TRUNCATE`, `DELETE` without `WHERE`, `git push --force`, `kill -9`, piping downloads into a shell. Warns: `rm`, `chmod`, `chown`, `sudo`, `UPDATE` without `WHERE`, `git reset --hard`. Logs: `git push`, `pip install`, `npm install`, `curl`, `wget`. |
++| **File writes** | Blocked to: `~/.ssh`, `~/.gnupg`, `~/.env`, `~/.openclaw/reins`, `/etc/passwd`, `/etc/shadow`. |
++| **MCP tool calls** (any outside service the agent talks to — Notion, Gmail, your database, etc.) | Blocked: deleting Notion pages, sending Gmail to unapproved domains, dropping or truncating database tables. Warned: reading email, reading credentials, filesystem MCP operations. Logged: every MCP call, regardless. |
++
++If you ever see a block whose rule is not in this table, that means your
++admin added a custom rule for your org. Ask them what it is for — it is
++almost always tied to something specific to your business (a regulated
++data source, a sensitive vendor account, etc.).
++
++---
++
++## Glossary of the words on this page
++
++- **Agent** — the AI program that runs commands on your behalf (Claude Code,
++  OpenClaw, Hermes, Replit Agent, and so on).
++- **Hook** — a small program your AI runtime runs before or after every
++  agent action. Reins ships as a hook.
++- **MCP** — Model Context Protocol; the standard way agents talk to outside
++  services. If the agent is reading your Gmail, it is doing so through MCP.
++- **Policy** — the file that lists which actions to allow, warn on, or
++  block. Defaults are sensible; your admin can tighten or loosen them.
++- **Audit log** — append-only file at `~/.openclaw/reins/decisions.jsonl`
++  recording every decision Reins made.
++- **Reins Cloud** — the web app at `app.pegasi.ai` your admin uses to push
++  org-wide policy and review audit data across the team.
++- **CRITICAL / HIGH / MEDIUM / LOW** — severity labels Reins puts on every
++  rule. Only `CRITICAL` is truly unbypassable on your machine.
++
++---
++
++## Still stuck?
++
++1. Run `reins audit -n 5` and copy the output.
++2. Post it to your team's Reins admin channel (your admin will have set
++   this up during rollout).
++3. Note which of the three paths above you tried.
++
++That is enough information for an admin to either approve, adjust the rule,
++or explain why the block stands. You should never need to "fight" the tool
++to do your job.

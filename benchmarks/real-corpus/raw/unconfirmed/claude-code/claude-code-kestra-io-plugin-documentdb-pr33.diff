@@ -1,0 +1,23 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.documentdb.md b/src/main/resources/doc/io.kestra.plugin.documentdb.md
+new file mode 100644
+index 0000000..caaf9e5
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.documentdb.md
+@@ -0,0 +1,17 @@
++# How to use the DocumentDB plugin
++
++Read and write documents in Amazon DocumentDB (MongoDB-compatible) from Kestra flows.
++
++## Authentication
++
++Set `host` (required, the HTTPS endpoint), `username` (required), and `password` (required) on every task, along with `database` and `collection`. Authentication uses HTTP Basic auth. Store secrets in [secrets](https://kestra.io/docs/concepts/secret) and apply connection properties globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
++
++## Tasks
++
++`Read` queries documents from a collection — optionally set `filter` (MongoDB-style filter object) and `limit`/`skip` for pagination. Use `aggregationPipeline` instead of `filter` to run an aggregation (when set, it overrides `filter`, `skip`, and `limit`). Set `fetchType` (default `FETCH`) to control output: `FETCH` returns all rows in `rows`, `FETCH_ONE` returns a single row in `row`, `STORE` writes to internal storage and returns a `uri`. The output also includes `size`.
++
++`Insert` inserts one or more documents — set either `document` (a single map) or `documents` (a list, max 10 per call). The output includes `insertedId`, `insertedIds`, and `insertedCount`.
++
++`Update` updates documents matching a `filter` — set `update` (required, MongoDB update operators such as `$set`, `$inc`). Set `updateMany: true` to update all matches (default `false`, updates only the first). The output includes `matchedCount`, `modifiedCount`, and `upsertedId`.
++
++`Delete` deletes documents matching a `filter` — set `deleteMany: true` to delete all matches (default `false`, deletes only the first). The output includes `deletedCount`.

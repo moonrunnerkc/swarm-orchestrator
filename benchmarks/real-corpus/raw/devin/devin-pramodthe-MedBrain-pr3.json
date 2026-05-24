@@ -1,0 +1,26 @@
+{
+  "id": "devin-pramodthe-MedBrain-pr3",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 3,
+    "headSha": "cb101b452def6987027066021a9aa058c793e26b",
+    "baseSha": "6f8694da7a42415bd0ae3d724d94daa2da02d5c9",
+    "title": "Fix invalid Gemini model default, inverted lab trends, error handling, and stale docs",
+    "body": "## Summary\n\nCode review of the MedBRAIN monorepo identified 3 code bugs and 1 documentation gap. This PR fixes all of them:\n\n1. **`gemini_config.py`** — `DEFAULT_GEMINI_MODEL` was `\"gemini-3.5-flash\"` (nonexistent model). Changed to `\"gemini-2.5-flash\"`. Without `GEMINI_MODEL` env var set, all LLM/VLM calls would fail at runtime.\n2. **`clinical.py` `_labs()`** — Episodes are sorted newest-first, but `vals[-1]` (oldest) was picked as \"latest\" value, inverting lab trend direction on the dashboard. Fixed to `vals[0]`.\n3. **`transcribe.py`** — `save_session_endpoint` returned HTTP 200 with `{\"error\": ...}` on failure. Changed to raise `HTTPException(500)` for consistency with all other API endpoints.\n4. **`AGENTS.md` / `CLAUDE.md`** — Added `(default gemini-2.5-flash)` to the Backends section so the actual fallback value is documented.\n\n## Review & Testing Checklist for Human\n\n- [ ] **Lab trends (critical):** Load a patient with multiple lab episodes in the clinical dashboard. Verify the \"Latest\" value shown corresponds to the most recent episode, not the oldest. This was silently wrong before.\n- [ ] **Gemini model:** Confirm `GEMINI_MODEL` env var is unset, then verify LLM calls use `gemini-2.5-flash` (check logs or LangSmith traces). Previously would attempt `gemini-3.5-flash` and fail.\n- [ ] **Transcribe error handling:** Trigger a failure in `POST /api/transcribe/save-session` (e.g., invalid payload) and confirm you get HTTP 500 with a `detail` field, not HTTP 200 with `{\"error\": ...}`.\n\n**Recommended test plan:** Start the API (`npm run dev:api`), open the clinical dashboard, and verify lab trend values for a patient with Zep episode history. Then test the transcribe save endpoint with a deliberately bad request.\n\n### Notes\n\n- The upstream commit `6f8694d` already fixed the Fireworks→Gemini references in docs and the `patients.py` docstring. This PR's doc changes now only add the default model annotation.\n- No CI is configured on this repo; TypeScript type-check (`tsc --noEmit`) passes locally.\n\nLink to Devin session: https://app.devin.ai/sessions/a720e4ec335e47e7847aadc76da4d99d\nRequested by: @pthebesfsu-a11y",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779577755-code-review-fixes",
+    "repository": "pramodthe/MedBrain"
+  },
+  "diffRef": {
+    "repository": "pramodthe/MedBrain",
+    "headSha": "cb101b452def6987027066021a9aa058c793e26b",
+    "baseSha": "6f8694da7a42415bd0ae3d724d94daa2da02d5c9"
+  },
+  "vendoredDiffPath": "devin/devin-pramodthe-MedBrain-pr3.diff",
+  "vendoredAt": "2026-05-24T03:04:48.753Z",
+  "collectedAt": "2026-05-24T03:04:48.753Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5138",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5138,
+    "headSha": "048cba63d464a92bf39230b07211ec43590a37a3",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "fix: skip invalid repo-map tree-sitter queries",
+    "body": "## Summary\n\n- catch tree-sitter `QueryError` while running repo-map tag queries\n- keep affected files in the repo map as filename-only entries instead of crashing\n- add a regression test that forces an invalid tags query\n\n## Motivation\n\nA bundled tags query can drift out of sync with the installed tree-sitter grammar. Julia files currently hit this path with `Invalid node type ... module`, which aborts repo-map generation before Aider can answer the next prompt.\n\nFixes #4867\nFixes #4888\n\n## Validation\n\n- `.venv/bin/python -m pytest tests/basic/test_repomap.py::TestRepoMap::test_get_repo_map_skips_invalid_tree_sitter_query -q`\n- `.venv/bin/python -m pytest tests/basic/test_repomap.py -q`\n- `.venv/bin/pre-commit run --files aider/repomap.py tests/basic/test_repomap.py`\n- `git diff --check`\n- manual `hello.jl` repo-map smoke test now returns `hello.jl` instead of raising `tree_sitter.QueryError`\n",
+    "author": "pragnyanramtha",
+    "headRef": "codex/skip-invalid-repomap-query",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "048cba63d464a92bf39230b07211ec43590a37a3",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5138.diff",
+  "vendoredAt": "2026-05-24T03:19:22.144Z",
+  "collectedAt": "2026-05-24T03:19:22.144Z"
+}

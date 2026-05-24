@@ -1,0 +1,148 @@
+diff --git a/AUTONOMOUS_IMPROVEMENT_LOG.md b/AUTONOMOUS_IMPROVEMENT_LOG.md
+index 2687b8e..1893559 100644
+--- a/AUTONOMOUS_IMPROVEMENT_LOG.md
++++ b/AUTONOMOUS_IMPROVEMENT_LOG.md
+@@ -853,7 +853,50 @@ uv run streamlit run app/main.py  # 앱 실행
+ 
+ ---
+ 
+-## 최종 점수 (Round 28 기준)
++## Round 29 — 섹션 레이블 헬퍼 추출 (L1) (2026-05-19)
++
++- **Branch**: `agent/round-29-section-label-helper` (stacked on R28)
++- **Scores (before → after)**:
++  - 기능 완성도: 9 → 9
++  - 사용자 경험: 9 → 9
++  - 안정성: 9 → 9 (XSS escape 회귀 가드 +2, 70 passed)
++  - 성능: 9 → 9
++  - 코드 품질: 9 → 9 (main.py 인라인 unsafe_allow_html 1건 → 헬퍼 호출)
++  - 완성도: 9 → 9
++- **Lowest area**: 동률 9. Round 28 K1 패턴(`render_page_header`) 의 자매 — `app/main.py` 의 "공급-수요 매칭 지도" 섹션 레이블도 인라인 `unsafe_allow_html` 마크업으로 남아 있어 응집도·escape 가드 동일 문제.
++
++### Planned improvement (L1 소진)
++`app/components/cards.py` 에 `section_label_html(text) -> str` (순수, escape) + `render_section_label(text) -> None` (Streamlit wrapper). `main.py` 인라인 4줄 → 1줄 호출.
++
++### Files changed
++- `app/components/cards.py` — `section_label_html` + `render_section_label` 두 함수 신규.
++- `app/main.py` — 인라인 `st.markdown("<p class='section-label'>...")` → `render_section_label(...)`.
++- `tests/test_app.py`
++  - `test_section_label_html_escapes_user_text` — `<img onerror>` 페이로드 escape 검증.
++  - `test_section_label_html_uses_section_label_class` — 정확한 마크업 일치.
++
++### Verification
++- `uv run ruff check --fix .` → All checks passed
++- `uv run ruff format .` → 43 files left unchanged
++- `uv run pyright` → 0 errors, 137 warnings
++- `uv run pytest` → **70 passed** (이전 68 → +2), coverage 65.32% → **65.35%**
++
++### Slack 메시지 (요약)
++> Round 29 ✅ 섹션 레이블 헬퍼 추출 + escape 가드 — main.py 응집도 ↑, 70 tests.
++
++### Commit
++- `refactor(cards): main.py 섹션 레이블 인라인 → render_section_label 헬퍼 추출 + escape 가드`
++
++### Notes (다음 라운드 후보 풀)
++- **I1**: 사이드바 footer 모바일 분기 — 데이터 갱신 시각·출처 line-height·font-size 미세 조정
++- **M1 (신규)**: `app/main.py:67` 의 "데이터 출처: 서울 열린데이터광장 ..." `st.caption` 도 `render_data_source_caption()` 헬퍼로 추출 — refactor 일관성 (그러나 caption은 이미 escape 안전).
++- **F1**: 모달 X 닫기 폴리시 (보류)
++- **E1**: 캐시 키 hash (사용자 컨펌 권장)
++- 다음 라운드 1순위: **I1 사이드바 footer 모바일** (단일 라운드 적정) 또는 **N1 (신규)** — `app/main.py` warning 메시지 텍스트 톤 일관화.
++
++---
++
++## 최종 점수 (Round 29 기준)
+ | 영역 | 점수 |
+ |------|------|
+ | 기능 완성도 | 9 |
+diff --git a/app/components/cards.py b/app/components/cards.py
+index 81c7432..f55cb83 100644
+--- a/app/components/cards.py
++++ b/app/components/cards.py
+@@ -179,6 +179,29 @@ def render_page_header(title: str, subtitle: str) -> None:
+     st.markdown(page_header_html(title, subtitle), unsafe_allow_html=True)
+ 
+ 
++def section_label_html(text: str) -> str:
++    """Compose the section label HTML (``<p class='section-label'>``) with escape.
++
++    Pure function — exposed for unit testing the escape behaviour.
++
++    Args:
++        text: 섹션 레이블 텍스트 — HTML escape 처리.
++
++    Returns:
++        ``<p class='section-label'>{text}</p>`` 마크업.
++    """
++    return f"<p class='section-label'>{escape(text)}</p>"
++
++
++def render_section_label(text: str) -> None:
++    """Render a section label using Design.md tokens (11px/600 muted, uppercase).
++
++    Args:
++        text: 섹션 레이블 텍스트.
++    """
++    st.markdown(section_label_html(text), unsafe_allow_html=True)
++
++
+ class _KpiSource(NamedTuple):
+     caption: str
+     dataset: str
+diff --git a/app/main.py b/app/main.py
+index db7baf5..5e443f5 100644
+--- a/app/main.py
++++ b/app/main.py
+@@ -9,6 +9,7 @@
+     inject_design_css,
+     render_epiphany_cards,
+     render_page_header,
++    render_section_label,
+     render_solution_summary,
+ )
+ from app.components.kakao_map import build_kakao_map_html
+@@ -70,10 +71,7 @@ def main() -> None:
+             icon="⚠️",
+         )
+ 
+-    st.markdown(
+-        "<p class='section-label'>공급-수요 매칭 지도</p>",
+-        unsafe_allow_html=True,
+-    )
++    render_section_label("공급-수요 매칭 지도")
+     components.html(
+         build_kakao_map_html(
+             suppliers=data.suppliers,
+diff --git a/tests/test_app.py b/tests/test_app.py
+index ce1df23..a5a687b 100644
+--- a/tests/test_app.py
++++ b/tests/test_app.py
+@@ -5,7 +5,11 @@
+ import pandas as pd
+ import pytest
+ 
+-from app.components.cards import _DESIGN_CSS, page_header_html  # 모바일 분기 회귀 가드용
++from app.components.cards import (  # 모바일 분기·헤더 헬퍼 회귀 가드용
++    _DESIGN_CSS,
++    page_header_html,
++    section_label_html,
++)
+ from app.components.kakao_map import build_kakao_map_html
+ from app.services.data import KST, last_data_refresh, load_app_data
+ from app.services.matching import (
+@@ -171,6 +175,16 @@ def test_page_header_html_uses_page_subtitle_class() -> None:
+     assert "<p class='page-subtitle'>부제</p>" in html
+ 
+ 
++def test_section_label_html_escapes_user_text() -> None:
++    html = section_label_html("<img src=x onerror=alert(1)>")
++    assert "<img" not in html
++    assert "&lt;img src=x onerror=alert(1)&gt;" in html
++
++
++def test_section_label_html_uses_section_label_class() -> None:
++    assert section_label_html("매칭 지도") == "<p class='section-label'>매칭 지도</p>"
++
++
+ def test_kpi_mobile_breakpoint_tokens_present() -> None:
+     # Round 26 회귀 가드 — 720px 이하에서 KPI 폰트·padding 축소 분기가 살아있는지.
+     assert "@media(max-width:720px)" in _DESIGN_CSS

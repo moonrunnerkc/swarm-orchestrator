@@ -1,0 +1,26 @@
+{
+  "id": "devin-akasper-plate_template-pr3",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 3,
+    "headSha": "6d4f3eee76c5607af5cc39c30d04f7697ef10474",
+    "baseSha": "b36c93fadea87346fc268da9443b011f7315a7c5",
+    "title": "Fix Devin Review bugs: rsync, persist-credentials, TBD placeholders",
+    "body": "# PLATE Pull Request\n\n## Summary\n\nFixes bugs identified by Devin Review on PR #2, plus related review feedback from CodeRabbit. All changes are to documentation, process metadata, and workflow configuration — no product behavior changes.\n\n### Fixes applied\n\n1. **`rsync --delete` destroys `tmp_wiki/.git/`** (Devin Review 🔴 BUG): Added `--exclude='.git'` to the rsync command in `sync-wiki-on-merge.yml` so the cloned wiki repository metadata is preserved.\n\n2. **`rsync --delete` also deletes `Last-Feature-Merge.md`** (Devin Review 🚩 ANALYSIS): Moved the `Last-Feature-Merge.md` copy to *after* the rsync so it is not wiped by `--delete`.\n\n3. **`persist-credentials: false` missing on checkout** (CodeRabbit): Added `persist-credentials: false` to the `actions/checkout@v4` step so credentials are not left in the git config after the job completes.\n\n4. **`wiki-sync` extension missing `human_approval_required`** (CodeRabbit): Added `human_approval_required: true` to match the other extensions.\n\n5. **TBD placeholders in `CHANGELOG.md` and `CURRENT.md`** (CodeRabbit): Replaced with actual PR #2 references and verification date.\n\n## Required PR Type Label\n\n- [ ] `Bug`\n- [ ] `Feature`\n- [x] `Documentation`\n\n## Linked Work\n\n| Link Type | URL or Reference |\n|---|---|\n| Issue | — |\n| Epic | — |\n| ADR / Discussion | PR #2 review comments |\n\n## Tests and Evidence\n\n| Evidence Type | Command, Artifact, or Explanation | Result |\n|---|---|---|\n| YAML validation | `python3 -c \\\"import yaml; yaml.safe_load(open(...))\\\"` for all changed YAML files | Pass |\n| Manual verification | Reviewed rsync behavior with `--exclude='.git'` flag and post-rsync copy ordering | Correct |\n\n## Documentation and Traceability\n\n| Artifact | Required for This PR? | Updated or Explanation |\n|---|---|---|\n| `SPEC.md` | No | No product changes |\n| `CURRENT.md` | Yes (TBD placeholders fixed) | Updated verification metadata and feature entry |\n| Wiki or docs source | No | N/A |\n| Release notes / `CHANGELOG.md` | Yes (TBD placeholders fixed) | Updated PR reference |\n| Public claims / marketing | No | N/A |\n| `.agentic/*` process metadata | Yes | `extensions.yml` updated with `human_approval_required` for wiki-sync |\n\n## Risk and Rollback\n\n| Question | Answer |\n|---|---|\n| Risk label applied, if any | None |\n| User, data, security, or public-claim risk | None — fixes existing bugs in workflow that was already disabled by default |\n| Rollback plan | Revert this commit |\n| Follow-up issue needed | No |\n\n## Agent Self-Review\n\n- [x] I followed `AGENTS.md` and did not change product intent without human approval.\n- [x] I used GitHub Projects fields, not labels, for mutable planning state.\n- [x] I did not weaken tests, remove required gates, or bypass review.\n- [x] I updated `CURRENT.md` for a Feature PR or explained why this PR is not a Feature.\n- [x] I left enough evidence for a human reviewer to verify the change without relying on chat history.\n\nLink to Devin session: https://app.devin.ai/sessions/2b2142fd63f845e88ff1e8a34364a1b5\nRequested by: @akasper\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/akasper/plate_template/pull/3\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779592705-fix-devin-review-bugs",
+    "repository": "akasper/plate_template"
+  },
+  "diffRef": {
+    "repository": "akasper/plate_template",
+    "headSha": "6d4f3eee76c5607af5cc39c30d04f7697ef10474",
+    "baseSha": "b36c93fadea87346fc268da9443b011f7315a7c5"
+  },
+  "vendoredDiffPath": "devin/devin-akasper-plate_template-pr3.diff",
+  "vendoredAt": "2026-05-24T03:34:16.089Z",
+  "collectedAt": "2026-05-24T03:34:16.089Z"
+}

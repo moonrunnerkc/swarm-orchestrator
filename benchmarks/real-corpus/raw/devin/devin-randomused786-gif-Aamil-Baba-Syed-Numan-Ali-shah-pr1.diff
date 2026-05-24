@@ -1,0 +1,900 @@
+diff --git a/.github/workflows/social-media-post.yml b/.github/workflows/social-media-post.yml
+new file mode 100644
+index 0000000..a6e6414
+--- /dev/null
++++ b/.github/workflows/social-media-post.yml
+@@ -0,0 +1,75 @@
++name: Social Media Auto-Post
++
++on:
++  # Scheduled trigger — runs daily at 09:00 UTC
++  schedule:
++    - cron: "0 9 * * *"
++
++  # Manual trigger via GitHub Actions UI
++  workflow_dispatch:
++    inputs:
++      platforms:
++        description: "Comma-separated platforms (twitter, facebook, instagram)"
++        required: true
++        default: "twitter,facebook"
++      post_id:
++        description: "Specific post ID from posts.yaml (leave empty for auto-select)"
++        required: false
++        default: ""
++      dry_run:
++        description: "Dry run (true/false)"
++        required: false
++        default: "false"
++
++permissions:
++  contents: read
++
++jobs:
++  post:
++    runs-on: ubuntu-latest
++
++    steps:
++      - name: Checkout repository
++        uses: actions/checkout@v4
++
++      - name: Set up Python
++        uses: actions/setup-python@v5
++        with:
++          python-version: "3.12"
++
++      - name: Install dependencies
++        run: pip install -r requirements.txt
++
++      - name: Run social media bot
++        env:
++          # Twitter/X credentials (set these in repo Settings → Secrets)
++          TWITTER_API_KEY: ${{ secrets.TWITTER_API_KEY }}
++          TWITTER_API_SECRET: ${{ secrets.TWITTER_API_SECRET }}
++          TWITTER_ACCESS_TOKEN: ${{ secrets.TWITTER_ACCESS_TOKEN }}
++          TWITTER_ACCESS_TOKEN_SECRET: ${{ secrets.TWITTER_ACCESS_TOKEN_SECRET }}
++          TWITTER_BEARER_TOKEN: ${{ secrets.TWITTER_BEARER_TOKEN }}
++
++          # Facebook credentials
++          FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
++          FACEBOOK_ACCESS_TOKEN: ${{ secrets.FACEBOOK_ACCESS_TOKEN }}
++
++          # Instagram credentials
++          INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
++          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
++        run: |
++          PLATFORMS="${{ github.event.inputs.platforms || 'twitter,facebook' }}"
++          POST_ID="${{ github.event.inputs.post_id }}"
++          DRY_RUN="${{ github.event.inputs.dry_run }}"
++
++          CMD="python -m social_media_bot.poster --platforms $PLATFORMS"
++
++          if [ -n "$POST_ID" ]; then
++            CMD="$CMD --post-id $POST_ID"
++          fi
++
++          if [ "$DRY_RUN" = "true" ]; then
++            CMD="$CMD --dry-run"
++          fi
++
++          echo "Running: $CMD"
++          $CMD
+diff --git a/.github/workflows/validate-config.yml b/.github/workflows/validate-config.yml
+new file mode 100644
+index 0000000..7501b27
+--- /dev/null
++++ b/.github/workflows/validate-config.yml
+@@ -0,0 +1,38 @@
++name: Validate Social Media Config
++
++on:
++  push:
++    paths:
++      - "content/**"
++      - "social_media_bot/**"
++      - "requirements.txt"
++  pull_request:
++    paths:
++      - "content/**"
++      - "social_media_bot/**"
++      - "requirements.txt"
++
++permissions:
++  contents: read
++
++jobs:
++  validate:
++    runs-on: ubuntu-latest
++
++    steps:
++      - name: Checkout repository
++        uses: actions/checkout@v4
++
++      - name: Set up Python
++        uses: actions/setup-python@v5
++        with:
++          python-version: "3.12"
++
++      - name: Install dependencies
++        run: pip install -r requirements.txt
++
++      - name: Validate YAML configuration
++        run: python -c "from social_media_bot.config import load_content; load_content(); print('Config is valid.')"
++
++      - name: Dry-run post selection
++        run: python -m social_media_bot.poster --platforms twitter --dry-run
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..4522c33
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,7 @@
++__pycache__/
++*.pyc
++*.pyo
++.env
++*.egg-info/
++dist/
++build/
+diff --git a/SOCIAL_MEDIA_AUTOMATION.md b/SOCIAL_MEDIA_AUTOMATION.md
+new file mode 100644
+index 0000000..3396deb
+--- /dev/null
++++ b/SOCIAL_MEDIA_AUTOMATION.md
+@@ -0,0 +1,171 @@
++# Social Media Automation – Setup & Usage Guide
++
++Automated posting system for **Twitter/X**, **Facebook**, and **Instagram** using GitHub Actions and Python.
++
++---
++
++## Architecture
++
++```
++.github/workflows/
++  social-media-post.yml   ← Main posting workflow (scheduled + manual)
++  validate-config.yml     ← CI validation on push/PR
++
++social_media_bot/
++  __init__.py
++  config.py               ← Credential & YAML config loader
++  poster.py               ← CLI entry point & post dispatcher
++  platforms/
++    twitter.py            ← Twitter/X via Tweepy (API v2)
++    facebook.py           ← Facebook Page via Graph API
++    instagram.py          ← Instagram via Graph API
++
++content/
++  posts.yaml              ← Post definitions (text, media, schedule)
++  media/                  ← Local media files (images, GIFs)
++```
++
++---
++
++## 1. Configure API Credentials
++
++All credentials are stored as **GitHub Repository Secrets** (Settings → Secrets and variables → Actions).
++
++### Twitter/X
++
++| Secret Name                    | Description                      |
++|-------------------------------|----------------------------------|
++| `TWITTER_API_KEY`             | Consumer / API key               |
++| `TWITTER_API_SECRET`          | Consumer / API secret            |
++| `TWITTER_ACCESS_TOKEN`        | OAuth 1.0a access token          |
++| `TWITTER_ACCESS_TOKEN_SECRET` | OAuth 1.0a access token secret   |
++| `TWITTER_BEARER_TOKEN`        | Bearer token for v2 endpoints    |
++
++Get these from the [Twitter Developer Portal](https://developer.twitter.com/).
++
++### Facebook
++
++| Secret Name              | Description                        |
++|-------------------------|------------------------------------|
++| `FACEBOOK_PAGE_ID`      | Numeric Page ID                    |
++| `FACEBOOK_ACCESS_TOKEN` | Page Access Token (long-lived)     |
++
++Generate from [Meta for Developers](https://developers.facebook.com/).
++
++### Instagram
++
++| Secret Name               | Description                              |
++|--------------------------|------------------------------------------|
++| `INSTAGRAM_ACCOUNT_ID`   | Instagram Business/Creator Account ID    |
++| `INSTAGRAM_ACCESS_TOKEN` | Access token via Facebook Graph API      |
++
++Requires a linked Facebook Page. See [Instagram Graph API docs](https://developers.facebook.com/docs/instagram-api/).
++
++---
++
++## 2. Define Posts
++
++Edit `content/posts.yaml`:
++
++```yaml
++posts:
++  - id: my-post
++    text: "Hello from our automated system! #hashtag"
++    media:
++      - banner.jpg          # file in content/media/
++    instagram_image_url: "https://example.com/banner.jpg"  # required for Instagram
++    scheduled_date: "2026-06-01"
++    platforms:
++      - twitter
++      - facebook
++      - instagram
++```
++
++### Fields
++
++| Field                | Required | Description                                                |
++|---------------------|----------|------------------------------------------------------------|
++| `id`                | Yes      | Unique post identifier                                     |
++| `text`              | Yes      | Post body (keep ≤280 chars for Twitter)                    |
++| `media`             | No       | List of filenames in `content/media/` or public URLs       |
++| `instagram_image_url` | No    | Public image URL (Instagram requirement)                   |
++| `scheduled_date`    | No       | `YYYY-MM-DD` — auto-selected when the cron runs that day  |
++| `platforms`         | No       | Default target platforms for this post                     |
++
++### Supported Media Types
++
++- **Text** — all platforms
++- **Images** (JPEG, PNG) — Twitter, Facebook, Instagram
++- **GIFs** — Twitter, Facebook
++
++---
++
++## 3. Triggers
++
++### Automatic (Scheduled)
++
++The `social-media-post.yml` workflow runs **daily at 09:00 UTC**. It selects the post whose `scheduled_date` matches the current date and posts it to the configured platforms.
++
++Edit the cron expression to change the schedule:
++
++```yaml
++schedule:
++  - cron: "0 9 * * *"   # daily at 09:00 UTC
++```
++
++### Manual (Workflow Dispatch)
++
++Go to **Actions → Social Media Auto-Post → Run workflow** and fill in:
++
++| Input        | Description                                           |
++|-------------|-------------------------------------------------------|
++| `platforms` | Comma-separated: `twitter`, `facebook`, `instagram`   |
++| `post_id`   | Specific post ID from `posts.yaml` (optional)         |
++| `dry_run`   | `true` to preview without posting                     |
++
++---
++
++## 4. Local Testing
++
++```bash
++# Install dependencies
++pip install -r requirements.txt
++
++# Dry run (no credentials needed)
++python -m social_media_bot.poster --platforms twitter --dry-run
++
++# Post to Twitter (credentials must be set as env vars)
++export TWITTER_API_KEY="..."
++export TWITTER_API_SECRET="..."
++export TWITTER_ACCESS_TOKEN="..."
++export TWITTER_ACCESS_TOKEN_SECRET="..."
++export TWITTER_BEARER_TOKEN="..."
++python -m social_media_bot.poster --platforms twitter --post-id welcome-post
++```
++
++---
++
++## 5. CI Validation
++
++The `validate-config.yml` workflow runs on every push/PR that modifies `content/`, `social_media_bot/`, or `requirements.txt`. It:
++
++1. Validates the YAML configuration can be parsed
++2. Runs a dry-run to confirm post selection logic works
++
++---
++
++## 6. Adding New Platforms
++
++1. Create a new module in `social_media_bot/platforms/` (e.g., `linkedin.py`)
++2. Implement a class with a `post(text, media_paths=None)` method
++3. Register it in `social_media_bot/poster.py` → `PLATFORM_MAP`
++4. Add the credential loader in `social_media_bot/config.py`
++5. Add the corresponding secrets to GitHub
++
++---
++
++## Security
++
++- API credentials are **never** stored in code — only in GitHub Secrets
++- The workflow uses `permissions: contents: read` (least privilege)
++- Secrets are injected as environment variables at runtime only
+diff --git a/content/posts.yaml b/content/posts.yaml
+new file mode 100644
+index 0000000..bb24a8f
+--- /dev/null
++++ b/content/posts.yaml
+@@ -0,0 +1,45 @@
++# Social Media Post Definitions
++#
++# Each post has:
++#   id:                  Unique identifier for the post
++#   text:                The message body (keep under 280 chars for Twitter)
++#   media:               Optional list of media files (relative to content/media/)
++#                        or public URLs
++#   instagram_image_url: Public URL required by Instagram Graph API
++#   scheduled_date:      Date (YYYY-MM-DD) when this post should auto-publish
++#   platforms:           Default platforms if not overridden via CLI
++
++posts:
++  - id: welcome-post
++    text: >
++      Assalamu Alaikum! Welcome to the official page of Aamil Baba Syed Numan
++      Ali Shah - Expert in Rohaniyat, Istikhara, and Spiritual Healing.
++      Available 24/7. Contact us for guidance. #SpiritualHealing #Istikhara
++    media: []
++    scheduled_date: "2026-05-24"
++    platforms:
++      - twitter
++      - facebook
++
++  - id: services-post
++    text: >
++      Our spiritual services include: Istikhara, Wazaif, Taweezat, Love
++      Marriage Solutions, Kala Jadu Removal, and Business Problem Solutions.
++      Consult Aamil Baba Numan Ali Shah today! #RohaniIlaj #AmilBaba
++    media: []
++    scheduled_date: "2026-05-25"
++    platforms:
++      - twitter
++      - facebook
++
++  - id: contact-post
++    text: >
++      Need spiritual guidance? Reach out to Aamil Baba Syed Numan Ali Shah.
++      Call/WhatsApp: +92 309 2015876. Available 24/7 for consultations.
++      #SpiritualHealer #Lahore
++    media: []
++    scheduled_date: "2026-05-26"
++    platforms:
++      - twitter
++      - facebook
++      - instagram
+diff --git a/requirements.txt b/requirements.txt
+new file mode 100644
+index 0000000..c551f0b
+--- /dev/null
++++ b/requirements.txt
+@@ -0,0 +1,3 @@
++tweepy>=4.14,<5
++requests>=2.31,<3
++PyYAML>=6.0,<7
+diff --git a/social_media_bot/__init__.py b/social_media_bot/__init__.py
+new file mode 100644
+index 0000000..fe4f3bd
+--- /dev/null
++++ b/social_media_bot/__init__.py
+@@ -0,0 +1 @@
++# Social Media Automation Bot
+diff --git a/social_media_bot/config.py b/social_media_bot/config.py
+new file mode 100644
+index 0000000..994385a
+--- /dev/null
++++ b/social_media_bot/config.py
+@@ -0,0 +1,50 @@
++"""
++Configuration loader for the social media automation bot.
++
++Reads content definitions from YAML files and environment-based credentials.
++"""
++
++import os
++from pathlib import Path
++
++import yaml
++
++
++BASE_DIR = Path(__file__).resolve().parent.parent
++CONTENT_DIR = BASE_DIR / "content"
++
++
++def load_content(content_file="posts.yaml"):
++    """Load scheduled post definitions from a YAML file."""
++    path = CONTENT_DIR / content_file
++    if not path.exists():
++        raise FileNotFoundError(f"Content file not found: {path}")
++    with open(path, "r", encoding="utf-8") as fh:
++        return yaml.safe_load(fh)
++
++
++def get_twitter_credentials():
++    """Return Twitter/X API credentials from environment variables."""
++    return {
++        "api_key": os.environ.get("TWITTER_API_KEY", ""),
++        "api_secret": os.environ.get("TWITTER_API_SECRET", ""),
++        "access_token": os.environ.get("TWITTER_ACCESS_TOKEN", ""),
++        "access_token_secret": os.environ.get("TWITTER_ACCESS_TOKEN_SECRET", ""),
++        "bearer_token": os.environ.get("TWITTER_BEARER_TOKEN", ""),
++    }
++
++
++def get_facebook_credentials():
++    """Return Facebook Page API credentials from environment variables."""
++    return {
++        "page_id": os.environ.get("FACEBOOK_PAGE_ID", ""),
++        "access_token": os.environ.get("FACEBOOK_ACCESS_TOKEN", ""),
++    }
++
++
++def get_instagram_credentials():
++    """Return Instagram Graph API credentials from environment variables."""
++    return {
++        "account_id": os.environ.get("INSTAGRAM_ACCOUNT_ID", ""),
++        "access_token": os.environ.get("INSTAGRAM_ACCESS_TOKEN", ""),
++    }
+diff --git a/social_media_bot/platforms/__init__.py b/social_media_bot/platforms/__init__.py
+new file mode 100644
+index 0000000..8c2a541
+--- /dev/null
++++ b/social_media_bot/platforms/__init__.py
+@@ -0,0 +1,5 @@
++from social_media_bot.platforms.twitter import TwitterPoster
++from social_media_bot.platforms.facebook import FacebookPoster
++from social_media_bot.platforms.instagram import InstagramPoster
++
++__all__ = ["TwitterPoster", "FacebookPoster", "InstagramPoster"]
+diff --git a/social_media_bot/platforms/facebook.py b/social_media_bot/platforms/facebook.py
+new file mode 100644
+index 0000000..950aeef
+--- /dev/null
++++ b/social_media_bot/platforms/facebook.py
+@@ -0,0 +1,79 @@
++"""
++Facebook Page posting module using the Graph API.
++
++Supports text posts and posts with images.
++"""
++
++import logging
++from pathlib import Path
++
++import requests
++
++from social_media_bot.config import get_facebook_credentials
++
++logger = logging.getLogger(__name__)
++
++GRAPH_API_BASE = "https://graph.facebook.com/v19.0"
++
++
++class FacebookPoster:
++    """Post content to a Facebook Page via the Graph API."""
++
++    def __init__(self):
++        creds = get_facebook_credentials()
++        self._validate_credentials(creds)
++        self.page_id = creds["page_id"]
++        self.access_token = creds["access_token"]
++
++    @staticmethod
++    def _validate_credentials(creds):
++        missing = [k for k, v in creds.items() if not v]
++        if missing:
++            raise EnvironmentError(
++                f"Missing Facebook credentials: {', '.join(missing)}. "
++                "Set them as environment variables or GitHub Secrets."
++            )
++
++    def post(self, text, media_paths=None):
++        """
++        Publish a post to a Facebook Page.
++
++        Args:
++            text: The post message.
++            media_paths: Optional list of image file paths. The first image
++                         is posted; additional images are ignored by the
++                         single-photo endpoint.
++
++        Returns:
++            The JSON response from the Graph API.
++        """
++        if media_paths:
++            return self._post_with_photo(text, media_paths[0])
++        return self._post_text(text)
++
++    def _post_text(self, text):
++        url = f"{GRAPH_API_BASE}/{self.page_id}/feed"
++        payload = {"message": text, "access_token": self.access_token}
++        logger.info("Posting text to Facebook Page %s", self.page_id)
++        resp = requests.post(url, data=payload, timeout=30)
++        resp.raise_for_status()
++        data = resp.json()
++        logger.info("Facebook post created. ID: %s", data.get("id"))
++        return data
++
++    def _post_with_photo(self, text, image_path):
++        path = Path(image_path)
++        if not path.exists():
++            raise FileNotFoundError(f"Image file not found: {image_path}")
++
++        url = f"{GRAPH_API_BASE}/{self.page_id}/photos"
++        payload = {"caption": text, "access_token": self.access_token}
++        with open(path, "rb") as img:
++            files = {"source": (path.name, img, "image/jpeg")}
++            logger.info("Posting photo to Facebook Page %s", self.page_id)
++            resp = requests.post(url, data=payload, files=files, timeout=60)
++
++        resp.raise_for_status()
++        data = resp.json()
++        logger.info("Facebook photo post created. ID: %s", data.get("id"))
++        return data
+diff --git a/social_media_bot/platforms/instagram.py b/social_media_bot/platforms/instagram.py
+new file mode 100644
+index 0000000..31d590a
+--- /dev/null
++++ b/social_media_bot/platforms/instagram.py
+@@ -0,0 +1,105 @@
++"""
++Instagram posting module using the Instagram Graph API.
++
++Instagram requires images to be publicly accessible URLs, so this module
++uploads the image to a temporary hosting service or expects a public URL.
++Supports image posts with captions.
++"""
++
++import logging
++import time
++
++import requests
++
++from social_media_bot.config import get_instagram_credentials
++
++logger = logging.getLogger(__name__)
++
++GRAPH_API_BASE = "https://graph.facebook.com/v19.0"
++
++
++class InstagramPoster:
++    """Post content to Instagram via the Graph API (Business/Creator accounts)."""
++
++    def __init__(self):
++        creds = get_instagram_credentials()
++        self._validate_credentials(creds)
++        self.account_id = creds["account_id"]
++        self.access_token = creds["access_token"]
++
++    @staticmethod
++    def _validate_credentials(creds):
++        missing = [k for k, v in creds.items() if not v]
++        if missing:
++            raise EnvironmentError(
++                f"Missing Instagram credentials: {', '.join(missing)}. "
++                "Set them as environment variables or GitHub Secrets."
++            )
++
++    def post(self, text, media_paths=None, image_url=None):
++        """
++        Publish an Instagram post.
++
++        The Instagram Graph API requires a publicly accessible image URL.
++        Provide either `image_url` (a public URL) or `media_paths` where
++        the first entry is treated as a public URL string.
++
++        Args:
++            text: The caption text.
++            media_paths: Optional list; the first item should be a public
++                         image URL string.
++            image_url: A direct public URL to the image.
++
++        Returns:
++            The JSON response from the Graph API.
++        """
++        url = image_url
++        if not url and media_paths:
++            url = media_paths[0]
++
++        if not url:
++            raise ValueError(
++                "Instagram requires a publicly accessible image URL. "
++                "Provide image_url or media_paths with a URL string."
++            )
++
++        container_id = self._create_media_container(text, url)
++        return self._publish_container(container_id)
++
++    def _create_media_container(self, caption, image_url):
++        url = f"{GRAPH_API_BASE}/{self.account_id}/media"
++        payload = {
++            "image_url": image_url,
++            "caption": caption,
++            "access_token": self.access_token,
++        }
++        logger.info("Creating Instagram media container")
++        resp = requests.post(url, data=payload, timeout=30)
++        resp.raise_for_status()
++        container_id = resp.json()["id"]
++        logger.info("Media container created: %s", container_id)
++        return container_id
++
++    def _publish_container(self, container_id, max_retries=5):
++        url = f"{GRAPH_API_BASE}/{self.account_id}/media_publish"
++        payload = {
++            "creation_id": container_id,
++            "access_token": self.access_token,
++        }
++
++        for attempt in range(max_retries):
++            logger.info("Publishing Instagram post (attempt %d)", attempt + 1)
++            resp = requests.post(url, data=payload, timeout=30)
++            if resp.status_code == 200:
++                data = resp.json()
++                logger.info("Instagram post published. ID: %s", data.get("id"))
++                return data
++            logger.warning(
++                "Publish attempt %d failed (%s), retrying...",
++                attempt + 1,
++                resp.status_code,
++            )
++            time.sleep(5)
++
++        resp.raise_for_status()
++        return resp.json()
+diff --git a/social_media_bot/platforms/twitter.py b/social_media_bot/platforms/twitter.py
+new file mode 100644
+index 0000000..c6d7d41
+--- /dev/null
++++ b/social_media_bot/platforms/twitter.py
+@@ -0,0 +1,80 @@
++"""
++Twitter/X posting module using Tweepy (Twitter API v2).
++
++Supports text posts, text with images, and text with GIFs.
++"""
++
++import logging
++from pathlib import Path
++
++import tweepy
++
++from social_media_bot.config import get_twitter_credentials
++
++logger = logging.getLogger(__name__)
++
++
++class TwitterPoster:
++    """Post content to Twitter/X using the v2 API."""
++
++    def __init__(self):
++        creds = get_twitter_credentials()
++        self._validate_credentials(creds)
++
++        self.auth = tweepy.OAuth1UserHandler(
++            consumer_key=creds["api_key"],
++            consumer_secret=creds["api_secret"],
++            access_token=creds["access_token"],
++            access_token_secret=creds["access_token_secret"],
++        )
++        self.api_v1 = tweepy.API(self.auth)
++        self.client = tweepy.Client(
++            bearer_token=creds["bearer_token"],
++            consumer_key=creds["api_key"],
++            consumer_secret=creds["api_secret"],
++            access_token=creds["access_token"],
++            access_token_secret=creds["access_token_secret"],
++        )
++
++    @staticmethod
++    def _validate_credentials(creds):
++        missing = [k for k, v in creds.items() if not v]
++        if missing:
++            raise EnvironmentError(
++                f"Missing Twitter credentials: {', '.join(missing)}. "
++                "Set them as environment variables or GitHub Secrets."
++            )
++
++    def _upload_media(self, media_path):
++        """Upload an image or GIF and return the media_id."""
++        path = Path(media_path)
++        if not path.exists():
++            raise FileNotFoundError(f"Media file not found: {media_path}")
++        logger.info("Uploading media: %s", media_path)
++        media = self.api_v1.media_upload(filename=str(path))
++        return media.media_id
++
++    def post(self, text, media_paths=None):
++        """
++        Publish a tweet.
++
++        Args:
++            text: The tweet text (max 280 characters).
++            media_paths: Optional list of file paths to images/GIFs to attach.
++
++        Returns:
++            The response object from the Twitter API.
++        """
++        media_ids = []
++        if media_paths:
++            for mp in media_paths:
++                media_ids.append(self._upload_media(mp))
++
++        kwargs = {"text": text}
++        if media_ids:
++            kwargs["media_ids"] = media_ids
++
++        logger.info("Posting tweet: %.80s...", text)
++        response = self.client.create_tweet(**kwargs)
++        logger.info("Tweet posted successfully. ID: %s", response.data["id"])
++        return response
+diff --git a/social_media_bot/poster.py b/social_media_bot/poster.py
+new file mode 100644
+index 0000000..bc83e48
+--- /dev/null
++++ b/social_media_bot/poster.py
+@@ -0,0 +1,163 @@
++"""
++Main entry point for the social media posting bot.
++
++Reads content from the YAML configuration, selects the appropriate post
++based on the current schedule or CLI arguments, and dispatches it to the
++configured platforms.
++"""
++
++import argparse
++import logging
++import sys
++from datetime import datetime, timezone
++from pathlib import Path
++
++from social_media_bot.config import CONTENT_DIR, load_content
++from social_media_bot.platforms import TwitterPoster, FacebookPoster, InstagramPoster
++
++logging.basicConfig(
++    level=logging.INFO,
++    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
++)
++logger = logging.getLogger(__name__)
++
++PLATFORM_MAP = {
++    "twitter": TwitterPoster,
++    "facebook": FacebookPoster,
++    "instagram": InstagramPoster,
++}
++
++
++def resolve_media_paths(media_list):
++    """Convert relative media paths to absolute paths under content/media/."""
++    if not media_list:
++        return None
++    resolved = []
++    for item in media_list:
++        if item.startswith("http://") or item.startswith("https://"):
++            resolved.append(item)
++        else:
++            full_path = CONTENT_DIR / "media" / item
++            if not full_path.exists():
++                logger.warning("Media file not found: %s", full_path)
++            resolved.append(str(full_path))
++    return resolved
++
++
++def select_post(posts, post_id=None):
++    """
++    Select a post to publish.
++
++    If post_id is given, find that specific post. Otherwise, pick the first
++    post whose scheduled_date matches today (UTC), or the first post if none
++    match.
++    """
++    if post_id:
++        for p in posts:
++            if p.get("id") == post_id:
++                return p
++        logger.error("Post with id '%s' not found.", post_id)
++        sys.exit(1)
++
++    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
++    for p in posts:
++        if p.get("scheduled_date") == today:
++            logger.info("Found post scheduled for today: %s", p.get("id"))
++            return p
++
++    logger.info("No post scheduled for today. Using the first available post.")
++    return posts[0] if posts else None
++
++
++def publish(post, platforms):
++    """Publish a post to the specified platforms."""
++    text = post["text"]
++    media = resolve_media_paths(post.get("media"))
++    results = {}
++
++    for platform_name in platforms:
++        platform_name = platform_name.strip().lower()
++        poster_cls = PLATFORM_MAP.get(platform_name)
++        if not poster_cls:
++            logger.warning("Unknown platform: %s", platform_name)
++            continue
++
++        try:
++            poster = poster_cls()
++            if platform_name == "instagram":
++                image_url = post.get("instagram_image_url")
++                result = poster.post(text, media_paths=media, image_url=image_url)
++            else:
++                result = poster.post(text, media_paths=media)
++            results[platform_name] = {"status": "success", "response": str(result)}
++            logger.info("Successfully posted to %s", platform_name)
++        except Exception as exc:
++            results[platform_name] = {"status": "error", "error": str(exc)}
++            logger.error("Failed to post to %s: %s", platform_name, exc)
++
++    return results
++
++
++def main():
++    parser = argparse.ArgumentParser(description="Social Media Automation Bot")
++    parser.add_argument(
++        "--platforms",
++        type=str,
++        default="twitter",
++        help="Comma-separated list of platforms (twitter, facebook, instagram)",
++    )
++    parser.add_argument(
++        "--post-id",
++        type=str,
++        default=None,
++        help="ID of a specific post to publish (from posts.yaml)",
++    )
++    parser.add_argument(
++        "--content-file",
++        type=str,
++        default="posts.yaml",
++        help="Name of the content YAML file in the content/ directory",
++    )
++    parser.add_argument(
++        "--dry-run",
++        action="store_true",
++        help="Print what would be posted without actually posting",
++    )
++    args = parser.parse_args()
++
++    content = load_content(args.content_file)
++    posts = content.get("posts", [])
++    if not posts:
++        logger.error("No posts defined in %s", args.content_file)
++        sys.exit(1)
++
++    post = select_post(posts, args.post_id)
++    if not post:
++        logger.error("No suitable post found.")
++        sys.exit(1)
++
++    platforms = [p.strip() for p in args.platforms.split(",")]
++
++    if args.dry_run:
++        logger.info("=== DRY RUN ===")
++        logger.info("Text: %s", post["text"])
++        logger.info("Media: %s", post.get("media", []))
++        logger.info("Platforms: %s", platforms)
++        logger.info("Instagram URL: %s", post.get("instagram_image_url", "N/A"))
++        return
++
++    results = publish(post, platforms)
++
++    for platform, result in results.items():
++        if result["status"] == "success":
++            logger.info("[%s] OK", platform)
++        else:
++            logger.error("[%s] FAILED: %s", platform, result["error"])
++
++    failed = [p for p, r in results.items() if r["status"] == "error"]
++    if failed:
++        sys.exit(1)
++
++
++if __name__ == "__main__":
++    main()

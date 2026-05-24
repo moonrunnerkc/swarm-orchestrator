@@ -1,0 +1,26 @@
+{
+  "id": "devin-benjisho-windows-mtr-pr200",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 200,
+    "headSha": "f13a31bf92e42bb228bfd857756176cbc0a0506e",
+    "baseSha": "e2278a11ca414a0848d66272fdfa0c5e02996da0",
+    "title": "docs: fix stale CLI examples in README enterprise integration section",
+    "body": "## Summary\n\nFix two broken CLI examples in the README's Enterprise Integration section that reference flags which do not exist in the actual CLI.\n\n## Why\n\nDuring repository onboarding and health check, I found two CLI examples in the Enterprise Integration `<details>` section that use non-existent flags:\n1. `--reporter json --log-level info` — these flags don't exist; the correct flag is `--json`\n2. `-o output.txt` — this flag doesn't exist; the binary uses shell redirection for file output\n\nAdditionally, the Task Scheduler example referenced `C:\\Program Files\\Windows-MTR\\mtr.exe` (an MSI install path), but the current docs recommend portable ZIP install to a user-chosen directory.\n\n## Changes\n\n- [x] Documentation updated\n\nTwo line changes in `README.md`:\n- **Task Scheduler example**: Replaced non-existent `-o output.txt` flag and updated path from `C:\\Program Files\\Windows-MTR\\` to `C:\\Tools\\windows-mtr\\` (matching portable install docs)\n- **Centralized Monitoring example**: Replaced non-existent `--reporter json --log-level info` with valid `--json -c 10`\n\n## Testing\n\n```bash\ncargo clippy --all-targets --all-features -- -D warnings  # PASS (exit 0)\ncargo check --workspace                                    # PASS (exit 0)\n```\n\nNo code changes — documentation-only fix. Verified both replacement commands match actual CLI flags defined in `src/main.rs` (`-j/--json`, `-c`, `-r`).\n\n## Compatibility / Risk Notes\n\n- CLI compatibility impact: None (documentation only)\n- Output/report format impact: None\n- Operational risk and rollback plan: Zero risk, single-file doc change\n\n## Security Considerations\n\nNone — documentation-only change.\n\n## Checklist\n\n- [x] I followed the contribution guidelines in `CONTRIBUTING.md`\n- [x] I ran relevant checks locally\n- [x] I updated docs/changelog as needed\n- [x] I confirmed no sensitive data is included\n\nLink to Devin session: https://app.devin.ai/sessions/871fb66468ba497e98d69036cb2a90fc\nRequested by: @benjisho\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/benjisho/windows-mtr/pull/200\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779578830-fix-stale-readme-cli-examples",
+    "repository": "benjisho/windows-mtr"
+  },
+  "diffRef": {
+    "repository": "benjisho/windows-mtr",
+    "headSha": "f13a31bf92e42bb228bfd857756176cbc0a0506e",
+    "baseSha": "e2278a11ca414a0848d66272fdfa0c5e02996da0"
+  },
+  "vendoredDiffPath": "devin/devin-benjisho-windows-mtr-pr200.diff",
+  "vendoredAt": "2026-05-24T03:04:44.278Z",
+  "collectedAt": "2026-05-24T03:04:44.278Z"
+}
