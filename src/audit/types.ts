@@ -40,6 +40,18 @@ export interface Finding {
    * was already terminal.
    */
   intentUpgraded?: boolean;
+  /**
+   * v10.3: when the LLM judge contributed to this finding firing, the
+   * model's one-sentence reasoning is preserved here for the renderer
+   * to show under the finding. Absent on deterministic-only findings.
+   */
+  judgeReasoning?: string;
+  /**
+   * v10.3: pinned model id the judge ran against (e.g.
+   * `claude-haiku-4-5-20251001`). Required so replay over the same
+   * diff and title produces the recorded answer.
+   */
+  judgeModelId?: string;
 }
 
 export interface AuditAgentAttribution {
@@ -76,6 +88,21 @@ export interface AuditInput {
   repoRoot: string;
   agent?: AuditAgentAttribution;
   detectorSet?: DetectorSetName;
+  /**
+   * v10.3: when true, detectors that integrate an LLM judge (currently
+   * `no-op-fix`) call out to Anthropic Haiku via the gated path. Off by
+   * default to preserve the no-credentials default contract of `swarm
+   * audit`. Toggled from CLI via `--enable-llm-judge` or the
+   * `SWARM_AUDIT_LLM_JUDGE=1` env var.
+   */
+  judgeEnabled?: boolean;
+  /**
+   * v10.3: ledger handle for judge invocations to record into. When
+   * absent the judge still runs (cache + answer), but no
+   * `llm-judge-result` entries are written. Threaded by the audit CLI
+   * so the audit ledger is the one source of judge replay state.
+   */
+  judgeLedger?: JudgeLedgerSink;
   pr?: {
     number: number;
     headSha: string;
@@ -86,6 +113,27 @@ export interface AuditInput {
     headRef: string;
     repository: string;
   };
+}
+
+/**
+ * Minimal ledger sink the judge needs. A callback wrapped around
+ * whatever ledger the caller owns; the audit CLI passes a closure
+ * over `HashChainedLedger.append`. Decoupled so the audit surface
+ * does not have to depend on `src/ledger/` types directly.
+ */
+export interface JudgeLedgerEntry {
+  type: 'llm-judge-result';
+  detector: string;
+  modelId: string;
+  cacheHit: boolean;
+  diffSha: string;
+  titleSha: string;
+  answer: 'yes' | 'no' | 'unavailable';
+  reason?: string;
+}
+
+export interface JudgeLedgerSink {
+  appendJudgeEntry(entry: JudgeLedgerEntry): void;
 }
 
 export interface AuditResult {
