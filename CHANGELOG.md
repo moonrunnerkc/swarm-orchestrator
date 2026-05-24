@@ -4,6 +4,101 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project follows
 [Semantic Versioning](https://semver.org/).
 
+## [10.1.0] - 2026-05-24
+
+### Detector accuracy on real PRs
+
+CLI, ledger, and AIBOM shape unchanged. The real-corpus baseline
+replaces the synthetic 500-case number as the published headline:
+precision 0.067, recall 0.300, F1 0.109 across 195 clean + 10 broken
+hand-labeled entries. Synthetic regression suite still passes 520 of
+520 with 0 failed expectations. Test count 1061 to 1127.
+
+#### Added
+
+- `benchmarks/real-corpus/` with 949 collected agent-authored PRs plus 60
+  closed-without-merge negatives and 205 hand-labeled entries (10 broken,
+  195 clean). Snapshot at `benchmarks/real-corpus/scores/latest.json`.
+- `scripts/corpus/{collect-real,collect-negatives,sample-unlabeled,sample-for-labeling,score-real,verify-pr-intent,agent-signatures}.ts`
+  for collection, labeling sampling, scoring, and intent-layer behavior
+  checks.
+- `src/audit/cheat-detector/manifests/` directory: five new ecosystem
+  readers (`pom-xml.ts`, `gradle.ts`, `gemfile.ts`, `composer-json.ts`,
+  `csproj.ts`) on top of the five existing (`package.json`,
+  `requirements.txt`, `pyproject.toml`, `go.mod`, `Cargo.toml`).
+- `src/audit/cheat-detector/matcher-grader.ts` AST matcher comparator using
+  the TypeScript compiler API. Catches tolerance widening like
+  `toBeCloseTo(5, 2)` to `toBeCloseTo(5, 100)` that the regex layer cannot
+  see.
+- `src/audit/cheat-detector/test-import-closure.ts` and
+  `src/audit/cheat-detector/import-resolver.ts` for import-graph
+  reachability. Honors `tsconfig#paths` and workspace mappings; Python
+  dotted and relative imports resolved against `__init__.py`.
+- `src/audit/cheat-detector/pr-intent.ts` parses PR title and body for
+  three fix-claim vocabularies (GitHub close-keyword with `#N`,
+  imperative title prefix with colon, body-lead "this PR fixes/closes"
+  sentence in the first 500 bytes).
+- `AuditConfig.intentSeverityPolicy: strict | lenient | off` field in
+  `.swarm/audit-config.yaml`. Documented in [`docs/audit-config.md`](docs/audit-config.md).
+- `Finding.intentUpgraded?: boolean` and `DetectorContext.pr?` on the
+  shared types (both additive).
+- 20 synthetic fixtures under
+  `benchmarks/falsification-corpus/v10-synthetic-corpus/test-relaxation/{broken,clean}/test-relaxation-{050..069}.diff`
+  exercising the AST grader rules. `index.json` totalCases 500 to 520.
+- `docs/audit-config.md` documents both `excludePaths` and
+  `intentSeverityPolicy` with the full fix-claim vocabulary catalog.
+
+#### Changed
+
+- `runCheatDetectors` is now async. Detector return type widens to
+  `Finding[] | Promise<Finding[]>` to support the import-graph path.
+- `error-swallow` 1.0.0 to 1.1.0 splits bare empty catches (still
+  `block`) from comment-only catches (now `info`).
+- `mock-of-hallucination` 1.0.0 to 1.1.0 picks up the five new manifest
+  readers.
+- `test-relaxation` 1.0.0 to 1.1.0 escalates regex-undecidable cases to
+  the AST grader. Hunk cap at 50 per PR with regex-only fallback above
+  the cap.
+- `no-op-fix` 1.0.0 to 1.1.0 uses `reachableSourceFiles` (BFS over the
+  import graph, 5000-node cap) instead of the basename `text.includes`
+  heuristic.
+- `scripts/corpus/score-real.ts` threads PR metadata into the audit so
+  the PR-intent layer fires during scoring.
+- `benchmarks/falsification-corpus/v10-corpus/` renamed
+  `v10-synthetic-corpus/` so the leaderboard UI can show the real-corpus
+  number as the headline and the synthetic numbers as a regression
+  sidebar.
+- README "Evidence" section replaces the synthetic 1.000 headline with
+  the real-corpus 0.109 F1 plus a per-detector TP/FP/TN/FN table.
+- LOC budget raised 23500 to 24500 to accommodate the new detector
+  infrastructure (matcher-grader 251 LOC, test-import-closure 137 LOC,
+  import-resolver 284 LOC).
+
+#### Removed
+
+- `testFilesReferencingSource`, `walkDir`, `readSafe`, and the
+  `text.includes(stem)` heuristic from `no-op-fix.ts`.
+
+#### Known limitations
+
+- Real-corpus recall is 0.300; only 3 of 10 broken-labeled PRs are
+  caught by at least one detector. The 7 misses are PRs labeled
+  `goal-not-fixed` (empty file added, half the stated change missing,
+  hardcoded answers) that neither `no-op-fix` nor `comment-only-fix`
+  fire on. Candidate for the next release.
+- The PR-intent layer's headline-precision impact on this baseline is
+  negative (0.083 to 0.067) because none of the 10 broken-labeled
+  entries in this sample carry fix-claim language while 22 of the 195
+  clean-labeled entries do. The layer escalates as designed; the
+  corpus does not exercise its upside on the broken side. Disable per
+  repo via `intentSeverityPolicy: off`.
+- `mock-of-hallucination` cannot resolve Python stdlib (`shlex`,
+  `graphviz`) against project manifests, producing 13 of its 13 FPs
+  from this class. Candidate for the next release.
+- Labels are AI-judged (`labeledBy: claude-opus-4-7-baseline-judge`)
+  pending human ground-truth review and marked as such in every label
+  file. Human review is the next credibility step.
+
 ## [10.0.0] - 2026-05-23
 
 ### v10 — Auditor repositioning
