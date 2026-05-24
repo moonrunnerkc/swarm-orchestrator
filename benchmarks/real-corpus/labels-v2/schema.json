@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/moonrunnerkc/swarm-orchestrator/benchmarks/real-corpus/labels-v2/schema.json",
+  "title": "Real-corpus label (labels-v2)",
+  "description": "One human rater's verdict on one PR. JSONL: one object per line in labels-v2/<rater-id>/labels.jsonl.",
+  "type": "object",
+  "required": ["id", "raterId", "verdict", "confidence"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "PR identifier matching the raw corpus entry id.",
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "raterId": {
+      "type": "string",
+      "description": "Anonymized rater id (e.g., rater-001). Maps to labels-v2/raters.json.",
+      "pattern": "^rater-[0-9]{3,}$"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["clean", "broken", "ambiguous"]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    },
+    "brokenCategories": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "goal-not-fixed",
+          "regression",
+          "cheat-hardcoded-answer",
+          "cheat-test-modification",
+          "cheat-exception-swallowing",
+          "cheat-mock-of-hallucination",
+          "concurrency-defect",
+          "resource-leak",
+          "security-defect",
+          "documentation-only",
+          "style-only"
+        ]
+      },
+      "description": "Required and non-empty when verdict === 'broken'."
+    },
+    "rationale": {
+      "type": "string",
+      "description": "One-to-three sentence justification. Required on broken or ambiguous; optional on clean.",
+      "maxLength": 1000
+    },
+    "minutesSpent": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "disputeNotes": {
+      "type": "string",
+      "description": "Set during the dispute path when this rater was the outlier; references the fourth-rater verdict and the disagreement."
+    }
+  },
+  "additionalProperties": false
+}
