@@ -64,6 +64,9 @@ swarm audit --diff-file my.patch --emit-aibom cyclonedx-ml
 
 # shadow-mode dogfood: record verdicts to disk, no comment, no gate
 swarm audit --pr <ref> --shadow my-org/my-repo
+
+# single-file shadow output (one JSON per audit invocation; see docs/shadow-mode.md)
+swarm audit --pr <ref> --shadow-output ./audit-verdict.json
 ```
 
 Exit codes: `0` advisory-clean or any advise-mode run, `1` block (gate mode only), `2` usage error.
@@ -308,6 +311,7 @@ pin `8.0.x` if you still need `swarm run --v6`.
 - [`benchmarks/real-corpus/`](benchmarks/real-corpus/): real-corpus baseline + labels.
 - [`docs/labeling-methodology.md`](docs/labeling-methodology.md): labels-v2 rubric and kappa policy.
 - [`benchmarks/leaderboard/`](benchmarks/leaderboard/): reproducible scorer.
+- [`docs/shadow-mode.md`](docs/shadow-mode.md): single-file and per-repo shadow audit guide.
 - [`docs/`](docs/): provider, check-type, AI-BOM, and adapter docs.
 - [`CHANGELOG.md`](CHANGELOG.md): release history.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): development workflow.
