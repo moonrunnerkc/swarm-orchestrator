@@ -10,7 +10,7 @@ A CLI for auditing AI-generated PRs and grading patches against typed contracts.
 [![License: ISC](https://img.shields.io/badge/license-ISC-blue.svg)](LICENSE)
 [![Node >= 20](https://img.shields.io/badge/node-%E2%89%A5%2020-3c873a.svg)](package.json)
 [![Version 10.2.0-advisory](https://img.shields.io/badge/version-10.2.0--advisory-22d3ee.svg)](package.json)
-[![Real-corpus F1 0.109](https://img.shields.io/badge/real--corpus%20F1-0.109%20%28205%20hand--labeled%29-orange.svg)](benchmarks/real-corpus/scores/latest.json)
+[![Real-corpus F1 0.167](https://img.shields.io/badge/real--corpus%20F1-0.167%20%28205%20AI--labeled%29-orange.svg)](benchmarks/real-corpus/scores/latest.json)
 
 <a href="#install"><b>Install</b></a> ·
 <a href="#quick-start"><b>Quick start</b></a> ·
@@ -77,12 +77,13 @@ with `node dist/scripts/corpus/score-real.js`; snapshot at
 
 | | Value |
 |---|---|
-| **Real-corpus F1** | **0.109** |
-| Real-corpus precision | 0.067 |
-| Real-corpus recall | 0.300 |
-| Sample size | 205 hand-labeled PRs (10 broken, 195 clean) |
+| **Real-corpus F1** | **0.167** |
+| Real-corpus precision | 0.100 |
+| Real-corpus recall | 0.500 |
+| Sample size | 205 AI-labeled PRs (10 broken, 195 clean), pending human re-label under labels-v2 |
 | Agent vendors covered | 8 (devin, cursor, openhands, copilot-workspace, claude-code, aider, codex-cli, replit-agent) |
 | Detector set scored | experimental (all 10), so retired detectors are still measured |
+| LLM judge | off (no `ANTHROPIC_API_KEY` exposed to the scorer); rerun with `SWARM_AUDIT_LLM_JUDGE=1` to score the gated path |
 
 The synthetic regression suite prints F1 1.000 on the same code. **That
 1.000 is a self-consistency check, not detection power**: the generator
@@ -100,20 +101,20 @@ project's credibility today; closing it is the next milestone (see
 labels-v2 scaffold under [`benchmarks/real-corpus/labels-v2/`](benchmarks/real-corpus/labels-v2/)).
 
 **Per-detector breakdown** (intent layer active, default strict policy,
-experimental set):
+experimental set, judge off):
 
-| Detector | Set | TP | FP | TN | FN | Precision | Recall |
-|---|---|---|---|---|---|---|---|
-| `error-swallow` | default | 3 | 13 | 189 | 0 | **0.188** | **1.000** |
-| `mock-of-hallucination` | default | 0 | 13 | 190 | 2 | 0.000 | 0.000 |
-| `no-op-fix` | default | 0 | 12 | 188 | 5 | 0.000 | 0.000 |
-| `fake-refactor` | default | 0 | 4 | 201 | 0 | 0.000 | n/a |
-| `assertion-strip` | experimental | 0 | 5 | 200 | 0 | 0.000 | n/a |
-| `coverage-erosion` | experimental | 0 | 4 | 201 | 0 | 0.000 | n/a |
-| `test-relaxation` | experimental | 0 | 4 | 201 | 0 | 0.000 | n/a |
-| `comment-only-fix` | experimental | 0 | 0 | 200 | 5 | n/a | 0.000 |
-| `exception-rethrow-lost-context` | experimental | 0 | 0 | 205 | 0 | n/a | n/a |
-| `dead-branch-insertion` | experimental | 0 | 0 | 205 | 0 | n/a | n/a |
+| Detector | Version | Set | TP | FP | TN | FN | Precision | Recall |
+|---|---|---|---|---|---|---|---|---|
+| `error-swallow` | 2.0.0 | default | 3 | 13 | 189 | 0 | **0.188** | **1.000** |
+| `mock-of-hallucination` | 2.0.0 | default | 2 | 16 | 187 | 0 | **0.111** | **1.000** |
+| `no-op-fix` | 2.0.0 | default | 0 | 12 | 188 | 5 | 0.000 | 0.000 |
+| `fake-refactor` | 2.0.0 | default | 0 | 4 | 201 | 0 | 0.000 | n/a |
+| `assertion-strip` | 1.0.0 | experimental | 0 | 5 | 200 | 0 | 0.000 | n/a |
+| `coverage-erosion` | 1.0.0 | experimental | 0 | 4 | 201 | 0 | 0.000 | n/a |
+| `test-relaxation` | 1.1.0 | experimental | 0 | 4 | 201 | 0 | 0.000 | n/a |
+| `comment-only-fix` | 1.0.0 | experimental | 0 | 0 | 200 | 5 | n/a | 0.000 |
+| `exception-rethrow-lost-context` | 1.0.0 | experimental | 0 | 0 | 205 | 0 | n/a | n/a |
+| `dead-branch-insertion` | 1.0.0 | experimental | 0 | 0 | 205 | 0 | n/a | n/a |
 
 `default` is loaded automatically; `experimental` requires
 `--detectors experimental` on the CLI. Six detectors moved out of the
