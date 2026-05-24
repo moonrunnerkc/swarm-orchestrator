@@ -150,6 +150,11 @@ async function scoreEntries(
     const result = await runCheatDetectors({
       unifiedDiff: diff,
       repoRoot: args.repoRoot,
+      // v10.2-advisory split detectors into default + experimental.
+      // The scorer needs the full set so it can keep producing the
+      // per-detector TP/FP table for the retired six as well, which
+      // is the data the promotion script reads.
+      detectorSet: 'experimental',
       pr: {
         number: entry.pr.number,
         headSha: entry.pr.headSha,

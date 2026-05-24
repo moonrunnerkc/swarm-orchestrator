@@ -100,8 +100,20 @@ export async function scoreCorpus(): Promise<LeaderboardOutput> {
   for (const entry of index.cases) {
     const brokenDiff = loadDiff(entry.brokenPath);
     const cleanDiff = loadDiff(entry.cleanPath);
-    const brokenResult = await runCheatDetectors({ unifiedDiff: brokenDiff, repoRoot: CORPUS_ROOT });
-    const cleanResult = await runCheatDetectors({ unifiedDiff: cleanDiff, repoRoot: CORPUS_ROOT });
+    // v10.2-advisory: the leaderboard covers all ten categories, so
+    // the scorer explicitly asks for the experimental set. The README
+    // "self-consistency check, not detection power" framing applies to
+    // the score this scorer produces.
+    const brokenResult = await runCheatDetectors({
+      unifiedDiff: brokenDiff,
+      repoRoot: CORPUS_ROOT,
+      detectorSet: 'experimental',
+    });
+    const cleanResult = await runCheatDetectors({
+      unifiedDiff: cleanDiff,
+      repoRoot: CORPUS_ROOT,
+      detectorSet: 'experimental',
+    });
     if (Object.keys(detectorVersions).length === 0) {
       detectorVersions = brokenResult.detectorVersions;
     }

@@ -2,10 +2,12 @@
 // accepts an AuditInput (already parsed diff text + repo root + optional
 // PR metadata + optional agent attribution) and returns an AuditResult.
 //
-// New detectors register themselves below; the detector list is the
-// only place that needs editing when adding a category. Each detector's
-// version pins into the AuditResult.detectorVersions map so downstream
-// AIBOM artifacts can attribute findings.
+// Detector selection lives in `./detector-sets.ts`. v10.2 split the
+// registry into a `default` set (the four advisory-grade detectors
+// targeted for v2.0 work) and an `experimental` set (the six retired
+// detectors that did not earn their context on the v10.1 real-corpus
+// baseline). The `set` field on `AuditInput.detectorSet` chooses which
+// list to load; absent, the default set is used.
 
 import parseDiff from 'parse-diff';
 import type { Detector } from './detector-types';
@@ -13,29 +15,11 @@ import type { AuditInput, AuditResult, Finding } from '../types';
 import { isAuditSubjectPath } from './subject-paths';
 import { buildExcludeMatcher, loadAuditConfig } from './audit-config';
 import { parsePrIntent, upgradeSeverity, type PrIntent } from './pr-intent';
-import { testRelaxationDetector } from './test-relaxation';
-import { mockOfHallucinationDetector } from './mock-of-hallucination';
-import { assertionStripDetector } from './assertion-strip';
-import { noOpFixDetector } from './no-op-fix';
-import { coverageErosionDetector } from './coverage-erosion';
-import { fakeRefactorDetector } from './fake-refactor';
-import { commentOnlyFixDetector } from './comment-only-fix';
-import { errorSwallowDetector } from './error-swallow';
-import { exceptionRethrowLostContextDetector } from './exception-rethrow-lost-context';
-import { deadBranchInsertionDetector } from './dead-branch-insertion';
+import { resolveDetectors, type DetectorSet } from './detector-sets';
 
-export const DETECTORS: readonly Detector[] = [
-  testRelaxationDetector,
-  mockOfHallucinationDetector,
-  assertionStripDetector,
-  noOpFixDetector,
-  coverageErosionDetector,
-  fakeRefactorDetector,
-  commentOnlyFixDetector,
-  errorSwallowDetector,
-  exceptionRethrowLostContextDetector,
-  deadBranchInsertionDetector,
-];
+// Re-exported for backwards compatibility with callers that pinned the
+// flat list. New code should pass `detectorSet` on the AuditInput.
+export const DETECTORS: readonly Detector[] = resolveDetectors('all');
 
 export async function runCheatDetectors(input: AuditInput): Promise<AuditResult> {
   const allFiles = parseDiff(input.unifiedDiff);
@@ -57,7 +41,9 @@ export async function runCheatDetectors(input: AuditInput): Promise<AuditResult>
     : { files, repoRoot: input.repoRoot };
   const findings: Finding[] = [];
   const detectorVersions: Record<string, string> = {};
-  for (const detector of DETECTORS) {
+  const detectorSet: DetectorSet = input.detectorSet ?? 'default';
+  const detectors = resolveDetectors(detectorSet);
+  for (const detector of detectors) {
     detectorVersions[detector.name] = detector.version;
     const result = await detector.run(ctx);
     for (const finding of result) {
@@ -79,6 +65,7 @@ export async function runCheatDetectors(input: AuditInput): Promise<AuditResult>
     findings,
     generatedAt: new Date().toISOString(),
     detectorVersions,
+    detectorSet,
   };
   if (input.agent !== undefined) result.agent = input.agent;
   if (input.pr !== undefined) result.pr = input.pr;
@@ -112,3 +99,10 @@ export { errorSwallowDetector } from './error-swallow';
 export { exceptionRethrowLostContextDetector } from './exception-rethrow-lost-context';
 export { deadBranchInsertionDetector } from './dead-branch-insertion';
 export type { Detector } from './detector-types';
+export {
+  DEFAULT_DETECTORS,
+  EXPERIMENTAL_DETECTORS,
+  parseDetectorSet,
+  resolveDetectors,
+  type DetectorSet,
+} from './detector-sets';

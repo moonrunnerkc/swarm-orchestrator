@@ -49,18 +49,45 @@ diff --git a/src/lib.test.ts b/src/lib.test.ts
 describe('cli / swarm audit', function () {
   this.timeout(15_000);
 
-  it('returns exit 1 with json output for a test-relaxation diff', () => {
+  it('returns exit 1 with json output for a test-relaxation diff (gate mode + experimental set)', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-cli-audit-'));
     const diffFile = path.join(dir, 'in.patch');
     fs.writeFileSync(diffFile, TEST_RELAXATION_DIFF);
     const { stdout, exitCode } = runCli(
-      ['audit', '--diff-file', diffFile, '--repo-root', dir, '--output', 'json'],
+      [
+        'audit',
+        '--diff-file', diffFile,
+        '--repo-root', dir,
+        '--output', 'json',
+        '--mode', 'gate',
+        '--detectors', 'experimental',
+      ],
       dir,
     );
     assert.equal(exitCode, 1, `expected exit 1, got ${exitCode}`);
     const parsed = JSON.parse(stdout);
     assert.equal(parsed.pass, false);
     assert.ok(parsed.findings.some((f: { category: string }) => f.category === 'test-relaxation'));
+  });
+
+  it('defaults to advise mode: exit 0 even on a test-relaxation diff under experimental set', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-cli-audit-advise-'));
+    const diffFile = path.join(dir, 'in.patch');
+    fs.writeFileSync(diffFile, TEST_RELAXATION_DIFF);
+    const { stdout, exitCode } = runCli(
+      [
+        'audit',
+        '--diff-file', diffFile,
+        '--repo-root', dir,
+        '--output', 'json',
+        '--detectors', 'experimental',
+      ],
+      dir,
+    );
+    assert.equal(exitCode, 0, `expected exit 0 in advise mode, got ${exitCode}`);
+    const parsed = JSON.parse(stdout);
+    assert.equal(parsed.mode, 'advise');
+    assert.equal(parsed.pass, false);
   });
 
   it('returns exit 0 for a clean diff', () => {
@@ -88,6 +115,10 @@ describe('cli / swarm audit', function () {
         dir,
         '--output',
         'json',
+        '--mode',
+        'gate',
+        '--detectors',
+        'experimental',
         '--emit-aibom',
         'cyclonedx-ml',
         '--aibom-out',
