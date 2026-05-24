@@ -1,7 +1,6 @@
-// Renders an audit result as a GitHub PR-comment body. The PR-comment
-// renderer is the user-facing artifact in Phase 1; everything else is
-// internal scaffolding. Output is deterministic for a given input — the
-// timestamp and ledger link are the only run-specific fields.
+// Renders an audit result as a GitHub PR-comment body. Output is
+// deterministic for a given input; the timestamp and ledger link are
+// the only run-specific fields.
 
 import type { AuditResult, Finding, Severity } from '../types';
 
@@ -28,6 +27,11 @@ export function renderPrComment(result: AuditResult, options: RenderOptions = {}
     lines.push(agentLine, '');
   }
 
+  const intentLine = renderIntentNote(result);
+  if (intentLine !== undefined) {
+    lines.push(intentLine, '');
+  }
+
   lines.push(renderSummary(result), '');
 
   for (const severity of SEVERITY_ORDER) {
@@ -50,6 +54,24 @@ function renderAgentLine(result: AuditResult): string | undefined {
   const { vendor, version, confidence, source } = result.agent;
   const versionPart = version !== undefined ? ` v${version}` : '';
   return `**Detected agent:** \`${vendor}\`${versionPart} (confidence: ${confidence}, signal: ${source})`;
+}
+
+// One-line note printed at the top of the comment when the PR-intent
+// layer escalated at least one finding's severity. Quotes the agent's
+// fix-claim back so the human reviewer can see why the audit took a
+// harder line on this PR than it would have on a neutrally-titled
+// change. Returns undefined when no finding was upgraded; silence when
+// nothing changed.
+function renderIntentNote(result: AuditResult): string | undefined {
+  const upgraded = result.findings.filter((f) => f.intentUpgraded === true);
+  if (upgraded.length === 0) return undefined;
+  const categories = Array.from(new Set(upgraded.map((f) => f.category)));
+  const catList = categories.map((c) => `\`${c}\``).join(', ');
+  return (
+    `**Severity raised by PR-intent layer:** ${upgraded.length} finding(s) ` +
+    `across ${catList} were escalated because the PR claims a fix. ` +
+    `Disable with \`intentSeverityPolicy: off\` in \`.swarm/audit-config.yaml\`.`
+  );
 }
 
 function renderSummary(result: AuditResult): string {

@@ -30,6 +30,16 @@ export interface Finding {
   message: string;
   location: FindingLocation;
   evidence: string;
+  /**
+   * True when the PR-intent layer escalated this finding's severity
+   * above what the detector originally emitted. The renderer uses
+   * this to print a one-line note at the top of the PR comment
+   * quoting the agent's fix-claim. Absent (undefined) means the
+   * layer did not fire on this finding, either because the PR did
+   * not claim a fix, the policy was `off`, or the starting severity
+   * was already terminal.
+   */
+  intentUpgraded?: boolean;
 }
 
 export interface AuditAgentAttribution {
