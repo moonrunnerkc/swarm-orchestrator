@@ -9,7 +9,7 @@ A CLI for auditing AI-generated PRs and grading patches against typed contracts.
 [![CI](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml)
 [![License: ISC](https://img.shields.io/badge/license-ISC-blue.svg)](LICENSE)
 [![Node >= 20](https://img.shields.io/badge/node-%E2%89%A5%2020-3c873a.svg)](package.json)
-[![Version 10.2.0-advisory](https://img.shields.io/badge/version-10.2.0--advisory-22d3ee.svg)](package.json)
+[![Version 10.3.0-advisory](https://img.shields.io/badge/version-10.3.0--advisory-22d3ee.svg)](package.json)
 [![Real-corpus F1 0.167](https://img.shields.io/badge/real--corpus%20F1-0.167%20%28205%20AI--labeled%29-orange.svg)](benchmarks/real-corpus/scores/latest.json)
 
 <a href="#install"><b>Install</b></a> ·
@@ -279,6 +279,23 @@ Both surfaces write to the same append-only hash-chained ledger ([`src/ledger/le
 - Aider pre-commit hook: [`integrations/aider/pre-commit-swarm-audit`](integrations/aider/pre-commit-swarm-audit).
 
 ## Versions
+
+`10.3.0-advisory` finishes the four solo-doable items left after
+`10.2.0-advisory`. `no-op-fix` bumps to 2.0.0 with a gated Anthropic
+Haiku judge (off by default; opt in with `--enable-llm-judge` or
+`SWARM_AUDIT_LLM_JUDGE=1`), content-addressed cache at
+`.swarm/llm-judge-cache/`, and a new `llm-judge-result` ledger entry
+that pins the model id so replay is deterministic. The real-corpus
+baseline is re-scored against the v2.0 detectors: overall F1 0.167
+(P 0.100, R 0.500), with `mock-of-hallucination` picking up 2 TPs the
+v1.x shape missed. A static dashboard fetches the score snapshot
+directly and publishes via GitHub Pages
+([moonrunnerkc.github.io/swarm-orchestrator](https://moonrunnerkc.github.io/swarm-orchestrator/docs/leaderboard/)).
+`--shadow-output <path>` writes one JSON object per audit with
+detector verdicts, judge invocation count, and the rendered comment;
+the existing `--shadow <repo-label>` per-repo rollup remains. No
+detector crosses the F1 0.5 promotion gate, so all ten stay
+advisory-only.
 
 `10.2.0-advisory` repositions the project around the suspicion-score
 verdict the measured precision can credibly support. Synthetic 1.000 is

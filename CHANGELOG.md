@@ -4,6 +4,67 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project follows
 [Semantic Versioning](https://semver.org/).
 
+## [10.3.0-advisory] - 2026-05-24
+
+### Finishes the v10.2 solo-doable backlog
+
+The four items left after `10.2.0-advisory` that didn't need external
+humans (paid raters, OSS maintainers running shadow audits on their
+own repos) land here: `no-op-fix` v2.0 with a gated LLM judge, a
+real-corpus rebaseline against the v2.0 detectors, a public
+dashboard, and a single-file shadow-output flag.
+
+#### Added
+
+- **`no-op-fix` 2.0.0 with a gated Anthropic Haiku judge.** The judge
+  fires only when `--enable-llm-judge` is set or
+  `SWARM_AUDIT_LLM_JUDGE=1` is in the environment, both of which
+  require `ANTHROPIC_API_KEY`. Default audits still run with no
+  credentials. Content-addressed cache at `.swarm/llm-judge-cache/`
+  makes the judge's verdict replayable: the same diff + title +
+  pinned model id always returns the cached answer. Model id pinned
+  to `claude-haiku-4-5-20251001`.
+- **`llm-judge-result` ledger entry kind.** One entry per judge call
+  (cache hit or live), carrying detector, modelId, cacheHit, diffSha,
+  titleSha, answer, and optional reason. Feeds the
+  `--shadow-output` `judgeInvocations` counter and the renderer's
+  per-finding judge reasoning line.
+- **`--shadow-output <path>` on `swarm audit`.** Single-file shadow
+  schema (`schemaVersion: 2`): `prRef`, `auditedAt`, `durationMs`,
+  `detectorVerdicts` per loaded detector, the `judgeInvocations`
+  count, and the `renderedComment` body. Existing `--shadow
+  <repo-label>` per-repo rollup mode is unchanged.
+- **Public dashboard at `docs/leaderboard/`.** New `index.html` +
+  `score.js` (no build step, no CDN) fetches
+  `benchmarks/real-corpus/scores/latest.json` directly and renders
+  the overall precision / recall / F1, a sortable per-detector F1
+  table, and the score-file timestamp. Synthetic regression sidebar
+  preserved so the weekly cron still has somewhere to land.
+- **GitHub Pages workflow** (`.github/workflows/pages.yml`) publishes
+  `docs/` plus the score snapshot to
+  [moonrunnerkc.github.io/swarm-orchestrator/docs/leaderboard/](https://moonrunnerkc.github.io/swarm-orchestrator/docs/leaderboard/).
+- **`docs/shadow-mode.md`.** Operator guide for both shadow shapes
+  with a runnable `jq` rollup recipe.
+
+#### Changed
+
+- **Real-corpus headline rescored against v2.0 detectors.** The prior
+  `latest.json` snapshot predated the v2.0 commits to
+  `error-swallow`, `fake-refactor`, `mock-of-hallucination`, and
+  `no-op-fix`. Rescoring against the live registry (judge off) moves
+  the overall numbers from F1 0.109 (P 0.067, R 0.300) to F1 0.167
+  (P 0.100, R 0.500). The single per-detector mover is
+  `mock-of-hallucination`, which goes from 0 TP / 13 FP to
+  2 TP / 16 FP. `promotions.json` keeps every detector at
+  `advisory-only`; no detector clears the F1 0.5 gate.
+- **README evidence table now carries detector versions** so a reader
+  can see which shape produced each row, and an "LLM judge" row makes
+  the default-off scoring posture explicit.
+
+#### Internal
+
+- LOC budget raised from 26000 to 27000 to absorb the judge module.
+
 ## [10.2.0-advisory] - 2026-05-24
 
 ### Honest reset and repositioning
