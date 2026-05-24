@@ -1,10 +1,14 @@
 import { strict as assert } from 'assert';
 import parseDiff from 'parse-diff';
 import { testRelaxationDetector } from '../../../src/audit/cheat-detector/test-relaxation';
+import type { Finding } from '../../../src/audit/types';
 
-function runOn(unifiedDiff: string) {
+function runOn(unifiedDiff: string): Finding[] {
   const files = parseDiff(unifiedDiff);
-  return testRelaxationDetector.run({ files, repoRoot: '.' });
+  // testRelaxationDetector.run is synchronous; the Detector interface widens
+  // the return to `Finding[] | Promise<Finding[]>` for the async-capable
+  // no-op-fix detector. Narrow back here since this detector is synchronous.
+  return testRelaxationDetector.run({ files, repoRoot: '.' }) as Finding[];
 }
 
 describe('cheat-detector / test-relaxation', () => {
