@@ -7,8 +7,11 @@ import { errorSwallowDetector } from '../../../src/audit/cheat-detector/error-sw
 import { exceptionRethrowLostContextDetector } from '../../../src/audit/cheat-detector/exception-rethrow-lost-context';
 import { deadBranchInsertionDetector } from '../../../src/audit/cheat-detector/dead-branch-insertion';
 
-function run(detector: { run: (ctx: { files: ReturnType<typeof parseDiff>; repoRoot: string }) => unknown[] }, diff: string) {
-  return detector.run({ files: parseDiff(diff), repoRoot: '.' });
+function run(
+  detector: { run: (ctx: { files: ReturnType<typeof parseDiff>; repoRoot: string }) => unknown },
+  diff: string,
+): unknown[] {
+  return detector.run({ files: parseDiff(diff), repoRoot: '.' }) as unknown[];
 }
 
 describe('cheat-detector / coverage-erosion', () => {

@@ -8,8 +8,8 @@ import { scoreCorpus } from '../../benchmarks/leaderboard/score';
 
 describe('leaderboard / corpus scoring', function () {
   this.timeout(20_000);
-  it('reports zero failed expectations across the full v10 corpus', () => {
-    const out = scoreCorpus();
+  it('reports zero failed expectations across the full v10 corpus', async () => {
+    const out = await scoreCorpus();
     assert.equal(out.failedExpectations.length, 0, JSON.stringify(out.failedExpectations.slice(0, 5)));
     assert.ok(out.corpusSize >= 500);
     assert.ok(out.perAgent.length >= 1);
