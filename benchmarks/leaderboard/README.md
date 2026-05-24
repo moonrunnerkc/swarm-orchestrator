@@ -25,7 +25,7 @@ Exit code:
 
 ## How it works
 
-For each case in `benchmarks/falsification-corpus/v10-corpus/index.json`:
+For each case in `benchmarks/falsification-corpus/v10-synthetic-corpus/index.json`:
 
 1. Read the broken-fixture diff and the clean-control diff.
 2. Run both through `runCheatDetectors`.

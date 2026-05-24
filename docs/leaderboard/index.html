@@ -129,16 +129,52 @@
     <header>
       <h1>Swarm Audit · Agent Leaderboard</h1>
       <p class="lede">
-        AI coding agents scored against the v10 cheat-pattern corpus.
-        Catch rate = fraction of synthetic broken patches the cheat-detector
-        engine flagged. <a href="https://github.com/moonrunnerkc/swarm-orchestrator" style="color: var(--accent)"
-          >Reproduce by cloning the repo and running <code>npm run leaderboard</code>.</a
-        >
+        AI coding agents scored against two corpora. The
+        <strong>v10.1 real-corpus baseline</strong> (top) reports
+        false-positive rates on hand-labeled real agent PRs. The
+        <strong>synthetic regression suite</strong> (bottom) is the v10
+        500/500 corpus used to keep the detector engine self-consistent.
+        Both reproducible:
+        <a href="https://github.com/moonrunnerkc/swarm-orchestrator" style="color: var(--accent)"
+          ><code>npm run leaderboard</code> and
+          <code>npm run corpus:score-real</code></a
+        >.
       </p>
       <p id="meta" class="meta">Loading…</p>
     </header>
 
     <div class="grid">
+      <section class="panel" id="real-baseline-panel" style="border-color: rgba(34, 211, 238, 0.4)">
+        <h2>v10.1 real-corpus baseline (preliminary)</h2>
+        <p id="real-baseline-meta" class="meta">Loading…</p>
+        <table id="real-baseline-table">
+          <thead>
+            <tr>
+              <th>Detector</th>
+              <th class="num">TP</th>
+              <th class="num">FP</th>
+              <th class="num">TN</th>
+              <th class="num">FN</th>
+              <th class="num">FP rate</th>
+              <th class="num">Recall</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="meta" style="margin-top: 0.75rem">
+          Labels in this baseline are AI-judged
+          (<code>claude-opus-4-7-baseline-judge</code>) pending human review.
+          Recall is undefined where no broken cases were labeled — the
+          sample contains only entries judged clean. FP rate = FP / (FP +
+          TN); 0% with 0 firings means the detector did not fire on
+          anything in the sample.
+        </p>
+      </section>
+
+      <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.08); max-width: 1100px; margin: 1.5rem auto; width: 100%" />
+
+      <h2 style="max-width: 1100px; margin: 0 auto; color: var(--mute)">Synthetic regression suite</h2>
+
       <section class="panel">
         <h2>Per-agent</h2>
         <table id="per-agent">
@@ -190,8 +226,19 @@
           ><code>scripts/corpus/generate-v10.ts</code></a
         >. Agent attribution on synthetic fixtures is round-robin across
         the eight named agents, so per-agent rows reflect the detector's
-        consistency, not the agents' real-world behaviour. Real-PR scoring
-        ships in a follow-up Phase 2 deliverable.
+        consistency, not the agents' real-world behaviour.
+      </p>
+      <p>
+        The v10.1 real-corpus baseline scores 30 hand-labeled PRs sampled
+        from
+        <a href="https://github.com/moonrunnerkc/swarm-orchestrator/tree/main/benchmarks/real-corpus"
+          ><code>benchmarks/real-corpus/</code></a
+        >. The collector under
+        <a href="https://github.com/moonrunnerkc/swarm-orchestrator/blob/main/scripts/corpus/collect-real.ts"
+          ><code>scripts/corpus/collect-real.ts</code></a
+        > pulled 949 candidate PRs across 8 agent vendors; this baseline
+        is a stratified 30-entry sample, labeled by an AI judge
+        pending human review.
       </p>
     </footer>
 
@@ -264,11 +311,63 @@
           tbody.appendChild(tr);
         }
       }
+      function renderRealBaseline(rb) {
+        const meta = document.getElementById('real-baseline-meta');
+        meta.textContent =
+          'Generated ' +
+          rb.generatedAt +
+          ' · scored=' +
+          rb.aggregate.totalScored +
+          ' (broken=' +
+          rb.aggregate.totalBrokenLabeled +
+          ', clean=' +
+          rb.aggregate.totalCleanLabeled +
+          ') · overall P=' +
+          rb.aggregate.overallPrecision.toFixed(3) +
+          ' R=' +
+          rb.aggregate.overallRecall.toFixed(3) +
+          ' F1=' +
+          rb.aggregate.overallF1.toFixed(3);
+        const tbody = document.querySelector('#real-baseline-table tbody');
+        tbody.innerHTML = '';
+        rb.perDetector
+          .slice()
+          .sort((a, b) => {
+            const ar = a.falsePositive / Math.max(a.falsePositive + a.trueNegative, 1);
+            const br = b.falsePositive / Math.max(b.falsePositive + b.trueNegative, 1);
+            return br - ar;
+          })
+          .forEach((d) => {
+            const fpRate = d.falsePositive / Math.max(d.falsePositive + d.trueNegative, 1);
+            const recallText =
+              d.truePositive + d.falseNegative === 0 ? '—' : fmtPct(d.recall);
+            const tr = document.createElement('tr');
+            tr.innerHTML =
+              '<td><code>' + d.detector + '</code></td>' +
+              '<td class="num">' + d.truePositive + '</td>' +
+              '<td class="num">' + d.falsePositive + '</td>' +
+              '<td class="num">' + d.trueNegative + '</td>' +
+              '<td class="num">' + d.falseNegative + '</td>' +
+              '<td class="num ' +
+              (fpRate > 0.1 ? 'pct bad' : fpRate > 0 ? 'pct' : 'pct good') +
+              '">' + fmtPct(fpRate) + '</td>' +
+              '<td class="num meta">' + recallText + '</td>';
+            tbody.appendChild(tr);
+          });
+      }
+      fetch('./real-baseline.json')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((rb) => {
+          if (rb) renderRealBaseline(rb);
+        })
+        .catch(() => {
+          /* real-baseline.json is optional; older deploys may not have it */
+        });
       fetch('./data.json')
         .then((r) => r.json())
         .then((data) => {
           document.getElementById('meta').textContent =
-            'Generated ' +
+            'Synthetic generated ' +
             data.generatedAt +
             ' · ' +
             data.corpusSize +

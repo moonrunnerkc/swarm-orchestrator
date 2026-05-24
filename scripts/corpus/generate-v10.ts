@@ -328,7 +328,7 @@ function buildDeadBranchInsertion(i: number): GeneratedCase {
 void renderMultiHunk;
 
 function main(): void {
-  const outRoot = path.resolve(process.cwd(), 'benchmarks', 'falsification-corpus', 'v10-corpus');
+  const outRoot = path.resolve(process.cwd(), 'benchmarks', 'falsification-corpus', 'v10-synthetic-corpus');
   fs.rmSync(outRoot, { recursive: true, force: true });
   fs.mkdirSync(outRoot, { recursive: true });
   const index: CaseMetadata[] = [];
