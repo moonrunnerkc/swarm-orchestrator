@@ -14,9 +14,15 @@
  *                              GITHUB_TOKEN if available)
  *
  * Exit code:
- *   0 — no blocking findings
- *   1 — at least one blocking finding (the merge gate)
+ *   0 — no blocking findings, or any result in `advise` mode
+ *   1 — at least one blocking finding in `gate` mode (the merge gate)
  *   2 — usage error or unrecoverable failure
+ *
+ * The `--mode` flag toggles between `advise` (default, suspicion-score
+ * only) and `gate` (the v10.1 merge-blocking contract). In `advise`
+ * the rendered comment is unchanged in content (every finding is still
+ * surfaced with its measured precision), but the exit code never goes
+ * to 1 on a blocking finding — the audit's role is signal, not refusal.
  */
 
 import * as fs from 'fs';
@@ -25,13 +31,20 @@ import * as crypto from 'crypto';
 import { getLogger } from '../../logger';
 import { runParseArgs, readBoolean, readString, type ParseArgsOptions } from './argv-schema';
 import { runCheatDetectors } from '../../audit/cheat-detector';
+import { parseDetectorSet } from '../../audit/cheat-detector/detector-sets';
 import { detectAgent } from '../../audit/pr-source';
 import { renderPrComment } from '../../audit/report-comment';
 import { writeCycloneDxMlBom } from '../../audit/aibom/cyclonedx-ml';
 import { writeSpdxAiProfileBom } from '../../audit/aibom/spdx-ai-profile';
 import { HashChainedLedger } from '../../ledger/ledger';
 import { SwarmError } from '../../errors';
-import type { AuditInput, AuditResult, AuditAgentAttribution } from '../../audit/types';
+import type {
+  AuditInput,
+  AuditMode,
+  AuditResult,
+  AuditAgentAttribution,
+  DetectorSetName,
+} from '../../audit/types';
 import type {
   LedgerAgentAttribution,
   PrAuditStartedEntry,
@@ -39,6 +52,7 @@ import type {
   PrAuditCompletedEntry,
 } from '../../ledger/types';
 import { fetchPrDiffViaGithub, parsePrRef, type GithubPrRef } from './pr-fetch';
+import { writeShadowEntry } from '../../audit/shadow';
 
 const logger = getLogger('cli:v8:audit');
 
@@ -52,6 +66,10 @@ interface AuditFlags {
   aibomPath: string;
   ledgerPath?: string;
   helpRequested: boolean;
+  mode: AuditMode;
+  detectorSet: DetectorSetName;
+  shadow?: string;
+  shadowDir: string;
 }
 
 const AUDIT_SCHEMA: ParseArgsOptions = {
@@ -63,6 +81,10 @@ const AUDIT_SCHEMA: ParseArgsOptions = {
   'emit-aibom': { type: 'string' },
   'aibom-out': { type: 'string' },
   'ledger-path': { type: 'string' },
+  mode: { type: 'string' },
+  detectors: { type: 'string' },
+  shadow: { type: 'string' },
+  'shadow-dir': { type: 'string' },
   help: { type: 'boolean', short: 'h' },
 };
 
@@ -76,16 +98,22 @@ const USAGE = [
   '  --diff-stdin              read unified diff from stdin',
   '',
   'options:',
+  '  --mode <advise|gate>      advise (default): report only, never block merge;',
+  '                            gate: exit 1 on any blocking finding',
+  '  --detectors <set>         default (the four advisory-grade detectors) |',
+  "                            experimental (default + six retired) | all (alias)",
   '  --repo-root <path>        repo checkout for manifest / test-import lookups (default: cwd)',
   "  --output <fmt>            text (default) | json | markdown",
   '  --emit-aibom <fmt>        cyclonedx-ml | spdx-ai | both',
   '  --aibom-out <path>        directory for AIBOM artifacts (default: .swarm/aibom)',
   '  --ledger-path <path>      override audit ledger file (default: .swarm/ledger/audit-<runId>.jsonl)',
+  '  --shadow <repo-label>     shadow-mode dogfood: record findings to disk, no comment, no gate',
+  '  --shadow-dir <path>       shadow output directory (default: .swarm/shadow)',
   '  --help, -h                show this message',
   '',
   'exit codes:',
-  '  0 — pass (no blocking findings)',
-  '  1 — block (one or more blocking findings)',
+  '  0 — pass, or any result in advise mode',
+  '  1 — block (one or more blocking findings, gate mode only)',
   '  2 — usage error or unrecoverable failure',
   '',
 ].join('\n');
@@ -104,6 +132,9 @@ function parseFlags(argv: string[]): AuditFlags {
     output: parseOutput(readString(values, 'output')),
     aibomPath: readString(values, 'aibom-out') ?? '.swarm/aibom',
     helpRequested: false,
+    mode: parseMode(readString(values, 'mode')),
+    detectorSet: parseDetectorsFlag(readString(values, 'detectors')),
+    shadowDir: readString(values, 'shadow-dir') ?? '.swarm/shadow',
   };
   const diffFile = readString(values, 'diff-file');
   if (diffFile !== undefined) flags.diffFile = diffFile;
@@ -115,6 +146,8 @@ function parseFlags(argv: string[]): AuditFlags {
   if (aibom !== undefined) flags.emitAibom = parseAibom(aibom);
   const ledgerPath = readString(values, 'ledger-path');
   if (ledgerPath !== undefined) flags.ledgerPath = ledgerPath;
+  const shadowLabel = readString(values, 'shadow');
+  if (shadowLabel !== undefined) flags.shadow = shadowLabel;
   validateFlags(flags);
   return flags;
 }
@@ -126,6 +159,9 @@ function makeMinimalFlags(helpRequested: boolean): AuditFlags {
     output: 'text',
     aibomPath: '.swarm/aibom',
     helpRequested,
+    mode: 'advise',
+    detectorSet: 'default',
+    shadowDir: '.swarm/shadow',
   };
 }
 
@@ -146,6 +182,28 @@ function parseAibom(raw: string): 'cyclonedx-ml' | 'spdx-ai' | 'both' {
     'AUDIT_USAGE',
     { remediation: 'Try: --emit-aibom cyclonedx-ml' },
   );
+}
+
+function parseMode(raw: string | undefined): AuditMode {
+  if (raw === undefined) return 'advise';
+  if (raw === 'advise' || raw === 'gate') return raw;
+  throw new SwarmError(
+    `invalid --mode value "${raw}"; expected advise | gate`,
+    'AUDIT_USAGE',
+    { remediation: 'Try: --mode advise | --mode gate' },
+  );
+}
+
+function parseDetectorsFlag(raw: string | undefined): DetectorSetName {
+  try {
+    return parseDetectorSet(raw);
+  } catch (err) {
+    throw new SwarmError(
+      err instanceof Error ? err.message : String(err),
+      'AUDIT_USAGE',
+      { remediation: 'Try: --detectors default | --detectors experimental' },
+    );
+  }
 }
 
 function validateFlags(flags: AuditFlags): void {
@@ -185,6 +243,7 @@ async function runAudit(flags: AuditFlags): Promise<number> {
   const auditInput: AuditInput = {
     unifiedDiff,
     repoRoot: flags.repoRoot,
+    detectorSet: flags.detectorSet,
   };
   if (agent !== undefined) auditInput.agent = agent;
   if (prContext !== undefined) auditInput.pr = prContext.prMetadata;
@@ -254,8 +313,23 @@ async function runAudit(flags: AuditFlags): Promise<number> {
     await emitAibom(flags.emitAibom, flags.aibomPath, ledgerPath, runId);
   }
 
-  emitOutput(flags.output, result, ledgerPath);
+  // Shadow mode: record the verdict to disk for later analysis against
+  // the human merge decision, suppress text output (the operator does
+  // not want this surfaced as a CI signal), and never block.
+  if (flags.shadow !== undefined) {
+    writeShadowEntry(flags.shadowDir, flags.shadow, runId, {
+      mode: flags.mode,
+      detectorSet: flags.detectorSet,
+      result,
+      wallTimeMs,
+      pr: prContext?.prMetadata,
+    });
+    return 0;
+  }
 
+  emitOutput(flags.output, result, ledgerPath, flags.mode);
+
+  if (flags.mode === 'advise') return 0;
   return result.pass ? 0 : 1;
 }
 
@@ -331,19 +405,26 @@ async function emitAibom(
   }
 }
 
-function emitOutput(format: AuditFlags['output'], result: AuditResult, ledgerPath: string): void {
+function emitOutput(
+  format: AuditFlags['output'],
+  result: AuditResult,
+  ledgerPath: string,
+  mode: AuditMode,
+): void {
   if (format === 'json') {
-    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    process.stdout.write(JSON.stringify({ ...result, mode }, null, 2) + '\n');
     return;
   }
   if (format === 'markdown') {
-    process.stdout.write(renderPrComment(result, { ledgerUrl: ledgerPath }));
+    process.stdout.write(renderPrComment(result, { ledgerUrl: ledgerPath, mode }));
     return;
   }
-  const header = result.pass ? 'PASS' : 'BLOCK';
+  const header = mode === 'advise'
+    ? (result.findings.length === 0 ? 'ADVISORY-CLEAN' : 'ADVISORY')
+    : (result.pass ? 'PASS' : 'BLOCK');
   const blocking = result.findings.filter((f) => f.severity === 'block').length;
   const warnings = result.findings.filter((f) => f.severity === 'warn').length;
-  logger.info(`audit ${header}: ${blocking} blocking, ${warnings} warning (ledger: ${ledgerPath})`);
+  logger.info(`audit ${header} (mode=${mode}): ${blocking} blocking, ${warnings} warning (ledger: ${ledgerPath})`);
   for (const finding of result.findings) {
     logger.info(`  [${finding.severity}] ${finding.category}: ${finding.location.file}:${finding.location.line} — ${finding.message}`);
   }

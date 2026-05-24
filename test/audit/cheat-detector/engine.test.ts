@@ -63,13 +63,36 @@ describe('cheat-detector engine', () => {
 
   it('returns pass:false when any detector reports a blocking finding', async () => {
     const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-engine-'));
-    const result = await runCheatDetectors({ unifiedDiff: RELAXED_DIFF, repoRoot: repo });
+    // test-relaxation is retired to the experimental set in v10.2;
+    // the default set would not see this relaxation.
+    const result = await runCheatDetectors({
+      unifiedDiff: RELAXED_DIFF,
+      repoRoot: repo,
+      detectorSet: 'experimental',
+    });
     assert.equal(result.pass, false);
     assert.ok(result.findings.some((f) => f.category === 'test-relaxation'));
   });
 
-  it('carries detectorVersions into the result', async () => {
-    const result = await runCheatDetectors({ unifiedDiff: CLEAN_DIFF, repoRoot: '.' });
+  it('default detector set does NOT include retired detectors', async () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-engine-'));
+    const result = await runCheatDetectors({ unifiedDiff: CLEAN_DIFF, repoRoot: repo });
+    const names = Object.keys(result.detectorVersions).sort();
+    assert.deepEqual(names, [
+      'error-swallow',
+      'fake-refactor',
+      'mock-of-hallucination',
+      'no-op-fix',
+    ].sort());
+    assert.equal(result.detectorSet, 'default');
+  });
+
+  it('carries detectorVersions into the result (experimental set sees all 10)', async () => {
+    const result = await runCheatDetectors({
+      unifiedDiff: CLEAN_DIFF,
+      repoRoot: '.',
+      detectorSet: 'experimental',
+    });
     for (const det of DETECTORS) {
       assert.equal(result.detectorVersions[det.name], det.version);
     }
