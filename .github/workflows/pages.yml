@@ -1,0 +1,62 @@
+name: Pages
+
+# Publishes the leaderboard dashboard at
+# https://moonrunnerkc.github.io/swarm-orchestrator/docs/leaderboard/.
+# The score.js fetches `../../benchmarks/real-corpus/scores/latest.json`
+# at runtime, so the deployed artifact mirrors the repo layout: docs/
+# and benchmarks/ side by side at the Pages root.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'benchmarks/real-corpus/scores/**'
+      - 'benchmarks/real-corpus/promotions.json'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  pages: write
+  id-token: write
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - name: Stage Pages artifact
+        run: |
+          mkdir -p _site/docs _site/benchmarks
+          cp -R docs/. _site/docs/
+          # Only the score / promotion data the dashboard reads is
+          # mirrored — full benchmarks/ tree is large and irrelevant
+          # to the page.
+          mkdir -p _site/benchmarks/real-corpus/scores
+          cp benchmarks/real-corpus/scores/latest.json _site/benchmarks/real-corpus/scores/
+          cp benchmarks/real-corpus/promotions.json _site/benchmarks/real-corpus/
+          # Convenience landing page at the Pages root so the bare URL
+          # redirects into the dashboard.
+          cat > _site/index.html <<'HTML'
+          <!doctype html><meta charset="utf-8"><title>swarm-orchestrator</title>
+          <meta http-equiv="refresh" content="0; url=./docs/leaderboard/">
+          <link rel="canonical" href="./docs/leaderboard/">
+          HTML
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
