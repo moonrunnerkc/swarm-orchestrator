@@ -56,6 +56,7 @@ import type {
 } from '../../ledger/types';
 import { fetchPrDiffViaGithub, parsePrRef, type GithubPrRef } from './pr-fetch';
 import { writeShadowEntry } from '../../audit/shadow';
+import { buildShadowOutput, writeShadowOutputFile } from '../../audit/shadow-output';
 
 const logger = getLogger('cli:v8:audit');
 
@@ -73,6 +74,7 @@ interface AuditFlags {
   detectorSet: DetectorSetName;
   shadow?: string;
   shadowDir: string;
+  shadowOutput?: string;
   enableLlmJudge: boolean;
 }
 
@@ -89,6 +91,7 @@ const AUDIT_SCHEMA: ParseArgsOptions = {
   detectors: { type: 'string' },
   shadow: { type: 'string' },
   'shadow-dir': { type: 'string' },
+  'shadow-output': { type: 'string' },
   'enable-llm-judge': { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
 };
@@ -112,8 +115,11 @@ const USAGE = [
   '  --emit-aibom <fmt>        cyclonedx-ml | spdx-ai | both',
   '  --aibom-out <path>        directory for AIBOM artifacts (default: .swarm/aibom)',
   '  --ledger-path <path>      override audit ledger file (default: .swarm/ledger/audit-<runId>.jsonl)',
-  '  --shadow <repo-label>     shadow-mode dogfood: record findings to disk, no comment, no gate',
-  '  --shadow-dir <path>       shadow output directory (default: .swarm/shadow)',
+  '  --shadow <repo-label>     shadow-mode dogfood: record findings under <dir>/<repo>/<run-id>.json,',
+  '                            no comment post, no gate',
+  '  --shadow-dir <path>       shadow output directory for --shadow (default: .swarm/shadow)',
+  '  --shadow-output <path>    single-file shadow output (one JSON object: detector verdicts, judge',
+  '                            invocation count, rendered comment). No comment post, no gate.',
   '  --enable-llm-judge        opt into the Anthropic Haiku judge for detectors that integrate it',
   '                            (also enabled by SWARM_AUDIT_LLM_JUDGE=1). Requires ANTHROPIC_API_KEY.',
   '  --help, -h                show this message',
@@ -158,6 +164,8 @@ function parseFlags(argv: string[]): AuditFlags {
   if (ledgerPath !== undefined) flags.ledgerPath = ledgerPath;
   const shadowLabel = readString(values, 'shadow');
   if (shadowLabel !== undefined) flags.shadow = shadowLabel;
+  const shadowOutput = readString(values, 'shadow-output');
+  if (shadowOutput !== undefined) flags.shadowOutput = shadowOutput;
   validateFlags(flags);
   return flags;
 }
@@ -349,6 +357,24 @@ async function runAudit(flags: AuditFlags): Promise<number> {
 
   if (flags.emitAibom !== undefined) {
     await emitAibom(flags.emitAibom, flags.aibomPath, ledgerPath, runId);
+  }
+
+  // --shadow-output: write the v10.3 single-file schema and exit
+  // without posting a comment or affecting the merge gate. Resolved
+  // before --shadow so a caller can pass both flags and get both
+  // outputs from a single run.
+  if (flags.shadowOutput !== undefined) {
+    const entry = buildShadowOutput({
+      prRef: flags.prRef ?? null,
+      durationMs: wallTimeMs,
+      result,
+      mode: flags.mode,
+      ledgerPath,
+      ledgerUrl: ledgerPath,
+    });
+    writeShadowOutputFile(flags.shadowOutput, entry);
+    logger.info(`shadow-output: wrote ${flags.shadowOutput}`);
+    return 0;
   }
 
   // Shadow mode: record the verdict to disk for later analysis against
