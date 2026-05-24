@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Swarm Audit · Agent Leaderboard</title>
+    <title>Swarm Audit · Real-Corpus Leaderboard</title>
     <meta
       name="description"
-      content="Public leaderboard scoring AI coding agents on the swarm-orchestrator v10 cheat-pattern corpus. Reproducible — clone the repo and run npm run leaderboard."
+      content="Public leaderboard for the swarm-orchestrator cheat-detector registry. Real-corpus precision / recall / F1 against benchmarks/real-corpus/scores/latest.json. Reproduce with npm run corpus:score-real."
     />
     <style>
       :root {
@@ -19,41 +19,20 @@
         --bad: #f87171;
         --good: #34d399;
       }
-      * {
-        box-sizing: border-box;
-      }
+      * { box-sizing: border-box; }
       body {
         font-family:
-          ui-sans-serif,
-          system-ui,
-          -apple-system,
-          Segoe UI,
-          Roboto,
-          sans-serif;
+          ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
         background: var(--bg);
         color: var(--ink);
         margin: 0;
         padding: 2rem;
         line-height: 1.55;
       }
-      header {
-        max-width: 1100px;
-        margin: 0 auto 2rem;
-      }
-      h1 {
-        font-size: 2rem;
-        margin: 0 0 0.5rem;
-        letter-spacing: -0.01em;
-      }
-      h2 {
-        font-size: 1.2rem;
-        margin: 2rem 0 0.75rem;
-        color: var(--accent);
-      }
-      .lede {
-        color: var(--mute);
-        max-width: 60ch;
-      }
+      header { max-width: 1100px; margin: 0 auto 2rem; }
+      h1 { font-size: 2rem; margin: 0 0 0.5rem; letter-spacing: -0.01em; }
+      h2 { font-size: 1.2rem; margin: 2rem 0 0.75rem; color: var(--accent); }
+      .lede { color: var(--mute); max-width: 60ch; }
       .grid {
         max-width: 1100px;
         margin: 0 auto;
@@ -66,13 +45,38 @@
         border-radius: 14px;
         padding: 1.25rem 1.5rem;
       }
+      .kpi-row {
+        display: flex;
+        gap: 1.5rem;
+        flex-wrap: wrap;
+        margin-top: 0.75rem;
+      }
+      .kpi {
+        background: rgba(34, 211, 238, 0.06);
+        border: 1px solid rgba(34, 211, 238, 0.25);
+        border-radius: 12px;
+        padding: 0.85rem 1.15rem;
+        min-width: 8rem;
+      }
+      .kpi-label {
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        font-size: 0.7rem;
+        color: var(--mute);
+      }
+      .kpi-value {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 1.7rem;
+        font-weight: 600;
+        color: var(--ink);
+        margin-top: 0.2rem;
+      }
       table {
         width: 100%;
         border-collapse: collapse;
         font-size: 0.9rem;
       }
-      th,
-      td {
+      th, td {
         text-align: left;
         padding: 0.55rem 0.75rem;
         border-bottom: 1px solid rgba(255, 255, 255, 0.06);
@@ -84,100 +88,92 @@
         font-weight: 600;
         font-size: 0.75rem;
       }
+      th[data-sort] { cursor: pointer; user-select: none; }
+      th[data-sort]:hover { color: var(--accent); }
+      th.sort-asc::after { content: ' ↑'; }
+      th.sort-desc::after { content: ' ↓'; }
       td.num {
         font-variant-numeric: tabular-nums;
         text-align: right;
       }
-      .pct {
-        font-weight: 600;
-      }
-      .pct.good {
-        color: var(--good);
-      }
-      .pct.bad {
-        color: var(--bad);
-      }
+      .meta { font-size: 0.85rem; color: var(--mute); }
       footer {
         max-width: 1100px;
         margin: 3rem auto 0;
         color: var(--mute);
         font-size: 0.85rem;
       }
-      footer a {
-        color: var(--accent);
-      }
-      .meta {
-        font-size: 0.85rem;
-        color: var(--mute);
-      }
-      .bar {
-        position: relative;
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 6px;
-        height: 8px;
-        margin-top: 4px;
-      }
-      .bar > span {
-        display: block;
-        height: 100%;
-        background: linear-gradient(90deg, var(--accent), var(--good));
-        border-radius: 6px;
-      }
+      footer a { color: var(--accent); }
     </style>
   </head>
   <body>
     <header>
-      <h1>Swarm Audit · Agent Leaderboard</h1>
+      <h1>Swarm Audit · Real-Corpus Leaderboard</h1>
       <p class="lede">
-        AI coding agents scored against two corpora. The
-        <strong>v10.1 real-corpus baseline</strong> (top) reports
-        false-positive rates on hand-labeled real agent PRs. The
-        <strong>synthetic regression suite</strong> (bottom) is the v10
-        500/500 corpus used to keep the detector engine self-consistent.
-        Both reproducible:
+        Precision, recall, and F1 on the 205-PR
+        <code>benchmarks/real-corpus/scores/latest.json</code> snapshot. The
+        synthetic 500/500 regression suite is in the lower panel as a
+        self-consistency check. Reproduce locally with
         <a href="https://github.com/moonrunnerkc/swarm-orchestrator" style="color: var(--accent)"
-          ><code>npm run leaderboard</code> and
-          <code>npm run corpus:score-real</code></a
+          ><code>npm run corpus:score-real</code></a
         >.
       </p>
-      <p id="meta" class="meta">Loading…</p>
     </header>
 
     <div class="grid">
-      <section class="panel" id="real-baseline-panel" style="border-color: rgba(34, 211, 238, 0.4)">
-        <h2>v10.1 real-corpus baseline (preliminary)</h2>
-        <p id="real-baseline-meta" class="meta">Loading…</p>
-        <table id="real-baseline-table">
+      <section class="panel" id="real-headline-panel">
+        <h2>Real-corpus headline</h2>
+        <p id="head-meta" class="meta">Loading…</p>
+        <div class="kpi-row">
+          <div class="kpi">
+            <div class="kpi-label">Overall precision</div>
+            <div class="kpi-value" id="head-precision">—</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Overall recall</div>
+            <div class="kpi-value" id="head-recall">—</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Overall F1</div>
+            <div class="kpi-value" id="head-f1">—</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Per-detector (click a column to sort)</h2>
+        <table id="per-detector-table">
           <thead>
             <tr>
-              <th>Detector</th>
-              <th class="num">TP</th>
-              <th class="num">FP</th>
-              <th class="num">TN</th>
-              <th class="num">FN</th>
-              <th class="num">FP rate</th>
-              <th class="num">Recall</th>
+              <th data-sort="detector">Detector</th>
+              <th class="num" data-sort="truePositive">TP</th>
+              <th class="num" data-sort="falsePositive">FP</th>
+              <th class="num" data-sort="trueNegative">TN</th>
+              <th class="num" data-sort="falseNegative">FN</th>
+              <th class="num" data-sort="precision">Precision</th>
+              <th class="num" data-sort="recall">Recall</th>
+              <th class="num sort-desc" data-sort="f1">F1</th>
             </tr>
           </thead>
           <tbody></tbody>
         </table>
         <p class="meta" style="margin-top: 0.75rem">
-          Labels in this baseline are AI-judged
-          (<code>claude-opus-4-7-baseline-judge</code>) pending human review.
-          Recall is undefined where no broken cases were labeled — the
-          sample contains only entries judged clean. FP rate = FP / (FP +
-          TN); 0% with 0 firings means the detector did not fire on
-          anything in the sample.
+          Labels in the current snapshot are AI-judged
+          (<code>claude-opus-4-7-baseline-judge</code>), pending human re-label under
+          <a href="https://github.com/moonrunnerkc/swarm-orchestrator/tree/main/benchmarks/real-corpus/labels-v2" style="color: var(--accent)"
+            ><code>labels-v2</code></a
+          >. Promotion to gate-eligible requires human-labeled F1 ≥ 0.5 in
+          <a href="https://github.com/moonrunnerkc/swarm-orchestrator/blob/main/benchmarks/real-corpus/promotions.json" style="color: var(--accent)"
+            ><code>promotions.json</code></a
+          >.
         </p>
       </section>
 
-      <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.08); max-width: 1100px; margin: 1.5rem auto; width: 100%" />
-
-      <h2 style="max-width: 1100px; margin: 0 auto; color: var(--mute)">Synthetic regression suite</h2>
-
       <section class="panel">
-        <h2>Per-agent</h2>
-        <table id="per-agent">
+        <h2>Synthetic regression sidebar</h2>
+        <p id="synthetic-meta" class="meta">Loading…</p>
+        <h3 style="font-size:1rem;margin-top:1rem;color:var(--mute);">Per-agent</h3>
+        <table id="synthetic-per-agent">
           <thead>
             <tr>
               <th>Agent</th>
@@ -188,11 +184,8 @@
           </thead>
           <tbody></tbody>
         </table>
-      </section>
-
-      <section class="panel">
-        <h2>Per-category</h2>
-        <table id="per-category">
+        <h3 style="font-size:1rem;margin-top:1rem;color:var(--mute);">Per-category</h3>
+        <table id="synthetic-per-category">
           <thead>
             <tr>
               <th>Category</th>
@@ -203,186 +196,29 @@
           </thead>
           <tbody></tbody>
         </table>
-      </section>
-
-      <section class="panel">
-        <h2>Agent × category</h2>
-        <p class="meta">
-          Empty cells = no cases for that (agent, category) combination.
+        <p class="meta" style="margin-top:0.75rem;">
+          The 1.000 catch rate on the synthetic corpus is a self-consistency
+          check, not detection power: the generator and detectors share the
+          same regex vocabulary.
         </p>
-        <div style="overflow-x: auto">
-          <table id="matrix">
-            <thead></thead>
-            <tbody></tbody>
-          </table>
-        </div>
       </section>
     </div>
 
     <footer>
       <p>
-        Synthetic corpus generated by
-        <a href="https://github.com/moonrunnerkc/swarm-orchestrator/tree/main/scripts/corpus"
-          ><code>scripts/corpus/generate-v10.ts</code></a
-        >. Agent attribution on synthetic fixtures is round-robin across
-        the eight named agents, so per-agent rows reflect the detector's
-        consistency, not the agents' real-world behaviour.
-      </p>
-      <p>
-        The v10.1 real-corpus baseline scores 30 hand-labeled PRs sampled
-        from
-        <a href="https://github.com/moonrunnerkc/swarm-orchestrator/tree/main/benchmarks/real-corpus"
-          ><code>benchmarks/real-corpus/</code></a
-        >. The collector under
-        <a href="https://github.com/moonrunnerkc/swarm-orchestrator/blob/main/scripts/corpus/collect-real.ts"
-          ><code>scripts/corpus/collect-real.ts</code></a
-        > pulled 949 candidate PRs across 8 agent vendors; this baseline
-        is a stratified 30-entry sample, labeled by an AI judge
-        pending human review.
+        Score JSON:
+        <a href="https://github.com/moonrunnerkc/swarm-orchestrator/blob/main/benchmarks/real-corpus/scores/latest.json"
+          ><code>benchmarks/real-corpus/scores/latest.json</code></a
+        >. Promotion record:
+        <a href="https://github.com/moonrunnerkc/swarm-orchestrator/blob/main/benchmarks/real-corpus/promotions.json"
+          ><code>benchmarks/real-corpus/promotions.json</code></a
+        >. Detector source:
+        <a href="https://github.com/moonrunnerkc/swarm-orchestrator/tree/main/src/audit/cheat-detector"
+          ><code>src/audit/cheat-detector/</code></a
+        >.
       </p>
     </footer>
 
-    <script>
-      // Inline, no build step. Loads ./data.json (written by `npm run leaderboard`).
-      function fmtPct(x) {
-        return (x * 100).toFixed(1) + '%';
-      }
-      function pctClass(x) {
-        return x >= 0.95 ? 'pct good' : x < 0.5 ? 'pct bad' : 'pct';
-      }
-      function fillTable(id, rows, keyName, totalKey, caughtKey) {
-        const tbody = document.querySelector('#' + id + ' tbody');
-        tbody.innerHTML = '';
-        rows
-          .slice()
-          .sort((a, b) => (b[caughtKey] / b[totalKey]) - (a[caughtKey] / a[totalKey]))
-          .forEach((r) => {
-            const rate = r[totalKey] === 0 ? 0 : r[caughtKey] / r[totalKey];
-            const tr = document.createElement('tr');
-            tr.innerHTML =
-              '<td><code>' +
-              r[keyName] +
-              '</code></td>' +
-              '<td class="num">' +
-              r[totalKey] +
-              '</td>' +
-              '<td class="num">' +
-              r[caughtKey] +
-              '</td>' +
-              '<td class="num ' +
-              pctClass(rate) +
-              '">' +
-              fmtPct(rate) +
-              '<div class="bar"><span style="width:' +
-              fmtPct(rate) +
-              '"></span></div>' +
-              '</td>';
-            tbody.appendChild(tr);
-          });
-      }
-      function fillMatrix(rows) {
-        const agents = Array.from(new Set(rows.map((r) => r.agent))).sort();
-        const cats = Array.from(new Set(rows.map((r) => r.category))).sort();
-        const head = document.querySelector('#matrix thead');
-        head.innerHTML =
-          '<tr><th>agent ↓ / category →</th>' +
-          cats.map((c) => '<th class="num"><code>' + c + '</code></th>').join('') +
-          '</tr>';
-        const tbody = document.querySelector('#matrix tbody');
-        tbody.innerHTML = '';
-        for (const a of agents) {
-          const tr = document.createElement('tr');
-          let row = '<td><code>' + a + '</code></td>';
-          for (const c of cats) {
-            const cell = rows.find((r) => r.agent === a && r.category === c);
-            if (!cell) {
-              row += '<td class="num meta">—</td>';
-            } else {
-              const rate = cell.catchRate;
-              row +=
-                '<td class="num ' +
-                pctClass(rate) +
-                '">' +
-                fmtPct(rate) +
-                '</td>';
-            }
-          }
-          tr.innerHTML = row;
-          tbody.appendChild(tr);
-        }
-      }
-      function renderRealBaseline(rb) {
-        const meta = document.getElementById('real-baseline-meta');
-        meta.textContent =
-          'Generated ' +
-          rb.generatedAt +
-          ' · scored=' +
-          rb.aggregate.totalScored +
-          ' (broken=' +
-          rb.aggregate.totalBrokenLabeled +
-          ', clean=' +
-          rb.aggregate.totalCleanLabeled +
-          ') · overall P=' +
-          rb.aggregate.overallPrecision.toFixed(3) +
-          ' R=' +
-          rb.aggregate.overallRecall.toFixed(3) +
-          ' F1=' +
-          rb.aggregate.overallF1.toFixed(3);
-        const tbody = document.querySelector('#real-baseline-table tbody');
-        tbody.innerHTML = '';
-        rb.perDetector
-          .slice()
-          .sort((a, b) => {
-            const ar = a.falsePositive / Math.max(a.falsePositive + a.trueNegative, 1);
-            const br = b.falsePositive / Math.max(b.falsePositive + b.trueNegative, 1);
-            return br - ar;
-          })
-          .forEach((d) => {
-            const fpRate = d.falsePositive / Math.max(d.falsePositive + d.trueNegative, 1);
-            const recallText =
-              d.truePositive + d.falseNegative === 0 ? '—' : fmtPct(d.recall);
-            const tr = document.createElement('tr');
-            tr.innerHTML =
-              '<td><code>' + d.detector + '</code></td>' +
-              '<td class="num">' + d.truePositive + '</td>' +
-              '<td class="num">' + d.falsePositive + '</td>' +
-              '<td class="num">' + d.trueNegative + '</td>' +
-              '<td class="num">' + d.falseNegative + '</td>' +
-              '<td class="num ' +
-              (fpRate > 0.1 ? 'pct bad' : fpRate > 0 ? 'pct' : 'pct good') +
-              '">' + fmtPct(fpRate) + '</td>' +
-              '<td class="num meta">' + recallText + '</td>';
-            tbody.appendChild(tr);
-          });
-      }
-      fetch('./real-baseline.json')
-        .then((r) => (r.ok ? r.json() : null))
-        .then((rb) => {
-          if (rb) renderRealBaseline(rb);
-        })
-        .catch(() => {
-          /* real-baseline.json is optional; older deploys may not have it */
-        });
-      fetch('./data.json')
-        .then((r) => r.json())
-        .then((data) => {
-          document.getElementById('meta').textContent =
-            'Synthetic generated ' +
-            data.generatedAt +
-            ' · ' +
-            data.corpusSize +
-            ' cases · detectors: ' +
-            Object.keys(data.detectorVersions)
-              .map((n) => n + '@' + data.detectorVersions[n])
-              .join(', ');
-          fillTable('per-agent', data.perAgent, 'agent', 'total', 'caught');
-          fillTable('per-category', data.perCategory, 'category', 'total', 'caught');
-          fillMatrix(data.perAgentCategory);
-        })
-        .catch((err) => {
-          document.getElementById('meta').textContent =
-            'Failed to load data.json: ' + err.message;
-        });
-    </script>
+    <script defer src="./score.js"></script>
   </body>
 </html>
