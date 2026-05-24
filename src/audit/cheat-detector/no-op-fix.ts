@@ -1,23 +1,36 @@
 // No-op-fix: the PR claims to fix a failing test, but the modified
-// non-test code has no plausible relationship to the failing test's
-// import closure. Approximated without running tests: we collect the
-// set of *source files* the PR touches, the set of *test files* the
-// PR touches, and the set of *symbols added or modified in source*
-// vs *symbols referenced in test changes*. If no test was modified
-// (i.e., the fix-claim came from the PR title/body only) we still
-// require *some* overlap between modified source filenames and the
-// test files' import paths reachable from the repo on disk.
+// non-test code has no plausible relationship to any test in the repo.
+// Two independent signals run; either is enough to flag.
 //
-// "No overlap" is a high-recall, low-precision signal — useful as a
-// warning paired with the PR's stated "fix:" intent.
+// (1) Import-graph reachability. We compute the closure of every
+//     test file touched in the PR (or, when no test changed but
+//     source did, every touched source file's reverse problem: do
+//     *any* repo tests reach it?). The closure is delegated to
+//     `reachableSourceFiles` in `test-import-closure.ts`, which uses
+//     `extractImports` from `src/verification/ast-imports.ts`. Python
+//     parsing requires `python3` on PATH; the underlying extractor
+//     falls back to regex when python3 is missing, which can lose a
+//     few edges but never crashes the audit.
+//
+// (2) Symbol overlap. When both source and tests are touched in the
+//     same PR, the added lines on each side must share at least one
+//     identifier. If they share none the test changes can't possibly
+//     exercise the source changes, regardless of import structure.
+//
+// Both signals replace the v10 basename `text.includes(stem)`
+// heuristic, which false-positived on common names (`utils`,
+// `index`, `helpers`, `config`) and silently suppressed real no-op
+// fixes by claiming "the test mentions the word `utils`, so the
+// source file is covered."
 
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Detector, DetectorContext } from './detector-types';
 import type { Finding } from '../types';
 import { filePath, fileKind, isTestFile, shouldInspect } from './diff-walker';
+import { reachableSourceFiles } from './test-import-closure';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 const SYMBOL_RE = /\b([A-Za-z_][A-Za-z0-9_]{1,})\b/g;
 const COMMON_NOISE = new Set([
@@ -52,30 +65,32 @@ export const noOpFixDetector: Detector = {
     const findings: Finding[] = [];
 
     if (testTouched.length === 0 && sourceTouched.length > 0) {
-      const overlapped = testFilesReferencingSource(ctx.repoRoot, sourceTouched);
-      if (overlapped.length === 0 && sourceSymbols.size > 0) {
-        // PR modifies source but no test imports any of the touched
-        // files. Either there is no test for the modified code or the
-        // patch missed the failing path.
-        for (const file of sourceTouched) {
-          findings.push({
-            category: 'no-op-fix',
-            severity: 'warn',
-            message:
-              `Source file ${file} was modified but no test file in the repository ` +
-              `imports it, directly or transitively. If this PR claimed to fix a ` +
-              `failing test, the fix likely missed the failing code path.`,
-            location: { file, line: 1 },
-            evidence: `(touched: ${sourceTouched.join(', ')})`,
-          });
-        }
+      // No test changed; ask the import-graph whether *any* test in
+      // the repo transitively reaches each touched source file.
+      const allRepoTests = enumerateRepoTestFiles(ctx.repoRoot);
+      const closure = reachableSourceFiles(allRepoTests, ctx.repoRoot);
+      pushDegradationNotices(findings, closure, sourceTouched[0] ?? '<repo>');
+
+      if (sourceSymbols.size === 0) return findings;
+      for (const file of sourceTouched) {
+        const abs = path.resolve(ctx.repoRoot, file);
+        if (closure.reachable.has(abs)) continue;
+        if (closure.capped) continue; // optimistic when cap hit
+        findings.push({
+          category: 'no-op-fix',
+          severity: 'warn',
+          message:
+            `Source file ${file} was modified but no test file in the repository ` +
+            `imports it, directly or transitively. If this PR claimed to fix a ` +
+            `failing test, the fix likely missed the failing code path.`,
+          location: { file, line: 1 },
+          evidence: `(touched: ${sourceTouched.join(', ')})`,
+        });
       }
       return findings;
     }
 
     if (testTouched.length > 0 && sourceTouched.length === 0) {
-      // Tests were modified with no source changes at all. This is the
-      // canonical "fix the test, not the bug" pattern.
       for (const file of testTouched) {
         findings.push({
           category: 'no-op-fix',
@@ -91,7 +106,9 @@ export const noOpFixDetector: Detector = {
       return findings;
     }
 
-    // Both source and tests touched: check symbol overlap.
+    // Both source and tests touched: symbol overlap is the relevant
+    // signal. The import-graph reachability check is implied (the
+    // same PR touched both sides, so they're co-located in intent).
     const overlap = intersect(sourceSymbols, testSymbols);
     if (overlap.size === 0 && testSymbols.size > 0 && sourceSymbols.size > 0) {
       for (const file of testTouched) {
@@ -122,9 +139,7 @@ function collectSymbolsFromAddedLines(
     for (const chunk of file.chunks) {
       for (const change of chunk.changes) {
         if (change.type !== 'add') continue;
-        for (const sym of extractSymbols(change.content)) {
-          out.add(sym);
-        }
+        for (const sym of extractSymbols(change.content)) out.add(sym);
       }
     }
   }
@@ -151,34 +166,27 @@ function intersect(a: Set<string>, b: Set<string>): Set<string> {
   return out;
 }
 
-function testFilesReferencingSource(repoRoot: string, sourceTouched: string[]): string[] {
+function enumerateRepoTestFiles(repoRoot: string): string[] {
   if (!fs.existsSync(repoRoot)) return [];
-  const allTests: string[] = [];
-  walkDir(repoRoot, repoRoot, allTests, 0);
-  const sourceBasenames = new Set(sourceTouched.map((p) => path.basename(p, path.extname(p))));
-  const matched: string[] = [];
-  for (const testFile of allTests) {
-    const text = readSafe(testFile);
-    for (const stem of sourceBasenames) {
-      if (text.includes(stem)) {
-        matched.push(testFile);
-        break;
-      }
-    }
-  }
-  return matched;
+  const out: string[] = [];
+  walkRepo(repoRoot, repoRoot, out, 0);
+  return out;
 }
 
-function walkDir(repoRoot: string, dir: string, out: string[], depth: number): void {
+function walkRepo(repoRoot: string, dir: string, out: string[], depth: number): void {
   if (depth > 6) return;
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
   for (const entry of entries) {
-    if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist') {
-      continue;
-    }
+    if (entry.name.startsWith('.')) continue;
+    if (entry.name === 'node_modules' || entry.name === 'dist') continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      walkDir(repoRoot, full, out, depth + 1);
+      walkRepo(repoRoot, full, out, depth + 1);
     } else if (entry.isFile()) {
       const rel = path.relative(repoRoot, full);
       if (isTestFile(rel)) out.push(full);
@@ -186,10 +194,33 @@ function walkDir(repoRoot: string, dir: string, out: string[], depth: number): v
   }
 }
 
-function readSafe(file: string): string {
-  try {
-    return fs.readFileSync(file, 'utf8');
-  } catch (err) {
-    throw new Error(`no-op-fix: failed to read ${file}: ${(err as Error).message}`, { cause: err });
+function pushDegradationNotices(
+  findings: Finding[],
+  closure: { capped: boolean; unresolvedSpecCount: number },
+  fileForLocation: string,
+): void {
+  if (closure.capped) {
+    findings.push({
+      category: 'no-op-fix',
+      severity: 'info',
+      message:
+        `Import-graph closure hit the 5000-node BFS cap; no-op-fix coverage ` +
+        `checks were treated as optimistically reaching every touched source ` +
+        `file for this audit run.`,
+      location: { file: fileForLocation, line: 1 },
+      evidence: '(closure capped)',
+    });
+  }
+  if (closure.unresolvedSpecCount > 0) {
+    findings.push({
+      category: 'no-op-fix',
+      severity: 'info',
+      message:
+        `Import-graph resolver could not follow ${closure.unresolvedSpecCount} ` +
+        `import specifier(s) (bare specs, workspace mappings the resolver could ` +
+        `not read, or unsupported syntax). Reachability is conservative.`,
+      location: { file: fileForLocation, line: 1 },
+      evidence: `(unresolved: ${closure.unresolvedSpecCount})`,
+    });
   }
 }

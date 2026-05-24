@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import parseDiff from 'parse-diff';
 import { mockOfHallucinationDetector } from '../../../src/audit/cheat-detector/mock-of-hallucination';
+import type { Finding } from '../../../src/audit/types';
 
 function tempRepo(manifestKind: 'js' | 'py' | 'go' | 'none', deps: string[] = []): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-mock-of-h-'));
@@ -23,9 +24,9 @@ function tempRepo(manifestKind: 'js' | 'py' | 'go' | 'none', deps: string[] = []
   return dir;
 }
 
-function runOn(unifiedDiff: string, repoRoot: string) {
+function runOn(unifiedDiff: string, repoRoot: string): Finding[] {
   const files = parseDiff(unifiedDiff);
-  return mockOfHallucinationDetector.run({ files, repoRoot });
+  return mockOfHallucinationDetector.run({ files, repoRoot }) as Finding[];
 }
 
 describe('cheat-detector / mock-of-hallucination', () => {

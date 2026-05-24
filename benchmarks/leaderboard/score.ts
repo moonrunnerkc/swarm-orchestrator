@@ -1,6 +1,6 @@
 // Reproducible scorer for the v10 leaderboard.
 //
-// Reads benchmarks/falsification-corpus/v10-corpus/index.json, replays
+// Reads benchmarks/falsification-corpus/v10-synthetic-corpus/index.json, replays
 // every (broken, clean) pair through `runCheatDetectors`, and emits an
 // aggregated JSON document under benchmarks/leaderboard/results.json
 // plus a copy under docs/leaderboard/data.json that the static site
@@ -76,7 +76,7 @@ function findRepoRoot(start: string): string {
 }
 
 const REPO_ROOT = findRepoRoot(__dirname);
-const CORPUS_ROOT = path.join(REPO_ROOT, 'benchmarks', 'falsification-corpus', 'v10-corpus');
+const CORPUS_ROOT = path.join(REPO_ROOT, 'benchmarks', 'falsification-corpus', 'v10-synthetic-corpus');
 const RESULTS_PATH = path.join(REPO_ROOT, 'benchmarks', 'leaderboard', 'results.json');
 const SITE_DATA_PATH = path.join(REPO_ROOT, 'docs', 'leaderboard', 'data.json');
 
@@ -89,7 +89,7 @@ function loadDiff(rel: string): string {
   return fs.readFileSync(path.join(CORPUS_ROOT, rel), 'utf8');
 }
 
-export function scoreCorpus(): LeaderboardOutput {
+export async function scoreCorpus(): Promise<LeaderboardOutput> {
   const index = loadIndex();
   const failedExpectations: LeaderboardOutput['failedExpectations'] = [];
   const caseResults: CaseResult[] = [];
@@ -100,8 +100,8 @@ export function scoreCorpus(): LeaderboardOutput {
   for (const entry of index.cases) {
     const brokenDiff = loadDiff(entry.brokenPath);
     const cleanDiff = loadDiff(entry.cleanPath);
-    const brokenResult = runCheatDetectors({ unifiedDiff: brokenDiff, repoRoot: CORPUS_ROOT });
-    const cleanResult = runCheatDetectors({ unifiedDiff: cleanDiff, repoRoot: CORPUS_ROOT });
+    const brokenResult = await runCheatDetectors({ unifiedDiff: brokenDiff, repoRoot: CORPUS_ROOT });
+    const cleanResult = await runCheatDetectors({ unifiedDiff: cleanDiff, repoRoot: CORPUS_ROOT });
     if (Object.keys(detectorVersions).length === 0) {
       detectorVersions = brokenResult.detectorVersions;
     }
@@ -206,8 +206,8 @@ function writeResults(out: LeaderboardOutput): void {
   fs.writeFileSync(SITE_DATA_PATH, JSON.stringify(out, null, 2) + '\n');
 }
 
-function main(): void {
-  const out = scoreCorpus();
+async function main(): Promise<void> {
+  const out = await scoreCorpus();
   writeResults(out);
   process.stdout.write(
     `leaderboard: ${out.corpusSize} cases, ` +
@@ -226,5 +226,8 @@ function main(): void {
 }
 
 if (require.main === module) {
-  main();
+  main().catch((err) => {
+    process.stderr.write(`leaderboard: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(1);
+  });
 }

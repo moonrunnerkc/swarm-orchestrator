@@ -189,7 +189,7 @@ async function runAudit(flags: AuditFlags): Promise<number> {
   if (agent !== undefined) auditInput.agent = agent;
   if (prContext !== undefined) auditInput.pr = prContext.prMetadata;
 
-  const result = runCheatDetectors(auditInput);
+  const result = await runCheatDetectors(auditInput);
   const wallTimeMs = Date.now() - startedAt;
 
   const runId = `audit-${crypto.randomUUID()}`;

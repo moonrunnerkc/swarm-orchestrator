@@ -1,10 +1,11 @@
 import { strict as assert } from 'assert';
 import parseDiff from 'parse-diff';
 import { assertionStripDetector } from '../../../src/audit/cheat-detector/assertion-strip';
+import type { Finding } from '../../../src/audit/types';
 
-function runOn(diff: string) {
+function runOn(diff: string): Finding[] {
   const files = parseDiff(diff);
-  return assertionStripDetector.run({ files, repoRoot: '.' });
+  return assertionStripDetector.run({ files, repoRoot: '.' }) as Finding[];
 }
 
 describe('cheat-detector / assertion-strip', () => {
