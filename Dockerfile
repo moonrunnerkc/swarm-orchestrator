@@ -4,10 +4,10 @@ FROM node:20-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY tsconfig.json tsconfig.build.json ./
-COPY scripts/ scripts/
+COPY tsconfig.json tsconfig.build.json tsconfig.docker.json ./
+COPY scripts/copy-non-ts-assets.js scripts/
 COPY src/ src/
-RUN npm run build
+RUN npm run build:docker
 
 # ── Stage 2: Production ──
 FROM node:20-slim

@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.build.json",
+  "comment": "Narrower include than tsconfig.build.json: compiles only what the production runtime image ships. Dev tooling (scripts/corpus, scripts/v8-bench, scripts/phase*), benchmarks, and tests are excluded because the production image only contains dist/src and dist/config; pulling them through tsc would force the Docker build context to vendor benchmark data and dev-only sources for no runtime benefit.",
+  "include": ["src/**/*"]
+}
