@@ -50,6 +50,10 @@ diff --git a/src/feat.test.ts b/src/feat.test.ts
 
 describe('cheat-detector / fake-refactor', () => {
   it('blocks a rename whose callers were not updated', () => {
+    // v2.0 (TS compiler-API closure) fires when a caller reference to
+    // the old name is visible anywhere in the diff (added or unchanged
+    // context). The caller below is a context line in src/caller.ts
+    // that the PR forgot to rename.
     const diff = `diff --git a/src/x.ts b/src/x.ts
 --- a/src/x.ts
 +++ b/src/x.ts
@@ -58,6 +62,13 @@ describe('cheat-detector / fake-refactor', () => {
 +export function computeV2(x: number): number {
    return x;
  }
+diff --git a/src/caller.ts b/src/caller.ts
+--- a/src/caller.ts
++++ b/src/caller.ts
+@@ -1,2 +1,2 @@
+ import { compute } from './x';
+-const r = compute(1);
++const r = compute(2);
 `;
     const f = run(fakeRefactorDetector, diff);
     assert.equal(f.length, 1);

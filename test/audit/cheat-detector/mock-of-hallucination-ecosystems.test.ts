@@ -48,9 +48,9 @@ function buildDiff(file: string, lines: string[]): string {
   );
 }
 
-describe('mock-of-hallucination v1.1.0 ecosystem expansion', () => {
-  it('declares version 1.1.0', () => {
-    assert.equal(mockOfHallucinationDetector.version, '1.1.0');
+describe('mock-of-hallucination ecosystem expansion', () => {
+  it('declares a 2.x detector version', () => {
+    assert.ok(mockOfHallucinationDetector.version.startsWith('2.'));
   });
 
   describe('Java / Maven (Mockito)', () => {
