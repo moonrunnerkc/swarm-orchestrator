@@ -1,13 +1,12 @@
 /**
- * Phase 3: Haiku-tier tournament verifier persona. Scores candidate
- * synthesis output against a single obligation's contract assertions and
- * returns a structured score plus a brief rationale.
+ * Haiku-tier tournament verifier persona. Scores candidate synthesis output
+ * against a single obligation's contract assertions and returns a structured
+ * score plus a brief rationale.
  *
  * Distinct from the legacy `VERIFIER_PERSONA` in `persona-registry.ts`,
  * which is the dispatch persona that handles `test-must-pass` obligations
  * during synthesis. The tournament verifier never writes patches; its only
- * job is to rank candidates produced by other personas. See
- * `v8-implementation-guide.md` §6 (Phase 3 — `src/persona/verifier-persona.ts`).
+ * job is to rank candidates produced by other personas.
  */
 import type { ObligationV1 } from '../contract/types';
 import type { Session, SessionUsage } from '../session/types';

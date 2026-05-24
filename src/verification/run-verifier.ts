@@ -23,12 +23,11 @@ import { checkFunctionSignature } from './ast-signature';
 import { extractImports as extractImportsAst } from './ast-imports';
 
 /**
- * Per-obligation verification result. Phase 2's verifier is the
- * post-generation, pre-commit checker described in
- * `v8-overhaul-guide.md` §5.5. Streaming and post-merge checks come in
- * Phase 6. Phase 7 (impl guide §10) extends the verifier with five new
- * obligation types: `function-must-have-signature`, `property-must-hold`,
- * `import-graph-must-satisfy`, `coverage-must-exceed`,
+ * Per-obligation verification result. The verifier is the post-generation,
+ * pre-commit checker. Streaming and post-merge variants live in sibling
+ * modules. Supported obligation types: `test-must-pass`, `build-must-pass`,
+ * `coverage-must-exceed`, `file-must-exist`, `function-must-have-signature`,
+ * `property-must-hold`, `import-graph-must-satisfy`,
  * `performance-must-not-regress`.
  */
 export interface VerificationResult {

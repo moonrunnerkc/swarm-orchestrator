@@ -1,9 +1,8 @@
 // Anthropic Claude Code CLI profile + envelope parser + cost.
-// Phase 4 redo (DECISIONS.md 2026-05-09): same-family control arm.
-// AST obligations reuse Copilot's prompt + AST candidate runner;
-// `property-must-hold` reuses Codex's prompt + shell candidate
-// runner. The cross-adapter comparison is "same task, different
-// model family".
+// Same-family control arm. AST obligations reuse Copilot's prompt + AST
+// candidate runner; `property-must-hold` reuses Codex's prompt + shell
+// candidate runner. The cross-adapter comparison is "same task,
+// different model family".
 
 import type {
   FunctionMustHaveSignatureObligation,

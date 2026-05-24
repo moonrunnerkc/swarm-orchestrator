@@ -12,10 +12,10 @@ import type { FalsificationInput } from '../../../../src/falsification/adapters/
  * when `SWARM_E2E_CLAUDECODE=1` is set; otherwise mocha skips the
  * suite.
  *
- * Per `docs/adapter-integration.md` Phase 4: real subprocess invocation,
- * no SDK shortcut. The test exercises the smallest possible task that
- * demonstrates end-to-end behaviour (prompt → JSON envelope → fenced
- * candidates → AST verifier confirms a falsifying perturbation).
+ * Real subprocess invocation, no SDK shortcut. The test exercises the
+ * smallest possible task that demonstrates end-to-end behaviour
+ * (prompt → JSON envelope → fenced candidates → AST verifier confirms
+ * a falsifying perturbation).
  */
 
 const E2E_FLAG = 'SWARM_E2E_CLAUDECODE';

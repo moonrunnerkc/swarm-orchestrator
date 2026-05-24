@@ -46,8 +46,7 @@ The Phase 1 fixture has neither at meaningful scale. Adding the
 scaffolding under Phase 1's tree would silently change the contamination
 surface of Phase 1/2 obligations; landing the new fixture under
 `evidence/fixtures/phase-3/` keeps the two obligation surfaces
-independent. The decision is recorded in DECISIONS.md under the Phase 3
-obligation set entry.
+independent.
 
 ## Contamination guard
 

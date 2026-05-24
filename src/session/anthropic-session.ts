@@ -12,9 +12,9 @@ import {
 } from './types';
 
 /**
- * Default Sonnet model used by Phase 2. Tier matches `AnthropicExtractor`'s
- * default (also Sonnet) so the contract compiler and the run-time pipeline
- * share a cache prefix when run back-to-back.
+ * Default Sonnet model. Tier matches `AnthropicExtractor`'s default (also
+ * Sonnet) so the contract compiler and the run-time pipeline share a cache
+ * prefix when run back-to-back.
  */
 export const DEFAULT_SESSION_MODEL = 'claude-sonnet-4-6';
 
@@ -40,9 +40,6 @@ export interface AnthropicSessionOptions {
  * and the (non-cached) per-persona suffix, which is the placement Anthropic's
  * documentation recommends for sessions with many short calls sharing one
  * long prefix.
- *
- * See `v8-overhaul-guide.md` §4.1 for the architectural rationale, §6 for the
- * cost model, and `v8-implementation-guide.md` §5 for Phase 2 scope.
  */
 export class AnthropicSession implements Session {
   private readonly client: Anthropic;

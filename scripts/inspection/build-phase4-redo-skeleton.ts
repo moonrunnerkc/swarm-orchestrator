@@ -11,8 +11,7 @@
  * things Codex didn't? "Real" means an operator-confirmed
  * counter-example, not a predicate-runner FP and not a
  * predicate-gaming proposal that happened to flip the predicate.
- * Audit-and-corrections (DECISIONS.md 2026-05-09) ensures the
- * inspection step is at least set up; the operator commits the
+ * This skeleton sets up the inspection; the operator commits the
  * verdicts.
  *
  * Heuristic classifier note: the existing heuristic classifier in
@@ -257,9 +256,8 @@ function main(): void {
   );
   out.push(
     '- ≥ 1 confirmed unique catches → cross-family-diversity thesis ' +
-      '**INVALIDATED** on this obligation surface; the audit-and-corrections ' +
-      'DECISIONS.md entry\'s third-adapter-revisit condition fires and ' +
-      'Phase 5 returns to the table.',
+      '**INVALIDATED** on this obligation surface; the third-adapter-revisit ' +
+      'condition fires and Phase 5 returns to the table.',
   );
   out.push('');
   out.push('## Provenance');

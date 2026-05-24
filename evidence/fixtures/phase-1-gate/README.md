@@ -13,8 +13,7 @@ the repo against its own `evidence/` subtree: four predicates already
 exited 1 against the snapshot before any candidate ran, because earlier
 aborted-run evidence directories contained the literal marker tokens the
 predicates searched for. See run-1 inspection at
-`evidence/phase1-dev-gate/run-1/inspection.md` and the close-out entry
-in `DECISIONS.md`.
+`evidence/phase1-dev-gate/run-1/inspection.md`.
 
 Pinning the snapshot to v8.0.1 (`a7e5455`) sidestepped that single
 contamination cycle but kept the gate dependent on git history. A

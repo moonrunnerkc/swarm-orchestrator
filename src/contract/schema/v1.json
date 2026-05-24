@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/moonrunnerkc/swarm-orchestrator/contract/v1.json",
   "title": "Swarm Orchestrator v8 Contract Obligation",
-  "description": "Single contract obligation. Contracts serialize as JSONL where each line is one obligation. See docs/v8-overhaul-guide.md §5.1 and docs/v8-implementation-guide.md §4. Phase 5 adds the optional `deterministicStrategy` field for WASM-eligible obligations (impl guide §8 / overhaul §5.6). Phase 7 adds five additional oneOf branches: function-must-have-signature, property-must-hold, import-graph-must-satisfy, coverage-must-exceed, performance-must-not-regress (impl guide §10).",
+  "description": "Single contract obligation. Contracts serialize as JSONL where each line is one obligation. The optional `deterministicStrategy` field marks WASM-eligible obligations the population manager dispatches to the deterministic floor instead of the synthesis tournament. Supported types: file-must-exist, build-must-pass, test-must-pass, coverage-must-exceed, function-must-have-signature, property-must-hold, import-graph-must-satisfy, performance-must-not-regress.",
   "type": "object",
   "oneOf": [
     {
@@ -19,7 +19,7 @@
         "deterministicStrategy": {
           "type": "string",
           "minLength": 1,
-          "description": "Optional name of a deterministic strategy registered with the WASM runtime. When set, the population manager dispatches this obligation to the runtime instead of the synthesis tournament. See docs/v8-implementation-guide.md §8."
+          "description": "Optional name of a deterministic strategy registered with the WASM runtime. When set, the population manager dispatches this obligation to the runtime instead of the synthesis tournament."
         }
       },
       "additionalProperties": false

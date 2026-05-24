@@ -69,7 +69,7 @@ PER_COMPARISON_ALPHA = FAMILY_WISE_ALPHA / N_COMPARISONS
 
 # Codex Phase 2 baseline yield-per-dollar, used as the Phase 3 ship/no-ship
 # threshold. Source: evidence/phase2/analysis.md (26 confirmed yields,
-# $4.3994 total billed cost). Locked in DECISIONS.md Phase 2 close-out.
+# $4.3994 total billed cost). Locked at Phase 2 close-out.
 CODEX_PHASE2_YIELD = 26
 CODEX_PHASE2_DOLLARS = 4.3994
 CODEX_PHASE2_YIELD_PER_DOLLAR = CODEX_PHASE2_YIELD / CODEX_PHASE2_DOLLARS

@@ -2,9 +2,9 @@
 /**
  * Phase 4 redo paired-run harness.
  *
- * Audit-and-corrections rerun (DECISIONS.md 2026-05-09): the original
- * Phase 4 reused Phase 3's obligation set, which targeted Copilot's
- * specialties (`import-graph-must-satisfy`, `function-must-have-signature`).
+ * The original Phase 4 reused Phase 3's obligation set, which targeted
+ * Copilot's specialties (`import-graph-must-satisfy`,
+ * `function-must-have-signature`).
  * That obligation surface is uninterpretable for ClaudeCode's
  * adversarial-test-input strategy. The redo runs against an N=20
  * `property-must-hold` obligation set at

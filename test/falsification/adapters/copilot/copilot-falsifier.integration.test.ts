@@ -11,10 +11,8 @@ import type { FalsificationInput } from '../../../../src/falsification/adapters/
  * Real-CLI integration test for the Copilot falsifier. Exercises the full
  * adapter against an installed `copilot` binary plus a logged-in
  * Copilot session. Runs only when `SWARM_E2E_COPILOT=1` is set; otherwise
- * mocha skips the suite.
- *
- * Per `docs/adapter-integration.md` Phase 3: the integration test must
- * run the real CLI locally; CI may skip via the env-var gate.
+ * mocha skips the suite. The suite must run against the real CLI
+ * locally; CI may skip via the env-var gate.
  *
  * The test relaxes the production per-tool permission set to
  * `--allow-all-tools` because (a) it runs inside an isolated temp

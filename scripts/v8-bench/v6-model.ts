@@ -5,12 +5,11 @@ import {
 } from '../../src/session/types';
 
 /**
- * Synthetic v6 cost model. The architectural premise of v6 from
- * `v8-overhaul-guide.md` §4.1 is "each agent is a separate CLI invocation,
- * each invocation boots a fresh agent context, re-loads tool definitions,
- * re-authenticates, and re-derives project understanding from scratch." §6
- * gives concrete numbers we use as the model's defaults; they're a
- * deliberately conservative read of what v6 actually does in production.
+ * Synthetic v6 cost model. The architectural premise of v6 is "each
+ * agent is a separate CLI invocation, each invocation boots a fresh
+ * agent context, re-loads tool definitions, re-authenticates, and
+ * re-derives project understanding from scratch." The defaults below
+ * are a deliberately conservative read of what v6 did in production.
  *
  * The model:
  *   - Each obligation is its own CLI invocation (no shared context, no

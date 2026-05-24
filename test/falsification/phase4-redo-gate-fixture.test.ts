@@ -5,12 +5,11 @@ import * as path from 'path';
 import { runPredicate } from './shared/run-predicate';
 
 /**
- * Contamination guard for the Phase 4 redo obligation set
- * (audit-and-corrections, DECISIONS.md 2026-05-09). Reuses the Phase 1
- * fixture; this test runs every locked Phase 4 redo predicate against a
- * fresh copy of the fixture and asserts each exits 0 (the property
- * holds against the bare fixture). Same shape as the Phase 1 / 2 / 3
- * contamination guards.
+ * Contamination guard for the Phase 4 redo obligation set. Reuses the
+ * Phase 1 fixture; this test runs every locked Phase 4 redo predicate
+ * against a fresh copy of the fixture and asserts each exits 0 (the
+ * property holds against the bare fixture). Same shape as the Phase 1
+ * / 2 / 3 contamination guards.
  */
 
 interface Phase4RedoObligation {

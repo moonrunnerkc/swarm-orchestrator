@@ -12,11 +12,8 @@ import type { FalsificationInput } from '../../../../src/falsification/adapters/
  * adapter against an installed `codex` binary plus valid OpenAI
  * credentials in the environment. Runs only when `SWARM_E2E_CODEX=1` is
  * set; otherwise mocha skips the suite, which keeps CI green when the
- * binary is absent.
- *
- * Per `docs/adapter-integration.md` Phase 1: "If the binary is not
- * present in CI, gate the test on an env var, but the test must run and
- * pass against a real Codex install locally."
+ * binary is absent. The suite must run and pass against a real Codex
+ * install locally.
  */
 
 const E2E_FLAG = 'SWARM_E2E_CODEX';

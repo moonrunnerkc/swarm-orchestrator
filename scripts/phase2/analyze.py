@@ -454,10 +454,10 @@ def run_real_analysis(args: argparse.Namespace) -> int:
         raise ValueError("config-a and config-b obligation orderings differ")
 
     # Filter out paired pairs where either arm is an environmental discard
-    # (errored). Documented in PROTOCOL.md and DECISIONS.md: discards are
-    # logged and excluded from the paired analysis. The discard count is
-    # reported alongside the analyzable N so the dataset's
-    # post-discard size is auditable from the analysis output alone.
+    # (errored). Discards are logged and excluded from the paired
+    # analysis. The discard count is reported alongside the analyzable N
+    # so the dataset's post-discard size is auditable from the analysis
+    # output alone.
     discarded: list[tuple[str, str]] = []
     config_a: list[PerObligation] = []
     config_b: list[PerObligation] = []

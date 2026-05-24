@@ -1,11 +1,10 @@
 // Hash-chained evidence ledger: each entry's entryHash folds in the
-// previous entry's hash, so tampering breaks `verifyChain`. Impl guide
-// §7 calls for IRONROOT primitives; we use the same sha256-of-canonical-
-// JSON pattern so a swap to that npm package is mechanical. Deviation
-// in docs/v8-architecture-deviations.md.
+// previous entry's hash, so tampering breaks `verifyChain`. Uses the
+// sha256-of-canonical-JSON pattern so a swap to an IRONROOT-style
+// library is mechanical.
 //
 // Genesis prevHash is 64 hex zeros — string-comparator-safe vs the
-// empty-string variant some IRONROOT implementations use.
+// empty-string variant some implementations use.
 
 import * as crypto from 'crypto';
 import * as fs from 'fs';

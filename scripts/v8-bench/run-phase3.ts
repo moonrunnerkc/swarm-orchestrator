@@ -15,14 +15,14 @@
  *      candidate-failure rates so tournament's diversity injection
  *      actually lifts pass rate measurably above single mode.
  *
- * Ship-gate booleans (per impl guide §6 exit criterion (b)):
+ * Ship-gate booleans:
  *   - tournament/single cost multiplier ≤ 1.5× on the easy suite.
  *   - tournament pass rate ≥ single pass rate on the tricky suite, with
  *     a strict improvement on at least one goal.
  *
  * Output:
  *   - `docs/v8-phase-3-benchmark.md` — Markdown report.
- *   - `docs/benchmarks/v8-history.jsonl` — appended rows (impl guide §11).
+ *   - `docs/benchmarks/v8-history.jsonl` — appended rows.
  */
 
 import * as fs from 'fs';
@@ -148,9 +148,9 @@ async function main(): Promise<void> {
   const easySummary = summarizeModeComparison(easyRows);
   const trickySummary = summarizeModeComparison(trickyRows);
 
-  // §6 ship-gate. Accuracy lift on the tricky suite is the hard pass
+  // Ship-gate. Accuracy lift on the tricky suite is the hard pass
   // criterion; cost ratio is reported but not a hard gate (synthetic-mode
-  // limitation documented in v8-architecture-deviations.md).
+  // limitation).
   const trickyImprovement = trickyRows.some(
     (r) => r.tournament.satisfied > r.single.satisfied,
   );
@@ -207,15 +207,15 @@ async function main(): Promise<void> {
     `[bench3] tricky single→tournament pass rate ${(trickySummary.singlePassRate * 100).toFixed(1)}%→${(trickySummary.tournamentPassRate * 100).toFixed(1)}%: ${trickyAccuracyOk ? 'PASS' : 'FAIL'}\n`,
   );
 
-  // Hard gate: accuracy lift on tricky suite (§6 (a)). Cost ratio is
-  // reported but not enforced — see v8-architecture-deviations.md.
+  // Hard gate: accuracy lift on tricky suite. Cost ratio is reported
+  // but not enforced.
   if (flags.refuseOnFailure && !trickyAccuracyOk) {
     process.exit(1);
   }
   // Surface the cost-cap status non-fatally so the gate's expectations are clear.
   if (!easyCostOk) {
     process.stderr.write(
-      `[bench3] note: synthetic-mode cost ratio exceeds the §6 1.5× target; documented as architecture deviation. Real-API replication tracked under impl guide §11.\n`,
+      `[bench3] note: synthetic-mode cost ratio exceeds the 1.5× target; real-API replication is the ultimate gate.\n`,
     );
   }
 }
@@ -321,7 +321,7 @@ function renderReport(args: ReportArgs): string {
     '- The tricky suite\'s candidate-quality distribution is a synthetic stand-in for "real models occasionally produce bad code." A real-API replication would replace the Bernoulli responder with actual model dispatches.',
   );
   lines.push(
-    '- The cost cap and accuracy lift are necessary but not sufficient to prove Phase 3 is worth running in production: real-API runs against representative codebases are the ultimate ship gate, scheduled per impl guide §11.',
+    '- The cost cap and accuracy lift are necessary but not sufficient to prove Phase 3 is worth running in production: real-API runs against representative codebases are the ultimate ship gate.',
   );
   lines.push('');
   return lines.join('\n');

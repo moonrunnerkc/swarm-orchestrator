@@ -460,8 +460,7 @@ def render_markdown(
             "premise assumes — investigate what ClaudeCode caught that "
             "Codex did not, and whether the gap reflects a strategy "
             "ceiling or a model-family advantage. This invalidates the "
-            "Phase 5 skip's third-adapter-revisit condition recorded in "
-            "the audit-and-corrections DECISIONS.md entry; Phase 5 "
+            "Phase 5 skip's third-adapter-revisit condition; Phase 5 "
             "becomes worth re-evaluating."
         )
     out.append("")
@@ -471,17 +470,14 @@ def render_markdown(
             "ClaudeCode marginal yield is zero on the property-must-hold "
             "obligation surface. The operator brief's tightened gate "
             "(\"if ClaudeCode yield is zero or negative, skip Phase 5\") "
-            "fires; Phase 5 stays skipped on operational grounds. The "
-            "audit-and-corrections DECISIONS.md entry records the "
-            "third-adapter-revisit condition that would re-open the "
-            "decision."
+            "fires; Phase 5 stays skipped on operational grounds. A "
+            "third-adapter-revisit condition would re-open the decision."
         )
     else:
         out.append(
             "ClaudeCode marginal yield is positive on the property-must-hold "
             "obligation surface; Phase 5 (bandit dispatcher) becomes eligible. "
-            "The audit-and-corrections DECISIONS.md entry's "
-            "\"third adapter that earns its slot\" revisit condition has "
+            "The \"third adapter that earns its slot\" revisit condition has "
             "fired — Phase 5 returns to the table."
         )
     out.append("")

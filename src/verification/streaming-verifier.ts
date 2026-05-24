@@ -1,5 +1,5 @@
 /**
- * Phase 6: streaming-verification driver.
+ * Streaming-verification driver.
  *
  * Receives partial generation output from the session's streaming API at
  * intervals and evaluates checkable contract assertions against the
@@ -7,10 +7,6 @@
  * by continuing, the generation is cancelled. Tokens generated to that
  * point are still billed by the provider; tokens not generated are
  * saved.
- *
- * See `v8-overhaul-guide.md` §5.5 (multi-point verification) and
- * `v8-implementation-guide.md` §9 (Phase 6 deliverables and exit
- * criteria).
  */
 
 import type { ObligationV1 } from '../shared-types/obligation-types';

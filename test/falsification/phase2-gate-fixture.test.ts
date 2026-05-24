@@ -6,12 +6,11 @@ import { runPredicate } from './shared/run-predicate';
 
 /**
  * Contamination guard for the Phase 2 empirical-gate fixture. Phase 2
- * reuses the Phase 1 fixture under `evidence/fixtures/phase-1-gate/`
- * (decision recorded in DECISIONS.md 2026-05-09 entry); this test runs
- * every locked Phase 2 predicate against a fresh copy of that fixture
- * and asserts each exits 0. Mirrors the Phase 1 contamination guard at
- * `phase1-gate-fixture.test.ts` so the same "contamination caught at
- * design time" invariant covers both gates.
+ * reuses the Phase 1 fixture under `evidence/fixtures/phase-1-gate/`;
+ * this test runs every locked Phase 2 predicate against a fresh copy of
+ * that fixture and asserts each exits 0. Mirrors the Phase 1
+ * contamination guard at `phase1-gate-fixture.test.ts` so the same
+ * "contamination caught at design time" invariant covers both gates.
  */
 
 interface Phase2Obligation {

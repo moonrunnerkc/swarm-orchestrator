@@ -30,8 +30,7 @@ describe('copilot-cost', () => {
   });
 
   describe('copilotApiEquivalentUsdPerPremiumRequest', () => {
-    // The audit-and-corrections fix (DECISIONS.md 2026-05-09)
-    // distinguishes the subscription-imputed per-request rate ($0.026 on
+    // Distinguishes the subscription-imputed per-request rate ($0.026 on
     // Pro+) from the API-equivalent rate (GPT-4-Turbo midpoint, $0.05).
     // The test pins both the default and the override path so a future
     // rate-card refresh has to update the constant *and* the test

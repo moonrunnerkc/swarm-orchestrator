@@ -4,8 +4,7 @@ import { execSync } from 'child_process';
  * Shared `runPredicate` helper used by the per-phase fixture-contamination
  * tests and the confirmed-yields regression test. Three identical copies
  * existed at one point; the duplicate-blocks quality gate flagged them
- * during the audit-and-corrections sweep (DECISIONS.md 2026-05-09) and
- * the helper was extracted into this file.
+ * and the helper was extracted into this file.
  *
  * Returns the exit code and combined stdout+stderr; never throws on a
  * non-zero exit (the obligations being tested deliberately exercise both

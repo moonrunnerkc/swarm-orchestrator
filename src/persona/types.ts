@@ -1,8 +1,6 @@
 /**
  * Type definitions for the v8 persona layer. A persona is a system-prompt
- * slice plus a sampling configuration plus a model-tier preference. See
- * `v8-overhaul-guide.md` §5.2 (population manager) and
- * `v8-implementation-guide.md` §5 (Phase 2 deliverable).
+ * slice plus a sampling configuration plus a model-tier preference.
  */
 
 import type { ObligationType } from '../contract/types';
@@ -21,7 +19,7 @@ export interface PersonaSampling {
 }
 
 /**
- * Static persona definition. Per §5.2 the registry holds the system slice,
+ * Static persona definition. The registry holds the system slice,
  * sampling regime, and tier preference for each persona.
  */
 export interface PersonaSpec {
@@ -36,8 +34,8 @@ export interface PersonaSpec {
   /** Preferred model tier; the run-time may map this to a concrete model id. */
   tier: ModelTier;
   /**
-   * Obligation types this persona is suited to take on. Used by the Phase 2
-   * predicate evaluator to wake the right persona for each obligation.
+   * Obligation types this persona is suited to take on. The predicate
+   * evaluator uses this to wake the right persona for each obligation.
    */
   handles: readonly ObligationType[];
 }

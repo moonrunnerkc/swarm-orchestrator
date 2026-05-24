@@ -5,9 +5,8 @@
  * with heuristic classifications for all 60 candidates produced by the
  * Phase 3 ship-B' run.
  *
- * Audit-and-corrections (DECISIONS.md 2026-05-09): Phase 3's "60
- * catches, 0 false positives" headline was unaudited. This skeleton
- * walks the existing run artefacts at
+ * Phase 3's "60 catches, 0 false positives" headline needs operator
+ * audit. This skeleton walks the existing run artefacts at
  * `evidence/phase3/run/config-bp/<id>/result.json`, pulls each
  * candidate file, runs the AST-based heuristic classifier, and
  * generates a per-candidate section the operator fills in.

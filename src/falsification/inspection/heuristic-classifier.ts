@@ -1,26 +1,22 @@
 /**
- * Heuristic pre-classifier for falsifier candidates (audit-and-corrections,
- * DECISIONS.md 2026-05-09).
+ * Heuristic pre-classifier for falsifier candidates.
  *
- * Phase 1 and Phase 2 hand inspections found roughly 33% of
+ * Hand inspections of grep-style predicates found roughly 33% of
  * machine-claimed yields were "predicate-gaming" — text that the
- * grep-based predicate counted as a violation but a human would not
- * consider a real instance. Phase 3 used the AST-backed verifier, which
- * already filters most string-literal-style gaming, so the same
- * adversarial behaviour likely surfaces less; but the inspection step
- * has not been done. This classifier supports operator inspection by
- * pre-labelling each candidate as `likely-real`, `likely-gaming`, or
- * `ambiguous`, with a one-line reason.
+ * predicate counted as a violation but a human would not consider a
+ * real instance. The AST-backed verifier filters most string-literal
+ * gaming, but operator inspection is still required. This classifier
+ * supports that step by pre-labelling each candidate as `likely-real`,
+ * `likely-gaming`, or `ambiguous`, with a one-line reason.
  *
  * The classifier is **heuristic, not authoritative**. Operator verdict
  * has the final word; this module's labels appear in `inspection.md`
  * skeletons as a starting point, never as a substitute for inspection.
  *
- * Implementation discipline (per the audit brief): parse with the
- * TypeScript compiler API for TS/JS files; compare AST node kinds, not
- * regex. The "is this string only inside a comment / string literal /
- * template string?" check is also AST-driven (TypeScript exposes
- * trivia and parent-node kinds).
+ * Implementation discipline: parse with the TypeScript compiler API for
+ * TS/JS files; compare AST node kinds, not regex. The "is this string
+ * only inside a comment / string literal / template string?" check is
+ * also AST-driven (TypeScript exposes trivia and parent-node kinds).
  */
 
 import * as path from 'path';

@@ -1,6 +1,6 @@
 // Adapters are *falsifiers*, not alternative producers. If they cannot
 // falsify within the time budget they return `no-falsification-found`
-// rather than pretending success. Source: docs/adapter-integration.md.
+// rather than pretending success.
 
 import type { ObligationV1, ObligationType } from '../../contract/types';
 
@@ -84,21 +84,21 @@ export interface AdapterCostRecord {
   // Real charge to the operator's account; zero under flat-rate.
   readonly dollarsBilled: number;
   // Upper-bound from token counts × rate card. For Copilot this is
-  // subscription-imputed at $0.026/Premium-request (audit 2026-05-09);
-  // for cross-adapter like-for-like, read dollarsApiEquivalent.
+  // subscription-imputed at $0.026/Premium-request; for cross-adapter
+  // like-for-like, read dollarsApiEquivalent.
   readonly dollarsTokenEstimate: number;
   // What the same workload would cost on the comparable per-token API
   // rate card, regardless of how it was actually billed. For Copilot
   // this maps Premium requests to GPT-4-Turbo-equivalent token costs
-  // (see copilot-cost.ts + DECISIONS.md 2026-05-09); for Codex and
-  // ClaudeCode equals dollarsTokenEstimate.
+  // (see copilot-cost.ts); for Codex and ClaudeCode equals
+  // dollarsTokenEstimate.
   readonly dollarsApiEquivalent: number;
   readonly counterExamplesFound: number;
-  // requestedCandidates - counterExamplesFound under Phase 1.
+  // requestedCandidates - counterExamplesFound.
   readonly falsePositives: number;
 }
 
-// Adapters are sequential in Phase 1: no batching, no scheduling.
+// Adapters are sequential: no batching, no scheduling.
 // `handles` is advisory; an adapter receiving an out-of-list obligation
 // must return `strategy-not-applicable`, not throw.
 export interface FalsifierAdapter {

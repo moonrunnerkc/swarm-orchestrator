@@ -1,18 +1,17 @@
 /**
- * Phase 5 WASM deterministic-floor runtime. Hosts a registry of
+ * WASM deterministic-floor runtime. Hosts a registry of
  * `DeterministicStrategy` modules and dispatches obligations through
  * them under a sandbox: writes outside `repoRoot` are rejected, a
  * scratch directory is provided per-dispatch, and a hard wall-time
  * cap is enforced.
  *
- * Architecture deviation: the §8 spec calls for a Wasmer or wasmtime
- * runtime with WASM modules. Strategies in this build are
- * TypeScript modules running in the same Node process as the
- * orchestrator, with a sandbox layer that enforces the same isolation
- * properties (no writes outside repoRoot, no implicit network access,
- * time budget). The strategy-module surface is shaped to be
- * substitutable with WASM-compiled modules without API churn; the
- * deviation is documented in `docs/v8-architecture-deviations.md`.
+ * Architecture note: the long-term design calls for a Wasmer or wasmtime
+ * runtime with WASM modules. Strategies in this build are TypeScript
+ * modules running in the same Node process as the orchestrator, with a
+ * sandbox layer that enforces the same isolation properties (no writes
+ * outside repoRoot, no implicit network access, time budget). The
+ * strategy-module surface is shaped to be substitutable with
+ * WASM-compiled modules without API churn.
  */
 
 import * as fs from 'fs';
