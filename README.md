@@ -70,10 +70,11 @@ Exit codes: `0` advisory-clean or any advise-mode run, `1` block (gate mode only
 
 ## Real-corpus headline F1
 
-The headline number is the score against the hand-labeled real-corpus
+The headline number is the score against the AI-labeled real-corpus
 baseline (205 PRs, 10 broken / 195 clean, eight agent vendors). Reproduce
 with `node dist/scripts/corpus/score-real.js`; snapshot at
 [`benchmarks/real-corpus/scores/latest.json`](benchmarks/real-corpus/scores/latest.json).
+Public dashboard: [moonrunnerkc.github.io/swarm-orchestrator](https://moonrunnerkc.github.io/swarm-orchestrator/docs/leaderboard/).
 
 | | Value |
 |---|---|
