@@ -4,6 +4,82 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project follows
 [Semantic Versioning](https://semver.org/).
 
+## [10.2.0-advisory] - 2026-05-24
+
+### Honest reset and repositioning
+
+The synthetic 1.000 is demoted to a regression-only number with the
+literal framing "self-consistency check, not detection power". The
+real-corpus F1 (0.109 on 205 hand-labeled PRs) is the only published
+headline. The cheat-detector engine repositions around the suspicion
+score the measured precision can credibly support; the merge-gate
+ambition becomes opt-in rather than the default.
+
+#### Added
+
+- `--mode <advise|gate>` on `swarm audit`. `advise` (the default)
+  reports findings without ever exiting 1 on a blocking finding;
+  `gate` preserves the v10.1 merge-blocking exit-code contract. The
+  rendered PR comment makes the distinction explicit with a top-of-
+  comment banner and a reframed blocking-section header.
+- `--detectors <default|experimental|all>` on `swarm audit`.
+  `default` loads the four advisory-grade detectors targeted for v2.0
+  (error-swallow, mock-of-hallucination, no-op-fix, fake-refactor);
+  `experimental` adds back the six retired detectors; `all` is an
+  alias for `experimental` retained for v10.1-pinned callers.
+- `src/audit/cheat-detector/detector-sets.ts` defines the split.
+  `runCheatDetectors` accepts a new optional `detectorSet` field on
+  `AuditInput`; `AuditResult.detectorSet` carries the resolved set
+  through to the rendered comment, the ledger, and downstream
+  AIBOM artifacts.
+- Per-detector measured-precision badge in the rendered PR comment.
+  Every finding header is followed by a `Detector precision badge:`
+  line citing the precision, firing count, and corpus identifier.
+  Numbers come from
+  `src/audit/report-comment/detector-precision.ts` and are pinned at
+  the v10.1 real-corpus snapshot.
+- `--shadow <repo-label>` shadow-mode infrastructure: writes the
+  audit verdict to `.swarm/shadow/<repo>/<run-id>.json` and
+  suppresses both the comment and the gating exit code. Provides the
+  on-disk shape downstream analyzers join against the upstream PR's
+  merge / revert / review history.
+- `docs/labeling-methodology.md`, the rubric and inter-rater policy
+  the labels-v2 corpus is being built against.
+- `benchmarks/real-corpus/labels-v2/` scaffold with `agreement.json`
+  layout, rater-id anonymization, and the kappa-threshold gate.
+- `scripts/labeling/compute-kappa.ts` computes Cohen's kappa pairwise
+  across the labels-v2 rater files and emits `agreement.json`.
+- `scripts/promotions/compute-promotions.ts` emits
+  `benchmarks/real-corpus/promotions.json`. F1 ≥ 0.50 promotes a
+  detector from advisory to gate-eligible; the table is the
+  auditable artifact that justifies the gate-eligible list in the
+  next major release.
+
+#### Changed
+
+- Six detectors retire from the default set in v10.2-advisory.
+  Three are zero-TP / zero-FP on the real corpus
+  (`comment-only-fix`, `exception-rethrow-lost-context`,
+  `dead-branch-insertion`); three are FP-only on the real corpus
+  (`assertion-strip`, `coverage-erosion`, `test-relaxation`). All
+  six remain available behind `--detectors experimental`.
+- README "What This Does" repositions around the suspicion-score
+  verdict. A "Real-corpus headline F1" section replaces the v10.1
+  Evidence section; the synthetic 1.000 is presented as a self-
+  consistency check next to the real-corpus 0.109.
+- `scripts/corpus/score-real.ts` and the leaderboard scorer both
+  request `detectorSet: 'experimental'` so the retired six are
+  still scored.
+
+#### Renamed / repositioned (no breaking API change)
+
+- `Finding` shape and `AuditResult` JSON shape unchanged (a new
+  optional `detectorSet` field is additive). The `--mode` and
+  `--detectors` flags default to behavior matching the v10.1
+  rendered shape when omitted by an older caller (gate, all).
+- The CLI's `--output json` adds a top-level `mode` field next to
+  the existing AuditResult shape.
+
 ## [10.1.0] - 2026-05-24
 
 ### Detector accuracy on real PRs
