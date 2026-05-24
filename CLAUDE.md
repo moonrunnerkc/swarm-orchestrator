@@ -1,11 +1,18 @@
 # Swarm Orchestrator
 
-A CLI and library that compiles a natural-language goal into a typed
-contract, runs the contract through a falsification-gated v8 pipeline
-(extractor → session → predicate-runner → falsifier → verifier), and
-admits only patches that satisfy every obligation. v6 (the verified-
-branch pipeline that wrapped third-party coding-agent CLIs) was
-removed in v9.0.0; pin to `8.0.x` if you still depend on it.
+A CLI and library with two surfaces. The **audit surface** (v10, the
+headline) is `swarm audit <pr | --diff-file | --diff-stdin>`: it walks a
+PR diff through a pluggable cheat-detector registry (test relaxation,
+mock-of-hallucination, assertion strip, no-op fix, and six more),
+fingerprints the AI agent that wrote the PR, optionally emits a
+CycloneDX-ML or SPDX 3.0 AI-Profile AIBOM, and posts a deterministic
+finding back to the PR. The **orchestrator surface** (v8) compiles a
+natural-language goal into a typed contract and runs it through a
+falsification-gated pipeline (extractor → session → predicate-runner →
+falsifier → verifier), admitting only patches that satisfy every
+obligation. v6 (the verified-branch pipeline that wrapped third-party
+coding-agent CLIs) was removed in v9.0.0; pin to `8.0.x` if you still
+depend on it.
 
 **The architectural rule:** nothing reaches `main` without passing
 verification end-to-end. Don't introduce a merge path that bypasses
@@ -33,11 +40,18 @@ Before any PR: `npm test`, `npm run typecheck`, then a descriptive commit. The L
 
 ## Where things live
 
-- `src/cli.ts`: top-level CLI dispatcher (`run`, `compile`, `resume`, `stats`, `doctor`, `init`, `v8`).
-- `src/cli/v8/`: per-subcommand handlers for the v8 pipeline.
+- `src/cli.ts`: top-level CLI dispatcher (`audit`, `run`, `compile`, `resume`, `stats`, `doctor`, `init`, `v8`). `audit` is the v10 user-facing verb; `run` and friends are the v8 orchestrator surface.
+- `src/cli/v8/`: per-subcommand handlers for both surfaces.
+  - `src/cli/v8/audit-handler.ts`: `swarm audit` dispatcher; resolves `--pr` / `--diff-file` / `--diff-stdin`, walks the cheat-detector registry, renders the comment, optionally emits the AIBOM.
+  - `src/cli/v8/pr-fetch.ts`: PR-ref → unified-diff resolver used by `swarm audit --pr`.
   - `src/cli/v8/init-handler.ts`: `swarm init` scaffolding.
   - `src/cli/v8/doctor-handler.ts`: `swarm doctor` diagnostics (with `--fix`).
   - `src/cli/v8/run-handler.ts`: `swarm run` with auto-discover and preset integration.
+- `src/audit/`: the v10 audit surface.
+  - `src/audit/cheat-detector/`: ten detectors (`test-relaxation`, `mock-of-hallucination`, `assertion-strip`, `no-op-fix`, `comment-only-fix`, `coverage-erosion`, `dead-branch-insertion`, `error-swallow`, `exception-rethrow-lost-context`, `fake-refactor`) behind a single registry in `index.ts`. Adding a category is one import + one array entry. Shared utilities: `diff-walker.ts`, `subject-paths.ts`, `detector-types.ts`, `audit-config.ts` (project-level `.swarm/audit-config.yaml` loader).
+  - `src/audit/pr-source/`: AI-agent fingerprinter (Claude Code, Cursor, Devin, Aider, Codex CLI, Copilot Workspace, Replit Agent, OpenHands).
+  - `src/audit/report-comment/`: deterministic PR-comment renderer.
+  - `src/audit/aibom/`: hand-rolled CycloneDX 1.6 ML-BOM and SPDX 3.0 AI-Profile emitters (`cyclonedx-ml.ts`, `spdx-ai-profile.ts`, `ledger-reader.ts`); no new runtime deps. Triggered by `--emit-aibom`.
 - `src/errors.ts`: `SwarmError` base class with `code` and `remediation` fields; subclasses `ContractError`, `PopulationError`, `VerificationError`, `InferenceError`, `ConfigError`.
 - `src/contract/`: contract compilation, validation, serialization, and approval.
   - `src/contract/auto-discover.ts`: automatic contract file discovery (contract.yaml, swarm-contract.yaml, .swarm/contract.yaml).
@@ -180,6 +194,42 @@ gates:
   every throw site includes a `remediation` string.
 - **58 dead exports removed.** Public surface reduced from 581 to 523
   exported symbols.
+
+## Auditor repositioning (v10)
+
+v10 repositions the project around the audit surface without disturbing the v8
+orchestrator. Internal API names (`Obligation`, `Contract`, `verifier`) are
+unchanged; only the docs vocabulary, the headline action, and the top-level
+CLI surface shifted.
+
+- **`swarm audit` subcommand** with three input modes: `--pr <ref>`,
+  `--diff-file <path>`, `--diff-stdin`. Also exposed as a `swarm-audit`
+  bin alias.
+- **Cheat-detector registry** with ten detectors covering test relaxation,
+  mock-of-hallucination, assertion strip, no-op fix, comment-only fix,
+  coverage erosion, dead-branch insertion, error swallow, exception
+  rethrow with lost context, and fake refactor. Project consumers can
+  exempt paths via `.swarm/audit-config.yaml`.
+- **PR-source fingerprinter** identifies the AI agent that authored the
+  PR (Claude Code, Cursor, Devin, Aider, Codex CLI, Copilot Workspace,
+  Replit Agent, OpenHands).
+- **Deterministic PR-comment renderer.** Same input → identical Markdown
+  output; safe to re-post.
+- **AIBOM emitters.** CycloneDX 1.6 ML-BOM and SPDX 3.0 AI-Profile, both
+  hand-rolled, no new runtime deps. Triggered by `--emit-aibom`.
+- **Ledger extensions.** Optional `aiAgent: { vendor, version?,
+  confidence?, source? }` on every entry; three new entry kinds
+  (`pr-audit-started`, `pr-audit-finding`, `pr-audit-completed`).
+- **GitHub Action `audit-mode: true`.** Composite sub-action at
+  `.github/actions/swarm-audit/` emits `audit-pass`, `audit-findings`,
+  `audit-ledger` outputs and posts the rendered finding back to the PR
+  via `GITHUB_TOKEN`. Dogfooded on every PR via
+  `.github/workflows/pr-audit.yml`.
+- **500/500 broken/clean fixture corpus** under
+  `benchmarks/falsification-corpus/v10-corpus/`, generated by
+  `scripts/corpus/`.
+- **Reproducible leaderboard** at `benchmarks/leaderboard/` rendered as
+  a static site under `docs/leaderboard/`.
 
 <!-- OCR:START -->
 ## Open Code Review Instructions
