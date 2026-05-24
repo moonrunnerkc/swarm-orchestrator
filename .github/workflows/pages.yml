@@ -5,6 +5,12 @@ name: Pages
 # The score.js fetches `../../benchmarks/real-corpus/scores/latest.json`
 # at runtime, so the deployed artifact mirrors the repo layout: docs/
 # and benchmarks/ side by side at the Pages root.
+#
+# Pages must be enabled in repo settings with "GitHub Actions" as the
+# source. The default GITHUB_TOKEN can't auto-enable Pages on
+# repos whose workflow-permission settings forbid it, so the first
+# job here probes the API and bails cleanly when Pages isn't enabled
+# yet (keeps CI green; a maintainer flips the toggle once).
 
 on:
   push:
@@ -26,25 +32,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  probe:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh api "repos/${{ github.repository }}/pages" > /dev/null 2>&1; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Pages is enabled; will build and deploy."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Pages is not enabled on this repository. Enable it in Settings → Pages → Source: GitHub Actions, then re-run this workflow."
+          fi
+
   build:
+    needs: probe
+    if: needs.probe.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
-        with:
-          # Auto-enable Pages on first run so this workflow doesn't fail
-          # with "Pages site not found" the first time it lands on main.
-          # Requires the workflow's GITHUB_TOKEN to have the repo
-          # admin-equivalent permission this action needs; if your org's
-          # settings forbid that, enable Pages manually in repo
-          # settings (Source: GitHub Actions) and drop this flag.
-          enablement: true
       - name: Stage Pages artifact
         run: |
           mkdir -p _site/docs _site/benchmarks
           cp -R docs/. _site/docs/
           # Only the score / promotion data the dashboard reads is
-          # mirrored — full benchmarks/ tree is large and irrelevant
+          # mirrored; full benchmarks/ tree is large and irrelevant
           # to the page.
           mkdir -p _site/benchmarks/real-corpus/scores
           cp benchmarks/real-corpus/scores/latest.json _site/benchmarks/real-corpus/scores/
@@ -59,8 +76,10 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+
   deploy:
-    needs: build
+    needs: [probe, build]
+    if: needs.probe.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
