@@ -8,7 +8,7 @@
 // so a mock target written as either resolves cleanly.
 
 import * as fs from 'fs';
-import * as path from 'path';
+import { findManifestFiles } from './find-manifests';
 
 const CONFIGURATIONS = [
   'implementation',
@@ -28,10 +28,10 @@ const FILE_NAMES = ['build.gradle', 'build.gradle.kts'];
 export function readDependencies(repoRoot: string): Set<string> {
   const out = new Set<string>();
   for (const name of FILE_NAMES) {
-    const file = path.join(repoRoot, name);
-    if (!fs.existsSync(file)) continue;
-    const text = fs.readFileSync(file, 'utf8');
-    collectFromText(text, out);
+    for (const file of findManifestFiles(repoRoot, name)) {
+      const text = fs.readFileSync(file, 'utf8');
+      collectFromText(text, out);
+    }
   }
   return out;
 }
