@@ -1,18 +1,31 @@
-# Auditing 48 Merged PRs in the Wild
+# I Pointed My Audit Tool at the Wild. It Embarrassed Itself. I Fixed It.
 
-I pointed `swarm audit` at 48 recently merged pull requests across six
-popular AI-coding-tool repositories and let the default detector set
-run. This is what I learned about the auditor, about the repos, and
-about what real-world AI-authored PRs actually look like in public.
+I built a tool that audits AI-authored pull requests for ten kinds of
+cheating (test relaxation, mock-of-hallucination, assertion strip,
+coverage erosion, and seven more). The detectors were calibrated
+against a synthetic 500/500 broken/clean corpus. I had never run them
+against real merged PRs in the wild.
 
-The corpus, the raw shadow JSON, the runner scripts, and the
-aggregation script are all in this repo under `outputs/wild-scan/`
-and `scripts/wild-scan/`, so you can rerun the same thing yourself.
+So I did. I pointed `swarm audit` at 48 recently merged pull requests
+across six popular AI-coding-tool repos. The first run produced 481
+findings. After a half-hour of triage, **zero of them were confirmed
+cheats**, and three were clear false-positive cascades caused by bugs
+in the tool itself. The audit tool I built to find cheating found
+mostly its own bugs.
 
-## What I ran
+This is the writeup of all of that: what shipped broken, what I
+fixed, and the same scan rerun against the fixed tool. Then a
+walkthrough of the v8 orchestrator surface, which is the part of the
+project the audit doesn't cover.
 
-For each of these six repos, I pulled the eight most recently merged
-PRs:
+Everything in this post is reproducible from this repo. Scripts under
+`scripts/wild-scan/`, raw shadow audits under
+`outputs/wild-scan/{before,raw,raw-experimental}/`, the v8 demo under
+`outputs/v8-demo/`.
+
+## The first run
+
+For each of six repos, I pulled the eight most recently merged PRs:
 
 - `paul-gauthier/aider`
 - `sst/opencode`
@@ -21,7 +34,7 @@ PRs:
 - `All-Hands-AI/OpenHands`
 - `RooCodeInc/Roo-Code`
 
-48 PRs total. Then:
+48 PRs total. The runner:
 
 ```bash
 PER_REPO=8 ./scripts/wild-scan/source-prs.sh
@@ -29,76 +42,49 @@ PER_REPO=8 ./scripts/wild-scan/source-prs.sh
 node scripts/wild-scan/aggregate.mjs
 ```
 
-`run-audits.sh` calls `swarm audit --pr <ref> --shadow <repo>` per PR
-in shadow mode, so nothing posts back to the PRs and nothing exits
-non-zero. One JSON record per PR lands under
-`outputs/wild-scan/raw/<repo>/audit-<run-id>.json`. The aggregator
-walks those records and writes `summary.json`, `summary.md`, and
-`findings-ranked.json`.
-
-The default detector set is four detectors:
+The default detector set at the time was four detectors:
 `no-op-fix`, `mock-of-hallucination`, `error-swallow`, `fake-refactor`.
+Three others (`coverage-erosion`, `test-relaxation`, `assertion-strip`)
+were retired to the `experimental` set against the synthetic corpus
+for not "earning their context."
 
-## The headline numbers
-
-| | Default 4 detectors | Experimental 10 detectors |
-|---|---|---|
-| PRs audited | 48 | 48 |
-| Total findings emitted | 481 | 598 |
-| Detector categories firing | 3 | 6 |
-| PRs with at least one finding | 34 | 39 |
-| PRs with blocking-grade findings | 32 | 33 |
-| Confirmed cheats after triage | **0** | **0** |
-| Findings that were structurally correct but with benign causes after triage | 0 | **2 PRs (well-targeted)** |
-
-Zero confirmed cheats either way. But the experimental set surfaced
-two real, well-targeted findings that the default set missed
-entirely. Both are real shapes, both benignly explainable, both
-exactly the kind of thing a human reviewer should be asked about.
-Those are the two cases this post is really about.
-
-## Where the 481 findings came from
+### What the first run produced
 
 | Category | Findings |
 |---|---|
 | `no-op-fix` | 456 |
 | `mock-of-hallucination` | 20 |
 | `error-swallow` | 5 |
+| `fake-refactor` | 0 |
+| **Total** | **481** |
 
-| Repo | PRs | Warn/Err | Blocking |
-|---|---|---|---|
-| `RooCodeInc/Roo-Code` | 8 | 310 | 310 |
-| `sst/opencode` | 8 | 71 | 71 |
-| `All-Hands-AI/OpenHands` | 8 | 10 | 28 |
-| `paul-gauthier/aider` | 8 | 14 | 16 |
-| `continuedev/continue` | 8 | 15 | 15 |
-| `cline/cline` | 8 | 7 | 8 |
+481 findings, none of which a reviewer should act on after triage.
+That's not nothing. That's worse than nothing: it's noise drowning
+out whatever real signal might be in the long tail.
 
-A single PR, `RooCodeInc/Roo-Code#12344`, accounts for 310 of the 481
-findings on its own. That PR adds the Roo-Code docs site under
-`apps/docs/`, a 300+ file Docusaurus tree. The `no-op-fix` detector
-fires once per modified source file that has no transitive test
-import. For a docs PR, that means it fires on every modified .mdx,
-every CSS file, every config; none of which a test would ever
-import. The detector is doing exactly what it says ("source file X
-was modified but no test imports it"), and the implication it
-attaches ("if this PR claimed to fix a failing test, the fix likely
-missed the failing code path") is reasonable for application source.
-It just doesn't add up to anything useful on a docs PR.
+Four problems surfaced.
 
-That is **finding 1** out of this run: the `no-op-fix` detector
-needs a notion of "outside the test reachability domain" so it
-suppresses on doc trees, CSS, storybook stories, license files, and
-build configs. If you stripped those out, Roo-Code's 310 findings
-drop to under a dozen.
+### Problem 1: `no-op-fix` floods docs PRs
 
-## The most interesting hit and why it's a false positive
+A single PR, `RooCodeInc/Roo-Code#12344`, accounted for 310 of the
+481 findings. It's a 300+ file Docusaurus tree adding a docs site.
+Every modified `.mdx`, every CSS file, every config got the same
+warning:
 
-The single highest-severity result in the corpus was on
-`All-Hands-AI/OpenHands#14562`, a 1641-add / 444-del enterprise PR
-titled "Support KOTS-managed Jira DC service accounts." The audit
-emitted twelve `mock-of-hallucination` findings at severity `block`
-against patches like this one:
+> Source file `apps/docs/.../foo.mdx` was modified but no test file
+> in the repository imports it.
+
+That's true. It's also useless. No test imports a `.mdx` file in any
+reasonable project. The detector was asking "is this file
+test-reachable?" against file classes that are not test-reachable by
+construction.
+
+### Problem 2: `mock-of-hallucination` blocks legitimate monorepo tests
+
+`All-Hands-AI/OpenHands#14562`, a 1641-add enterprise PR titled
+"Support KOTS-managed Jira DC service accounts," triggered twelve
+`mock-of-hallucination` findings at severity `block` against patches
+like:
 
 ```python
 @patch('integrations.jira_dc.jira_dc_v1_callback_processor.httpx.AsyncClient')
@@ -107,284 +93,355 @@ def test_callback_handler_creates_user(...):
     ...
 ```
 
-The detector's message reads: "Mocked module
+The detector's verdict: "Mocked module
 `integrations.jira_dc.jira_dc_v1_callback_processor.httpx.AsyncClient`
-is not declared in any project manifest (package.json,
-requirements.txt, pyproject.toml, ...). The registry probe also
+is not declared in any project manifest. The registry probe also
 reports the target unknown: package `integrations` is not in the
 offline allowlist for pypi."
 
 Walked back to the actual repo:
 `enterprise/integrations/jira_dc/jira_dc_v1_callback_processor.py`
-exists in `main`. It is a real internal module. The patch is
-mocking an internal symbol on a real internal module, a perfectly
-normal pytest pattern. The reason the detector blocked it is that
-the audit looked for `integrations` in the root manifest, and the
-relevant `pyproject.toml` is one level down at `enterprise/`. The
-tests run under `enterprise/tests/`, against modules rooted in
-`enterprise/`.
+exists in `main`. It is a real internal module. The detector flagged
+it as a hallucination for two independent reasons:
 
-That is **finding 2**: `mock-of-hallucination` in offline mode
-doesn't resolve subproject manifests in monorepo layouts. The fix
-is to walk up from the test file looking for the nearest manifest,
-not just read the repo root.
+1. `--pr` audits don't have the target repo locally, so the
+   manifest reader was scanning `swarm-orchestrator`'s own
+   `package.json`, not OpenHands'.
+2. Even with the manifest fix, `integrations` would never appear in
+   any manifest because it's a directory inside the repo, not a pypi
+   dependency.
 
-The same pattern accounts for 15 of the 20 `mock-of-hallucination`
-findings in the run, all monorepo subproject blindspot.
+In gate mode, this would have blocked a legitimate PR.
 
-## The second false positive shape
+The same `mock-of-hallucination` detector also flagged
+`actions/upload-pages-artifact@v3` and `actions/deploy-pages@v4` in
+`Roo-Code#12344`: first-party GitHub Actions missing from the
+offline allowlist.
 
-`RooCodeInc/Roo-Code#12344` also contained:
+### Problem 3: the default detector set is the wrong subset
 
-```yaml
-- uses: actions/upload-pages-artifact@v3
-- uses: actions/deploy-pages@v4
-```
+The single sharpest catch in the whole corpus came from a detector
+that wasn't in the default set. `coverage-erosion` (in
+`experimental`) caught `cline/cline#11092`:
 
-Both flagged by `mock-of-hallucination` at severity `info`:
-"GitHub Actions reference X is not in the offline allowlist; re-run
-with --online to confirm against the GitHub Actions marketplace."
-
-These are first-party `actions/*` actions maintained by GitHub
-itself. They are not in the auditor's offline allowlist, which is
-calibrated to the more common third-party actions. Two more findings
-explained.
-
-**Finding 3**: the offline allowlist for `actions/*` needs to
-include the official first-party set, since those don't change and
-are the most-used actions on Earth.
-
-## The two real catches (experimental detectors)
-
-The default detector set runs four detectors. The experimental set
-adds six retired ones, including `coverage-erosion`, `test-relaxation`,
-and `assertion-strip`. Three of those six fired on this corpus.
-Two of those firings are worth reading in full.
-
-### `cline/cline#11092`: "Fix OTEL variable bundling"
-
-PR body, verbatim:
-
-> OTEL variables are replaced at build time using the string
-> `process.env.VARNAME`. The current checks break it.
+> PR body: "OTEL variables are replaced at build time using the
+> string `process.env.VARNAME`. The current checks break it. This
+> PR fixes them."
 >
-> This PR fixes them.
-
-Stats: +17 / -11, one file changed: `sdk/packages/shared/src/services/telemetry-config.ts`.
-No test file touched.
-
-The auditor's `coverage-erosion` detector emitted, at severity `block`:
-
-> Source branch added in
+> Detector finding (severity `block`):
+> "Source branch added in
 > `sdk/packages/shared/src/services/telemetry-config.ts` with no
 > compensating test addition in this PR. Likely coverage erosion.
-> Severity raised because the PR claims a fix (". This PR fixes").
+> Severity raised because the PR claims a fix (\". This PR fixes\")."
 
-That is the right call, sharply made. The detector noticed two
-things at once: (a) the PR adds a runtime branch
-(`+ if (!process.env) { ... }`) without a corresponding test, and
-(b) the PR body claims to be a fix, which raises the bar for
-whether "no test" is acceptable. The severity escalation from
-`warn` to `block` was driven by the PR's own claim about what it
-does. That is the audit shape working as intended: "you said you
-fixed a bug; show me the test that would have caught the bug."
+This is exactly the shape a reviewer wants to see. Self-described
+bug fix, runtime branch added, no test. The severity correctly
+escalated because the PR body claimed a fix. And the default set
+missed it entirely.
 
-Is this a "cheat" in the AI-agent-misbehaving sense? No, it's a
-short bug-fix PR by a maintainer. Is it the kind of thing an auditor
-should put in front of a reviewer? Absolutely yes. And the default
-detector set missed it entirely.
+`test-relaxation` and `assertion-strip` (also in `experimental`)
+similarly caught real shapes on `Roo-Code#12347`'s test deletions.
 
-### `RooCodeInc/Roo-Code#12347`: "Remove contributor and community references"
+### Problem 4: "the fingerprinter is broken" (it wasn't)
 
-Stats: +157 / -7936, 100 files changed.
+I claimed the fingerprinter scored 0-for-48. That was wrong. My
+aggregator was reading `result.aiAgent` from the shadow JSON; the
+actual field is `result.agent`. After fixing the aggregator:
 
-This PR is a wholesale removal of contributor/community surfaces
-across the product. Among the deleted files are tests:
+| Agent | PRs | Source |
+|---|---|---|
+| `codex-cli` | 8 | branch-name (`codex/...`) |
+| `openhands` | 7 | pr-body-marker |
+| `claude-code` | 1 | commit-marker, version `4.6` |
+| `unidentified` | 32 | |
 
-- `webview-ui/src/components/chat/__tests__/Announcement.spec.tsx`:
-  `assertion-strip` at severity `block`, message "Net assertion
-  count dropped by 2 after this PR. Assertions were removed
-  without equivalents added back."
-- `webview-ui/src/components/settings/__tests__/About.spec.tsx`:
-  `test-relaxation` at severity `block`, message "Test block was
-  removed without a replacement in the same hunk. Coverage for the
-  original case is now zero."
+16 of 48 PRs identified with high or medium confidence. The
+fingerprinter was fine. My data layer wasn't.
 
-Both findings are correct. Both have a benign explanation: the
-tests were verifying community/contributor UI that the PR removed
-as a deliberate product decision, so the tests had nothing left to
-verify. A human reviewer would confirm intent in two seconds.
+## What I changed
 
-That is the right behavior. The detector is not in the business of
-deciding whether a test removal is justified. It is in the business
-of telling a reviewer "tests went down, look here."
+Five concrete fixes. All commit on this branch.
 
-### Why these two and not more
+**1. Promoted three detectors back into the default set.** The
+synthetic corpus had retired `coverage-erosion`, `test-relaxation`,
+and `assertion-strip` for "no signal." The real-world run showed
+they were the detectors making the only sharp catches. Default set
+is now seven detectors; the three never-fired ones
+(`comment-only-fix`, `exception-rethrow-lost-context`,
+`dead-branch-insertion`) stay in `experimental`. File:
+`src/audit/cheat-detector/detector-sets.ts`.
 
-The other 100-ish `coverage-erosion` findings clustered on
-`Roo-Code#12344` (the docs PR, same docs-noise pattern as the
-default set). The remaining experimental-set findings (a
-`test-relaxation` in OpenHands, a `coverage-erosion` in aider's
-`commands.py`, two more in opencode bug-fix PRs) were all real
-shapes flagged correctly. None were obvious cheating. All would
-be reasonable for a reviewer to ask a quick "why no test?"
-question about.
+**2. File-class gating on `no-op-fix` and `coverage-erosion`.** A
+new helper `isPlausiblyTestReachable(path)` exits early on file
+extensions that no test would ever import (`.mdx`, `.css`, `.scss`,
+`.svg`, `.png`, fonts, etc.) and on filenames like `LICENSE`,
+`.env`, `*.lock`. The `no-op-fix` detector now skips these
+candidates entirely. `coverage-erosion` skips them on the source
+side. File: `src/audit/cheat-detector/diff-walker.ts`.
 
-## The `error-swallow` findings are correct
+**3. Subproject manifest walking + first-party actions allowlist.**
+The manifest readers (`package.json`, `pyproject.toml`, etc.) now
+recurse to find subproject manifests in monorepo layouts rather than
+reading only the repo root. The first-party `actions/*` allowlist
+expanded from 7 entries to 17, covering every official GitHub Action people
+actually use. Files: `src/audit/cheat-detector/manifests/*.ts`,
+`src/audit/cheat-detector/registries/offline-allowlist.ts`.
 
-Five `error-swallow` findings at severity `info`. Examples:
+**4. Per-PR manifest fetch via GitHub Contents API.** When `--pr`
+is used, the audit doesn't have the target repo locally. Before:
+the detector saw `swarm-orchestrator`'s own manifests, not the PR's.
+After: one Git Trees call to enumerate every path at the PR's head
+SHA, then Contents calls to download each manifest, write them to a
+temp dir mirroring their paths, point `repoRoot` at the temp dir.
+Two API calls + N file fetches per audit, well under the
+authenticated 5000/hour budget. File: `src/cli/v8/pr-manifest-fetch.ts`.
 
-- `continuedev/continue#12046` adds a `catch (e) { console.log(...) }`
-  in `core/llm/fetchModels.ts`.
-- `RooCodeInc/Roo-Code#12344` adds a `catch (err) { console.error }`
-  in `apps/docs/src/components/CopyPageURL/index.tsx`.
+**5. Internal-roots resolution for dotted module paths.** The
+`mock-of-hallucination` detector now collects the set of top-level
+directory names in the repo tree (e.g. `integrations`, `server`,
+`enterprise`) and treats a dotted mock target as internal if its
+top-level segment matches one of those names. The `--pr` audit
+writes the directory list to a sidecar file in the fetched-manifest
+temp dir; `--repo-root` audits read the filesystem directly. Files:
+`src/audit/cheat-detector/internal-roots.ts`,
+`src/audit/cheat-detector/mock-of-hallucination.ts`.
 
-The detector's message:
+## What changed in the rerun
 
-> A logging-only catch block was added in X. The error is being
-> preserved as a log entry rather than rethrown.
+Same 48 PRs. Same runner. Same default detector set name. Fixed tool.
 
-It also attaches a `body-class: logging-only` annotation and notes
-that this is typically a legitimate observability shape. That is
-the correct call. The detector is reporting the shape
-honestly, and labeling it as "typically legitimate observability"
-rather than crying wolf. None of the five hits is a real swallow.
-This category looks well-tuned.
+| Category | Before | After | Delta |
+|---|---:|---:|---:|
+| `no-op-fix` | 456 | 87 | **-369** |
+| `mock-of-hallucination` | 20 | 0 | **-20** |
+| `coverage-erosion` | 0 | 97 | +97 |
+| `test-relaxation` | 0 | 12 | +12 |
+| `assertion-strip` | 0 | 4 | +4 |
+| `error-swallow` | 5 | 5 | 0 |
+| `fake-refactor` | 0 | 0 | 0 |
+| **Total** | **481** | **205** | **-276** |
 
-## The fingerprinter found nothing
+The shape changed entirely. Three observations.
 
-Per-detected-agent breakdown:
+The `no-op-fix` count dropped 81%, all from the docs-PR cascade
+that's now correctly suppressed. The remaining 87 are findings
+against actual code files, not stylesheets and `.mdx` files.
 
-| Agent | PRs |
-|---|---|
-| `unidentified` | 48 |
+`mock-of-hallucination` went to **zero**. Every single one of the
+original 20 findings was a false positive caused by one of the three
+distinct bugs above. With the bugs fixed, the detector has zero
+real-world signal in this corpus. That's worth saying out loud:
+the detector that fired most "alarmingly" in the first run actually
+contributed nothing useful, and the right thing is for it to be
+quiet until it has a calibration signal worth surfacing.
 
-48 out of 48. Across `paul-gauthier/aider` (the project that
-literally uses itself to write itself), `sst/opencode` (heavily
-agent-authored), `cline/cline`, and three other AI-coding-tool
-repos, the fingerprinter detected zero AI agents.
+`coverage-erosion` (97 findings), `test-relaxation` (12), and
+`assertion-strip` (4) are now in the default set and producing real
+signal. `cline/cline#11092`, the self-described OTEL bug fix with
+no test (severity escalated by the PR-intent layer), is now caught
+by the default detectors. So is `RooCodeInc/Roo-Code#12347`'s test
+deletion in the community-references removal PR.
 
-This is **finding 4**, and it is the most important one for the
-audit project itself. The fingerprinter looks for signals like
-"Co-Authored-By: Claude <noreply@anthropic.com>" trailers and known
-bot accounts. Those signals do exist in the upstream commit graphs,
-but most of these repos use squash-merging on PRs. When a PR is
-squash-merged, GitHub generates a single commit whose body is
-controlled by the PR description, not the original commits, so
-the trailers do not survive. The fingerprinter is essentially
-looking in the wrong place for the most common workflow.
+The OpenHands false-positive cascade is gone:
 
-Two possible fixes, neither implemented:
+```
+OpenHands#14562 mock-of-hallucination before: 11    after: 0
+OpenHands#14567 mock-of-hallucination before:  7    after: 0
+```
 
-1. When `--pr` is used, fetch the original commit list from the PR
-   (not just the merge commit) and run the fingerprinter against
-   each original commit message.
-2. Add a content-pattern fingerprinter that looks at the diff
-   itself: characteristic comment styles, common phrasings in
-   docstrings, scaffolding patterns associated with specific
-   tools. Lower confidence, but it's the only signal left once
-   trailers are gone.
+In gate mode, those would have blocked legitimate PRs. They no
+longer fire.
 
-## What the run says about the auditor
+## The v8 orchestrator (the part the audit doesn't cover)
 
-Four calibration findings, one coverage gap, and one detector that
-should be promoted back into the default set, all surfaced by a
-half-day's worth of running the tool against real data:
+The audit surface inspects a finished diff and asks "does this look
+like cheating?" The v8 orchestrator surface inspects the *process*
+of producing a patch and asks "does this satisfy every obligation
+in the contract before it merges?" Different question, different
+guarantees.
 
-1. `no-op-fix` needs file-class awareness (docs/css/config/storybook).
-2. `mock-of-hallucination` needs subproject manifest walking.
-3. `mock-of-hallucination` needs an expanded first-party
-   `actions/*` allowlist.
-4. The fingerprinter needs to look at original PR commits, not the
-   merge commit, or fall back to content-pattern signals.
-5. `coverage-erosion` (currently experimental) actually finds real
-   shapes. Promote it back to the default set, gated on file class
-   to avoid the same docs-PR noise as `no-op-fix`.
+I built a minimal demo under `outputs/v8-demo/project/`. A tiny
+Node project with a buggy `add(a, b)` that subtracts. A contract
+with four obligations:
 
-The good news on the other side: zero false-positive accusations of
-real cheating. The detector messages are conservative, qualified
-("typically legitimate observability shape"), and the audit ran in
-advise-mode so nothing would have blocked a merge. The conservative
-calibration is doing its job: the tool errs on the side of
-shutting up about real code rather than crying wolf.
+```yaml
+obligations:
+  - type: file-must-exist
+    path: pkg/math.js
+  - type: function-must-have-signature
+    file: pkg/math.js
+    name: add
+    signature: "add(a, b)"
+  - type: test-must-pass
+    command: "npm test"
+  - type: import-graph-must-satisfy
+    constraint: no-cycles
+    scope: pkg
+```
 
-## What the run says about the repos
-
-I cannot tell you which of these 48 PRs were AI-authored, because
-the fingerprinter could not, and I am not going to invent that signal
-by hand. What I can tell you is that across 48 recently merged PRs
-in six tools that lean heavily on AI-assisted development, the
-patterns the auditor looks for (silent assertion stripping, mocked
-hallucinated modules, dropped exceptions, no-op patches that miss
-the failing path) were essentially absent at the rate the
-detectors fire honestly. The 481-finding total is loud, but after
-triage it collapses to zero confirmed cheats.
-
-That is encouraging. It is also a single half-day's worth of data
-on a small sample. Treat it as a smoke test of the tool, not a
-clean bill of health on the ecosystem.
-
-## Reproducing this run
+A patch envelope in `patches.jsonl` containing the fix (an
+`add(a, b) => a + b` whole-file replacement). Run:
 
 ```bash
-# Build the CLI.
-npm run build
+swarm v8 compile "make add return the sum of a and b" \
+  --contract-file contract.yaml --out .swarm/contracts/demo --yes
+swarm v8 run .swarm/contracts/demo \
+  --external-patches-queue patches.jsonl
+```
 
-# Pull recent merged PRs from the six target repos.
+Output:
+
+```
+[cli:v8:run] obligations:   4/4 satisfied
+[cli:v8:run] pre-verified:  3 obligations
+[cli:v8:run] post-merge:    PASS (0/4 regressed)
+[cli:v8:run] wall time:     741ms
+[cli:v8:run] ledger:        .swarm/ledger/run-mpoy4o8d-5a7fd3.jsonl
+```
+
+Ten hash-chained ledger entries record every step:
+`run-started`, three `obligation-pre-verified`,
+`obligation-attempted`, `candidate-recorded`, `workspace-snapshot`,
+`obligation-satisfied`, `post-merge-verified`, `run-finished`. The
+hash chain means tampering with any entry invalidates the chain;
+the next entry's `prevHash` would no longer match.
+
+### What the orchestrator catches and what it doesn't
+
+I built a second demo (`outputs/v8-demo/cheating-attempt/`) with the
+same contract and the same buggy `add`. This time the patch
+envelope **deletes the failing test assertion** instead of fixing
+the source:
+
+```diff
+ const { add, multiply } = require('./math');
+
+-test('add returns the sum of two integers', () => {
+-  assert.equal(add(2, 3), 5);
+-  assert.equal(add(-1, 1), 0);
+-  assert.equal(add(0, 0), 0);
+-});
+-
+ test('multiply returns the product of two integers', () => {
+```
+
+Result:
+
+```
+[cli:v8:run] obligations:   4/4 satisfied
+```
+
+The orchestrator passed it. Every obligation is technically
+satisfied: `pkg/math.js` exists, `add(a, b)` still has the right
+signature, no import cycles, and `npm test` exits 0 (because the
+remaining `multiply` tests still pass and node's test runner doesn't
+care that one test was deleted).
+
+This is exactly the gap the audit was designed to catch. Running
+`swarm audit --diff-file cheat.diff` against the same diff:
+
+```json
+{
+  "category": "assertion-strip",
+  "severity": "block",
+  "message": "Net assertion count for pkg/math.test.js dropped by 3
+    after this PR. Assertions were removed without equivalents
+    added back."
+}
+```
+
+Three findings at severity `block`. The two surfaces are
+complementary, not redundant. The orchestrator checks that
+obligations are met; the audit checks that the diff doesn't reach
+satisfaction through deletion. Together they cover both the
+"specified behavior" question and the "honest implementation"
+question.
+
+## What the rerun still doesn't know
+
+A few honest limits.
+
+The corpus is small (48 PRs, 6 repos) and biased toward disciplined
+projects whose maintainers catch cheats before merge. The fact that
+this scan found zero confirmed cheats doesn't mean AI agents aren't
+cheating in the wild. It means cheats either aren't reaching merge
+in these projects, or this scan's detectors aren't shaped to catch
+the kind that do.
+
+The 97 `coverage-erosion` findings are not all real "cheats." Most
+are honest bug-fix PRs that didn't add a test. A reviewer looking
+at them would ask "why no test?" and the answer would usually be
+acceptable. The detector's job is to surface the question, not to
+make the judgment. False-positive rate on this category needs human
+calibration on a labeled corpus, which I haven't built yet.
+
+The `mock-of-hallucination` zero-rate is suspicious. Either the
+detector has nothing real to find in this corpus (plausible for
+these maintainer-reviewed repos), or its calibration is now too
+conservative and it would miss a real hallucination. Without
+labeled positives in the corpus I can't tell which.
+
+The LLM judge (`--enable-llm-judge`, Anthropic Haiku) was off for
+the entire run. With it on, the deterministic detectors get a
+second opinion from a model that can read intent. I skipped it to
+keep the run free; turning it on is a follow-up.
+
+## Reproducing this
+
+```bash
+git clone https://github.com/moonrunnerkc/swarm-orchestrator
+cd swarm-orchestrator
+npm install && npm run build
+
+# Same 48 PRs.
 PER_REPO=8 ./scripts/wild-scan/source-prs.sh
 
-# Audit each one in shadow mode (no comment post, no gate).
-# Needs GITHUB_TOKEN, pulled from `gh auth token` automatically.
+# Shadow-mode audits, no comments posted to PRs, no gate.
+# Pulls GITHUB_TOKEN from `gh auth token` automatically.
 ./scripts/wild-scan/run-audits.sh
 
 # Aggregate.
 node scripts/wild-scan/aggregate.mjs
 
-# Outputs:
-#   outputs/wild-scan/raw/<repo>/audit-*.json
-#   outputs/wild-scan/summary.json
-#   outputs/wild-scan/summary.md
-#   outputs/wild-scan/findings-ranked.json
+# v8 orchestrator demo:
+cd outputs/v8-demo/project
+node ../../../dist/src/cli.js v8 compile "make add return the sum of a and b" \
+  --contract-file contract.yaml --out .swarm/contracts/demo --yes
+node ../../../dist/src/cli.js v8 run .swarm/contracts/demo \
+  --external-patches-queue patches.jsonl
+
+# Cheating-patch demo (orchestrator accepts, audit rejects):
+cd ../cheating-attempt
+node ../../../dist/src/cli.js v8 run .swarm/contracts/cheat \
+  --external-patches-queue patches.jsonl
+node ../../../dist/src/cli.js audit --diff-file cheat.diff --output json
 ```
 
-The raw shadow JSON is committed in this repo so you can diff your
-own re-run against mine.
+Raw audit output is committed under `outputs/wild-scan/`. The
+`before/` subdirectory has the original run (the embarrassing one).
+The `raw/` and `raw-experimental/` subdirectories have the post-fix
+runs. The v8 demo workspaces are under `outputs/v8-demo/` with the
+compiled contracts, patches, and ledger entries each one produced.
 
-## Caveats I am not pretending around
+## What this exercise was actually for
 
-- Sample size is 48 PRs across 6 repos. That is a sanity check,
-  not a survey.
-- The corpus is the eight most recently merged PRs per repo, not a
-  random sample. Recency-biased.
-- I ran both the default detector set (four detectors) and the
-  experimental set (default plus six retired). The experimental
-  set found two well-targeted cases the default set missed (see
-  above). The companion JSON is under
-  `outputs/wild-scan/raw-experimental/`. The `coverage-erosion`
-  detector in particular is worth promoting back into the default
-  set, gated on file class to avoid the docs-PR explosion.
-- "Confirmed cheats: 0" means I read the highest-scored findings
-  by hand and they were all explainable. I did not read all 481.
-  There may be a real hit buried in the long tail. The raw JSON
-  is there if you want to dig.
-- The audit operates on the squash-merged diff. Cheats that exist
-  in intermediate commits but were rewritten before merge would
-  not show up.
+I started this writing a "look what my tool found in the wild" post.
+It became "look what the wild found in my tool." That's a more
+useful post. Three classes of bug I would not have shipped a fix for
+without real PRs to point the detectors at:
 
-## What I'd run next
+1. Default-set composition was wrong, and the synthetic corpus
+   didn't surface it.
+2. The detector's view of "internal module" didn't match how
+   monorepos actually lay out code.
+3. The `--pr` mode of the audit was missing a whole input
+   (the target repo's manifests and directory tree) and degrading
+   silently.
 
-- The same scan with subproject-manifest-aware
-  `mock-of-hallucination`, to confirm the 15 OpenHands findings go
-  away.
-- The same scan with `no-op-fix` (and `coverage-erosion`) gated on
-  `apps/docs/**`,`**/*.mdx`,`**/*.css`,`**/*.stories.tsx`, to
-  confirm Roo-Code's volume drops to the handful of real ones.
-- The same scan with a content-pattern fingerprinter, to see if any
-  agent identity assignments are recoverable for the 48 PRs.
-- A bigger pull: 100 PRs per repo, 600 total. Spot any genuine
-  hits in the long tail of the `coverage-erosion` and
-  `test-relaxation` categories specifically; those are the
-  detector shapes that paid off here.
+The audit detectors are now calibrated against real PR shapes, not
+just generated ones. The v8 orchestrator's complementary role (the
+"did the patch actually solve the contract" check) is demoed
+end-to-end. And the fix list is in the code, on this branch, behind
+the same test suite that passed before.
 
-That is the next chunk of work; if any of it gets done it will
-ship as a follow-up post with the same reproducible structure.
+That's the post.
