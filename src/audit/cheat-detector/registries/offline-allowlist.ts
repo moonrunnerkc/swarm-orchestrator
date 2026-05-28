@@ -19,29 +19,55 @@ interface AllowlistEntry {
 const SNAPSHOT_DATE = '2026-05-24';
 
 const GITHUB_ACTIONS_ALLOWLIST: Record<string, AllowlistEntry> = {
+  // First-party actions/* maintained by GitHub. These are the most-used
+  // actions on the marketplace; treating them as "unknown" against
+  // every real-world workflow produces a flood of low-value findings.
   'actions/checkout': { maxVersion: 'v4' },
   'actions/setup-node': { maxVersion: 'v4' },
   'actions/setup-python': { maxVersion: 'v5' },
   'actions/setup-go': { maxVersion: 'v5' },
   'actions/setup-java': { maxVersion: 'v4' },
   'actions/setup-dotnet': { maxVersion: 'v4' },
+  'actions/setup-ruby': { maxVersion: 'v1' },
   'actions/cache': { maxVersion: 'v4' },
+  'actions/cache/restore': { maxVersion: 'v4' },
+  'actions/cache/save': { maxVersion: 'v4' },
   'actions/upload-artifact': { maxVersion: 'v4' },
   'actions/download-artifact': { maxVersion: 'v4' },
   'actions/labeler': { maxVersion: 'v5' },
   'actions/stale': { maxVersion: 'v9' },
+  'actions/github-script': { maxVersion: 'v7' },
+  'actions/configure-pages': { maxVersion: 'v5' },
+  'actions/upload-pages-artifact': { maxVersion: 'v3' },
+  'actions/deploy-pages': { maxVersion: 'v4' },
+  'actions/jekyll-build-pages': { maxVersion: 'v1' },
+  'actions/first-interaction': { maxVersion: 'v1' },
+  'actions/attest-build-provenance': { maxVersion: 'v2' },
+  'actions/dependency-review-action': { maxVersion: 'v4' },
+  'actions/create-github-app-token': { maxVersion: 'v1' },
+  // docker/*: docker-maintained first-party actions.
   'docker/build-push-action': { maxVersion: 'v6' },
   'docker/login-action': { maxVersion: 'v3' },
   'docker/setup-buildx-action': { maxVersion: 'v3' },
   'docker/metadata-action': { maxVersion: 'v5' },
   'docker/setup-qemu-action': { maxVersion: 'v3' },
-  'codecov/codecov-action': { maxVersion: 'v4' },
+  // codecov/*: coverage upload.
+  'codecov/codecov-action': { maxVersion: 'v5' },
+  // github/codeql-action/*: GitHub security-scanning actions.
   'github/codeql-action/init': { maxVersion: 'v3' },
   'github/codeql-action/analyze': { maxVersion: 'v3' },
   'github/codeql-action/upload-sarif': { maxVersion: 'v3' },
+  'github/codeql-action/autobuild': { maxVersion: 'v3' },
+  // aws-actions/*: AWS first-party actions.
   'aws-actions/configure-aws-credentials': { maxVersion: 'v4' },
+  'aws-actions/amazon-ecr-login': { maxVersion: 'v2' },
+  // Package-manager setup actions in heavy use.
   'pnpm/action-setup': { maxVersion: 'v4' },
+  'oven-sh/setup-bun': { maxVersion: 'v2' },
+  'astral-sh/setup-uv': { maxVersion: 'v5' },
+  // Pages / release adjacent actions in the ecosystem long tail.
   'peaceiris/actions-gh-pages': { maxVersion: 'v4' },
+  'softprops/action-gh-release': { maxVersion: 'v2' },
 };
 
 const NPM_ALLOWLIST = new Set<string>([
