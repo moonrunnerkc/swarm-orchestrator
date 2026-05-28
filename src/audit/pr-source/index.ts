@@ -52,8 +52,15 @@ const SIGNATURES: AgentSignature[] = [
     ],
     branchPatterns: [/^claude\//i, /^claude-code\//i],
     versionExtractor: (text) => {
-      const m = text.match(/(?:Opus|Sonnet|Haiku)[^\d]{0,5}([0-9]+\.[0-9]+(?:\.[0-9]+)?)/i);
-      return m?.[1];
+      // Require the model number to appear near a "Claude" mention.
+      // Without this proximity check, a commit body that happened to
+      // mention an Anthropic model in passing ("we benchmarked against
+      // Sonnet 4.6") would hand the leaderboard a fabricated version
+      // string whenever any other Claude Code signal (bot author, branch
+      // name, Co-Authored-By trailer) already attributed the PR.
+      const forward = /Claude[\s\S]{0,40}?(?:Opus|Sonnet|Haiku)[^\d]{0,5}([0-9]+\.[0-9]+(?:\.[0-9]+)?)/i;
+      const reverse = /(?:Opus|Sonnet|Haiku)[^\d]{0,5}([0-9]+\.[0-9]+(?:\.[0-9]+)?)[\s\S]{0,40}?Claude/i;
+      return text.match(forward)?.[1] ?? text.match(reverse)?.[1];
     },
   },
   {
