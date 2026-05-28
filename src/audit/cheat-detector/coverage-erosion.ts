@@ -2,19 +2,35 @@
 // (`if`/`else`/`switch`/`case`) without a matching test addition.
 // We approximate without a coverage tool by counting branch-opening
 // statements added in source vs. test files; a source-side delta of
-// >= 1 with zero test-side additions is flagged.
+// >= 1 with zero test-side assertion-or-test-block additions is flagged.
 
 import type { Detector, DetectorContext } from './detector-types';
 import type { Finding } from '../types';
 import { isTestFile, walkHunks } from './diff-walker';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 const BRANCH_PATTERNS: RegExp[] = [
   /\bif\s*\(/,
   /\belse\s+if\s*\(/,
   /\bswitch\s*\(/,
   /\bcase\s+[^:]+:/,
+];
+
+// A "real" test addition: a line that contains an assertion or a
+// test-block opener (jest/mocha/vitest/chai, plus pytest/junit/go-test).
+// Counting raw added lines lets a single comment or blank line in any
+// test file suppress the entire coverage-erosion finding, which makes
+// the detector trivially defeatable: add a `// noqa` to any test file
+// and the new source branch goes unflagged.
+const TEST_SIGNAL_PATTERNS: RegExp[] = [
+  /\bexpect\s*\(/,
+  /\bassert(?:Equal|True|False|Throws|Raises|That)?\b/,
+  /\b(?:it|test|describe|context|specify)\s*\(/,
+  /\bshould\b/,
+  /\b@Test\b/,
+  /^\s*def\s+test_/,
+  /^\s*func\s+Test/,
 ];
 
 export const coverageErosionDetector: Detector = {
@@ -28,7 +44,9 @@ export const coverageErosionDetector: Detector = {
       const test = isTestFile(hunk.file);
       for (const a of hunk.added) {
         if (test) {
-          testAdds += 1;
+          if (TEST_SIGNAL_PATTERNS.some((re) => re.test(a.content))) {
+            testAdds += 1;
+          }
         } else if (BRANCH_PATTERNS.some((re) => re.test(a.content))) {
           sourceBranches += 1;
           sourceLocations.push({ file: hunk.file, line: a.lineNumber, content: a.content });
