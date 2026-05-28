@@ -139,4 +139,47 @@ describe('integration: swarm v8 compile', () => {
       fs.rmSync(out, { recursive: true, force: true });
     }
   });
+
+  it('auto-discovers contract.yaml when the deterministic extractor has no input flag', async () => {
+    // Mirrors the `swarm init` + `swarm compile <goal>` flow documented
+    // in the README: contract.yaml in cwd should be picked up without an
+    // explicit --contract-file.
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'v8-compile-autodisc-'));
+    const out = tmpOut();
+    try {
+      fs.writeFileSync(
+        path.join(repo, 'contract.yaml'),
+        [
+          'obligations:',
+          '  - type: build-must-pass',
+          '    command: npm run build',
+          '  - type: test-must-pass',
+          '    command: npm test',
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+      const exit = await handleCompile([
+        'ensure tests pass',
+        '--repo-root', repo,
+        '--out', out,
+        '--yes',
+        '--no-editor',
+      ]);
+      assert.equal(exit, 0);
+      const contract = readContract(out);
+      assert.ok(contract.obligations.some((o) => o.type === 'build-must-pass'));
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+      fs.rmSync(out, { recursive: true, force: true });
+    }
+  });
+
+  it('--help exits 0 without re-printing usage from the catch block', async () => {
+    // Earlier, parseCompileFlags threw `'help requested'` after printing
+    // usage; the handler caught it, logged the message, and printed usage
+    // a second time. Now --help is a normal flag short-circuit.
+    const exit = await handleCompile(['--help']);
+    assert.equal(exit, 0);
+  });
 });

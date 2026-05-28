@@ -198,7 +198,12 @@ export async function handleRun(
   try {
     flags = parseRunFlags(argv);
   } catch (err) {
-    logger.error((err as Error).message);
+    const msg = (err as Error).message;
+    // parseRunFlags throws 'help requested' as a control-flow signal
+    // after printing the usage text. Re-printing it from the catch
+    // branch would render --help twice; bail with exit 0 instead.
+    if (msg === 'help requested') return 0;
+    logger.error(msg);
     printRunUsage();
     return 1;
   }

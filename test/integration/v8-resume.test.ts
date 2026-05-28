@@ -5,7 +5,7 @@ import * as path from 'path';
 import { finalize } from '../../src/contract/compiler';
 import { writeContract } from '../../src/contract/serializer';
 import { handleCompile } from '../../src/cli/v8/compile-handler';
-import { handleResume } from '../../src/cli/v8/resume-handler';
+import { handleResume, parseResumeFlags } from '../../src/cli/v8/resume-handler';
 import { StubExtractor } from '../../src/contract/extractor/stub-extractor';
 import { handleRun } from '../../src/cli/v8/run-handler';
 import { readEntries, verifyChainAt } from '../../src/ledger/ledger';
@@ -205,5 +205,25 @@ describe('integration: swarm v8 resume', () => {
       '--repo-root', work,
     ]);
     assert.equal(exit, 1);
+  });
+
+  it('--help exits 0 without re-printing usage from the catch block', async () => {
+    const exit = await handleResume(['--help']);
+    assert.equal(exit, 0);
+  });
+
+  it('parseResumeFlags auto-discovers patches.jsonl in repo-root', () => {
+    // Mirrors the `swarm init` → `swarm run --goal` → `swarm resume`
+    // flow documented in the README. Without auto-discovery, resume
+    // refused with "no patch source provided" even when init had
+    // already scaffolded patches.jsonl alongside contract.yaml.
+    const work = tmpDir();
+    fs.writeFileSync(path.join(work, 'patches.jsonl'), '{"patch":"no-op"}\n', 'utf8');
+    const flags = parseResumeFlags([
+      'demo-run',
+      '--ledger', path.join(work, 'demo-run.jsonl'),
+      '--repo-root', work,
+    ]);
+    assert.equal(flags.externalPatchesQueue, path.join(work, 'patches.jsonl'));
   });
 });
