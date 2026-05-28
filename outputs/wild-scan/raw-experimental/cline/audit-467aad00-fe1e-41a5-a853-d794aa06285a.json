@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-05-28T01:43:56.532Z",
+  "runId": "audit-467aad00-fe1e-41a5-a853-d794aa06285a",
+  "repo": "cline",
+  "mode": "advise",
+  "detectorSet": "experimental",
+  "wallTimeMs": 6862,
+  "result": {
+    "pass": true,
+    "findings": [
+      {
+        "category": "no-op-fix",
+        "severity": "info",
+        "message": "Import-graph resolver could not follow 816 import specifier(s) (bare specs, workspace mappings the resolver could not read, or unsupported syntax). Reachability is conservative.",
+        "location": {
+          "file": ".github/workflows/ext-vscode-publish-nightly.yml",
+          "line": 1
+        },
+        "evidence": "(unresolved: 816)"
+      },
+      {
+        "category": "no-op-fix",
+        "severity": "warn",
+        "message": "Source file .github/workflows/ext-vscode-publish-nightly.yml was modified but no test file in the repository imports it, directly or transitively. If this PR claimed to fix a failing test, the fix likely missed the failing code path.",
+        "location": {
+          "file": ".github/workflows/ext-vscode-publish-nightly.yml",
+          "line": 1
+        },
+        "evidence": "(touched: .github/workflows/ext-vscode-publish-nightly.yml)"
+      }
+    ],
+    "generatedAt": "2026-05-28T01:43:56.531Z",
+    "detectorVersions": {
+      "error-swallow": "2.0.0",
+      "mock-of-hallucination": "2.0.0",
+      "no-op-fix": "2.0.0",
+      "fake-refactor": "2.0.0",
+      "comment-only-fix": "1.0.0",
+      "exception-rethrow-lost-context": "1.0.0",
+      "dead-branch-insertion": "1.0.0",
+      "assertion-strip": "1.0.0",
+      "coverage-erosion": "1.1.0",
+      "test-relaxation": "1.1.0"
+    },
+    "detectorSet": "experimental",
+    "pr": {
+      "number": 11072,
+      "headSha": "8c12f05324c16aa0c2798681f719f9036f6346a5",
+      "baseSha": "2b45b7b7aa04e12daba5d0bbc0f8aa4dac07c172",
+      "title": "Fix VS Code nightly publish workflows",
+      "body": "### Related Issue\n\n**Issue:** #XXXX\n\n### Description\n\nFixes the `ext-vscode-publish-nightly` startup failure by passing `pull-requests: read` to the reusable `ext-vscode-test.yml` workflow.\n\nThe called test workflow declares `pull-requests: read` for PR path filtering, and reusable workflows cannot elevate token permissions beyond what the caller grants. Without this permission in the caller job, GitHub can fail the workflow before any jobs start.\n\nAfter rebasing on latest `main`, the separate SDK nightly workflow has already been removed upstream, so this PR no longer touches it.\n\n### Test Procedure\n\n- Inspected the failed nightly run and confirmed it was a GitHub Actions `startup_failure` with no jobs.\n- Parsed the changed workflow YAML locally with Ruby YAML.\n- Ran `git diff --check`.\n\n### Type of Change\n\n-   [x] 🐛 Bug fix (non-breaking change which fixes an issue)\n-   [ ] ✨ New feature (non-breaking change which adds functionality)\n-   [ ] 💥 Breaking change (fix or feature that would cause existing functionality to not work as expected)\n-   [ ] ♻️ Refactor Changes\n-   [ ] 💅 Cosmetic Changes\n-   [ ] 📚 Documentation update\n-   [x] 🏃 Workflow Changes\n\n### Pre-flight Checklist\n\n-   [x] Changes are limited to a single feature, bugfix or chore (split larger changes into separate PRs)\n-   [ ] Tests are passing (`npm test`) and code is formatted and linted (`npm run format && npm run lint`)\n-   [x] I have reviewed [contributor guidelines](https://github.com/cline/cline/blob/main/CONTRIBUTING.md)\n\n### Screenshots\n\nN/A - workflow-only change.\n\n### Additional Notes\n\nI did not run the full npm test/lint suite because this PR only changes a GitHub Actions workflow permission. The meaningful validation is rerunning the affected nightly publish workflow.\n",
+      "author": "arafatkatze",
+      "headRef": "arafatkatze/fix-vscode-nightly-workflows",
+      "repository": "cline/cline"
+    }
+  },
+  "pr": {
+    "number": 11072,
+    "headSha": "8c12f05324c16aa0c2798681f719f9036f6346a5",
+    "baseSha": "2b45b7b7aa04e12daba5d0bbc0f8aa4dac07c172",
+    "title": "Fix VS Code nightly publish workflows",
+    "body": "### Related Issue\n\n**Issue:** #XXXX\n\n### Description\n\nFixes the `ext-vscode-publish-nightly` startup failure by passing `pull-requests: read` to the reusable `ext-vscode-test.yml` workflow.\n\nThe called test workflow declares `pull-requests: read` for PR path filtering, and reusable workflows cannot elevate token permissions beyond what the caller grants. Without this permission in the caller job, GitHub can fail the workflow before any jobs start.\n\nAfter rebasing on latest `main`, the separate SDK nightly workflow has already been removed upstream, so this PR no longer touches it.\n\n### Test Procedure\n\n- Inspected the failed nightly run and confirmed it was a GitHub Actions `startup_failure` with no jobs.\n- Parsed the changed workflow YAML locally with Ruby YAML.\n- Ran `git diff --check`.\n\n### Type of Change\n\n-   [x] 🐛 Bug fix (non-breaking change which fixes an issue)\n-   [ ] ✨ New feature (non-breaking change which adds functionality)\n-   [ ] 💥 Breaking change (fix or feature that would cause existing functionality to not work as expected)\n-   [ ] ♻️ Refactor Changes\n-   [ ] 💅 Cosmetic Changes\n-   [ ] 📚 Documentation update\n-   [x] 🏃 Workflow Changes\n\n### Pre-flight Checklist\n\n-   [x] Changes are limited to a single feature, bugfix or chore (split larger changes into separate PRs)\n-   [ ] Tests are passing (`npm test`) and code is formatted and linted (`npm run format && npm run lint`)\n-   [x] I have reviewed [contributor guidelines](https://github.com/cline/cline/blob/main/CONTRIBUTING.md)\n\n### Screenshots\n\nN/A - workflow-only change.\n\n### Additional Notes\n\nI did not run the full npm test/lint suite because this PR only changes a GitHub Actions workflow permission. The meaningful validation is rerunning the affected nightly publish workflow.\n",
+    "author": "arafatkatze",
+    "headRef": "arafatkatze/fix-vscode-nightly-workflows",
+    "repository": "cline/cline"
+  }
+}

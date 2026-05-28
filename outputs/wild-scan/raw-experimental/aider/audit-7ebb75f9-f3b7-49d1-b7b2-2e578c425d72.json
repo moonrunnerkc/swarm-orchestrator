@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-05-28T01:43:11.740Z",
+  "runId": "audit-7ebb75f9-f3b7-49d1-b7b2-2e578c425d72",
+  "repo": "aider",
+  "mode": "advise",
+  "detectorSet": "experimental",
+  "wallTimeMs": 1584,
+  "result": {
+    "pass": true,
+    "findings": [
+      {
+        "category": "no-op-fix",
+        "severity": "warn",
+        "message": "Test changes in tests/basic/test_repomap.py share no identifier with the source changes in this PR. The modified test may not exercise the modified code.",
+        "location": {
+          "file": "tests/basic/test_repomap.py",
+          "line": 1
+        },
+        "evidence": "(source touched: aider/queries/tree-sitter-language-pack/bash-tags.scm, aider/queries/tree-sitter-languages/bash-tags.scm)"
+      }
+    ],
+    "generatedAt": "2026-05-28T01:43:11.738Z",
+    "detectorVersions": {
+      "error-swallow": "2.0.0",
+      "mock-of-hallucination": "2.0.0",
+      "no-op-fix": "2.0.0",
+      "fake-refactor": "2.0.0",
+      "comment-only-fix": "1.0.0",
+      "exception-rethrow-lost-context": "1.0.0",
+      "dead-branch-insertion": "1.0.0",
+      "assertion-strip": "1.0.0",
+      "coverage-erosion": "1.1.0",
+      "test-relaxation": "1.1.0"
+    },
+    "detectorSet": "experimental",
+    "pr": {
+      "number": 5132,
+      "headSha": "ff191affc6e1413f33dad914d9930a5993aad853",
+      "baseSha": "3ec8ec5a7d695b08a6c24fe6c0c235c8f87df9af",
+      "title": "feat: add bash tree-sitter tags for repomap support",
+      "body": "Adds tree-sitter tag queries for Bash/shell scripts so the repo map can index `.sh`, `.bash`, and `.zsh` files.\r\n\r\n## What\r\n- New `bash-tags.scm` under both `tree-sitter-language-pack/` and `tree-sitter-languages/` (matching the MATLAB precedent in #20429b685)\r\n- Captures: `function_definition` → definitions, `variable_assignment` → definitions, `command` → references\r\n- Test fixture `tests/fixtures/languages/bash/test.sh` and `test_language_bash` in `test_repomap.py`\r\n\r\n## Why\r\nBash/shell scripts are present in nearly every codebase but currently have no repo map support — `grep_ast` already maps `.sh`/`.bash`/`.zsh` to the `bash` parser, so the tags file was the missing piece.\r\n\r\n## Test\r\n- `pytest tests/basic/test_repomap.py` — all 46 tests pass (45 prior + new `test_language_bash`)\r\n- Pre-commit (isort, black, flake8, codespell) clean",
+      "author": "Mramaran",
+      "headRef": "add-bash-tree-sitter-tags",
+      "repository": "paul-gauthier/aider"
+    }
+  },
+  "pr": {
+    "number": 5132,
+    "headSha": "ff191affc6e1413f33dad914d9930a5993aad853",
+    "baseSha": "3ec8ec5a7d695b08a6c24fe6c0c235c8f87df9af",
+    "title": "feat: add bash tree-sitter tags for repomap support",
+    "body": "Adds tree-sitter tag queries for Bash/shell scripts so the repo map can index `.sh`, `.bash`, and `.zsh` files.\r\n\r\n## What\r\n- New `bash-tags.scm` under both `tree-sitter-language-pack/` and `tree-sitter-languages/` (matching the MATLAB precedent in #20429b685)\r\n- Captures: `function_definition` → definitions, `variable_assignment` → definitions, `command` → references\r\n- Test fixture `tests/fixtures/languages/bash/test.sh` and `test_language_bash` in `test_repomap.py`\r\n\r\n## Why\r\nBash/shell scripts are present in nearly every codebase but currently have no repo map support — `grep_ast` already maps `.sh`/`.bash`/`.zsh` to the `bash` parser, so the tags file was the missing piece.\r\n\r\n## Test\r\n- `pytest tests/basic/test_repomap.py` — all 46 tests pass (45 prior + new `test_language_bash`)\r\n- Pre-commit (isort, black, flake8, codespell) clean",
+    "author": "Mramaran",
+    "headRef": "add-bash-tree-sitter-tags",
+    "repository": "paul-gauthier/aider"
+  }
+}

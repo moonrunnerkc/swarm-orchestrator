@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-05-28T01:35:37.431Z",
+  "runId": "audit-4fb949f7-8012-465a-a5d9-29d83a8ca124",
+  "repo": "aider",
+  "mode": "advise",
+  "detectorSet": "default",
+  "wallTimeMs": 1279,
+  "result": {
+    "pass": true,
+    "findings": [],
+    "generatedAt": "2026-05-28T01:35:37.429Z",
+    "detectorVersions": {
+      "error-swallow": "2.0.0",
+      "mock-of-hallucination": "2.0.0",
+      "no-op-fix": "2.0.0",
+      "fake-refactor": "2.0.0"
+    },
+    "detectorSet": "default",
+    "agent": {
+      "vendor": "claude-code",
+      "confidence": "high",
+      "source": "commit-marker",
+      "version": "4.6"
+    },
+    "pr": {
+      "number": 4838,
+      "headSha": "b2bec25c2c785989d6456cb03321a61f539bcc86",
+      "baseSha": "4625ebb4b517ce51db0aa7eb92c3fea61243610f",
+      "title": "fix: handle symlink loops in safe_abs_path()",
+      "body": "## Summary\n\n- Fixes #4711 — `Path.resolve()` raises `RuntimeError` when encountering circular symlinks (e.g. `v8/v8 -> v8/v8`), crashing aider during repo map generation.\n- Wraps the `Path.resolve()` call in `safe_abs_path()` with a try/except for `RuntimeError` and `OSError`, falling back to `Path.absolute()` which doesn't follow symlinks.\n\n## Test plan\n\n- [x] New test `test_safe_abs_path_symlink_loop` creates a circular symlink pair and verifies `safe_abs_path()` returns an absolute path without raising\n- [x] `pytest tests/basic/test_utils.py` passes",
+      "author": "clayarnoldg2m",
+      "headRef": "fix/4711-symlink-loop",
+      "repository": "paul-gauthier/aider"
+    }
+  },
+  "pr": {
+    "number": 4838,
+    "headSha": "b2bec25c2c785989d6456cb03321a61f539bcc86",
+    "baseSha": "4625ebb4b517ce51db0aa7eb92c3fea61243610f",
+    "title": "fix: handle symlink loops in safe_abs_path()",
+    "body": "## Summary\n\n- Fixes #4711 — `Path.resolve()` raises `RuntimeError` when encountering circular symlinks (e.g. `v8/v8 -> v8/v8`), crashing aider during repo map generation.\n- Wraps the `Path.resolve()` call in `safe_abs_path()` with a try/except for `RuntimeError` and `OSError`, falling back to `Path.absolute()` which doesn't follow symlinks.\n\n## Test plan\n\n- [x] New test `test_safe_abs_path_symlink_loop` creates a circular symlink pair and verifies `safe_abs_path()` returns an absolute path without raising\n- [x] `pytest tests/basic/test_utils.py` passes",
+    "author": "clayarnoldg2m",
+    "headRef": "fix/4711-symlink-loop",
+    "repository": "paul-gauthier/aider"
+  }
+}
