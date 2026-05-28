@@ -46,6 +46,47 @@ diff --git a/src/feat.test.ts b/src/feat.test.ts
 `;
     assert.equal(run(coverageErosionDetector, diff).length, 0);
   });
+
+  it('still fires when the only test-file addition is a non-assertion line', () => {
+    // Regression: a single comment line in any test file used to count
+    // as a "matching test was added" and suppressed the finding. The
+    // detector now requires the addition to contain an assertion or a
+    // test-block opener.
+    const diff = `diff --git a/src/feat.ts b/src/feat.ts
+--- a/src/feat.ts
++++ b/src/feat.ts
+@@ -1,3 +1,4 @@
+ function f(x) {
++  if (x < 0) return -1;
+   return x * 2;
+ }
+diff --git a/src/feat.test.ts b/src/feat.test.ts
+--- a/src/feat.test.ts
++++ b/src/feat.test.ts
+@@ -1,1 +1,2 @@
+ it('positive', () => { expect(f(2)).toBe(4); });
++// negative branch is exercised by integration tests elsewhere
+`;
+    assert.equal(run(coverageErosionDetector, diff).length, 1);
+  });
+
+  it('recognizes Python pytest assertions as a real test addition', () => {
+    const diff = `diff --git a/src/feat.py b/src/feat.py
+--- a/src/feat.py
++++ b/src/feat.py
+@@ -1,2 +1,3 @@
+ def f(x):
++    if x < 0: return -1
+     return x * 2
+diff --git a/tests/test_feat.py b/tests/test_feat.py
+--- a/tests/test_feat.py
++++ b/tests/test_feat.py
+@@ -1,1 +1,2 @@
+ def test_positive(): assert f(2) == 4
++def test_negative(): assert f(-1) == -1
+`;
+    assert.equal(run(coverageErosionDetector, diff).length, 0);
+  });
 });
 
 describe('cheat-detector / fake-refactor', () => {
