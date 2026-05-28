@@ -31,6 +31,7 @@ import type { Detector, DetectorContext } from './detector-types';
 import type { Finding, Severity } from '../types';
 import { isCommentOnlyLine, walkHunks } from './diff-walker';
 import { collectKnownDependencies } from './manifests';
+import { collectInternalRoots, resolvesToInternalRoot } from './internal-roots';
 import {
   defaultRegistryProbe,
   extractUsesRefs,
@@ -107,6 +108,14 @@ export function buildMockOfHallucinationDetector(
       const findings: Finding[] = [];
       const knownDeps = collectKnownDependencies(ctx.repoRoot);
       const knownLower = lowerSet(knownDeps);
+      // The wild-PR scan surfaced a class of false positive on
+      // monorepos with subproject layouts: a Python test that mocks
+      // `integrations.jira_dc.foo` was flagged as a hallucinated
+      // package because `integrations` is not a pypi name — it's an
+      // internal directory in the repo. We resolve a mock target as
+      // "internal" when its top-level segment matches a real
+      // directory under repoRoot.
+      const internalRoots = collectInternalRoots(ctx.repoRoot);
       const hunks = walkHunks(ctx.files);
       for (const hunk of hunks) {
         for (const addition of hunk.added) {
@@ -114,6 +123,7 @@ export function buildMockOfHallucinationDetector(
           const claimed = extractMockTarget(addition.content);
           if (claimed === undefined) continue;
           if (isLocalImport(claimed)) continue;
+          if (resolvesToInternalRoot(claimed, internalRoots)) continue;
           if (resolvesAgainst(claimed, knownDeps, knownLower)) continue;
           const probeResult = probe.query(toMockProbeQuery(claimed));
           if (probeResult instanceof Promise) {
