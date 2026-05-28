@@ -3,6 +3,25 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { loadAuditConfig } from '../../../src/audit/cheat-detector/audit-config';
+import { configureLogger, getLoggerConfig } from '../../../src/logger';
+
+function captureStderr(fn: () => void): string {
+  const original = process.stderr.write.bind(process.stderr);
+  let captured = '';
+  // The logger writes warn/error to stderr by default in text mode.
+  (process.stderr as { write: typeof process.stderr.write }).write = ((
+    chunk: string | Uint8Array,
+  ): boolean => {
+    captured += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    fn();
+  } finally {
+    (process.stderr as { write: typeof process.stderr.write }).write = original;
+  }
+  return captured;
+}
 
 function withConfig(text: string, fn: (repo: string) => void): void {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-cfg-'));
@@ -75,6 +94,60 @@ describe('cheat-detector / audit-config', () => {
       const cfg = loadAuditConfig(repo);
       assert.equal(cfg.intentSeverityPolicy, 'lenient');
       assert.deepEqual(cfg.excludePaths, ['fixtures/**', 'test/data/*']);
+    });
+  });
+
+  describe('unrecognized-field warning', () => {
+    const priorConfig = getLoggerConfig();
+    before(() => configureLogger({ level: 'warn', diagnosticsToStderr: true }));
+    after(() => configureLogger({ level: priorConfig.level, diagnosticsToStderr: priorConfig.diagnosticsToStderr }));
+
+    it('warns when the file has content but no recognized fields parse', () => {
+      // Typo: `exclude_paths` (snake_case) instead of `excludePaths`. The
+      // parser sees nothing it recognizes and returns the default config.
+      // Without the warning, the user thinks the exclusion is in effect.
+      const yaml = 'exclude_paths:\n  - fixtures/**\n';
+      let stderr = '';
+      withConfig(yaml, (repo) => {
+        stderr = captureStderr(() => {
+          loadAuditConfig(repo);
+        });
+      });
+      assert.match(stderr, /audit-config/);
+      assert.match(stderr, /no recognized fields/);
+    });
+
+    it('does not warn when the file is empty or comment-only', () => {
+      const yaml = '# just a comment, intentionally empty\n# more comments\n';
+      let stderr = '';
+      withConfig(yaml, (repo) => {
+        stderr = captureStderr(() => {
+          loadAuditConfig(repo);
+        });
+      });
+      assert.equal(stderr, '');
+    });
+
+    it('does not warn when excludePaths parsed successfully', () => {
+      const yaml = 'excludePaths:\n  - fixtures/**\n';
+      let stderr = '';
+      withConfig(yaml, (repo) => {
+        stderr = captureStderr(() => {
+          loadAuditConfig(repo);
+        });
+      });
+      assert.equal(stderr, '');
+    });
+
+    it('does not warn when intentSeverityPolicy is present even with an unknown value', () => {
+      const yaml = 'intentSeverityPolicy: paranoid\n';
+      let stderr = '';
+      withConfig(yaml, (repo) => {
+        stderr = captureStderr(() => {
+          loadAuditConfig(repo);
+        });
+      });
+      assert.equal(stderr, '');
     });
   });
 });
