@@ -55,6 +55,7 @@ import type {
   PrAuditCompletedEntry,
 } from '../../ledger/types';
 import { fetchPrDiffViaGithub, parsePrRef, type GithubPrRef } from './pr-fetch';
+import { fetchPrManifests } from './pr-manifest-fetch';
 import { writeShadowEntry } from '../../audit/shadow';
 import { buildShadowOutput, writeShadowOutputFile } from '../../audit/shadow-output';
 
@@ -259,6 +260,17 @@ async function runAudit(flags: AuditFlags): Promise<number> {
   const prContext = await loadPrContext(flags);
   const agent = prContext !== undefined ? detectAgent(prContext.fingerprintInput) : undefined;
 
+  // For --pr audits, the user's cwd has no relationship to the target
+  // repo, so the cheat-detector's manifest readers would see swarm's
+  // own package.json instead of the PR's actual manifest(s). Fetch the
+  // candidate manifests via the GitHub Contents API and run the audit
+  // with `repoRoot` pointed at the resulting temp tree. For other
+  // input modes (--diff-file, --diff-stdin), the caller's --repo-root
+  // is the right answer.
+  const fetchedManifests = await maybeFetchManifests(flags, unifiedDiff, prContext);
+  const effectiveRepoRoot =
+    fetchedManifests !== undefined ? fetchedManifests.tempRoot : flags.repoRoot;
+
   // Ledger is created up-front so the judge can write
   // `llm-judge-result` entries onto the same hash chain as the audit
   // metadata. We capture the started entry once we know the detector
@@ -294,7 +306,7 @@ async function runAudit(flags: AuditFlags): Promise<number> {
 
   const auditInput: AuditInput = {
     unifiedDiff,
-    repoRoot: flags.repoRoot,
+    repoRoot: effectiveRepoRoot,
     detectorSet: flags.detectorSet,
     judgeEnabled: flags.enableLlmJudge,
     judgeLedger: judgeLedgerSink,
@@ -302,7 +314,12 @@ async function runAudit(flags: AuditFlags): Promise<number> {
   if (agent !== undefined) auditInput.agent = agent;
   if (prContext !== undefined) auditInput.pr = prContext.prMetadata;
 
-  const result = await runCheatDetectors(auditInput);
+  let result: AuditResult;
+  try {
+    result = await runCheatDetectors(auditInput);
+  } finally {
+    fetchedManifests?.cleanup();
+  }
   const wallTimeMs = Date.now() - startedAt;
 
   ledger.append<PrAuditStartedEntry>(
@@ -433,6 +450,27 @@ async function loadPrContext(flags: AuditFlags): Promise<PrContext | undefined> 
   if (flags.prRef === undefined) return undefined;
   const ref = parsePrRef(flags.prRef);
   return await fetchPrContextViaGithub(ref);
+}
+
+async function maybeFetchManifests(
+  flags: AuditFlags,
+  unifiedDiff: string,
+  prContext: PrContext | undefined,
+): Promise<Awaited<ReturnType<typeof fetchPrManifests>>> {
+  if (flags.prRef === undefined || prContext === undefined) return undefined;
+  const ref = parsePrRef(flags.prRef);
+  try {
+    return await fetchPrManifests(ref, unifiedDiff, prContext.prMetadata.headSha);
+  } catch (err) {
+    // Manifest fetch is a best-effort optimization. A failure here
+    // (rate-limit, auth, network) should not prevent the audit from
+    // running — it just means the mock-of-hallucination detector
+    // works from whatever `--repo-root` already had.
+    logger.debug(
+      `manifest fetch failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return undefined;
+  }
 }
 
 async function fetchPrContextViaGithub(ref: GithubPrRef): Promise<PrContext> {
