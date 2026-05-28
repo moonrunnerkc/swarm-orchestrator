@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-05-28T03:59:53.335Z",
+  "runId": "audit-3135a857-ee36-4ce1-9773-848f0b465344",
+  "repo": "continue",
+  "mode": "advise",
+  "detectorSet": "default",
+  "wallTimeMs": 8138,
+  "result": {
+    "pass": true,
+    "findings": [
+      {
+        "category": "no-op-fix",
+        "severity": "warn",
+        "message": "Source file core/llm/llms/OpenRouter.ts was modified but no test file in the repository imports it, directly or transitively. If this PR claimed to fix a failing test, the fix likely missed the failing code path.",
+        "location": {
+          "file": "core/llm/llms/OpenRouter.ts",
+          "line": 1
+        },
+        "evidence": "(touched: core/llm/llms/OpenRouter.ts, packages/openai-adapters/src/apis/OpenRouter.ts, packages/openai-adapters/src/index.ts)"
+      },
+      {
+        "category": "no-op-fix",
+        "severity": "warn",
+        "message": "Source file packages/openai-adapters/src/apis/OpenRouter.ts was modified but no test file in the repository imports it, directly or transitively. If this PR claimed to fix a failing test, the fix likely missed the failing code path.",
+        "location": {
+          "file": "packages/openai-adapters/src/apis/OpenRouter.ts",
+          "line": 1
+        },
+        "evidence": "(touched: core/llm/llms/OpenRouter.ts, packages/openai-adapters/src/apis/OpenRouter.ts, packages/openai-adapters/src/index.ts)"
+      },
+      {
+        "category": "no-op-fix",
+        "severity": "warn",
+        "message": "Source file packages/openai-adapters/src/index.ts was modified but no test file in the repository imports it, directly or transitively. If this PR claimed to fix a failing test, the fix likely missed the failing code path.",
+        "location": {
+          "file": "packages/openai-adapters/src/index.ts",
+          "line": 1
+        },
+        "evidence": "(touched: core/llm/llms/OpenRouter.ts, packages/openai-adapters/src/apis/OpenRouter.ts, packages/openai-adapters/src/index.ts)"
+      }
+    ],
+    "generatedAt": "2026-05-28T03:59:53.327Z",
+    "detectorVersions": {
+      "error-swallow": "2.0.0",
+      "mock-of-hallucination": "2.0.0",
+      "no-op-fix": "2.0.0",
+      "fake-refactor": "2.0.0",
+      "coverage-erosion": "1.1.0",
+      "test-relaxation": "1.1.0",
+      "assertion-strip": "1.0.0"
+    },
+    "detectorSet": "default",
+    "pr": {
+      "number": 11991,
+      "headSha": "cc4b8097879e99681d8b43db8c77abbdf2ace702",
+      "baseSha": "d971363a7e2711a056a2daafb4a788140bbf32a4",
+      "title": "feat(openrouter): send HTTP-Referer and X-Title headers in core/llm OpenRouter class",
+      "body": "## Summary\n\n- Adds `HTTP-Referer`, `X-OpenRouter-Title`, and `X-OpenRouter-Categories` headers to the **core/llm** `OpenRouter` class, matching what #11857 did for the openai-adapters `OpenRouter` class\n- Uses `X-OpenRouter-Title` (the newer official header) instead of `X-Title`\n- Adds `X-OpenRouter-Categories: ide-extension` for marketplace attribution\n- Deduplicates headers by exporting `OPENROUTER_HEADERS` from openai-adapters and importing it in core\n- User-configured `requestOptions.headers` take precedence over the defaults\n\nBuilds on #11857\n\n## Test plan\n\n- [ ] Verify OpenRouter requests from the core/llm path include `HTTP-Referer`, `X-OpenRouter-Title`, and `X-OpenRouter-Categories` headers\n- [ ] Verify user-configured `requestOptions.headers` can still override these defaults\n- [ ] Confirm the OpenRouter activity dashboard shows \"Continue\" in the App column",
+      "author": "RomneyDa",
+      "headRef": "feat/openrouter-headers-core-llm",
+      "repository": "continuedev/continue"
+    }
+  },
+  "pr": {
+    "number": 11991,
+    "headSha": "cc4b8097879e99681d8b43db8c77abbdf2ace702",
+    "baseSha": "d971363a7e2711a056a2daafb4a788140bbf32a4",
+    "title": "feat(openrouter): send HTTP-Referer and X-Title headers in core/llm OpenRouter class",
+    "body": "## Summary\n\n- Adds `HTTP-Referer`, `X-OpenRouter-Title`, and `X-OpenRouter-Categories` headers to the **core/llm** `OpenRouter` class, matching what #11857 did for the openai-adapters `OpenRouter` class\n- Uses `X-OpenRouter-Title` (the newer official header) instead of `X-Title`\n- Adds `X-OpenRouter-Categories: ide-extension` for marketplace attribution\n- Deduplicates headers by exporting `OPENROUTER_HEADERS` from openai-adapters and importing it in core\n- User-configured `requestOptions.headers` take precedence over the defaults\n\nBuilds on #11857\n\n## Test plan\n\n- [ ] Verify OpenRouter requests from the core/llm path include `HTTP-Referer`, `X-OpenRouter-Title`, and `X-OpenRouter-Categories` headers\n- [ ] Verify user-configured `requestOptions.headers` can still override these defaults\n- [ ] Confirm the OpenRouter activity dashboard shows \"Continue\" in the App column",
+    "author": "RomneyDa",
+    "headRef": "feat/openrouter-headers-core-llm",
+    "repository": "continuedev/continue"
+  }
+}

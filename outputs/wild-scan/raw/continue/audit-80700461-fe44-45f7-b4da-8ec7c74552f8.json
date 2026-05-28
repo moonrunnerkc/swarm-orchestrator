@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-05-28T03:59:45.035Z",
+  "runId": "audit-80700461-fe44-45f7-b4da-8ec7c74552f8",
+  "repo": "continue",
+  "mode": "advise",
+  "detectorSet": "default",
+  "wallTimeMs": 9032,
+  "result": {
+    "pass": true,
+    "findings": [
+      {
+        "category": "error-swallow",
+        "severity": "info",
+        "message": "A logging-only catch block was added in core/llm/fetchModels.ts. The error is being preserved as a log entry rather than rethrown. [body-class: logging-only — typically legitimate observability shape]",
+        "location": {
+          "file": "core/llm/fetchModels.ts",
+          "line": 1
+        },
+        "evidence": "+ import { LLMClasses, llmFromProviderAndOptions } from \"./llms/index.js\";\n+ \n+ export interface FetchedModel {\n+ name: string;\n+ modelId?: string;\n+ description?: string;\n+ icon?: string;\n+ contextLength?: number;\n+ maxTokens?: number;\n+ supportsTools?: boolean;\n+ }\n+ \n+ const OLLAMA_EXCLUDED_CAPABILITIES = [\"vision\", \"audio\", \"embedding\"];\n+ \n+ const OLLAMA_ICON_MAP: Record<string, string> = {\n+"
+      },
+      {
+        "category": "error-swallow",
+        "severity": "info",
+        "message": "A logging-only catch block was added in gui/src/forms/AddModelForm.tsx. The error is being preserved as a log entry rather than rethrown. [body-class: logging-only — typically legitimate observability shape]",
+        "location": {
+          "file": "gui/src/forms/AddModelForm.tsx",
+          "line": 48
+        },
+        "evidence": "+ const [fetchedModelsList, setFetchedModelsList] = useState<ModelPackage[]>(\n+ [],\n+ );\n+ const [isFetchingModels, setIsFetchingModels] = useState(false);\n+ \n+ void initializeDynamicModels(ideMessenger);\n+ useEffect(() => {\n+ setFetchedModelsList([]);\n+ }, [selectedProvider]);\n+ \n+ const handleFetchModels = useCallback(async () => {\n+ const apiKey = formMethods.watch(\"apiKey\");\n+ const apiBase = "
+      },
+      {
+        "category": "error-swallow",
+        "severity": "info",
+        "message": "A logging-only catch block was added in gui/src/pages/AddNewModel/configs/fetchProviderModels.ts. The error is being preserved as a log entry rather than rethrown. [body-class: logging-only — typically legitimate observability shape]",
+        "location": {
+          "file": "gui/src/pages/AddNewModel/configs/fetchProviderModels.ts",
+          "line": 1
+        },
+        "evidence": "+ import { ModelProviderTags } from \"../../../components/modelSelection/utils\";\n+ import { IIdeMessenger } from \"../../../context/IdeMessenger\";\n+ import { ModelPackage } from \"./models\";\n+ import { models } from \"./models\";\n+ import { ollamaStaticModels, providers } from \"./providers\";\n+ \n+ interface FetchedModel {\n+ name: string;\n+ modelId?: string;\n+ description?: string;\n+ icon?: string;\n+ con"
+      }
+    ],
+    "generatedAt": "2026-05-28T03:59:45.030Z",
+    "detectorVersions": {
+      "error-swallow": "2.0.0",
+      "mock-of-hallucination": "2.0.0",
+      "no-op-fix": "2.0.0",
+      "fake-refactor": "2.0.0",
+      "coverage-erosion": "1.1.0",
+      "test-relaxation": "1.1.0",
+      "assertion-strip": "1.0.0"
+    },
+    "detectorSet": "default",
+    "pr": {
+      "number": 12046,
+      "headSha": "bcd29eb0ec968fecfe058414dbc8c2544893730f",
+      "baseSha": "a1ead04122664b308131bdf1c3345ead00146bbc",
+      "title": "feat: fetch provider models dynamically and fix isOpenSource pollution",
+      "body": "## Summary\r\n1. Fixes issue where `isOpenSource` is used to detect if a model can be used by ollama. Changes to explicit `providers` listing.\r\n2. Adds support for dynamically fetching provider models. Open router already has this, moves logic to core to unify. Adds support for ollama using their tags API. Adds support for other providers using their `listModels` methods (or custom for gemini/anthropic). A little refresh icon to \"update models list using my API key\" shows once an API key has been entered. Does some sensible filtering and model param detection for context length, max tokens, and tool use. Also these results are deduplicated with hardcoded models (hardcoded take precedence) and show proper provider icons etc.\r\n3. Adds explicit Gemma 4 and GPT 5.4 family support\r\n4. updates some tools support regex matching to match e.g. gpt 6, 7, etc.\r\n\r\n<img width=\"386\" height=\"563\" alt=\"image\" src=\"https://github.com/user-attachments/assets/e7acfb89-2839-41df-b4a3-21bd2696150f\" />\r\n\r\n\r\n\r\n\r\n\n<!-- This is an auto-generated description by cubic. -->\n---\n## Summary by cubic\nUnifies dynamic model fetching across providers via a core `models/fetch` protocol, auto-loading `ollama` and `openrouter`, and letting users refresh other providers with their API key. Persists fetched context, max tokens, and capabilities to `config.yaml`, adds GPT‑5.4 (pro/mini) and Gemma 4, and removes `isOpenSource`-based routing.\n\n- New Features\n  - Central `models/fetch`: `ollama` scrapes the library (icons), `openrouter` hits its public API on load, `anthropic` calls `/v1/models`, `gemini` calls `v1beta/models` (chat-only; excludes 2.0, Gemma, embeddings/TTS/robotics/etc.), others use `listModels()` with optional `apiKey`/`apiBase`; returns `contextLength`, `maxTokens`, `supportsTools`; errors toast and return [].\n  - Add Model: Auto-loads `ollama`/`openrouter`; refresh button appears after API key to fetch provider models; merges and de‑duplicates into “Additional models”; sorts fetched models.\n  - Persistence: Writes `contextLength`, `completionOptions.maxTokens`, and `capabilities` (`tool_use`, `image_input`) to `config.yaml` when adding a model.\n  - Models: Adds `gpt-5.4` (`pro`, `mini`) and `gemma4`; improves image/tool detection for Gemma 4 and future GPT 5+.\n\n- Bug Fixes\n  - `OpenAI.listModels()`: Supports providers returning either a plain array or `{ data: [] }`; error text now references `config.yaml`.\n  - Add Model UX: Centered spinner; clears API key when switching to providers without `RequiresApiKey` and after adding; selects the new model by posting directly to core.\n  - Routing: Replaces `isOpenSource` logic with explicit `providerOptions` and `popularPackages`.\n  - Tool/agent heuristics: Safer regexes for GPT 5+ (`gpt-[5-9]`), Claude 4+, Grok 4.x+, GLM 4+; OpenAI checks use `isOSeriesOrGpt5PlusModel`.\n\n<sup>Written for commit bcd29eb0ec968fecfe058414dbc8c2544893730f. Summary will update on new commits.</sup>\n\n<!-- End of auto-generated description by cubic. -->\n\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n",
+      "author": "RomneyDa",
+      "headRef": "dynamic-model-fetching",
+      "repository": "continuedev/continue"
+    }
+  },
+  "pr": {
+    "number": 12046,
+    "headSha": "bcd29eb0ec968fecfe058414dbc8c2544893730f",
+    "baseSha": "a1ead04122664b308131bdf1c3345ead00146bbc",
+    "title": "feat: fetch provider models dynamically and fix isOpenSource pollution",
+    "body": "## Summary\r\n1. Fixes issue where `isOpenSource` is used to detect if a model can be used by ollama. Changes to explicit `providers` listing.\r\n2. Adds support for dynamically fetching provider models. Open router already has this, moves logic to core to unify. Adds support for ollama using their tags API. Adds support for other providers using their `listModels` methods (or custom for gemini/anthropic). A little refresh icon to \"update models list using my API key\" shows once an API key has been entered. Does some sensible filtering and model param detection for context length, max tokens, and tool use. Also these results are deduplicated with hardcoded models (hardcoded take precedence) and show proper provider icons etc.\r\n3. Adds explicit Gemma 4 and GPT 5.4 family support\r\n4. updates some tools support regex matching to match e.g. gpt 6, 7, etc.\r\n\r\n<img width=\"386\" height=\"563\" alt=\"image\" src=\"https://github.com/user-attachments/assets/e7acfb89-2839-41df-b4a3-21bd2696150f\" />\r\n\r\n\r\n\r\n\r\n\n<!-- This is an auto-generated description by cubic. -->\n---\n## Summary by cubic\nUnifies dynamic model fetching across providers via a core `models/fetch` protocol, auto-loading `ollama` and `openrouter`, and letting users refresh other providers with their API key. Persists fetched context, max tokens, and capabilities to `config.yaml`, adds GPT‑5.4 (pro/mini) and Gemma 4, and removes `isOpenSource`-based routing.\n\n- New Features\n  - Central `models/fetch`: `ollama` scrapes the library (icons), `openrouter` hits its public API on load, `anthropic` calls `/v1/models`, `gemini` calls `v1beta/models` (chat-only; excludes 2.0, Gemma, embeddings/TTS/robotics/etc.), others use `listModels()` with optional `apiKey`/`apiBase`; returns `contextLength`, `maxTokens`, `supportsTools`; errors toast and return [].\n  - Add Model: Auto-loads `ollama`/`openrouter`; refresh button appears after API key to fetch provider models; merges and de‑duplicates into “Additional models”; sorts fetched models.\n  - Persistence: Writes `contextLength`, `completionOptions.maxTokens`, and `capabilities` (`tool_use`, `image_input`) to `config.yaml` when adding a model.\n  - Models: Adds `gpt-5.4` (`pro`, `mini`) and `gemma4`; improves image/tool detection for Gemma 4 and future GPT 5+.\n\n- Bug Fixes\n  - `OpenAI.listModels()`: Supports providers returning either a plain array or `{ data: [] }`; error text now references `config.yaml`.\n  - Add Model UX: Centered spinner; clears API key when switching to providers without `RequiresApiKey` and after adding; selects the new model by posting directly to core.\n  - Routing: Replaces `isOpenSource` logic with explicit `providerOptions` and `popularPackages`.\n  - Tool/agent heuristics: Safer regexes for GPT 5+ (`gpt-[5-9]`), Claude 4+, Grok 4.x+, GLM 4+; OpenAI checks use `isOSeriesOrGpt5PlusModel`.\n\n<sup>Written for commit bcd29eb0ec968fecfe058414dbc8c2544893730f. Summary will update on new commits.</sup>\n\n<!-- End of auto-generated description by cubic. -->\n\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n",
+    "author": "RomneyDa",
+    "headRef": "dynamic-model-fetching",
+    "repository": "continuedev/continue"
+  }
+}

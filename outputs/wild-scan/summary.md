@@ -1,67 +1,72 @@
 # Wild PR Scan — Summary
 
-Generated: 2026-05-28T01:48:48.019Z
+Generated: 2026-05-28T04:02:27.432Z
 
 ## Totals
 
 - PRs audited: **48**
-- Passed (no blocking findings): **44**
-- PRs with at least one finding: **34**
-- PRs with warn-or-error findings: **29**
-- PRs with blocking-grade findings: **32**
-- Total findings: **481**
+- Passed (no blocking findings): **42**
+- PRs with at least one finding: **25**
+- PRs with warn-or-error findings: **19**
+- PRs with blocking-grade findings: **24**
+- Total findings: **205**
 
 ## Per repository
 
 | Repo                   | PRs | Pass | Warn/Err | Blocking |
 | ---------------------- | --- | ---- | -------- | -------- |
-| RooCodeInc/Roo-Code    | 8   | 8    | 310      | 310      |
-| sst/opencode           | 8   | 8    | 71       | 71       |
-| All-Hands-AI/OpenHands | 8   | 6    | 10       | 28       |
-| paul-gauthier/aider    | 8   | 7    | 14       | 16       |
-| continuedev/continue   | 8   | 8    | 15       | 15       |
-| cline/cline            | 8   | 7    | 7        | 8        |
+| RooCodeInc/Roo-Code    | 8   | 6    | 142      | 63       |
+| All-Hands-AI/OpenHands | 8   | 7    | 16       | 17       |
+| continuedev/continue   | 8   | 8    | 10       | 10       |
+| paul-gauthier/aider    | 8   | 6    | 5        | 7        |
+| sst/opencode           | 8   | 8    | 15       | 5        |
+| cline/cline            | 8   | 7    | 0        | 1        |
 
 ## Per detected agent
 
 | Agent        | PRs | Warn/Err | Blocking |
 | ------------ | --- | -------- | -------- |
-| unidentified | 48  | 427      | 448      |
+| codex-cli    | 8   | 143      | 64       |
+| unidentified | 32  | 29       | 22       |
+| openhands    | 7   | 16       | 17       |
+| claude-code  | 1   | 0        | 0        |
 
 ## Per detector category (totals)
 
-| Category              | Total findings |
-| --------------------- | -------------- |
-| no-op-fix             | 456            |
-| mock-of-hallucination | 20             |
-| error-swallow         | 5              |
+| Category         | Total findings |
+| ---------------- | -------------- |
+| coverage-erosion | 97             |
+| no-op-fix        | 87             |
+| test-relaxation  | 12             |
+| error-swallow    | 5              |
+| assertion-strip  | 4              |
 
 ## Top-ranked individual findings (first 25)
 
-| Score | Severity | Category  | Repo#PR                   | File                                                       | Message                                                                          |
-| ----- | -------- | --------- | ------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | .github/workflows/docs-pages.yml                           | Source file .github/workflows/docs-pages.yml was modified but no test file in th |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/.env.example                                     | Source file apps/docs/.env.example was modified but no test file in the reposito |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/.gitignore                                       | Source file apps/docs/.gitignore was modified but no test file in the repository |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/LICENSE                                          | Source file apps/docs/LICENSE was modified but no test file in the repository im |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/advanced-usage/local-development-setup.mdx  | Source file apps/docs/docs/advanced-usage/local-development-setup.mdx was modifi |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/advanced-usage/roo-code-nightly.mdx         | Source file apps/docs/docs/advanced-usage/roo-code-nightly.mdx was modified but  |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/features/api-configuration-profiles.mdx     | Source file apps/docs/docs/features/api-configuration-profiles.mdx was modified  |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/features/auto-approving-actions.mdx         | Source file apps/docs/docs/features/auto-approving-actions.mdx was modified but  |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/features/boomerang-tasks.mdx                | Source file apps/docs/docs/features/boomerang-tasks.mdx was modified but no test |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/features/checkpoints.mdx                    | Source file apps/docs/docs/features/checkpoints.mdx was modified but no test fil |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/features/code-actions.mdx                   | Source file apps/docs/docs/features/code-actions.mdx was modified but no test fi |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/features/codebase-indexing.mdx              | Source file apps/docs/docs/features/codebase-indexing.mdx was modified but no te |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/features/custom-modes.mdx                   | Source file apps/docs/docs/features/custom-modes.mdx was modified but no test fi |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/features/intelligent-context-condensing.mdx | Source file apps/docs/docs/features/intelligent-context-condensing.mdx was modif |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/features/marketplace.mdx                    | Source file apps/docs/docs/features/marketplace.mdx was modified but no test fil |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/features/mcp/using-mcp-in-roo.mdx           | Source file apps/docs/docs/features/mcp/using-mcp-in-roo.mdx was modified but no |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/features/shell-integration.mdx              | Source file apps/docs/docs/features/shell-integration.mdx was modified but no te |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/features/skills.mdx                         | Source file apps/docs/docs/features/skills.mdx was modified but no test file in  |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/features/slash-commands.mdx                 | Source file apps/docs/docs/features/slash-commands.mdx was modified but no test  |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/features/task-todo-list.mdx                 | Source file apps/docs/docs/features/task-todo-list.mdx was modified but no test  |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/features/worktrees.mdx                      | Source file apps/docs/docs/features/worktrees.mdx was modified but no test file  |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/getting-started/installing.mdx              | Source file apps/docs/docs/getting-started/installing.mdx was modified but no te |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/index.mdx                                   | Source file apps/docs/docs/index.mdx was modified but no test file in the reposi |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/providers/index.json                        | Source file apps/docs/docs/providers/index.json was modified but no test file in |
-| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docs/providers/index.mdx                         | Source file apps/docs/docs/providers/index.mdx was modified but no test file in  |
+| Score | Severity | Category  | Repo#PR                   | File                                                        | Message                                                                          |
+| ----- | -------- | --------- | ------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/docusaurus.config.ts                              | Source file apps/docs/docusaurus.config.ts was modified but no test file in the  |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/eslint.config.mjs                                 | Source file apps/docs/eslint.config.mjs was modified but no test file in the rep |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/sidebars.ts                                       | Source file apps/docs/sidebars.ts was modified but no test file in the repositor |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/clientModules/scrollToAnchor.ts               | Source file apps/docs/src/clientModules/scrollToAnchor.ts was modified but no te |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/components/Codicon.tsx                        | Source file apps/docs/src/components/Codicon.tsx was modified but no test file i |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/components/CopyPageURL/index.tsx              | Source file apps/docs/src/components/CopyPageURL/index.tsx was modified but no t |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/components/GitHubInstallButtons/index.tsx     | Source file apps/docs/src/components/GitHubInstallButtons/index.tsx was modified |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/components/KangarooIcon.tsx                   | Source file apps/docs/src/components/KangarooIcon.tsx was modified but no test f |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/components/LucideIcon.tsx                     | Source file apps/docs/src/components/LucideIcon.tsx was modified but no test fil |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/components/NavbarSocialIcons/index.tsx        | Source file apps/docs/src/components/NavbarSocialIcons/index.tsx was modified bu |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/components/ProviderTable/index.tsx            | Source file apps/docs/src/components/ProviderTable/index.tsx was modified but no |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/components/SocialIcons/index.tsx              | Source file apps/docs/src/components/SocialIcons/index.tsx was modified but no t |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/components/VideoGrid.tsx                      | Source file apps/docs/src/components/VideoGrid.tsx was modified but no test file |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/constants.ts                                  | Source file apps/docs/src/constants.ts was modified but no test file in the repo |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/theme/DocBreadcrumbs/Items/Home/index.tsx     | Source file apps/docs/src/theme/DocBreadcrumbs/Items/Home/index.tsx was modified |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/theme/DocBreadcrumbs/StructuredData/index.tsx | Source file apps/docs/src/theme/DocBreadcrumbs/StructuredData/index.tsx was modi |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/theme/DocBreadcrumbs/index.tsx                | Source file apps/docs/src/theme/DocBreadcrumbs/index.tsx was modified but no tes |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/theme/DocItem/Content/index.tsx               | Source file apps/docs/src/theme/DocItem/Content/index.tsx was modified but no te |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/theme/DocItem/index.js                        | Source file apps/docs/src/theme/DocItem/index.js was modified but no test file i |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/theme/Footer/Copyright/index.tsx              | Source file apps/docs/src/theme/Footer/Copyright/index.tsx was modified but no t |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/theme/Footer/Layout/index.tsx                 | Source file apps/docs/src/theme/Footer/Layout/index.tsx was modified but no test |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/theme/Footer/LinkItem/index.tsx               | Source file apps/docs/src/theme/Footer/LinkItem/index.tsx was modified but no te |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/theme/Footer/Links/MultiColumn/index.tsx      | Source file apps/docs/src/theme/Footer/Links/MultiColumn/index.tsx was modified  |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/theme/Footer/Links/Simple/index.tsx           | Source file apps/docs/src/theme/Footer/Links/Simple/index.tsx was modified but n |
+| 5     | warn     | no-op-fix | RooCodeInc/Roo-Code#12344 | apps/docs/src/theme/Footer/Links/index.tsx                  | Source file apps/docs/src/theme/Footer/Links/index.tsx was modified but no test  |

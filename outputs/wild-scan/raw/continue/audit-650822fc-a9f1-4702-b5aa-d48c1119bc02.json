@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-05-28T04:00:43.055Z",
+  "runId": "audit-650822fc-a9f1-4702-b5aa-d48c1119bc02",
+  "repo": "continue",
+  "mode": "advise",
+  "detectorSet": "default",
+  "wallTimeMs": 9233,
+  "result": {
+    "pass": true,
+    "findings": [
+      {
+        "category": "no-op-fix",
+        "severity": "warn",
+        "message": "Source file core/config/ConfigHandler.ts was modified but no test file in the repository imports it, directly or transitively. If this PR claimed to fix a failing test, the fix likely missed the failing code path.",
+        "location": {
+          "file": "core/config/ConfigHandler.ts",
+          "line": 1
+        },
+        "evidence": "(touched: core/config/ConfigHandler.ts, core/config/loadLocalAssistants.ts)"
+      },
+      {
+        "category": "no-op-fix",
+        "severity": "warn",
+        "message": "Source file core/config/loadLocalAssistants.ts was modified but no test file in the repository imports it, directly or transitively. If this PR claimed to fix a failing test, the fix likely missed the failing code path.",
+        "location": {
+          "file": "core/config/loadLocalAssistants.ts",
+          "line": 1
+        },
+        "evidence": "(touched: core/config/ConfigHandler.ts, core/config/loadLocalAssistants.ts)"
+      }
+    ],
+    "generatedAt": "2026-05-28T04:00:43.047Z",
+    "detectorVersions": {
+      "error-swallow": "2.0.0",
+      "mock-of-hallucination": "2.0.0",
+      "no-op-fix": "2.0.0",
+      "fake-refactor": "2.0.0",
+      "coverage-erosion": "1.1.0",
+      "test-relaxation": "1.1.0",
+      "assertion-strip": "1.0.0"
+    },
+    "detectorSet": "default",
+    "pr": {
+      "number": 11935,
+      "headSha": "8747c5f52821537c244da5fbb11834dea9d32bb0",
+      "baseSha": "d220a2e3702994bc1a6e0a4daed84da67cb1277e",
+      "title": "feat: add .continue/configs support",
+      "body": "## Summary\n- Adds `.continue/configs/` as a third directory (alongside `.continue/agents/` and `.continue/assistants/`) for loading local config profiles\n- YAML files placed in `.continue/configs/` (workspace or global) are now discovered, watched, and loaded as local profiles\n\n## Changes\n- `loadLocalAssistants.ts`: Updated `isContinueConfigRelatedUri` and `isContinueAgentConfigFile` to recognize `.continue/configs/`\n- `ConfigHandler.ts`: Added loading of definition files from the `configs` subdirectory in `getLocalProfiles`\n\n## Test plan\n- [ ] Place a YAML config file in `.continue/configs/` and verify it appears as a selectable profile\n- [ ] Verify file creation/deletion in `.continue/configs/` triggers config reload\n- [ ] Verify existing `.continue/agents/` and `.continue/assistants/` directories still work\n\n<!-- This is an auto-generated description by cubic. -->\n---\n## Summary by cubic\nAdds `.continue/configs/` as a third config directory. Loading across `assistants`, `agents`, and `configs` now runs in parallel via `Promise.all` for faster discovery with proper error propagation.\n\n- **New Features**\n  - `ConfigHandler.getLocalProfiles` now loads definition files from `.continue/configs/`.\n  - URI helpers updated to recognize and watch `.continue/configs/` files.\n\n<sup>Written for commit 8747c5f52821537c244da5fbb11834dea9d32bb0. Summary will update on new commits.</sup>\n\n<!-- End of auto-generated description by cubic. -->\n\n",
+      "author": "RomneyDa",
+      "headRef": "configs-support",
+      "repository": "continuedev/continue"
+    }
+  },
+  "pr": {
+    "number": 11935,
+    "headSha": "8747c5f52821537c244da5fbb11834dea9d32bb0",
+    "baseSha": "d220a2e3702994bc1a6e0a4daed84da67cb1277e",
+    "title": "feat: add .continue/configs support",
+    "body": "## Summary\n- Adds `.continue/configs/` as a third directory (alongside `.continue/agents/` and `.continue/assistants/`) for loading local config profiles\n- YAML files placed in `.continue/configs/` (workspace or global) are now discovered, watched, and loaded as local profiles\n\n## Changes\n- `loadLocalAssistants.ts`: Updated `isContinueConfigRelatedUri` and `isContinueAgentConfigFile` to recognize `.continue/configs/`\n- `ConfigHandler.ts`: Added loading of definition files from the `configs` subdirectory in `getLocalProfiles`\n\n## Test plan\n- [ ] Place a YAML config file in `.continue/configs/` and verify it appears as a selectable profile\n- [ ] Verify file creation/deletion in `.continue/configs/` triggers config reload\n- [ ] Verify existing `.continue/agents/` and `.continue/assistants/` directories still work\n\n<!-- This is an auto-generated description by cubic. -->\n---\n## Summary by cubic\nAdds `.continue/configs/` as a third config directory. Loading across `assistants`, `agents`, and `configs` now runs in parallel via `Promise.all` for faster discovery with proper error propagation.\n\n- **New Features**\n  - `ConfigHandler.getLocalProfiles` now loads definition files from `.continue/configs/`.\n  - URI helpers updated to recognize and watch `.continue/configs/` files.\n\n<sup>Written for commit 8747c5f52821537c244da5fbb11834dea9d32bb0. Summary will update on new commits.</sup>\n\n<!-- End of auto-generated description by cubic. -->\n\n",
+    "author": "RomneyDa",
+    "headRef": "configs-support",
+    "repository": "continuedev/continue"
+  }
+}

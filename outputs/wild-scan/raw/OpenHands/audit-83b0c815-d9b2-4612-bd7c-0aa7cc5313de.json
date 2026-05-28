@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-05-28T04:01:06.333Z",
+  "runId": "audit-83b0c815-d9b2-4612-bd7c-0aa7cc5313de",
+  "repo": "OpenHands",
+  "mode": "advise",
+  "detectorSet": "default",
+  "wallTimeMs": 7004,
+  "result": {
+    "pass": true,
+    "findings": [],
+    "generatedAt": "2026-05-28T04:01:06.331Z",
+    "detectorVersions": {
+      "error-swallow": "2.0.0",
+      "mock-of-hallucination": "2.0.0",
+      "no-op-fix": "2.0.0",
+      "fake-refactor": "2.0.0",
+      "coverage-erosion": "1.1.0",
+      "test-relaxation": "1.1.0",
+      "assertion-strip": "1.0.0"
+    },
+    "detectorSet": "default",
+    "agent": {
+      "vendor": "openhands",
+      "confidence": "high",
+      "source": "pr-body-marker"
+    },
+    "pr": {
+      "number": 14570,
+      "headSha": "02763976056d8dd8f0c83f020bd7e7004cd398b3",
+      "baseSha": "ae8caca41aef56e748d8db5f91e4527a8aae4098",
+      "title": "Clarify Jira DC repository access prompt",
+      "body": "HUMAN:\nThis copy update comes from R02 Jira DC shim testing: the non-installer account link and webhook delivery worked, but the linked user did not have access to the repo already named on the issue, so OpenHands asked only for a repo name.\n\n- [x] A human has tested the underlying Jira DC flow on R02; this PR only updates the fallback copy.\n\nAGENT:\n\n## Why\n\nWhen Jira DC cannot infer a usable repository from the issue/comment, the fallback comment should distinguish between missing repo context, inaccessible mentioned repositories, and ambiguous repository matches. Jira Cloud already handles these cases more precisely, so this brings Jira DC closer to the Jira Cloud behavior while clarifying that repo access is checked through the linked OpenHands account.\n\n## Summary\n\n- Split the Jira DC repository-selection fallback into Jira Cloud-style cases for missing, inaccessible, and ambiguous repositories.\n- Include the mentioned repository name when the invoking OpenHands user cannot access it.\n- Add focused Jira DC manager unit coverage for the inaccessible-repository message.\n\n## How to Test\n\n- `python3 -m py_compile enterprise/integrations/jira_dc/jira_dc_manager.py enterprise/tests/unit/integrations/jira_dc/test_jira_dc_manager.py`\n- `uv run ruff check enterprise/integrations/jira_dc/jira_dc_manager.py enterprise/tests/unit/integrations/jira_dc/test_jira_dc_manager.py`\n- `PYTHONPATH=enterprise:. uv run --with python-keycloak --with limits --with coredis pytest enterprise/tests/unit/integrations/jira_dc/test_jira_dc_manager.py -q`\n\n---\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-0276397   docker.openhands.dev/openhands/openhands:0276397\n```",
+      "author": "ak684",
+      "headRef": "alona/jira-dc-repo-selection-copy",
+      "repository": "All-Hands-AI/OpenHands"
+    }
+  },
+  "pr": {
+    "number": 14570,
+    "headSha": "02763976056d8dd8f0c83f020bd7e7004cd398b3",
+    "baseSha": "ae8caca41aef56e748d8db5f91e4527a8aae4098",
+    "title": "Clarify Jira DC repository access prompt",
+    "body": "HUMAN:\nThis copy update comes from R02 Jira DC shim testing: the non-installer account link and webhook delivery worked, but the linked user did not have access to the repo already named on the issue, so OpenHands asked only for a repo name.\n\n- [x] A human has tested the underlying Jira DC flow on R02; this PR only updates the fallback copy.\n\nAGENT:\n\n## Why\n\nWhen Jira DC cannot infer a usable repository from the issue/comment, the fallback comment should distinguish between missing repo context, inaccessible mentioned repositories, and ambiguous repository matches. Jira Cloud already handles these cases more precisely, so this brings Jira DC closer to the Jira Cloud behavior while clarifying that repo access is checked through the linked OpenHands account.\n\n## Summary\n\n- Split the Jira DC repository-selection fallback into Jira Cloud-style cases for missing, inaccessible, and ambiguous repositories.\n- Include the mentioned repository name when the invoking OpenHands user cannot access it.\n- Add focused Jira DC manager unit coverage for the inaccessible-repository message.\n\n## How to Test\n\n- `python3 -m py_compile enterprise/integrations/jira_dc/jira_dc_manager.py enterprise/tests/unit/integrations/jira_dc/test_jira_dc_manager.py`\n- `uv run ruff check enterprise/integrations/jira_dc/jira_dc_manager.py enterprise/tests/unit/integrations/jira_dc/test_jira_dc_manager.py`\n- `PYTHONPATH=enterprise:. uv run --with python-keycloak --with limits --with coredis pytest enterprise/tests/unit/integrations/jira_dc/test_jira_dc_manager.py -q`\n\n---\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-0276397   docker.openhands.dev/openhands/openhands:0276397\n```",
+    "author": "ak684",
+    "headRef": "alona/jira-dc-repo-selection-copy",
+    "repository": "All-Hands-AI/OpenHands"
+  }
+}
