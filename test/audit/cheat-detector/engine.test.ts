@@ -79,10 +79,13 @@ describe('cheat-detector engine', () => {
     const result = await runCheatDetectors({ unifiedDiff: CLEAN_DIFF, repoRoot: repo });
     const names = Object.keys(result.detectorVersions).sort();
     assert.deepEqual(names, [
+      'assertion-strip',
+      'coverage-erosion',
       'error-swallow',
       'fake-refactor',
       'mock-of-hallucination',
       'no-op-fix',
+      'test-relaxation',
     ].sort());
     assert.equal(result.detectorSet, 'default');
   });
