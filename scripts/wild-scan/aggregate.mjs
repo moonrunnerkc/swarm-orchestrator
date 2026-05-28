@@ -48,7 +48,7 @@ function classify(record) {
   const pr = r.result?.pr ?? r.pr ?? {};
   const repoLabel = r.repo ?? 'unknown';
   const repoFull = pr.repository ?? repoLabel;
-  const agent = r.result?.aiAgent ?? r.aiAgent ?? null;
+  const agent = r.result?.agent ?? r.agent ?? null;
 
   // Severity buckets (counts only non-info if available).
   const byCategory = {};
