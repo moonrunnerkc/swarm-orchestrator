@@ -25,6 +25,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { getLogger } from '../../logger';
 import type { IntentSeverityPolicy } from './pr-intent';
 
 const CONFIG_FILE = path.join('.swarm', 'audit-config.yaml');
@@ -46,7 +47,31 @@ export function loadAuditConfig(repoRoot: string): AuditConfig {
   const text = fs.readFileSync(file, 'utf8');
   const excludePaths = parseExcludePaths(text);
   const intentSeverityPolicy = parseIntentSeverityPolicy(text);
+  warnIfUnrecognized(file, text, excludePaths);
   return { excludePaths, intentSeverityPolicy };
+}
+
+// Surface a typo or indentation slip in `.swarm/audit-config.yaml`
+// instead of silently returning the default. Without this, the user
+// edits the file, the parser fails to recognize anything, and the
+// audit runs as if the file weren't there — the worst kind of silent
+// failure for a config that exists to suppress findings.
+function warnIfUnrecognized(
+  file: string,
+  text: string,
+  excludePaths: readonly string[],
+): void {
+  if (excludePaths.length > 0) return;
+  if (/^\s*intentSeverityPolicy\s*:/m.test(text)) return;
+  const hasContent = text
+    .split(/\r?\n/)
+    .some((line) => line.replace(/#.*$/, '').trim().length > 0);
+  if (!hasContent) return;
+  getLogger('audit-config').warn(
+    `audit-config: ${file} has content but no recognized fields were parsed. ` +
+      `Supported keys: excludePaths (list of glob strings), intentSeverityPolicy ` +
+      `(strict|lenient|off). See docs/audit-config.md.`,
+  );
 }
 
 // Parses the optional `intentSeverityPolicy:` scalar. Accepts
