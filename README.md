@@ -158,6 +158,11 @@ Four in the default set, six in experimental. Registered in
 
 Each detector lives in its own file under [`src/audit/cheat-detector/`](src/audit/cheat-detector/).
 
+Per-repo configuration in `.swarm/audit-config.yaml`: `excludePaths` exempts
+globs from detection, `intentSeverityPolicy` (`strict` | `lenient` | `off`)
+controls the PR-intent severity-upgrade layer. See
+[`docs/audit-config.md`](docs/audit-config.md).
+
 ## Use as a GitHub Action
 
 ```yaml
