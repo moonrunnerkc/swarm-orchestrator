@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getLogger } from '../../logger';
 import { readContract } from '../../contract/serializer';
+import { findPatchesSource } from '../../session/auto-discover';
 import {
   HashChainedLedger,
   ChainTamperedError,
@@ -123,7 +124,12 @@ export async function handleResume(
   try {
     flags = parseResumeFlags(argv);
   } catch (err) {
-    logger.error((err as Error).message);
+    const msg = (err as Error).message;
+    // parseResumeFlags throws 'help requested' as a control-flow signal
+    // after printing the usage text. Re-printing it from the catch
+    // branch would render --help twice; bail with exit 0 instead.
+    if (msg === 'help requested') return 0;
+    logger.error(msg);
     printResumeUsage();
     return 1;
   }
@@ -543,6 +549,27 @@ export function parseResumeFlags(argv: string[]): ResumeFlags {
     throw new Error(`too many positionals: ${positionals.join(' ')}`);
   }
   flags.runId = positionals[0] ?? '';
+
+  // Auto-discover a patches source when none was supplied explicitly or
+  // via env. Mirrors the behavior of `swarm run` so that the documented
+  // flow `swarm init` → `swarm run --goal` → `swarm resume <run-id>`
+  // works without re-specifying --external-patches-queue on resume.
+  if (
+    flags.externalPatchesDir === null &&
+    flags.externalPatchesQueue === null &&
+    !flags.externalPatchesStdin
+  ) {
+    const autoPatches = findPatchesSource(repoRoot);
+    if (autoPatches !== undefined) {
+      const stat = fs.statSync(autoPatches);
+      if (stat.isDirectory()) {
+        flags.externalPatchesDir = autoPatches;
+      } else {
+        flags.externalPatchesQueue = autoPatches;
+      }
+    }
+  }
+
   return flags;
 }
 

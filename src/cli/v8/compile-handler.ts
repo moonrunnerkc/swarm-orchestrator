@@ -8,6 +8,7 @@ import {
 } from '../../contract/compiler';
 import { writeContract } from '../../contract/serializer';
 import { runApproval, ContractRejectedError } from '../../contract/approval';
+import { findContractFile } from '../../contract/auto-discover';
 import { type Extractor } from '../../contract/extractor/types';
 import {
   buildExtractor as buildExtractorFromFactory,
@@ -58,6 +59,8 @@ interface CompileFlags {
    * default.
    */
   flagsSource: { extractorFromFlag: boolean };
+  /** Set when `--help`/`-h` was passed; handler short-circuits with exit 0. */
+  helpRequested: boolean;
 }
 
 /** Test seam: lets tests inject a custom extractor without touching env. */
@@ -86,6 +89,7 @@ export async function handleCompile(
     printCompileUsage();
     return 1;
   }
+  if (flags.helpRequested) return 0;
 
   const repoContext = discoverRepoContext(path.resolve(flags.repoRoot));
 
@@ -107,6 +111,25 @@ export async function handleCompile(
   } catch (err) {
     logger.error((err as Error).message);
     return 1;
+  }
+
+  // Auto-discover contract.yaml in the repo root when the deterministic
+  // extractor would otherwise have nothing to compile from. Mirrors the
+  // behavior of `swarm run --goal` so that the documented flow `swarm
+  // init` → `swarm compile <goal>` works without an explicit
+  // `--contract-file`. Only applies to the deterministic extractor; the
+  // anthropic and local extractors generate the contract from the goal
+  // text alone and do not need a baseline file.
+  if (
+    flags.extractor === 'deterministic' &&
+    flags.contractFile === null &&
+    flags.contractModule === null
+  ) {
+    const detected = findContractFile(path.resolve(flags.repoRoot));
+    if (detected !== undefined) {
+      flags.contractFile = detected;
+      logger.debug(`auto-detected contract file at ${detected}`);
+    }
   }
 
   let extractor: Extractor;
@@ -224,9 +247,9 @@ const COMPILE_SCHEMA: ParseArgsOptions = {
  */
 export function parseCompileFlags(argv: string[]): CompileFlags {
   const { values, positionals } = runParseArgs(argv, COMPILE_SCHEMA);
-  if (readBoolean(values, 'help')) {
+  const helpRequested = readBoolean(values, 'help');
+  if (helpRequested) {
     printCompileUsage();
-    throw new Error('help requested');
   }
 
   const repoRoot = readString(values, 'repo-root') ?? process.cwd();
@@ -247,7 +270,10 @@ export function parseCompileFlags(argv: string[]): CompileFlags {
     apiKey: readString(values, 'api-key') ?? null,
     local: buildLocalProviderFlagValues(values, (raw) => path.resolve(repoRoot, raw)),
     flagsSource: { extractorFromFlag: extractorRaw !== undefined },
+    helpRequested,
   };
+
+  if (helpRequested) return flags;
 
   if (positionals.length === 0) {
     throw new Error('missing goal: usage `swarm v8 compile <goal> [flags]`');
