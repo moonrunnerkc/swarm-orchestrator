@@ -34,6 +34,28 @@ describe('audit / pr-source / detectAgent', () => {
     assert.equal(att?.version, '4.7');
   });
 
+  it('extracts a version from a Co-Authored-By trailer carrying the model', () => {
+    const att = detectAgent({
+      commitMessages: ['fix: thing\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>'],
+    });
+    assert.equal(att?.vendor, 'claude-code');
+    assert.equal(att?.version, '4.7');
+  });
+
+  it('does not invent a version from an unrelated mention of an Anthropic model', () => {
+    // Branch-name attribution still fires (medium confidence), but the
+    // body mentions "Sonnet 4.6" in unrelated context. Earlier the
+    // extractor would happily report version=4.6; now it requires a
+    // "Claude" mention within ~40 chars of the model name.
+    const att = detectAgent({
+      headRef: 'claude/feature-x',
+      prBody: 'Refactor of pricing logic. We previously benchmarked against Sonnet 4.6 for context only.',
+    });
+    assert.equal(att?.vendor, 'claude-code');
+    assert.equal(att?.confidence, 'medium');
+    assert.equal(att?.version, undefined);
+  });
+
   it('falls back to medium confidence on branch-name pattern', () => {
     const att = detectAgent({ headRef: 'cursor/feature-add-foo' });
     assert.equal(att?.vendor, 'cursor');
