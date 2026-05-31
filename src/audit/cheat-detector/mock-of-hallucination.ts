@@ -32,6 +32,11 @@ import type { Finding, Severity } from '../types';
 import { isCommentOnlyLine, walkHunks } from './diff-walker';
 import { collectKnownDependencies } from './manifests';
 import {
+  collectInternalRoots,
+  collectInternalRootsFromFiles,
+  resolvesToInternalRoot,
+} from './internal-roots';
+import {
   defaultRegistryProbe,
   extractUsesRefs,
   type ProbeQuery,
@@ -107,6 +112,25 @@ export function buildMockOfHallucinationDetector(
       const findings: Finding[] = [];
       const knownDeps = collectKnownDependencies(ctx.repoRoot);
       const knownLower = lowerSet(knownDeps);
+      // The wild-PR scan surfaced a class of false positive on
+      // monorepos with subproject layouts: a Python test that mocks
+      // `integrations.jira_dc.foo` was flagged as a hallucinated
+      // package because `integrations` is not a pypi name — it's an
+      // internal directory in the repo. We resolve a mock target as
+      // "internal" when its top-level segment matches a real
+      // directory under repoRoot.
+      // Union of two sources: directories on disk under repoRoot (the
+      // target repo for --repo-root and sidecar-backed --pr audits) and
+      // directories named by the diff itself (the only reliable source
+      // when repoRoot points elsewhere, e.g. the corpus scorer or a
+      // bare --diff-file run). Without the diff-derived set, an internal
+      // mock target like `routers.servers.os.makedirs` is misread as a
+      // hallucinated pypi package whenever the filesystem is not the
+      // PR's repo.
+      const internalRoots = collectInternalRoots(ctx.repoRoot);
+      for (const root of collectInternalRootsFromFiles(ctx.files)) {
+        internalRoots.add(root);
+      }
       const hunks = walkHunks(ctx.files);
       for (const hunk of hunks) {
         for (const addition of hunk.added) {
@@ -114,6 +138,7 @@ export function buildMockOfHallucinationDetector(
           const claimed = extractMockTarget(addition.content);
           if (claimed === undefined) continue;
           if (isLocalImport(claimed)) continue;
+          if (resolvesToInternalRoot(claimed, internalRoots)) continue;
           if (resolvesAgainst(claimed, knownDeps, knownLower)) continue;
           const probeResult = probe.query(toMockProbeQuery(claimed));
           if (probeResult instanceof Promise) {
@@ -198,17 +223,24 @@ function buildGhaFinding(
   probeResult: ProbeResult,
 ): Finding | undefined {
   if (probeResult.verdict === 'known') return undefined;
-  const severity: Severity =
-    probeResult.verdict === 'unknown-version-of-known-package' ? 'block' : 'info';
+  // Both remaining verdicts are advisory only. Offline, a version past
+  // the pinned allowlist ceiling cannot be told apart from a real
+  // newer release: the wild-PR scan flagged `actions/checkout@v5` and
+  // `actions/setup-python@v6` as blocking hallucinations when both are
+  // current first-party actions. A hardcoded version ceiling goes stale
+  // the moment upstream ships a release, so it must not gate. The
+  // signal is preserved at `info` for a reviewer (or an opt-in online
+  // probe) to confirm.
   const message =
     probeResult.verdict === 'unknown-version-of-known-package'
       ? `GitHub Actions reference "${ref.action}@${ref.version}" is past the ` +
-        `highest known version. ${probeResult.diagnostic}.`
+        `highest version in the offline allowlist; it may be a real newer ` +
+        `release or a typo. ${probeResult.diagnostic}.`
       : `GitHub Actions reference "${ref.action}@${ref.version ?? '<no version>'}" ` +
         `is not in the offline allowlist. ${probeResult.diagnostic}.`;
   return {
     category: 'mock-of-hallucination',
-    severity,
+    severity: 'info',
     message,
     location: { file: ref.file, line: ref.line },
     evidence: `+ ${ref.raw}`,

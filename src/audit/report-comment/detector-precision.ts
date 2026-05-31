@@ -42,62 +42,71 @@ export interface DetectorPrecision {
  * retired detectors follow so the table still answers the question
  * "what was the measured precision when we retired this?".
  */
+const CORPUS = 'real-corpus (205 PRs, AI-labeled, pending human re-label)';
+const MEASURED_AT = '2026-05-31';
+
+// Deterministic (judge-off) scored path from
+// `benchmarks/real-corpus/scores/latest.json`, re-measured after the
+// v10.4 verification stage (internal-roots-from-diff and action-version
+// demotion on mock-of-hallucination, plus the refuters). error-swallow
+// is the only detector with a true positive on this corpus; the rest
+// are advisory candidate generators whose blocks are gated by the judge
+// confirmation stage. The CI policy guard keeps this aligned with the
+// scores snapshot.
 const TABLE: readonly DetectorPrecision[] = [
-  // Active in the default set as of v10.2-advisory.
   {
     name: 'error-swallow',
-    measuredVersion: '1.1.0',
+    measuredVersion: '2.0.0',
     precision: 0.188,
     recall: 1.0,
     firingCount: 16,
-    corpus: 'real-corpus-v10.1 (205 hand-labeled)',
-    lastMeasuredAt: '2026-05-24',
+    corpus: CORPUS,
+    lastMeasuredAt: MEASURED_AT,
   },
   {
     name: 'mock-of-hallucination',
-    measuredVersion: '1.1.0',
+    measuredVersion: '2.0.0',
     precision: 0.0,
     recall: 0.0,
-    firingCount: 13,
-    corpus: 'real-corpus-v10.1 (205 hand-labeled)',
-    lastMeasuredAt: '2026-05-24',
+    firingCount: 3,
+    corpus: CORPUS,
+    lastMeasuredAt: MEASURED_AT,
   },
   {
     name: 'no-op-fix',
-    measuredVersion: '1.1.0',
+    measuredVersion: '2.0.0',
     precision: 0.0,
     recall: 0.0,
-    firingCount: 12,
-    corpus: 'real-corpus-v10.1 (205 hand-labeled)',
-    lastMeasuredAt: '2026-05-24',
+    firingCount: 9,
+    corpus: CORPUS,
+    lastMeasuredAt: MEASURED_AT,
   },
   {
     name: 'fake-refactor',
-    measuredVersion: '1.0.0',
+    measuredVersion: '2.0.0',
     precision: 0.0,
     recall: null,
-    firingCount: 4,
-    corpus: 'real-corpus-v10.1 (205 hand-labeled)',
-    lastMeasuredAt: '2026-05-24',
+    firingCount: 2,
+    corpus: CORPUS,
+    lastMeasuredAt: MEASURED_AT,
   },
-  // Retired to experimental in v10.2-advisory.
   {
     name: 'assertion-strip',
     measuredVersion: '1.0.0',
     precision: 0.0,
     recall: null,
     firingCount: 5,
-    corpus: 'real-corpus-v10.1 (205 hand-labeled)',
-    lastMeasuredAt: '2026-05-24',
+    corpus: CORPUS,
+    lastMeasuredAt: MEASURED_AT,
   },
   {
     name: 'coverage-erosion',
-    measuredVersion: '1.0.0',
+    measuredVersion: '1.1.0',
     precision: 0.0,
     recall: null,
     firingCount: 4,
-    corpus: 'real-corpus-v10.1 (205 hand-labeled)',
-    lastMeasuredAt: '2026-05-24',
+    corpus: CORPUS,
+    lastMeasuredAt: MEASURED_AT,
   },
   {
     name: 'test-relaxation',
@@ -105,8 +114,8 @@ const TABLE: readonly DetectorPrecision[] = [
     precision: 0.0,
     recall: null,
     firingCount: 4,
-    corpus: 'real-corpus-v10.1 (205 hand-labeled)',
-    lastMeasuredAt: '2026-05-24',
+    corpus: CORPUS,
+    lastMeasuredAt: MEASURED_AT,
   },
   {
     name: 'comment-only-fix',
@@ -114,8 +123,8 @@ const TABLE: readonly DetectorPrecision[] = [
     precision: null,
     recall: 0.0,
     firingCount: 0,
-    corpus: 'real-corpus-v10.1 (205 hand-labeled)',
-    lastMeasuredAt: '2026-05-24',
+    corpus: CORPUS,
+    lastMeasuredAt: MEASURED_AT,
   },
   {
     name: 'exception-rethrow-lost-context',
@@ -123,8 +132,8 @@ const TABLE: readonly DetectorPrecision[] = [
     precision: null,
     recall: null,
     firingCount: 0,
-    corpus: 'real-corpus-v10.1 (205 hand-labeled)',
-    lastMeasuredAt: '2026-05-24',
+    corpus: CORPUS,
+    lastMeasuredAt: MEASURED_AT,
   },
   {
     name: 'dead-branch-insertion',
@@ -132,8 +141,8 @@ const TABLE: readonly DetectorPrecision[] = [
     precision: null,
     recall: null,
     firingCount: 0,
-    corpus: 'real-corpus-v10.1 (205 hand-labeled)',
-    lastMeasuredAt: '2026-05-24',
+    corpus: CORPUS,
+    lastMeasuredAt: MEASURED_AT,
   },
 ];
 

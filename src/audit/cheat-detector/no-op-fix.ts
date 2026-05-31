@@ -36,7 +36,7 @@
 import * as path from 'path';
 import type { Detector, DetectorContext } from './detector-types';
 import type { Finding } from '../types';
-import { filePath, fileKind, isTestFile, shouldInspect } from './diff-walker';
+import { filePath, fileKind, isPlausiblyTestReachable, isTestFile, shouldInspect } from './diff-walker';
 import { reachableSourceFiles } from './test-import-closure';
 import {
   collectSymbolsFromAddedLines,
@@ -66,8 +66,18 @@ function runDeterministic(ctx: DetectorContext): Finding[] {
     if (!shouldInspect(file)) continue;
     if (fileKind(file) === 'delete') continue;
     const p = filePath(file);
-    if (isTestFile(p)) testTouched.push(p);
-    else sourceTouched.push(p);
+    if (isTestFile(p)) {
+      testTouched.push(p);
+      continue;
+    }
+    // The whole detector asks "is this source file reached by any
+    // test?" For files outside the test-reachable file class
+    // (config, lockfiles, storybook stories, LICENSE), the answer is
+    // no by definition, and the finding is just noise. The wild-PR
+    // run showed a single docs-shaped PR producing 300+ findings of
+    // this exact shape.
+    if (!isPlausiblyTestReachable(p)) continue;
+    sourceTouched.push(p);
   }
 
   if (sourceTouched.length === 0 && testTouched.length === 0) return [];

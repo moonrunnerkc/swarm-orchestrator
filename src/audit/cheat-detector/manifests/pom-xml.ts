@@ -8,24 +8,24 @@
 // runtime.
 
 import * as fs from 'fs';
-import * as path from 'path';
+import { findManifestFiles } from './find-manifests';
 
 const GROUP_RE = /<groupId>\s*([^<\s]+)\s*<\/groupId>/;
 const ARTIFACT_RE = /<artifactId>\s*([^<\s]+)\s*<\/artifactId>/;
 
 export function readDependencies(repoRoot: string): Set<string> {
   const out = new Set<string>();
-  const file = path.join(repoRoot, 'pom.xml');
-  if (!fs.existsSync(file)) return out;
-  const text = fs.readFileSync(file, 'utf8');
-  for (const block of extractDependencyBlocks(text)) {
-    const group = block.match(GROUP_RE)?.[1];
-    const artifact = block.match(ARTIFACT_RE)?.[1];
-    if (artifact !== undefined && artifact.length > 0) {
-      out.add(artifact);
-      if (group !== undefined && group.length > 0) {
-        out.add(`${group}:${artifact}`);
-        out.add(group);
+  for (const file of findManifestFiles(repoRoot, 'pom.xml')) {
+    const text = fs.readFileSync(file, 'utf8');
+    for (const block of extractDependencyBlocks(text)) {
+      const group = block.match(GROUP_RE)?.[1];
+      const artifact = block.match(ARTIFACT_RE)?.[1];
+      if (artifact !== undefined && artifact.length > 0) {
+        out.add(artifact);
+        if (group !== undefined && group.length > 0) {
+          out.add(`${group}:${artifact}`);
+          out.add(group);
+        }
       }
     }
   }

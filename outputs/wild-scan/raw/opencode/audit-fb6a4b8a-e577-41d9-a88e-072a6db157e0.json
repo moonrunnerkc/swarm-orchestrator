@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-05-28T03:57:32.274Z",
+  "runId": "audit-fb6a4b8a-e577-41d9-a88e-072a6db157e0",
+  "repo": "opencode",
+  "mode": "advise",
+  "detectorSet": "default",
+  "wallTimeMs": 12895,
+  "result": {
+    "pass": true,
+    "findings": [
+      {
+        "category": "no-op-fix",
+        "severity": "warn",
+        "message": "Source file packages/console/app/src/routes/go/index.tsx was modified but no test file in the repository imports it, directly or transitively. If this PR claimed to fix a failing test, the fix likely missed the failing code path.",
+        "location": {
+          "file": "packages/console/app/src/routes/go/index.tsx",
+          "line": 1
+        },
+        "evidence": "(touched: packages/console/app/src/routes/go/index.tsx)"
+      }
+    ],
+    "generatedAt": "2026-05-28T03:57:32.267Z",
+    "detectorVersions": {
+      "error-swallow": "2.0.0",
+      "mock-of-hallucination": "2.0.0",
+      "no-op-fix": "2.0.0",
+      "fake-refactor": "2.0.0",
+      "coverage-erosion": "1.1.0",
+      "test-relaxation": "1.1.0",
+      "assertion-strip": "1.0.0"
+    },
+    "detectorSet": "default",
+    "pr": {
+      "number": 29598,
+      "headSha": "63cae42a43d26645a510834c4f21c3969d2a93bc",
+      "baseSha": "94f2ed1b84eabb3e0c5af3ed63c3f1a556604eb9",
+      "title": "docs(go): update MiMo",
+      "body": "## Summary\n- update MiMo-V2.5-Pro and add MiMo-V2.5 in the Go limits graph\n- align MiMo request estimates with the corresponding DeepSeek pricing while keeping MiMo token patterns slightly higher\n- remove the obsolete MiMo-V2.5 context-tier label and sync all localized Go docs\n\n## Validation\n- `git diff --check`\n- `bun typecheck` from `packages/console/app`\n- `bun run build` from `packages/web`\n- push hook: `bun turbo typecheck`\n- verified MiMo estimates remain below their paired DeepSeek estimates\n\n## Operational Follow-up\n- Updated `frank` Go model secret configuration separately so both MiMo models copy their paired DeepSeek single-tier cost settings and no longer have `cost200K`.\n- `production` Go model secrets are intentionally not changed by this PR and must be updated before publishing these public estimates.",
+      "author": "MrMushrooooom",
+      "headRef": "fix/go-mimo-request-estimates",
+      "repository": "sst/opencode"
+    }
+  },
+  "pr": {
+    "number": 29598,
+    "headSha": "63cae42a43d26645a510834c4f21c3969d2a93bc",
+    "baseSha": "94f2ed1b84eabb3e0c5af3ed63c3f1a556604eb9",
+    "title": "docs(go): update MiMo",
+    "body": "## Summary\n- update MiMo-V2.5-Pro and add MiMo-V2.5 in the Go limits graph\n- align MiMo request estimates with the corresponding DeepSeek pricing while keeping MiMo token patterns slightly higher\n- remove the obsolete MiMo-V2.5 context-tier label and sync all localized Go docs\n\n## Validation\n- `git diff --check`\n- `bun typecheck` from `packages/console/app`\n- `bun run build` from `packages/web`\n- push hook: `bun turbo typecheck`\n- verified MiMo estimates remain below their paired DeepSeek estimates\n\n## Operational Follow-up\n- Updated `frank` Go model secret configuration separately so both MiMo models copy their paired DeepSeek single-tier cost settings and no longer have `cost200K`.\n- `production` Go model secrets are intentionally not changed by this PR and must be updated before publishing these public estimates.",
+    "author": "MrMushrooooom",
+    "headRef": "fix/go-mimo-request-estimates",
+    "repository": "sst/opencode"
+  }
+}

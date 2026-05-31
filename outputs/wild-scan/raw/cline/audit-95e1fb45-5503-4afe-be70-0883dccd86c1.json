@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-05-28T03:58:53.146Z",
+  "runId": "audit-95e1fb45-5503-4afe-be70-0883dccd86c1",
+  "repo": "cline",
+  "mode": "advise",
+  "detectorSet": "default",
+  "wallTimeMs": 7013,
+  "result": {
+    "pass": true,
+    "findings": [],
+    "generatedAt": "2026-05-28T03:58:53.140Z",
+    "detectorVersions": {
+      "error-swallow": "2.0.0",
+      "mock-of-hallucination": "2.0.0",
+      "no-op-fix": "2.0.0",
+      "fake-refactor": "2.0.0",
+      "coverage-erosion": "1.1.0",
+      "test-relaxation": "1.1.0",
+      "assertion-strip": "1.0.0"
+    },
+    "detectorSet": "default",
+    "pr": {
+      "number": 11079,
+      "headSha": "7078c5e0f9bd6b8c98bd2ad96b008753de939dbc",
+      "baseSha": "49e8c1b324ce9be2c59802388f6b379171e0c814",
+      "title": "fix(vscode): show Qwen 3.7 Max cache support",
+      "body": "### Related Issue\n\n**Issue:** #XXXX\n\n### Description\n\nFixes Qwen3.7 Max prompt-cache reporting for the VSCode Cline provider path.\n\nCline's model endpoint exposes `qwen/qwen3.7-max` as `Qwen: Qwen3.7 Max` and includes cache-read pricing, but the extension still marked it as not prompt-cache capable because Cline model metadata only enabled prompt caching for hardcoded provider families. That made the model details/UI say prompt caching was unsupported even though the live Cline route returns cache reads.\n\nThis PR:\n\n- marks Cline models as prompt-cache capable when Cline's model API returns cache read or write pricing\n- adds `qwen/qwen3.7-max` to the OpenRouter-format cache-control model set used by the Cline provider request path\n- keeps the selected/display model ID as `qwen/qwen3.7-max`; no Cline provider alias is used\n\nThe Cline backend currently reports Qwen3.7 Max cache reads, not cache writes, on this route. That matches the Cline model API pricing, which has `input_cache_read` but no `input_cache_write` for `qwen/qwen3.7-max`.\n\n### Test Procedure\n\n- Verified Cline model metadata for `qwen/qwen3.7-max` returns cache-read pricing (`input_cache_read: 0.00000025`) and no cache-write pricing.\n- Ran live Cline provider probes for `qwen/qwen3.7-max`:\n  - no `cache_control`: turn 1 `cachedTokens=0`, turn 2 `cachedTokens=10880`\n  - with `cache_control`: turn 1 `cachedTokens=0`, turn 2 `cachedTokens=10880`\n- Ran live VSCode `ClineHandler` path with selected model `qwen/qwen3.7-max`:\n  - turn 1: `cacheWriteTokens=0`, `cacheReadTokens=0`, `inputTokens=11789`, `outputTokens=36`\n  - turn 2: `cacheWriteTokens=0`, `cacheReadTokens=10880`, `inputTokens=909`, `outputTokens=50`\n- Compared raw OpenRouter and Vercel Qwen3.7 Max routes; those providers report explicit cache writes and reads with `cache_control`, while the Cline route reports read hits only.\n- Ran focused unit tests from `apps/vscode`:\n  - `TS_NODE_PROJECT=./tsconfig.unit-test.json npx mocha --no-config --require ts-node/register --require source-map-support/register --require ./src/test/requires.ts src/core/controller/models/__tests__/refreshClineModels.test.ts src/core/api/transform/__tests__/openrouter-stream.test.ts src/core/api/providers/__tests__/cline.test.ts --exit`\n  - result: `11 passing`\n- Ran `npm run compile` from `apps/vscode`, including protobuf generation, type checks, lint, proto lint, and esbuild.\n\n### Type of Change\n\n-   [x] 🐛 Bug fix (non-breaking change which fixes an issue)\n-   [ ] ✨ New feature (non-breaking change which adds functionality)\n-   [ ] 💥 Breaking change (fix or feature that would cause existing functionality to not work as expected)\n-   [ ] ♻️ Refactor Changes\n-   [ ] 💅 Cosmetic Changes\n-   [ ] 📚 Documentation update\n-   [ ] 🏃 Workflow Changes\n\n### Pre-flight Checklist\n\n-   [x] Changes are limited to a single feature, bugfix or chore (split larger changes into separate PRs)\n-   [x] Tests are passing (`npm test`) and code is formatted and linted (`npm run format && npm run lint`)\n-   [x] I have reviewed [contributor guidelines](https://github.com/cline/cline/blob/main/CONTRIBUTING.md)\n\n### Screenshots\n\nN/A; request routing and usage accounting behavior only.\n\n### Additional Notes\n\nCline provider Qwen3.7 Max caching is working as read-hit caching. The extension bug was that cache support was not shown from Cline metadata, and Qwen3.7 Max was missing from the cache-control marker list used by the Cline provider request transformer.\n",
+      "author": "arafatkatze",
+      "headRef": "arafatkatze/fix-qwen-cache-route",
+      "repository": "cline/cline"
+    }
+  },
+  "pr": {
+    "number": 11079,
+    "headSha": "7078c5e0f9bd6b8c98bd2ad96b008753de939dbc",
+    "baseSha": "49e8c1b324ce9be2c59802388f6b379171e0c814",
+    "title": "fix(vscode): show Qwen 3.7 Max cache support",
+    "body": "### Related Issue\n\n**Issue:** #XXXX\n\n### Description\n\nFixes Qwen3.7 Max prompt-cache reporting for the VSCode Cline provider path.\n\nCline's model endpoint exposes `qwen/qwen3.7-max` as `Qwen: Qwen3.7 Max` and includes cache-read pricing, but the extension still marked it as not prompt-cache capable because Cline model metadata only enabled prompt caching for hardcoded provider families. That made the model details/UI say prompt caching was unsupported even though the live Cline route returns cache reads.\n\nThis PR:\n\n- marks Cline models as prompt-cache capable when Cline's model API returns cache read or write pricing\n- adds `qwen/qwen3.7-max` to the OpenRouter-format cache-control model set used by the Cline provider request path\n- keeps the selected/display model ID as `qwen/qwen3.7-max`; no Cline provider alias is used\n\nThe Cline backend currently reports Qwen3.7 Max cache reads, not cache writes, on this route. That matches the Cline model API pricing, which has `input_cache_read` but no `input_cache_write` for `qwen/qwen3.7-max`.\n\n### Test Procedure\n\n- Verified Cline model metadata for `qwen/qwen3.7-max` returns cache-read pricing (`input_cache_read: 0.00000025`) and no cache-write pricing.\n- Ran live Cline provider probes for `qwen/qwen3.7-max`:\n  - no `cache_control`: turn 1 `cachedTokens=0`, turn 2 `cachedTokens=10880`\n  - with `cache_control`: turn 1 `cachedTokens=0`, turn 2 `cachedTokens=10880`\n- Ran live VSCode `ClineHandler` path with selected model `qwen/qwen3.7-max`:\n  - turn 1: `cacheWriteTokens=0`, `cacheReadTokens=0`, `inputTokens=11789`, `outputTokens=36`\n  - turn 2: `cacheWriteTokens=0`, `cacheReadTokens=10880`, `inputTokens=909`, `outputTokens=50`\n- Compared raw OpenRouter and Vercel Qwen3.7 Max routes; those providers report explicit cache writes and reads with `cache_control`, while the Cline route reports read hits only.\n- Ran focused unit tests from `apps/vscode`:\n  - `TS_NODE_PROJECT=./tsconfig.unit-test.json npx mocha --no-config --require ts-node/register --require source-map-support/register --require ./src/test/requires.ts src/core/controller/models/__tests__/refreshClineModels.test.ts src/core/api/transform/__tests__/openrouter-stream.test.ts src/core/api/providers/__tests__/cline.test.ts --exit`\n  - result: `11 passing`\n- Ran `npm run compile` from `apps/vscode`, including protobuf generation, type checks, lint, proto lint, and esbuild.\n\n### Type of Change\n\n-   [x] 🐛 Bug fix (non-breaking change which fixes an issue)\n-   [ ] ✨ New feature (non-breaking change which adds functionality)\n-   [ ] 💥 Breaking change (fix or feature that would cause existing functionality to not work as expected)\n-   [ ] ♻️ Refactor Changes\n-   [ ] 💅 Cosmetic Changes\n-   [ ] 📚 Documentation update\n-   [ ] 🏃 Workflow Changes\n\n### Pre-flight Checklist\n\n-   [x] Changes are limited to a single feature, bugfix or chore (split larger changes into separate PRs)\n-   [x] Tests are passing (`npm test`) and code is formatted and linted (`npm run format && npm run lint`)\n-   [x] I have reviewed [contributor guidelines](https://github.com/cline/cline/blob/main/CONTRIBUTING.md)\n\n### Screenshots\n\nN/A; request routing and usage accounting behavior only.\n\n### Additional Notes\n\nCline provider Qwen3.7 Max caching is working as read-hit caching. The extension bug was that cache support was not shown from Cline metadata, and Qwen3.7 Max was missing from the cache-control marker list used by the Cline provider request transformer.\n",
+    "author": "arafatkatze",
+    "headRef": "arafatkatze/fix-qwen-cache-route",
+    "repository": "cline/cline"
+  }
+}

@@ -19,12 +19,14 @@ import type { CheatCategory } from '../../src/audit/types';
 import { loadPrCorpus, loadLabeledPrEntries } from '../../benchmarks/real-corpus/loader';
 import type { BrokenCategory, PrCorpusEntry } from '../../benchmarks/real-corpus/schema';
 import { findRepoRoot } from './repo-root';
+import { loadDotenv } from '../../src/env-loader';
 
 interface ScoreArgs {
   rawDir: string;
   labelsDir: string;
   outDir: string;
   repoRoot: string;
+  judgeEnabled: boolean;
 }
 
 interface PerDetectorScore {
@@ -106,6 +108,11 @@ const ALL_DETECTOR_CATEGORIES: readonly CheatCategory[] = [
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
   const args = parseArgs(argv);
+  if (args.judgeEnabled) {
+    // Load ANTHROPIC_API_KEY from the project/install/home .env chain so
+    // the judged scoring path works without exporting the key by hand.
+    loadDotenv();
+  }
   const entries = await loadPrCorpus(args.rawDir);
   const loaded = await loadLabeledPrEntries(entries, args.labelsDir);
   const snapshot = await scoreEntries(loaded.labeled, args);
@@ -155,6 +162,12 @@ async function scoreEntries(
       // per-detector TP/FP table for the retired six as well, which
       // is the data the promotion script reads.
       detectorSet: 'experimental',
+      // Opt-in judge confirmation gate. Off unless SWARM_AUDIT_LLM_JUDGE=1
+      // and a key is loaded, so the default scored path stays
+      // deterministic and free. When on, the gate downgrades blocks the
+      // judge refutes, which is exactly the precision question we want
+      // measured against the labeled corpus.
+      judgeEnabled: args.judgeEnabled,
       pr: {
         number: entry.pr.number,
         headSha: entry.pr.headSha,
@@ -294,10 +307,13 @@ function parseArgs(argv: string[]): ScoreArgs {
     labelsDir: path.join(repoRoot, 'benchmarks', 'real-corpus', 'labels'),
     outDir: path.join(repoRoot, 'benchmarks', 'real-corpus', 'scores'),
     repoRoot,
+    judgeEnabled: process.env.SWARM_AUDIT_LLM_JUDGE === '1',
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === '--raw-dir') {
+    if (arg === '--judge') {
+      defaults.judgeEnabled = true;
+    } else if (arg === '--raw-dir') {
       defaults.rawDir = path.resolve(requireValue(argv, (i += 1), '--raw-dir'));
     } else if (arg === '--labels-dir') {
       defaults.labelsDir = path.resolve(requireValue(argv, (i += 1), '--labels-dir'));

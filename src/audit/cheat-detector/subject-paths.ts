@@ -15,19 +15,50 @@
 // engine.
 
 // Extensions that hold data or prose, not executable code. A unified
-// diff (.diff/.patch) and prose formats (markdown, restructuredtext)
-// can quote cheat patterns as text without those patterns being live
-// in the codebase. Treating them as audit subjects produces only false
-// positives.
+// diff (.diff/.patch), prose formats (markdown, restructuredtext),
+// stylesheets, and static assets can quote cheat patterns as text
+// (or be entirely unrelated to test-reachable code), without those
+// patterns being live in the codebase. Treating them as audit
+// subjects produces only false positives.
+//
+// The list errs on the side of inclusion: any extension whose content
+// is not "code a test could import and exercise" belongs here.
 const DATA_EXTENSIONS = new Set([
+  // Diffs and patches.
   '.diff',
   '.patch',
+  // Prose / documentation.
   '.md',
   '.mdc',
+  '.mdx',
   '.markdown',
   '.rst',
   '.txt',
   '.adoc',
+  // Stylesheets — modified routinely in real PRs, never imported by
+  // a unit test, never the carrier of an AI cheat pattern at this
+  // detector's level.
+  '.css',
+  '.scss',
+  '.sass',
+  '.less',
+  '.styl',
+  // Static assets / binaries that occasionally appear as text-diffed
+  // patches but are not test-reachable code.
+  '.svg',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.ico',
+  '.bmp',
+  // Fonts.
+  '.woff',
+  '.woff2',
+  '.ttf',
+  '.otf',
+  '.eot',
 ]);
 
 // Path segments that mark a directory as containing fixture / corpus

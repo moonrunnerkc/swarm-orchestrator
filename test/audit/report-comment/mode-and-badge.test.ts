@@ -48,9 +48,9 @@ describe('audit / report-comment / mode + precision badge (v10.2-advisory)', () 
   it('per-finding precision badge renders for measured detectors', () => {
     const md = renderPrComment(ADVISE_BLOCK_RESULT, { mode: 'gate' });
     assert.ok(/Detector precision badge:.*precision\s+\d/.test(md));
-    // error-swallow precision is 0.19 on the v10.1 baseline.
+    // error-swallow precision is 0.19 on the real corpus.
     assert.ok(md.includes('0.19'));
-    assert.ok(md.includes('real-corpus-v10.1'));
+    assert.ok(md.includes('real-corpus'));
   });
 
   it('summary section names the detector set', () => {

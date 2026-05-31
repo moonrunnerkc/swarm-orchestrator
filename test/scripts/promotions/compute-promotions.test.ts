@@ -2,26 +2,44 @@ import { strict as assert } from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { computePromotions } from '../../../scripts/promotions/compute-promotions';
+import {
+  computePromotions,
+  wilsonLowerBound,
+} from '../../../scripts/promotions/compute-promotions';
 
 function writeScores(file: string): void {
   const snapshot = {
     generatedAt: '2026-05-24T14:17:34.169Z',
     detectorVersions: {
-      'good-detector': '2.0.0',
+      'precise-detector': '2.0.0',
+      'small-sample-detector': '1.0.0',
       'mediocre-detector': '1.0.0',
       'silent-detector': '1.0.0',
     },
     perDetector: [
+      // High precision with enough firings: clears the gate.
       {
-        detector: 'good-detector',
-        truePositive: 8,
-        falsePositive: 2,
+        detector: 'precise-detector',
+        truePositive: 18,
+        falsePositive: 1,
         trueNegative: 90,
         falseNegative: 2,
-        precision: 0.8,
-        recall: 0.8,
-        f1: 0.8,
+        precision: 18 / 19,
+        recall: 0.9,
+        f1: 0.9,
+      },
+      // Perfect precision but only three firings: the Wilson lower
+      // bound is below 0.5, so it stays advisory rather than promoting
+      // on luck.
+      {
+        detector: 'small-sample-detector',
+        truePositive: 3,
+        falsePositive: 0,
+        trueNegative: 100,
+        falseNegative: 1,
+        precision: 1,
+        recall: 0.75,
+        f1: 0.857,
       },
       {
         detector: 'mediocre-detector',
@@ -48,66 +66,61 @@ function writeScores(file: string): void {
   fs.writeFileSync(file, JSON.stringify(snapshot));
 }
 
-describe('scripts/promotions/compute-promotions', () => {
-  it('promotes detectors with F1 >= threshold to gate-eligible', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-prom-'));
-    const scoresFile = path.join(dir, 'scores.json');
-    writeScores(scoresFile);
-    const out = computePromotions({
+function run(dir: string) {
+  const scoresFile = path.join(dir, 'scores.json');
+  writeScores(scoresFile);
+  return {
+    scoresFile,
+    out: computePromotions({
       scoresFile,
       out: path.join(dir, 'p.json'),
-      f1Threshold: 0.5,
-    });
-    assert.deepEqual(out.gateEligibleDetectors, ['good-detector']);
+      gatePrecision: 0.9,
+      minTruePositive: 5,
+    }),
+  };
+}
+
+describe('scripts/promotions/compute-promotions', () => {
+  it('gate-eligible requires precision, a minimum TP count, and a Wilson lower bound', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-prom-'));
+    const { out } = run(dir);
+    assert.deepEqual(out.gateEligibleDetectors, ['precise-detector']);
   });
 
-  it('keeps detectors with F1 < threshold as advisory-only', () => {
+  it('keeps a perfect-but-tiny-sample detector advisory (Wilson guard)', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-prom-'));
-    const scoresFile = path.join(dir, 'scores.json');
-    writeScores(scoresFile);
-    const out = computePromotions({
-      scoresFile,
-      out: path.join(dir, 'p.json'),
-      f1Threshold: 0.5,
-    });
-    assert.deepEqual(out.advisoryOnlyDetectors, ['mediocre-detector']);
+    const { out } = run(dir);
+    assert.ok(out.advisoryOnlyDetectors.includes('small-sample-detector'));
+    assert.ok(out.advisoryOnlyDetectors.includes('mediocre-detector'));
+    assert.ok(!out.gateEligibleDetectors.includes('small-sample-detector'));
   });
 
   it('flags detectors that never fired and have no positives as unmeasured', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-prom-'));
-    const scoresFile = path.join(dir, 'scores.json');
-    writeScores(scoresFile);
-    const out = computePromotions({
-      scoresFile,
-      out: path.join(dir, 'p.json'),
-      f1Threshold: 0.5,
-    });
+    const { out } = run(dir);
     assert.deepEqual(out.unmeasuredDetectors, ['silent-detector']);
   });
 
-  it('threshold defaults to 0.5 in the typical call shape', () => {
+  it('records the gate thresholds it decided against', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-prom-'));
-    const scoresFile = path.join(dir, 'scores.json');
-    writeScores(scoresFile);
-    const out = computePromotions({
-      scoresFile,
-      out: path.join(dir, 'p.json'),
-      f1Threshold: 0.5,
-    });
-    assert.equal(out.f1GateThreshold, 0.5);
+    const { out } = run(dir);
+    assert.equal(out.gatePrecisionThreshold, 0.9);
+    assert.equal(out.minTruePositiveForGate, 5);
   });
 
-  it('reason string cites the threshold and the scores file', () => {
+  it('reason string cites the precision and the scores file', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-prom-'));
-    const scoresFile = path.join(dir, 'scores.json');
-    writeScores(scoresFile);
-    const out = computePromotions({
-      scoresFile,
-      out: path.join(dir, 'p.json'),
-      f1Threshold: 0.5,
-    });
-    const good = out.rows.find((r) => r.detector === 'good-detector')!;
-    assert.ok(good.reason.includes('0.5'));
+    const { out, scoresFile } = run(dir);
+    const good = out.rows.find((r) => r.detector === 'precise-detector')!;
+    assert.ok(good.reason.includes('precision'));
     assert.ok(good.reason.includes(scoresFile));
+  });
+
+  it('Wilson lower bound shrinks with smaller samples at equal precision', () => {
+    // 1.0 precision over 3 trials must be treated as less certain than
+    // 1.0 over 200 trials.
+    assert.ok(wilsonLowerBound(3, 3) < wilsonLowerBound(200, 200));
+    assert.ok(wilsonLowerBound(3, 3) < 0.5);
+    assert.equal(wilsonLowerBound(0, 0), 0);
   });
 });

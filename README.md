@@ -81,13 +81,38 @@ Public dashboard: [moonrunnerkc.github.io/swarm-orchestrator](https://moonrunner
 
 | | Value |
 |---|---|
-| **Real-corpus F1** | **0.167** |
-| Real-corpus precision | 0.100 |
-| Real-corpus recall | 0.500 |
+| **Real-corpus F1 (deterministic)** | **0.140** |
+| Real-corpus precision (deterministic) | 0.091 |
+| Real-corpus recall (deterministic) | 0.300 |
+| Advisory findings on the 195 clean PRs | 145 (down from ~1146 before the v10.4 verification stage) |
+| Real-corpus precision (judge gate on) | 1.000 (the gate refuses to block anything it cannot confirm) |
 | Sample size | 205 AI-labeled PRs (10 broken, 195 clean), pending human re-label under labels-v2 |
 | Agent vendors covered | 8 (devin, cursor, openhands, copilot-workspace, claude-code, aider, codex-cli, replit-agent) |
 | Detector set scored | experimental (all 10), so retired detectors are still measured |
-| LLM judge | off (no `ANTHROPIC_API_KEY` exposed to the scorer); rerun with `SWARM_AUDIT_LLM_JUDGE=1` to score the gated path |
+| LLM judge | off by default; rerun with `SWARM_AUDIT_LLM_JUDGE=1` (or `--judge`) to score the gated path |
+
+The recall fell from the v10.1 number (0.500) because two of the prior
+"catches" were `actions/checkout@v6` version-ceiling blocks on PRs that
+upgrade a real action, which v10.4 stops treating as hallucinations.
+Removing a catch that was only ever a coincidence is a correctness fix,
+not a regression. The reliable, label-independent win is on the 195
+clean PRs, where the verification stage cut non-informational findings
+by 87% (`docs/posts/2026-05-27-wild-pr-scan.md` has the per-detector
+breakdown).
+
+Findings reach a reviewer through two stages after the detectors run.
+First a deterministic verification stage refutes a candidate when the
+diff itself shows the pattern is legitimate (a mock target that resolves
+to an internal directory in the same diff, a rename paired with several
+different names, a test removed alongside the source it covered, a
+"no test" finding on a PR that claims no fix). Then, when
+`--mode=gate` and the judge are on, the Haiku confirmation gate must
+confirm a finding before it is allowed to block; anything it cannot
+confirm drops to advisory. On this corpus the gate refutes every
+candidate block, which is why judged precision is 1.000 and judged
+recall is 0: against AI-generated labels the safe gate blocks nothing
+rather than block wrongly. Trustworthy block-recall waits on the
+human-labeled corpus (`benchmarks/real-corpus/labels-v2/`).
 
 The synthetic regression suite prints F1 1.000 on the same code. **That
 1.000 is a self-consistency check, not detection power**: the generator
@@ -107,40 +132,44 @@ labels-v2 scaffold under [`benchmarks/real-corpus/labels-v2/`](benchmarks/real-c
 **Per-detector breakdown** (intent layer active, default strict policy,
 experimental set, judge off):
 
-| Detector | Version | Set | TP | FP | TN | FN | Precision | Recall |
-|---|---|---|---|---|---|---|---|---|
-| `error-swallow` | 2.0.0 | default | 3 | 13 | 189 | 0 | **0.188** | **1.000** |
-| `mock-of-hallucination` | 2.0.0 | default | 2 | 16 | 187 | 0 | **0.111** | **1.000** |
-| `no-op-fix` | 2.0.0 | default | 0 | 12 | 188 | 5 | 0.000 | 0.000 |
-| `fake-refactor` | 2.0.0 | default | 0 | 4 | 201 | 0 | 0.000 | n/a |
-| `assertion-strip` | 1.0.0 | experimental | 0 | 5 | 200 | 0 | 0.000 | n/a |
-| `coverage-erosion` | 1.0.0 | experimental | 0 | 4 | 201 | 0 | 0.000 | n/a |
-| `test-relaxation` | 1.1.0 | experimental | 0 | 4 | 201 | 0 | 0.000 | n/a |
-| `comment-only-fix` | 1.0.0 | experimental | 0 | 0 | 200 | 5 | n/a | 0.000 |
-| `exception-rethrow-lost-context` | 1.0.0 | experimental | 0 | 0 | 205 | 0 | n/a | n/a |
-| `dead-branch-insertion` | 1.0.0 | experimental | 0 | 0 | 205 | 0 | n/a | n/a |
+| Detector | Version | TP | FP | FN | Precision | Gate status |
+|---|---|---|---|---|---|---|
+| `error-swallow` | 2.0.0 | 3 | 13 | 0 | **0.188** | advisory |
+| `mock-of-hallucination` | 2.0.0 | 0 | 3 | 2 | 0.000 | advisory |
+| `no-op-fix` | 2.0.0 | 0 | 9 | 5 | 0.000 | advisory |
+| `fake-refactor` | 2.0.0 | 0 | 2 | 0 | 0.000 | advisory |
+| `assertion-strip` | 1.0.0 | 0 | 5 | 0 | 0.000 | advisory |
+| `coverage-erosion` | 1.1.0 | 0 | 4 | 0 | 0.000 | advisory |
+| `test-relaxation` | 1.1.0 | 0 | 4 | 0 | 0.000 | advisory |
+| `comment-only-fix` | 1.0.0 | 0 | 0 | 5 | n/a | advisory |
+| `exception-rethrow-lost-context` | 1.0.0 | 0 | 0 | 0 | n/a | unmeasured |
+| `dead-branch-insertion` | 1.0.0 | 0 | 0 | 0 | n/a | unmeasured |
 
-`default` is loaded automatically; `experimental` requires
-`--detectors experimental` on the CLI. Six detectors moved out of the
-default set in v10.2-advisory:
+A detector is gate-eligible (allowed to emit a blocking finding without
+the judge) only when its measured precision is at least 0.90, it has at
+least 5 true positives, and the Wilson 95% lower bound is at least 0.50.
+No detector clears that bar on the current corpus, so every one is
+advisory: it still runs and still surfaces findings, capped to advisory
+severity. The gate governs blocking only, so recall is unchanged and
+nothing is silenced. The tier is computed from the scores snapshot into
+[`benchmarks/real-corpus/promotions.json`](benchmarks/real-corpus/promotions.json),
+and CI fails if the committed policy drifts from a fresh recompute
+(`npm run promotions:check`), so a detector cannot be hand-promoted into
+the gate without the precision to back it.
 
-- **Zero TP / zero FP on the real corpus** (`comment-only-fix`,
-  `exception-rethrow-lost-context`, `dead-branch-insertion`): no signal
-  to gauge against. Available behind `--detectors experimental` for
-  shadow runs and the synthetic regression corpus.
-- **FP-only on the real corpus** (`assertion-strip`,
-  `coverage-erosion`, `test-relaxation`): measurable cost, no
-  measurable value at the current detector shape. Same `--detectors
-  experimental` access.
-
-Every PR-comment finding renders its measured-precision badge inline so
-a reviewer sees the number every time a finding fires. The renderer's
-data source is
+Every PR-comment finding renders its confidence and its measured
+precision inline, so a reviewer sees both every time a finding fires.
+The badge data source is
 [`src/audit/report-comment/detector-precision.ts`](src/audit/report-comment/detector-precision.ts).
 
 ## Cheat detectors
 
-Four in the default set, six in experimental. Registered in
+Ten detectors. Seven load by default; three (`comment-only-fix`,
+`exception-rethrow-lost-context`, `dead-branch-insertion`) require
+`--detectors experimental` because they have never fired on real PR
+data, so there is no signal to gauge them against. The set governs which
+detectors load; the precision gate above governs which may block.
+Registered in
 [`src/audit/cheat-detector/detector-sets.ts`](src/audit/cheat-detector/detector-sets.ts).
 
 | Category | Set | Trigger |

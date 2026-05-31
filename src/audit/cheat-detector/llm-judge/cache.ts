@@ -27,6 +27,13 @@ export interface JudgeCacheKeyInput {
   diff: string;
   title: string;
   modelId: string;
+  /**
+   * The detector category the question is framed for. Two categories
+   * ask the model different questions about the same diff, so the
+   * category is part of the key: without it, an error-swallow answer
+   * would be served for a no-op-fix question on the same PR.
+   */
+  detector: string;
 }
 
 export function computeJudgeCacheKey(input: JudgeCacheKeyInput): {
@@ -36,7 +43,7 @@ export function computeJudgeCacheKey(input: JudgeCacheKeyInput): {
 } {
   const diffSha = sha256(normalizeDiff(input.diff));
   const titleSha = sha256(input.title);
-  const cacheKey = sha256(`${diffSha}|${titleSha}|${input.modelId}`);
+  const cacheKey = sha256(`${diffSha}|${titleSha}|${input.modelId}|${input.detector}`);
   return { cacheKey, diffSha, titleSha };
 }
 

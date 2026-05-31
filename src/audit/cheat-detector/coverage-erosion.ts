@@ -6,7 +6,7 @@
 
 import type { Detector, DetectorContext } from './detector-types';
 import type { Finding } from '../types';
-import { isTestFile, walkHunks } from './diff-walker';
+import { isPlausiblyTestReachable, isTestFile, walkHunks } from './diff-walker';
 
 const VERSION = '1.1.0';
 
@@ -42,6 +42,11 @@ export const coverageErosionDetector: Detector = {
     const sourceLocations: Array<{ file: string; line: number; content: string }> = [];
     for (const hunk of walkHunks(ctx.files)) {
       const test = isTestFile(hunk.file);
+      // For source-side branch counting, only count file classes that
+      // could plausibly be reached by a test. A docs file with a code
+      // block that happens to contain `if (` is not test-reachable
+      // source; flagging it as coverage erosion is noise.
+      if (!test && !isPlausiblyTestReachable(hunk.file)) continue;
       for (const a of hunk.added) {
         if (test) {
           if (TEST_SIGNAL_PATTERNS.some((re) => re.test(a.content))) {

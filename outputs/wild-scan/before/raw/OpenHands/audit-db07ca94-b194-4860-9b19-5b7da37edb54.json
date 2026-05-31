@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-05-28T01:38:39.014Z",
+  "runId": "audit-db07ca94-b194-4860-9b19-5b7da37edb54",
+  "repo": "OpenHands",
+  "mode": "advise",
+  "detectorSet": "default",
+  "wallTimeMs": 2656,
+  "result": {
+    "pass": false,
+    "findings": [
+      {
+        "category": "mock-of-hallucination",
+        "severity": "block",
+        "message": "Mocked module \"server.auth.token_manager.AZURE_DEVOPS_TENANT_ID\" is not declared in any project manifest (package.json, requirements.txt, pyproject.toml, go.mod, Cargo.toml, pom.xml, build.gradle[.kts], Gemfile[.lock], composer.json, *.csproj). The registry probe also reports the target unknown: package \"server\" is not in the offline allowlist for pypi; re-run with --online to confirm against the live registry.",
+        "location": {
+          "file": "enterprise/tests/unit/test_token_manager_extended.py",
+          "line": 470
+        },
+        "evidence": "+ patch('server.auth.token_manager.AZURE_DEVOPS_TENANT_ID', 'tenant-id'),"
+      },
+      {
+        "category": "mock-of-hallucination",
+        "severity": "block",
+        "message": "Mocked module \"server.auth.token_manager.AZURE_DEVOPS_CLIENT_ID\" is not declared in any project manifest (package.json, requirements.txt, pyproject.toml, go.mod, Cargo.toml, pom.xml, build.gradle[.kts], Gemfile[.lock], composer.json, *.csproj). The registry probe also reports the target unknown: package \"server\" is not in the offline allowlist for pypi; re-run with --online to confirm against the live registry.",
+        "location": {
+          "file": "enterprise/tests/unit/test_token_manager_extended.py",
+          "line": 471
+        },
+        "evidence": "+ patch('server.auth.token_manager.AZURE_DEVOPS_CLIENT_ID', 'client-id'),"
+      },
+      {
+        "category": "mock-of-hallucination",
+        "severity": "block",
+        "message": "Mocked module \"httpx.AsyncClient\" is not declared in any project manifest (package.json, requirements.txt, pyproject.toml, go.mod, Cargo.toml, pom.xml, build.gradle[.kts], Gemfile[.lock], composer.json, *.csproj). Note: the registry probe recognized \"httpx.AsyncClient\" as a real published package; this may be a false-positive on a project that vendors the dep or uses a non-standard manifest.",
+        "location": {
+          "file": "enterprise/tests/unit/test_token_manager_extended.py",
+          "line": 484
+        },
+        "evidence": "+ patch('httpx.AsyncClient') as mock_client_cls,"
+      },
+      {
+        "category": "mock-of-hallucination",
+        "severity": "block",
+        "message": "Mocked module \"server.auth.token_manager.AZURE_DEVOPS_TENANT_ID\" is not declared in any project manifest (package.json, requirements.txt, pyproject.toml, go.mod, Cargo.toml, pom.xml, build.gradle[.kts], Gemfile[.lock], composer.json, *.csproj). The registry probe also reports the target unknown: package \"server\" is not in the offline allowlist for pypi; re-run with --online to confirm against the live registry.",
+        "location": {
+          "file": "enterprise/tests/unit/test_token_manager_extended.py",
+          "line": 522
+        },
+        "evidence": "+ patch('server.auth.token_manager.AZURE_DEVOPS_TENANT_ID', 'tenant-id'),"
+      },
+      {
+        "category": "mock-of-hallucination",
+        "severity": "block",
+        "message": "Mocked module \"server.auth.token_manager.AZURE_DEVOPS_CLIENT_ID\" is not declared in any project manifest (package.json, requirements.txt, pyproject.toml, go.mod, Cargo.toml, pom.xml, build.gradle[.kts], Gemfile[.lock], composer.json, *.csproj). The registry probe also reports the target unknown: package \"server\" is not in the offline allowlist for pypi; re-run with --online to confirm against the live registry.",
+        "location": {
+          "file": "enterprise/tests/unit/test_token_manager_extended.py",
+          "line": 523
+        },
+        "evidence": "+ patch('server.auth.token_manager.AZURE_DEVOPS_CLIENT_ID', 'client-id'),"
+      },
+      {
+        "category": "mock-of-hallucination",
+        "severity": "block",
+        "message": "Mocked module \"httpx.AsyncClient\" is not declared in any project manifest (package.json, requirements.txt, pyproject.toml, go.mod, Cargo.toml, pom.xml, build.gradle[.kts], Gemfile[.lock], composer.json, *.csproj). Note: the registry probe recognized \"httpx.AsyncClient\" as a real published package; this may be a false-positive on a project that vendors the dep or uses a non-standard manifest.",
+        "location": {
+          "file": "enterprise/tests/unit/test_token_manager_extended.py",
+          "line": 528
+        },
+        "evidence": "+ patch('httpx.AsyncClient') as mock_client_cls,"
+      },
+      {
+        "category": "mock-of-hallucination",
+        "severity": "block",
+        "message": "Mocked module \"server.auth.token_manager.AZURE_DEVOPS_TENANT_ID\" is not declared in any project manifest (package.json, requirements.txt, pyproject.toml, go.mod, Cargo.toml, pom.xml, build.gradle[.kts], Gemfile[.lock], composer.json, *.csproj). The registry probe also reports the target unknown: package \"server\" is not in the offline allowlist for pypi; re-run with --online to confirm against the live registry.",
+        "location": {
+          "file": "enterprise/tests/unit/test_token_manager_extended.py",
+          "line": 546
+        },
+        "evidence": "+ with patch('server.auth.token_manager.AZURE_DEVOPS_TENANT_ID', ''):"
+      }
+    ],
+    "generatedAt": "2026-05-28T01:38:39.012Z",
+    "detectorVersions": {
+      "error-swallow": "2.0.0",
+      "mock-of-hallucination": "2.0.0",
+      "no-op-fix": "2.0.0",
+      "fake-refactor": "2.0.0"
+    },
+    "detectorSet": "default",
+    "agent": {
+      "vendor": "openhands",
+      "confidence": "high",
+      "source": "pr-body-marker"
+    },
+    "pr": {
+      "number": 14567,
+      "headSha": "136e2c69fee4deee11dec9a19d46126fecd058bc",
+      "baseSha": "0a6cf00a4dd267fabad7b8182e775fc7787bd7eb",
+      "title": "[ALL-1887] Add Entra-backed Azure DevOps auth for enterprise",
+      "body": "Adds Azure DevOps support for OpenHands Enterprise using Microsoft Entra ID OAuth/OIDC rather than legacy Azure DevOps OAuth apps or PATs.\r\n\r\n## Summary\r\n- add enterprise Azure DevOps configuration/env plumbing\r\n- add Azure DevOps to enterprise provider modeling, login/config discovery, and frontend provider surfaces\r\n- support Keycloak-brokered Azure DevOps token retrieval and refresh through `ProviderType.AZURE_DEVOPS`\r\n- add an enterprise Azure DevOps service for org/project/repo/branch discovery\r\n- clone Azure DevOps repositories with an OAuth bearer `http.extraheader` instead of embedding credentials in URLs\r\n- exclude nested `.venv` directories from Docker build context\r\n\r\n## Validation\r\n- [x] Human tested these changes\r\n- `uv run pytest tests/unit/app_server/test_default_web_client_config_injector.py tests/unit/integrations/test_provider_immutability.py tests/unit/test_azure_devops.py`\r\n- `PYTHONPATH=.:enterprise uv run --with pytest --with pytest-asyncio --with freezegun --with python-keycloak --with httpx --with sqlalchemy --with asyncpg --with pydantic --with coredis --with limits --with posthog --with slack-sdk --with stripe --with resend --with prometheus-client pytest enterprise/tests/unit/test_token_manager_extended.py`\r\n- `frontend npm run typecheck`\r\n- `frontend npm run test -- __tests__/components/features/auth/login-content.test.tsx __tests__/routes/git-settings.test.tsx`\r\n- targeted `ruff check` for touched backend files\r\n- companion OpenHands-Cloud chart rendered/linted with Azure DevOps enabled\r\n- validated on `replicated-01`: Microsoft login via Keycloak Azure DevOps broker succeeded, OpenHands retrieved a `ProviderType.AZURE_DEVOPS` token, Azure DevOps repository search returned 200, and Azure DevOps branch search returned 200 for the test org/project/repo\r\n\r\n\r\n<img width=\"1512\" height=\"905\" alt=\"Screenshot 2026-05-26 at 9 46 38 AM\" src=\"https://github.com/user-attachments/assets/efaf502b-cc40-44e4-957e-6774248cff5b\" />\r\n<img width=\"1477\" height=\"958\" alt=\"Screenshot 2026-05-26 at 9 02 20 AM\" src=\"https://github.com/user-attachments/assets/02c871d0-b567-4e55-91ac-4e1e8afa1a50\" />\r\n\r\n\r\n---\r\n\r\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-136e2c6   docker.openhands.dev/openhands/openhands:136e2c6\n```",
+      "author": "ak684",
+      "headRef": "codex/azure-devops-ohe",
+      "repository": "All-Hands-AI/OpenHands"
+    }
+  },
+  "pr": {
+    "number": 14567,
+    "headSha": "136e2c69fee4deee11dec9a19d46126fecd058bc",
+    "baseSha": "0a6cf00a4dd267fabad7b8182e775fc7787bd7eb",
+    "title": "[ALL-1887] Add Entra-backed Azure DevOps auth for enterprise",
+    "body": "Adds Azure DevOps support for OpenHands Enterprise using Microsoft Entra ID OAuth/OIDC rather than legacy Azure DevOps OAuth apps or PATs.\r\n\r\n## Summary\r\n- add enterprise Azure DevOps configuration/env plumbing\r\n- add Azure DevOps to enterprise provider modeling, login/config discovery, and frontend provider surfaces\r\n- support Keycloak-brokered Azure DevOps token retrieval and refresh through `ProviderType.AZURE_DEVOPS`\r\n- add an enterprise Azure DevOps service for org/project/repo/branch discovery\r\n- clone Azure DevOps repositories with an OAuth bearer `http.extraheader` instead of embedding credentials in URLs\r\n- exclude nested `.venv` directories from Docker build context\r\n\r\n## Validation\r\n- [x] Human tested these changes\r\n- `uv run pytest tests/unit/app_server/test_default_web_client_config_injector.py tests/unit/integrations/test_provider_immutability.py tests/unit/test_azure_devops.py`\r\n- `PYTHONPATH=.:enterprise uv run --with pytest --with pytest-asyncio --with freezegun --with python-keycloak --with httpx --with sqlalchemy --with asyncpg --with pydantic --with coredis --with limits --with posthog --with slack-sdk --with stripe --with resend --with prometheus-client pytest enterprise/tests/unit/test_token_manager_extended.py`\r\n- `frontend npm run typecheck`\r\n- `frontend npm run test -- __tests__/components/features/auth/login-content.test.tsx __tests__/routes/git-settings.test.tsx`\r\n- targeted `ruff check` for touched backend files\r\n- companion OpenHands-Cloud chart rendered/linted with Azure DevOps enabled\r\n- validated on `replicated-01`: Microsoft login via Keycloak Azure DevOps broker succeeded, OpenHands retrieved a `ProviderType.AZURE_DEVOPS` token, Azure DevOps repository search returned 200, and Azure DevOps branch search returned 200 for the test org/project/repo\r\n\r\n\r\n<img width=\"1512\" height=\"905\" alt=\"Screenshot 2026-05-26 at 9 46 38 AM\" src=\"https://github.com/user-attachments/assets/efaf502b-cc40-44e4-957e-6774248cff5b\" />\r\n<img width=\"1477\" height=\"958\" alt=\"Screenshot 2026-05-26 at 9 02 20 AM\" src=\"https://github.com/user-attachments/assets/02c871d0-b567-4e55-91ac-4e1e8afa1a50\" />\r\n\r\n\r\n---\r\n\r\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-136e2c6   docker.openhands.dev/openhands/openhands:136e2c6\n```",
+    "author": "ak684",
+    "headRef": "codex/azure-devops-ohe",
+    "repository": "All-Hands-AI/OpenHands"
+  }
+}

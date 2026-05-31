@@ -4,19 +4,17 @@
 // direct declarations otherwise.
 
 import * as fs from 'fs';
-import * as path from 'path';
+import { findManifestFiles } from './find-manifests';
 
 const GEMFILE_LINE_RE = /^\s*gem\s+['"]([A-Za-z0-9_\-.]+)['"]/;
 const LOCK_DEP_LINE_RE = /^\s{4}([A-Za-z0-9_\-.]+)\s*(?:\(|$)/;
 
 export function readDependencies(repoRoot: string): Set<string> {
   const out = new Set<string>();
-  const lockPath = path.join(repoRoot, 'Gemfile.lock');
-  if (fs.existsSync(lockPath)) {
+  for (const lockPath of findManifestFiles(repoRoot, 'Gemfile.lock')) {
     readGemfileLock(lockPath, out);
   }
-  const gemfile = path.join(repoRoot, 'Gemfile');
-  if (fs.existsSync(gemfile)) {
+  for (const gemfile of findManifestFiles(repoRoot, 'Gemfile')) {
     readGemfile(gemfile, out);
   }
   return out;

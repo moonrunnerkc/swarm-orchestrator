@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-05-28T01:38:45.081Z",
+  "runId": "audit-906b9114-cfd9-4ccf-b301-7a9938de11da",
+  "repo": "OpenHands",
+  "mode": "advise",
+  "detectorSet": "default",
+  "wallTimeMs": 1643,
+  "result": {
+    "pass": true,
+    "findings": [],
+    "generatedAt": "2026-05-28T01:38:45.080Z",
+    "detectorVersions": {
+      "error-swallow": "2.0.0",
+      "mock-of-hallucination": "2.0.0",
+      "no-op-fix": "2.0.0",
+      "fake-refactor": "2.0.0"
+    },
+    "detectorSet": "default",
+    "agent": {
+      "vendor": "openhands",
+      "confidence": "high",
+      "source": "pr-body-marker"
+    },
+    "pr": {
+      "number": 14557,
+      "headSha": "ed55b0b499a1b53c195139d2cfec4a08ad9ab106",
+      "baseSha": "5e311f7f995008ffe4c74f8cf6f3085d4030c670",
+      "title": "Simplify event callback execution filters",
+      "body": "HUMAN: Slightly reduce flexibility of our event callback queries to hopefully increase efficiency and decrease DB load.\r\n\r\n- [ ] A human has tested these changes\r\n\r\n## Summary\r\n\r\n- Remove `event_kind IS NULL` and `conversation_id IS NULL` wildcard matching from `SQLEventCallbackService.execute_callbacks()`.\r\n- Tighten `CreateEventCallbackRequest` / `EventCallback` so new callbacks require concrete `conversation_id` and non-null `event_kind`.\r\n- Add `EventCallbackProcessor.get_event_kind()` and use it when registering startup processors.\r\n- Register enterprise V1 integration processors for `ConversationStateUpdateEvent` and title callbacks for `MessageEvent`.\r\n- Add tests for exact callback execution, model validation, and ignored legacy null conversation/event-kind rows.\r\n\r\nCloses #14556\r\n\r\n## Context\r\n\r\nThe callback execution query is on a hot event path and previously expanded each lookup with null wildcard branches. Callback processors already handle specific event types, so registrations now declare the event kind they actually handle and execution uses exact matching.\r\n\r\nThe DB columns remain nullable in this PR for backwards compatibility with existing rows; legacy null rows simply do not match execution anymore. A later migration can clean them up and add `NOT NULL` constraints/indexes if desired.\r\n\r\n## Testing\r\n\r\n- `OPENHANDS_SUPPRESS_BANNER=1 uv run python -m pytest tests/unit/app_server/test_sql_event_callback_service.py tests/unit/app_server/test_webhook_router_auto_title.py tests/unit/app_server/test_set_title_callback_processor.py -q`\r\n- `OPENHANDS_SUPPRESS_BANNER=1 uv run ruff check openhands/app_server/event_callback/event_callback_models.py openhands/app_server/event_callback/sql_event_callback_service.py openhands/app_server/app_conversation/live_status_app_conversation_service.py openhands/app_server/event_callback/webhook_router.py tests/unit/app_server/test_sql_event_callback_service.py tests/unit/app_server/test_webhook_router_auto_title.py tests/unit/app_server/test_set_title_callback_processor.py enterprise/integrations/bitbucket/bitbucket_v1_callback_processor.py enterprise/integrations/bitbucket_data_center/bitbucket_dc_v1_callback_processor.py enterprise/integrations/github/github_v1_callback_processor.py enterprise/integrations/gitlab/gitlab_v1_callback_processor.py enterprise/integrations/jira/jira_v1_callback_processor.py enterprise/integrations/jira_dc/jira_dc_v1_callback_processor.py enterprise/integrations/slack/slack_v1_callback_processor.py`\r\n- `cd enterprise && python3 -m pre_commit run --all-files --show-diff-on-failure --config ./dev_config/python/.pre-commit-config.yaml`\r\n\r\n---\r\n\r\n_This PR was updated by an AI agent (OpenHands) on behalf of the user._\r\n\r\n---\r\n\r\nTo run this PR locally, use the following command:\r\n\r\nGUI with Docker:\r\n```\r\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-ed55b0b   docker.openhands.dev/openhands/openhands:ed55b0b\r\n```",
+      "author": "neubig",
+      "headRef": "remove-event-callback-global-conversation",
+      "repository": "All-Hands-AI/OpenHands"
+    }
+  },
+  "pr": {
+    "number": 14557,
+    "headSha": "ed55b0b499a1b53c195139d2cfec4a08ad9ab106",
+    "baseSha": "5e311f7f995008ffe4c74f8cf6f3085d4030c670",
+    "title": "Simplify event callback execution filters",
+    "body": "HUMAN: Slightly reduce flexibility of our event callback queries to hopefully increase efficiency and decrease DB load.\r\n\r\n- [ ] A human has tested these changes\r\n\r\n## Summary\r\n\r\n- Remove `event_kind IS NULL` and `conversation_id IS NULL` wildcard matching from `SQLEventCallbackService.execute_callbacks()`.\r\n- Tighten `CreateEventCallbackRequest` / `EventCallback` so new callbacks require concrete `conversation_id` and non-null `event_kind`.\r\n- Add `EventCallbackProcessor.get_event_kind()` and use it when registering startup processors.\r\n- Register enterprise V1 integration processors for `ConversationStateUpdateEvent` and title callbacks for `MessageEvent`.\r\n- Add tests for exact callback execution, model validation, and ignored legacy null conversation/event-kind rows.\r\n\r\nCloses #14556\r\n\r\n## Context\r\n\r\nThe callback execution query is on a hot event path and previously expanded each lookup with null wildcard branches. Callback processors already handle specific event types, so registrations now declare the event kind they actually handle and execution uses exact matching.\r\n\r\nThe DB columns remain nullable in this PR for backwards compatibility with existing rows; legacy null rows simply do not match execution anymore. A later migration can clean them up and add `NOT NULL` constraints/indexes if desired.\r\n\r\n## Testing\r\n\r\n- `OPENHANDS_SUPPRESS_BANNER=1 uv run python -m pytest tests/unit/app_server/test_sql_event_callback_service.py tests/unit/app_server/test_webhook_router_auto_title.py tests/unit/app_server/test_set_title_callback_processor.py -q`\r\n- `OPENHANDS_SUPPRESS_BANNER=1 uv run ruff check openhands/app_server/event_callback/event_callback_models.py openhands/app_server/event_callback/sql_event_callback_service.py openhands/app_server/app_conversation/live_status_app_conversation_service.py openhands/app_server/event_callback/webhook_router.py tests/unit/app_server/test_sql_event_callback_service.py tests/unit/app_server/test_webhook_router_auto_title.py tests/unit/app_server/test_set_title_callback_processor.py enterprise/integrations/bitbucket/bitbucket_v1_callback_processor.py enterprise/integrations/bitbucket_data_center/bitbucket_dc_v1_callback_processor.py enterprise/integrations/github/github_v1_callback_processor.py enterprise/integrations/gitlab/gitlab_v1_callback_processor.py enterprise/integrations/jira/jira_v1_callback_processor.py enterprise/integrations/jira_dc/jira_dc_v1_callback_processor.py enterprise/integrations/slack/slack_v1_callback_processor.py`\r\n- `cd enterprise && python3 -m pre_commit run --all-files --show-diff-on-failure --config ./dev_config/python/.pre-commit-config.yaml`\r\n\r\n---\r\n\r\n_This PR was updated by an AI agent (OpenHands) on behalf of the user._\r\n\r\n---\r\n\r\nTo run this PR locally, use the following command:\r\n\r\nGUI with Docker:\r\n```\r\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-ed55b0b   docker.openhands.dev/openhands/openhands:ed55b0b\r\n```",
+    "author": "neubig",
+    "headRef": "remove-event-callback-global-conversation",
+    "repository": "All-Hands-AI/OpenHands"
+  }
+}

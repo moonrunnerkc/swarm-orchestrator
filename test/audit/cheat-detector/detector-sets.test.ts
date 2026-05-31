@@ -6,26 +6,26 @@ import {
   resolveDetectors,
 } from '../../../src/audit/cheat-detector/detector-sets';
 
-describe('cheat-detector / detector-sets (v10.2-advisory)', () => {
-  it('default set is exactly the four advisory-grade detectors', () => {
+describe('cheat-detector / detector-sets', () => {
+  it('default set is the seven detectors with real-world signal', () => {
     const names = DEFAULT_DETECTORS.map((d) => d.name).sort();
     assert.deepEqual(names, [
+      'assertion-strip',
+      'coverage-erosion',
       'error-swallow',
       'fake-refactor',
       'mock-of-hallucination',
       'no-op-fix',
+      'test-relaxation',
     ].sort());
   });
 
-  it('experimental set holds the six retired detectors', () => {
+  it('experimental set holds the three detectors with no real-world signal yet', () => {
     const names = EXPERIMENTAL_DETECTORS.map((d) => d.name).sort();
     assert.deepEqual(names, [
-      'assertion-strip',
       'comment-only-fix',
-      'coverage-erosion',
       'dead-branch-insertion',
       'exception-rethrow-lost-context',
-      'test-relaxation',
     ].sort());
   });
 
@@ -36,9 +36,9 @@ describe('cheat-detector / detector-sets (v10.2-advisory)', () => {
     }
   });
 
-  it('resolveDetectors("default") returns the default four', () => {
+  it('resolveDetectors("default") returns the seven default detectors', () => {
     const out = resolveDetectors('default');
-    assert.equal(out.length, 4);
+    assert.equal(out.length, 7);
   });
 
   it('resolveDetectors("experimental") returns all ten', () => {

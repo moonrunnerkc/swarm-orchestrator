@@ -52,6 +52,19 @@ export interface Finding {
    * diff and title produces the recorded answer.
    */
   judgeModelId?: string;
+  /**
+   * v10.4: the judge confirmation gate set this to `true` when the
+   * judge confirmed the finding is a real cheat. Findings the judge
+   * refuted are downgraded to advisory and do not carry this flag.
+   */
+  judgeConfirmed?: boolean;
+  /**
+   * v10.4: how much weight a reviewer should give this finding,
+   * assigned by the verification stage from the evidence behind it
+   * (judge confirmation, PR-intent corroboration, severity). Surfaced
+   * in the PR comment so the reader sees it on every finding.
+   */
+  confidence?: 'high' | 'medium' | 'low';
 }
 
 export interface AuditAgentAttribution {

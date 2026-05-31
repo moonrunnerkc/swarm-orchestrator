@@ -1,11 +1,13 @@
 // Reader for npm-ecosystem `package.json`. Collects dependencies from
 // all four standard dependency blocks so mock-of-hallucination can
 // resolve test-only mocks (devDependencies) the same way it resolves
-// runtime mocks.
+// runtime mocks. Walks the tree to find subproject package.json files
+// in monorepo layouts; the union of all blocks across all manifests is
+// returned.
 
 import * as fs from 'fs';
-import * as path from 'path';
 import { SwarmError } from '../../../errors';
+import { findManifestFiles } from './find-manifests';
 
 const DEP_KEYS = [
   'dependencies',
@@ -16,14 +18,14 @@ const DEP_KEYS = [
 
 export function readDependencies(repoRoot: string): Set<string> {
   const out = new Set<string>();
-  const file = path.join(repoRoot, 'package.json');
-  if (!fs.existsSync(file)) return out;
-  const parsed = parsePackageJson(file, fs.readFileSync(file, 'utf8'));
-  for (const key of DEP_KEYS) {
-    const block = parsed[key];
-    if (block !== null && typeof block === 'object') {
-      for (const name of Object.keys(block as Record<string, unknown>)) {
-        out.add(name);
+  for (const file of findManifestFiles(repoRoot, 'package.json')) {
+    const parsed = parsePackageJson(file, fs.readFileSync(file, 'utf8'));
+    for (const key of DEP_KEYS) {
+      const block = parsed[key];
+      if (block !== null && typeof block === 'object') {
+        for (const name of Object.keys(block as Record<string, unknown>)) {
+          out.add(name);
+        }
       }
     }
   }

@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-05-28T01:43:26.395Z",
+  "runId": "audit-9f865f82-1c3d-4b87-9dae-9f09c0b0a563",
+  "repo": "aider",
+  "mode": "advise",
+  "detectorSet": "experimental",
+  "wallTimeMs": 1808,
+  "result": {
+    "pass": true,
+    "findings": [
+      {
+        "category": "no-op-fix",
+        "severity": "info",
+        "message": "Import-graph resolver could not follow 816 import specifier(s) (bare specs, workspace mappings the resolver could not read, or unsupported syntax). Reachability is conservative.",
+        "location": {
+          "file": "aider/exceptions.py",
+          "line": 1
+        },
+        "evidence": "(unresolved: 816)"
+      },
+      {
+        "category": "no-op-fix",
+        "severity": "warn",
+        "message": "Source file aider/exceptions.py was modified but no test file in the repository imports it, directly or transitively. If this PR claimed to fix a failing test, the fix likely missed the failing code path.",
+        "location": {
+          "file": "aider/exceptions.py",
+          "line": 1
+        },
+        "evidence": "(touched: aider/exceptions.py)"
+      }
+    ],
+    "generatedAt": "2026-05-28T01:43:26.394Z",
+    "detectorVersions": {
+      "error-swallow": "2.0.0",
+      "mock-of-hallucination": "2.0.0",
+      "no-op-fix": "2.0.0",
+      "fake-refactor": "2.0.0",
+      "comment-only-fix": "1.0.0",
+      "exception-rethrow-lost-context": "1.0.0",
+      "dead-branch-insertion": "1.0.0",
+      "assertion-strip": "1.0.0",
+      "coverage-erosion": "1.1.0",
+      "test-relaxation": "1.1.0"
+    },
+    "detectorSet": "experimental",
+    "pr": {
+      "number": 4748,
+      "headSha": "08165c57a21636d0f995abf55de33fd9bbbcee94",
+      "baseSha": "1354e0bfa4847c1a71b9eea7374847a786d81c1b",
+      "title": "Fix regression in the LiteLLM exception list",
+      "body": "In an attempt to fix issue #4615, commit 656301c introduced a regression where running the `coder` feature raises the following error:\r\n\r\n> TypeError: catching classes that do not inherit from BaseException is not allowed\r\n\r\nThe primary misunderstanding that caused the regression is the fact that `ErrorEventError` sounds like an error class that needs to be included in the exceptions list. In reality, however, the name `ErrorEventError` is just a coincidence and actually belongs to a regular class, which doesn’t have `BaseException` in its chain of base classes.\r\n\r\nCurrent Python versions raise a `TypeError` at runtime if you try to include such a class name in an `except` clause, which explains why the error shows up.\r\n\r\nThis PR narrows down the filter so it only tries to include actual exception classes and excludes classes like `ErrorEventError`.\r\nIt also removes `ErrorEventError` from the exception list.\r\n\r\nFixes issue #4615 and #4724. Reverts commit 656301c.\r\n",
+      "author": "claui",
+      "headRef": "fix-litellm-exception-list-regression",
+      "repository": "paul-gauthier/aider"
+    }
+  },
+  "pr": {
+    "number": 4748,
+    "headSha": "08165c57a21636d0f995abf55de33fd9bbbcee94",
+    "baseSha": "1354e0bfa4847c1a71b9eea7374847a786d81c1b",
+    "title": "Fix regression in the LiteLLM exception list",
+    "body": "In an attempt to fix issue #4615, commit 656301c introduced a regression where running the `coder` feature raises the following error:\r\n\r\n> TypeError: catching classes that do not inherit from BaseException is not allowed\r\n\r\nThe primary misunderstanding that caused the regression is the fact that `ErrorEventError` sounds like an error class that needs to be included in the exceptions list. In reality, however, the name `ErrorEventError` is just a coincidence and actually belongs to a regular class, which doesn’t have `BaseException` in its chain of base classes.\r\n\r\nCurrent Python versions raise a `TypeError` at runtime if you try to include such a class name in an `except` clause, which explains why the error shows up.\r\n\r\nThis PR narrows down the filter so it only tries to include actual exception classes and excludes classes like `ErrorEventError`.\r\nIt also removes `ErrorEventError` from the exception list.\r\n\r\nFixes issue #4615 and #4724. Reverts commit 656301c.\r\n",
+    "author": "claui",
+    "headRef": "fix-litellm-exception-list-regression",
+    "repository": "paul-gauthier/aider"
+  }
+}

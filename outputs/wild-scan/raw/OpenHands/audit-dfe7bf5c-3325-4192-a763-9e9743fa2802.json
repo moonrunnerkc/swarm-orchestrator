@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-05-28T04:00:54.324Z",
+  "runId": "audit-dfe7bf5c-3325-4192-a763-9e9743fa2802",
+  "repo": "OpenHands",
+  "mode": "advise",
+  "detectorSet": "default",
+  "wallTimeMs": 6095,
+  "result": {
+    "pass": true,
+    "findings": [],
+    "generatedAt": "2026-05-28T04:00:54.322Z",
+    "detectorVersions": {
+      "error-swallow": "2.0.0",
+      "mock-of-hallucination": "2.0.0",
+      "no-op-fix": "2.0.0",
+      "fake-refactor": "2.0.0",
+      "coverage-erosion": "1.1.0",
+      "test-relaxation": "1.1.0",
+      "assertion-strip": "1.0.0"
+    },
+    "detectorSet": "default",
+    "pr": {
+      "number": 14580,
+      "headSha": "e8841a6b517e747fd20afef851a64f6cc6fee292",
+      "baseSha": "9717aab35595583fe9025a606a0d7ce716842b7c",
+      "title": "Seed Default LLM profile from legacy config on first load in SaaS",
+      "body": "## Summary\r\n  \r\n  In OSS, FileSettingsStore.load() seeds a Default LLM profile from the legacy single-LLM config when no llm_profiles exist, so users upgrading to LLM profiles keep their previous\r\n  LLM as the active profile. The SaaS SaasSettingsStore.load() did not do this — it dropped a null llm_profiles and let the default factory produce an empty container, leaving\r\n  upgrading users with an empty profiles UI.\r\n  \r\n  This change mirrors the OSS behavior in SaaS: when no profiles exist, load() seeds a Default profile from the effective (org + member merged) LLM config and marks it active. It\r\n  covers both pre-migration rows (llm_profiles is null) and already-migrated orgs whose profiles map is empty. Existing non-empty profiles are left untouched, and the non-nullable\r\n  fallback to the default factory is preserved when there is no legacy LLM to seed.\r\n  \r\n  Tests: repurposed the prior null-column test to assert the Default profile is seeded and active; existing round-trip and encryption-at-rest tests confirm real profiles are not\r\n  clobbered and seeded keys are encrypted.\r\n\r\n",
+      "author": "VascoSch92",
+      "headRef": "vasco/seed-default-profile",
+      "repository": "All-Hands-AI/OpenHands"
+    }
+  },
+  "pr": {
+    "number": 14580,
+    "headSha": "e8841a6b517e747fd20afef851a64f6cc6fee292",
+    "baseSha": "9717aab35595583fe9025a606a0d7ce716842b7c",
+    "title": "Seed Default LLM profile from legacy config on first load in SaaS",
+    "body": "## Summary\r\n  \r\n  In OSS, FileSettingsStore.load() seeds a Default LLM profile from the legacy single-LLM config when no llm_profiles exist, so users upgrading to LLM profiles keep their previous\r\n  LLM as the active profile. The SaaS SaasSettingsStore.load() did not do this — it dropped a null llm_profiles and let the default factory produce an empty container, leaving\r\n  upgrading users with an empty profiles UI.\r\n  \r\n  This change mirrors the OSS behavior in SaaS: when no profiles exist, load() seeds a Default profile from the effective (org + member merged) LLM config and marks it active. It\r\n  covers both pre-migration rows (llm_profiles is null) and already-migrated orgs whose profiles map is empty. Existing non-empty profiles are left untouched, and the non-nullable\r\n  fallback to the default factory is preserved when there is no legacy LLM to seed.\r\n  \r\n  Tests: repurposed the prior null-column test to assert the Default profile is seeded and active; existing round-trip and encryption-at-rest tests confirm real profiles are not\r\n  clobbered and seeded keys are encrypted.\r\n\r\n",
+    "author": "VascoSch92",
+    "headRef": "vasco/seed-default-profile",
+    "repository": "All-Hands-AI/OpenHands"
+  }
+}

@@ -4,6 +4,69 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project follows
 [Semantic Versioning](https://semver.org/).
 
+## [10.4.0-advisory] - 2026-05-31
+
+### Two-stage verification: candidate detectors, then refute and confirm
+
+The detectors are now treated as high-recall candidate generators, with
+two stages after them deciding what reaches a reviewer. The goal is
+precision without silencing detectors or losing recall. On the 205-PR
+real corpus, non-informational findings on the 195 clean PRs dropped
+from about 1146 to 145 (an 87% cut), and the blocking path no longer
+fires on a finding the judge cannot confirm.
+
+#### Added
+
+- **Deterministic verification stage** (`src/audit/cheat-detector/verify-findings.ts`).
+  Refutes a candidate finding when the diff itself shows the pattern is
+  legitimate: a mock target that resolves to an internal directory named
+  in the same diff, a rename paired with several different names, a test
+  removed alongside the non-test source it covered. no-op-fix and
+  coverage-erosion are demoted to informational when the PR claims no
+  fix, since that is the only context their own message describes.
+  Suppressions carry a rule id and reason.
+- **LLM-judge confirmation gate** (`src/audit/cheat-detector/confirm-findings.ts`).
+  When the judge is enabled, a block-severity finding must be confirmed
+  before it blocks; a refuted finding drops to advisory. Off by default,
+  so the no-credentials path is unchanged. Uses a clear-polarity
+  `confirm:<category>` cache and ledger namespace, separate from the
+  no-op-fix detector's own judge usage.
+- **Per-finding confidence** (high/medium/low), assigned from judge
+  confirmation, PR-intent corroboration, and severity, rendered on every
+  PR-comment finding next to the precision badge.
+- **Per-category cascade cap** in the renderer: a same-category cascade
+  is capped at 10 findings with a summary line for the remainder, so one
+  noisy PR cannot bury the signal.
+- **Precision-based promotion gate** (`scripts/promotions/compute-promotions.ts`).
+  A detector may block only when precision is at least 0.90 with at
+  least 5 true positives and a Wilson 95% lower bound of at least 0.50.
+  Detectors below the gate stay advisory; nothing is silenced.
+- **CI policy-freshness guard** (`scripts/promotions/check-policy.ts`,
+  `npm run promotions:check`). Fails when the committed promotion policy
+  drifts from a fresh recompute, so a detector cannot be hand-promoted
+  into the gate without the measured precision to support it.
+- **Detector evasion-cost harness** (`benchmarks/evasion/`,
+  `npm run evasion`). Measures how many semantics-preserving edits it
+  takes to make a detector go silent. error-swallow,
+  mock-of-hallucination, and assertion-strip survive the full cosmetic
+  battery on the seeded cases.
+
+#### Changed
+
+- **`mock-of-hallucination` resolves internal roots from the diff.** A
+  dotted mock target like `routers.servers.os.makedirs` is treated as
+  internal when the diff touches a `routers/` directory, which works in
+  the scorer and bare `--diff-file` runs where the filesystem is not the
+  PR's repo. The GitHub Actions version-ceiling finding drops from block
+  to advisory: offline, a version past a hardcoded allowlist cannot be
+  told apart from a real newer release, and `actions/checkout@v5` /
+  `setup-python@v6` were being reported as blocking hallucinations.
+- **The judge caps the diff it sends to Haiku** to 120k chars, so large
+  PRs (lockfile regenerations, vendored trees) no longer fail the call.
+- **Published numbers repinned** to the v10.4 deterministic scores
+  snapshot in `detector-precision.ts` and the README, replacing the
+  stale v10.1 figures.
+
 ## [10.3.0-advisory] - 2026-05-24
 
 ### Finishes the v10.2 solo-doable backlog

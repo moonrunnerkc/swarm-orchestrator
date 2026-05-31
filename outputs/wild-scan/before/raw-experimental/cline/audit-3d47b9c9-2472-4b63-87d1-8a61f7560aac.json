@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-05-28T01:43:43.749Z",
+  "runId": "audit-3d47b9c9-2472-4b63-87d1-8a61f7560aac",
+  "repo": "cline",
+  "mode": "advise",
+  "detectorSet": "experimental",
+  "wallTimeMs": 1104,
+  "result": {
+    "pass": false,
+    "findings": [
+      {
+        "category": "no-op-fix",
+        "severity": "warn",
+        "message": "Import-graph resolver could not follow 816 import specifier(s) (bare specs, workspace mappings the resolver could not read, or unsupported syntax). Reachability is conservative. Severity raised because the PR claims a fix (\". This PR fixes\").",
+        "location": {
+          "file": "sdk/packages/shared/src/services/telemetry-config.ts",
+          "line": 1
+        },
+        "evidence": "(unresolved: 816)",
+        "intentUpgraded": true
+      },
+      {
+        "category": "no-op-fix",
+        "severity": "block",
+        "message": "Source file sdk/packages/shared/src/services/telemetry-config.ts was modified but no test file in the repository imports it, directly or transitively. If this PR claimed to fix a failing test, the fix likely missed the failing code path. Severity raised because the PR claims a fix (\". This PR fixes\").",
+        "location": {
+          "file": "sdk/packages/shared/src/services/telemetry-config.ts",
+          "line": 1
+        },
+        "evidence": "(touched: sdk/packages/shared/src/services/telemetry-config.ts)",
+        "intentUpgraded": true
+      },
+      {
+        "category": "coverage-erosion",
+        "severity": "block",
+        "message": "Source branch added in sdk/packages/shared/src/services/telemetry-config.ts with no compensating test addition in this PR. Likely coverage erosion. Severity raised because the PR claims a fix (\". This PR fixes\").",
+        "location": {
+          "file": "sdk/packages/shared/src/services/telemetry-config.ts",
+          "line": 9
+        },
+        "evidence": "+ if (!process.env) {",
+        "intentUpgraded": true
+      }
+    ],
+    "generatedAt": "2026-05-28T01:43:43.748Z",
+    "detectorVersions": {
+      "error-swallow": "2.0.0",
+      "mock-of-hallucination": "2.0.0",
+      "no-op-fix": "2.0.0",
+      "fake-refactor": "2.0.0",
+      "comment-only-fix": "1.0.0",
+      "exception-rethrow-lost-context": "1.0.0",
+      "dead-branch-insertion": "1.0.0",
+      "assertion-strip": "1.0.0",
+      "coverage-erosion": "1.1.0",
+      "test-relaxation": "1.1.0"
+    },
+    "detectorSet": "experimental",
+    "pr": {
+      "number": 11092,
+      "headSha": "7a6e9d163531ffafe8369f5c787c6078e894b860",
+      "baseSha": "3068fcfedf4f97bb82f6abf721dd64623f4e480b",
+      "title": "Fix OTEL variable bundling",
+      "body": "OTEL variables are replaced at build time using the string `process.env.VARNAME`. The current checks break it.\r\n\r\nThis PR fixes them.",
+      "author": "BarreiroT",
+      "headRef": "fix-telemetry",
+      "repository": "cline/cline"
+    }
+  },
+  "pr": {
+    "number": 11092,
+    "headSha": "7a6e9d163531ffafe8369f5c787c6078e894b860",
+    "baseSha": "3068fcfedf4f97bb82f6abf721dd64623f4e480b",
+    "title": "Fix OTEL variable bundling",
+    "body": "OTEL variables are replaced at build time using the string `process.env.VARNAME`. The current checks break it.\r\n\r\nThis PR fixes them.",
+    "author": "BarreiroT",
+    "headRef": "fix-telemetry",
+    "repository": "cline/cline"
+  }
+}

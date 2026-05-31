@@ -2,31 +2,28 @@
 // `require-dev` top-level objects. Both are vendor/package maps.
 
 import * as fs from 'fs';
-import * as path from 'path';
 import { SwarmError } from '../../../errors';
+import { findManifestFiles } from './find-manifests';
 
 const REQUIRE_KEYS = ['require', 'require-dev'] as const;
 
 export function readDependencies(repoRoot: string): Set<string> {
   const out = new Set<string>();
-  const file = path.join(repoRoot, 'composer.json');
-  if (!fs.existsSync(file)) return out;
-  const parsed = parseComposerJson(file, fs.readFileSync(file, 'utf8'));
-  for (const key of REQUIRE_KEYS) {
-    const block = parsed[key];
-    if (block !== null && typeof block === 'object' && !Array.isArray(block)) {
-      for (const name of Object.keys(block as Record<string, unknown>)) {
-        out.add(name);
-        // PHP packages are vendor/package; also expose the bare
-        // package name and the bare vendor name so mocks written
-        // with either resolve. The vendor name on its own is rarely
-        // a meaningful target, but exposing it keeps the lookup
-        // logic in mock-of-hallucination uniform with the JVM case
-        // where `org.example.foo` should match a `<groupId>` alone.
-        const slash = name.indexOf('/');
-        if (slash > 0) {
-          out.add(name.slice(0, slash));
-          out.add(name.slice(slash + 1));
+  for (const file of findManifestFiles(repoRoot, 'composer.json')) {
+    const parsed = parseComposerJson(file, fs.readFileSync(file, 'utf8'));
+    for (const key of REQUIRE_KEYS) {
+      const block = parsed[key];
+      if (block !== null && typeof block === 'object' && !Array.isArray(block)) {
+        for (const name of Object.keys(block as Record<string, unknown>)) {
+          out.add(name);
+          // PHP packages are vendor/package; also expose the bare
+          // package name and the bare vendor name so mocks written
+          // with either resolve.
+          const slash = name.indexOf('/');
+          if (slash > 0) {
+            out.add(name.slice(0, slash));
+            out.add(name.slice(slash + 1));
+          }
         }
       }
     }
