@@ -57,8 +57,8 @@ export interface PromotionsOutput {
   computedBy: string;
   scoresFile: string;
   scoresGeneratedAt: string;
-  f1GateThreshold: number;
-  precisionFloorForAdvisory: number;
+  gatePrecisionThreshold: number;
+  minTruePositiveForGate: number;
   rows: PromotionRow[];
   gateEligibleDetectors: string[];
   advisoryOnlyDetectors: string[];
@@ -68,13 +68,30 @@ export interface PromotionsOutput {
 interface Args {
   scoresFile: string;
   out: string;
-  f1Threshold: number;
+  gatePrecision: number;
+  minTruePositive: number;
 }
+
+// A detector may emit a blocking finding only when it clears the gate.
+// The gate is precision-first, not F1: a reviewer reads "block" as "act
+// on this now", so the cost of a false block is high and recall is
+// secondary. F1 hid that by trading the two off. The Wilson lower bound
+// keeps a detector that fired a handful of times from being promoted on
+// luck: it must be precise AND have enough firings for the precision to
+// mean something.
+//
+// Detectors below the gate are advisory-only: they still run and still
+// surface findings, but their findings are capped to advisory severity.
+// Nothing is silenced, so recall is unchanged; the gate governs blocking
+// only.
+const DEFAULT_GATE_PRECISION = 0.9;
+const DEFAULT_MIN_TRUE_POSITIVE = 5;
 
 function parseArgs(argv: string[]): Args {
   let scoresFile = path.join('benchmarks', 'real-corpus', 'scores', 'latest.json');
   let out = path.join('benchmarks', 'real-corpus', 'promotions.json');
-  let f1Threshold = 0.5;
+  let gatePrecision = DEFAULT_GATE_PRECISION;
+  let minTruePositive = DEFAULT_MIN_TRUE_POSITIVE;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--scores' && argv[i + 1] !== undefined) {
@@ -83,12 +100,32 @@ function parseArgs(argv: string[]): Args {
     } else if (arg === '--out' && argv[i + 1] !== undefined) {
       out = argv[i + 1]!;
       i += 1;
-    } else if (arg === '--threshold' && argv[i + 1] !== undefined) {
-      f1Threshold = Number(argv[i + 1]);
+    } else if (arg === '--gate-precision' && argv[i + 1] !== undefined) {
+      gatePrecision = Number(argv[i + 1]);
+      i += 1;
+    } else if (arg === '--min-true-positive' && argv[i + 1] !== undefined) {
+      minTruePositive = Number(argv[i + 1]);
       i += 1;
     }
   }
-  return { scoresFile, out, f1Threshold };
+  return { scoresFile, out, gatePrecision, minTruePositive };
+}
+
+/**
+ * Wilson score interval lower bound for a binomial proportion at 95%
+ * confidence. `successes` true positives out of `trials` firings. Used
+ * so a detector that fired 3 times at precision 1.0 is not treated the
+ * same as one that fired 200 times at precision 1.0.
+ */
+export function wilsonLowerBound(successes: number, trials: number): number {
+  if (trials === 0) return 0;
+  const z = 1.96;
+  const phat = successes / trials;
+  const z2 = z * z;
+  const denom = 1 + z2 / trials;
+  const center = phat + z2 / (2 * trials);
+  const margin = z * Math.sqrt((phat * (1 - phat) + z2 / (4 * trials)) / trials);
+  return Math.max(0, (center - margin) / denom);
 }
 
 export function computePromotions(args: Args): PromotionsOutput {
@@ -96,42 +133,9 @@ export function computePromotions(args: Args): PromotionsOutput {
   const scores = JSON.parse(text) as ScoresSnapshot;
   const rows: PromotionRow[] = scores.perDetector.map((row) => {
     const firingCount = row.truePositive + row.falsePositive;
-    if (firingCount === 0 && row.falseNegative === 0) {
-      return {
-        detector: row.detector,
-        detectorVersion: scores.detectorVersions[row.detector] ?? 'unknown',
-        status: 'unmeasured' as PromotionStatus,
-        f1: row.f1,
-        precision: row.precision,
-        recall: row.recall,
-        truePositive: row.truePositive,
-        falsePositive: row.falsePositive,
-        trueNegative: row.trueNegative,
-        falseNegative: row.falseNegative,
-        firingCount,
-        reason: 'did not fire and no broken-labeled targets in the sample',
-      };
-    }
-    if (row.f1 >= args.f1Threshold) {
-      return {
-        detector: row.detector,
-        detectorVersion: scores.detectorVersions[row.detector] ?? 'unknown',
-        status: 'gate-eligible' as PromotionStatus,
-        f1: row.f1,
-        precision: row.precision,
-        recall: row.recall,
-        truePositive: row.truePositive,
-        falsePositive: row.falsePositive,
-        trueNegative: row.trueNegative,
-        falseNegative: row.falseNegative,
-        firingCount,
-        reason: `F1 ${row.f1.toFixed(3)} >= ${args.f1Threshold} threshold on ${args.scoresFile}`,
-      };
-    }
-    return {
+    const base = {
       detector: row.detector,
       detectorVersion: scores.detectorVersions[row.detector] ?? 'unknown',
-      status: 'advisory-only' as PromotionStatus,
       f1: row.f1,
       precision: row.precision,
       recall: row.recall,
@@ -140,7 +144,36 @@ export function computePromotions(args: Args): PromotionsOutput {
       trueNegative: row.trueNegative,
       falseNegative: row.falseNegative,
       firingCount,
-      reason: `F1 ${row.f1.toFixed(3)} < ${args.f1Threshold} threshold on ${args.scoresFile}`,
+    };
+    if (firingCount === 0 && row.falseNegative === 0) {
+      return {
+        ...base,
+        status: 'unmeasured' as PromotionStatus,
+        reason: 'did not fire and no broken-labeled targets in the sample',
+      };
+    }
+    const lower = wilsonLowerBound(row.truePositive, firingCount);
+    const clearsGate =
+      row.precision >= args.gatePrecision &&
+      row.truePositive >= args.minTruePositive &&
+      lower >= 0.5;
+    if (clearsGate) {
+      return {
+        ...base,
+        status: 'gate-eligible' as PromotionStatus,
+        reason:
+          `precision ${row.precision.toFixed(3)} (Wilson95 lower ${lower.toFixed(3)}) ` +
+          `with ${row.truePositive} TP clears the gate (precision >= ${args.gatePrecision}, ` +
+          `TP >= ${args.minTruePositive}) on ${args.scoresFile}`,
+      };
+    }
+    return {
+      ...base,
+      status: 'advisory-only' as PromotionStatus,
+      reason:
+        `precision ${row.precision.toFixed(3)} (Wilson95 lower ${lower.toFixed(3)}), ` +
+        `${row.truePositive} TP: advisory only, below the gate ` +
+        `(precision >= ${args.gatePrecision}, TP >= ${args.minTruePositive}) on ${args.scoresFile}`,
     };
   });
   return {
@@ -148,8 +181,8 @@ export function computePromotions(args: Args): PromotionsOutput {
     computedBy: 'scripts/promotions/compute-promotions.ts',
     scoresFile: args.scoresFile,
     scoresGeneratedAt: scores.generatedAt,
-    f1GateThreshold: args.f1Threshold,
-    precisionFloorForAdvisory: 0,
+    gatePrecisionThreshold: args.gatePrecision,
+    minTruePositiveForGate: args.minTruePositive,
     rows,
     gateEligibleDetectors: rows.filter((r) => r.status === 'gate-eligible').map((r) => r.detector),
     advisoryOnlyDetectors: rows.filter((r) => r.status === 'advisory-only').map((r) => r.detector),
