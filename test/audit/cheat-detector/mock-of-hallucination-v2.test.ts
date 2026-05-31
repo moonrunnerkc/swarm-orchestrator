@@ -30,7 +30,7 @@ describe('mock-of-hallucination v2.0', () => {
     assert.ok(mockOfHallucinationDetector.version.startsWith('2.'));
   });
 
-  it('blocks actions/checkout@v6 (the v10.1 missed hallucination case)', async () => {
+  it('flags actions/checkout@v6 as advisory, not blocking (offline cannot prove a version is hallucinated)', async () => {
     const diff = `diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
 --- a/.github/workflows/ci.yml
 +++ b/.github/workflows/ci.yml
@@ -41,9 +41,12 @@ describe('mock-of-hallucination v2.0', () => {
 `;
     const findings = run(diff);
     assert.equal(findings.length, 1);
-    assert.equal(findings[0]!.severity, 'block');
+    // A version past the offline ceiling is advisory: `actions/checkout@v5`
+    // and `setup-python@v6` are real, current actions that the old block
+    // behavior reported as hallucinations on the wild-PR scan.
+    assert.equal(findings[0]!.severity, 'info');
     assert.match(findings[0]!.message, /actions\/checkout@v6/);
-    assert.match(findings[0]!.message, /highest known version/);
+    assert.match(findings[0]!.message, /offline allowlist/);
   });
 
   it('does NOT fire on actions/checkout@v4 (a real, supported version)', async () => {

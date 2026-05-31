@@ -17,6 +17,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import type { File as ParsedDiffFile } from 'parse-diff';
 
 // Directories we never descend into when discovering roots. Same set
 // as the manifest finder; replicated here to avoid an import cycle.
@@ -54,6 +55,38 @@ export function collectInternalRoots(repoRoot: string): Set<string> {
   const out = new Set<string>();
   walk(repoRoot, 0, out);
   readSidecar(repoRoot, out);
+  return out;
+}
+
+/**
+ * Returns internal roots derived purely from the paths touched by the
+ * diff under audit. Every directory segment of every changed file is a
+ * candidate root, so a mock target like `routers.servers.os.makedirs`
+ * resolves as internal whenever the PR also touches a `routers/`
+ * directory.
+ *
+ * This complements `collectInternalRoots`, which reads the filesystem:
+ * the filesystem is the target repo only for `--repo-root` audits and
+ * the sidecar-backed `--pr` path. When the scorer or a bare `--diff-file`
+ * run points `repoRoot` at an unrelated directory, the diff is the only
+ * trustworthy source of the project's own module layout.
+ */
+export function collectInternalRootsFromFiles(files: readonly ParsedDiffFile[]): Set<string> {
+  const out = new Set<string>();
+  for (const file of files) {
+    const p = file.to ?? file.from ?? '';
+    if (p.length === 0) continue;
+    const segments = p.split(/[/\\]/);
+    // Drop the final segment (the filename) and keep directory names.
+    for (let i = 0; i < segments.length - 1; i += 1) {
+      const name = segments[i];
+      if (name === undefined) continue;
+      if (name.length === 0 || name === '.' || name === '..') continue;
+      if (SKIP_DIRS.has(name) || name.startsWith('.')) continue;
+      out.add(name);
+      if (out.size >= MAX_ROOTS) return out;
+    }
+  }
   return out;
 }
 
