@@ -14,8 +14,10 @@
 //   - no-op-fix / coverage-erosion only mean "the fix missed the code
 //     path" when the PR actually claims a fix. Their own messages say
 //     so ("If this PR claimed to fix a failing test..."). On a feature
-//     or chore PR, "new code has no test" is ordinary development, not
-//     a cheat.
+//     or chore PR, "new code has no test" is ordinary development, so
+//     the finding is demoted to an informational note rather than a
+//     warning. (It is demoted, not dropped, so a bare --diff-file audit
+//     with no PR context still records the observation.)
 //   - fake-refactor pairs a removed symbol with an added one and calls
 //     it a rename. When one removed symbol is paired with several
 //     different added names in the same file, the pairing is unreliable
@@ -30,7 +32,7 @@
 // module) without changing the contract here.
 
 import type { File as ParsedDiffFile } from 'parse-diff';
-import type { CheatCategory, Finding } from '../types';
+import type { CheatCategory, Finding, Severity } from '../types';
 import type { PrIntent } from './pr-intent';
 import { fileKind, filePath, isTestFile } from './diff-walker';
 import { getLogger } from '../../logger';
@@ -54,6 +56,10 @@ export interface VerificationResult {
   kept: Finding[];
   suppressed: SuppressedFinding[];
 }
+
+type Refutation =
+  | { action: 'drop'; rule: string; reason: string }
+  | { action: 'downgrade'; rule: string; reason: string; severity: Severity };
 
 /** Categories whose signal is only meaningful when the PR claims a fix. */
 const FIX_CLAIM_GATED: ReadonlySet<CheatCategory> = new Set<CheatCategory>([
@@ -94,6 +100,11 @@ export function verifyFindings(
       kept.push(finding);
       continue;
     }
+    if (refutation.action === 'downgrade') {
+      finding.severity = refutation.severity;
+      kept.push(finding);
+      continue;
+    }
     suppressed.push({ finding, rule: refutation.rule, reason: refutation.reason });
   }
 
@@ -114,9 +125,14 @@ function refute(
   finding: Finding,
   ctx: VerificationContext,
   state: RefuteState,
-): { rule: string; reason: string } | undefined {
+): Refutation | undefined {
+  // Already informational findings have nothing to refute or demote.
+  if (finding.severity === 'info') return undefined;
+
   if (FIX_CLAIM_GATED.has(finding.category) && !ctx.intent.claimsFix) {
     return {
+      action: 'downgrade',
+      severity: 'info',
       rule: 'no-fix-claim',
       reason:
         `${finding.category} only indicates a missed fix when the PR claims one; ` +
@@ -128,6 +144,7 @@ function refute(
     const key = renameKey(finding);
     if (key !== undefined && state.ambiguousRenameKeys.has(key)) {
       return {
+        action: 'drop',
         rule: 'ambiguous-rename',
         reason:
           'the same removed symbol was paired with more than one added name, ' +
@@ -138,6 +155,7 @@ function refute(
 
   if (TEST_REMOVAL.has(finding.category) && state.deletesNonTestSource) {
     return {
+      action: 'drop',
       rule: 'source-co-removed',
       reason:
         'the PR also deletes non-test source, so removing the tests that ' +

@@ -17,31 +17,33 @@ function finding(over: Partial<Finding>): Finding {
 const noFiles = parseDiff('');
 
 describe('cheat-detector / verify-findings', () => {
-  it('suppresses no-op-fix and coverage-erosion when the PR makes no fix claim', () => {
+  it('demotes no-op-fix and coverage-erosion to info when the PR makes no fix claim', () => {
     const findings = [
-      finding({ category: 'no-op-fix' }),
-      finding({ category: 'coverage-erosion' }),
-      finding({ category: 'error-swallow' }),
+      finding({ category: 'no-op-fix', severity: 'warn' }),
+      finding({ category: 'coverage-erosion', severity: 'warn' }),
+      finding({ category: 'error-swallow', severity: 'warn' }),
     ];
     const { kept, suppressed } = verifyFindings(findings, {
       files: noFiles,
       intent: { claimsFix: false, evidence: '' },
     });
-    assert.deepEqual(
-      kept.map((f) => f.category),
-      ['error-swallow'],
-    );
-    assert.equal(suppressed.length, 2);
-    assert.ok(suppressed.every((s) => s.rule === 'no-fix-claim'));
+    // All three are kept; the two fix-claim-gated ones drop to info.
+    assert.equal(kept.length, 3);
+    const byCat = new Map(kept.map((f) => [f.category, f.severity]));
+    assert.equal(byCat.get('no-op-fix'), 'info');
+    assert.equal(byCat.get('coverage-erosion'), 'info');
+    assert.equal(byCat.get('error-swallow'), 'warn');
+    assert.equal(suppressed.length, 0);
   });
 
-  it('keeps no-op-fix when the PR claims a fix', () => {
-    const findings = [finding({ category: 'no-op-fix' })];
+  it('keeps no-op-fix at its emitted severity when the PR claims a fix', () => {
+    const findings = [finding({ category: 'no-op-fix', severity: 'warn' })];
     const { kept } = verifyFindings(findings, {
       files: noFiles,
       intent: { claimsFix: true, evidence: 'This PR fixes the bug' },
     });
     assert.equal(kept.length, 1);
+    assert.equal(kept[0]!.severity, 'warn');
   });
 
   it('suppresses fake-refactor when one removed symbol maps to several new names', () => {
