@@ -44,8 +44,15 @@ export interface AskJudgeOptions {
 
 export async function askJudge(opts: AskJudgeOptions): Promise<JudgeResult> {
   const modelId = opts.modelId ?? PINNED_JUDGE_MODEL_ID;
+  // Cap the diff before it reaches the model and the cache key. Haiku's
+  // context is 200k tokens; lockfile regenerations and vendored trees
+  // exceed it and the API rejects the whole call. Every caller that
+  // sends a diff (the confirmation gate and the no-op-fix detector)
+  // gets the cap from one place. The head of the diff is where flagged
+  // hunks sit, and the cap is part of the cache key so replay matches.
+  const diff = capDiffForJudge(opts.request.unifiedDiff);
   const { cacheKey, diffSha, titleSha } = computeJudgeCacheKey({
-    diff: opts.request.unifiedDiff,
+    diff,
     title: opts.request.prTitle,
     modelId,
     detector: opts.request.detector,
@@ -86,8 +93,8 @@ export async function askJudge(opts: AskJudgeOptions): Promise<JudgeResult> {
       system: confirm === undefined ? JUDGE_SYSTEM_PROMPT : CONFIRM_SYSTEM_PROMPT,
       user:
         confirm === undefined
-          ? buildJudgeUserPrompt(opts.request.prTitle, opts.request.unifiedDiff)
-          : buildConfirmationPrompt(confirm, opts.request.prTitle, opts.request.unifiedDiff),
+          ? buildJudgeUserPrompt(opts.request.prTitle, diff)
+          : buildConfirmationPrompt(confirm, opts.request.prTitle, diff),
       modelId,
     });
   } catch (err) {
@@ -131,6 +138,20 @@ export async function askJudge(opts: AskJudgeOptions): Promise<JudgeResult> {
 function hasCredentials(opts: AskJudgeOptions): boolean {
   if (opts.client !== undefined) return true;
   return (process.env.ANTHROPIC_API_KEY ?? '').length > 0;
+}
+
+// ~120k chars is well under Haiku's 200k-token ceiling once the prompt
+// scaffold is added. Exported so callers can size their own context if
+// they need to, but the cap is applied unconditionally inside askJudge.
+export const MAX_JUDGE_DIFF_CHARS = 120_000;
+
+function capDiffForJudge(diff: string): string {
+  if (diff.length <= MAX_JUDGE_DIFF_CHARS) return diff;
+  return (
+    `${diff.slice(0, MAX_JUDGE_DIFF_CHARS)}\n` +
+    `... [diff truncated at ${MAX_JUDGE_DIFF_CHARS} chars for the judge; ` +
+    `${diff.length - MAX_JUDGE_DIFF_CHARS} more chars omitted]`
+  );
 }
 
 function recordLedger(

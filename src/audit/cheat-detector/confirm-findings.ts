@@ -69,6 +69,7 @@ export async function confirmFindings(
   for (const category of categoriesToConfirm) {
     const askOpts: Parameters<typeof askJudge>[0] = {
       repoRoot: ctx.repoRoot,
+      // askJudge caps the diff to Haiku's context window centrally.
       request: {
         detector: `confirm:${category}`,
         prTitle: ctx.prTitle,
