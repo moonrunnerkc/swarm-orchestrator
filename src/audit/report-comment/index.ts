@@ -58,9 +58,8 @@ export function renderPrComment(result: AuditResult, options: RenderOptions = {}
     if (bucket.length === 0) continue;
     lines.push(renderSeverityHeader(severity, bucket.length, mode));
     lines.push('');
-    for (const finding of bucket) {
-      lines.push(renderFinding(finding));
-      lines.push('');
+    for (const line of renderBucketWithCascadeCap(bucket)) {
+      lines.push(line);
     }
   }
 
@@ -152,15 +151,48 @@ function renderSeverityHeader(severity: Severity, count: number, mode: AuditMode
   return `## ${label} (${count})`;
 }
 
+// Cap how many findings of one category render inside a single severity
+// bucket. A 300-file docs PR once produced 310 no-op-fix findings of the
+// identical shape; rendering them all buries any real signal and floods
+// the PR. Beyond the cap, one summary line reports the remainder so the
+// suppression is visible rather than silent.
+const MAX_FINDINGS_PER_CATEGORY = 10;
+
+function renderBucketWithCascadeCap(bucket: readonly Finding[]): string[] {
+  const shownByCategory = new Map<string, number>();
+  const omittedByCategory = new Map<string, number>();
+  const out: string[] = [];
+  for (const finding of bucket) {
+    const shown = shownByCategory.get(finding.category) ?? 0;
+    if (shown >= MAX_FINDINGS_PER_CATEGORY) {
+      omittedByCategory.set(finding.category, (omittedByCategory.get(finding.category) ?? 0) + 1);
+      continue;
+    }
+    shownByCategory.set(finding.category, shown + 1);
+    out.push(renderFinding(finding));
+    out.push('');
+  }
+  for (const [category, omitted] of omittedByCategory) {
+    out.push(
+      `> ${omitted} more \`${category}\` finding(s) of the same shape were ` +
+        `collapsed to keep this comment readable (showing the first ` +
+        `${MAX_FINDINGS_PER_CATEGORY}). See the evidence ledger for the full list.`,
+    );
+    out.push('');
+  }
+  return out;
+}
+
 function renderFinding(finding: Finding): string {
   const fileLine = finding.location.endLine !== undefined
     ? `\`${finding.location.file}\`:${finding.location.line}-${finding.location.endLine}`
     : `\`${finding.location.file}\`:${finding.location.line}`;
   const badge = formatPrecisionBadge(finding.category);
+  const confidence = finding.confidence ?? 'medium';
   const lines: string[] = [
     `### \`${finding.category}\` — ${fileLine}`,
     '',
-    `*Detector precision badge:* ${badge}.`,
+    `*Confidence:* ${confidence}. *Detector precision badge:* ${badge}.`,
     '',
     finding.message,
     '',

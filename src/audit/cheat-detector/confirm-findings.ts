@@ -102,8 +102,9 @@ export async function confirmFindings(
       f.severity = 'warn';
       f.judgeReasoning = `judge refuted the block: ${verdict.reason ?? 'no reason given'}`;
       refuted.push(f);
-    } else if (verdict.answer === 'yes' && verdict.reason !== undefined) {
-      f.judgeReasoning = verdict.reason;
+    } else if (verdict.answer === 'yes') {
+      f.judgeConfirmed = true;
+      if (verdict.reason !== undefined) f.judgeReasoning = verdict.reason;
     }
     out.push(f);
   }

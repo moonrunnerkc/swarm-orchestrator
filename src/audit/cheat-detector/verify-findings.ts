@@ -201,6 +201,30 @@ function parseRename(finding: Finding): { oldName: string; newName: string } | u
   return { oldName: m[1], newName: m[2] };
 }
 
+/**
+ * Assign a reviewer-facing confidence to every finding from the
+ * evidence behind it. Mutates in place. Judge confirmation is the
+ * strongest signal; a PR-intent escalation is next; otherwise severity
+ * stands in for confidence (an info-severity note is low confidence by
+ * construction). Called by the engine after the verification and judge
+ * stages so it sees the final severity and judge verdict.
+ */
+export function assignConfidence(findings: readonly Finding[]): void {
+  for (const f of findings) {
+    if (f.judgeConfirmed === true) {
+      f.confidence = 'high';
+    } else if (f.intentUpgraded === true) {
+      f.confidence = 'high';
+    } else if (f.severity === 'block') {
+      f.confidence = 'high';
+    } else if (f.severity === 'warn') {
+      f.confidence = 'medium';
+    } else {
+      f.confidence = 'low';
+    }
+  }
+}
+
 function hasNonTestSourceDeletion(files: readonly ParsedDiffFile[]): boolean {
   for (const file of files) {
     if (fileKind(file) !== 'delete') continue;

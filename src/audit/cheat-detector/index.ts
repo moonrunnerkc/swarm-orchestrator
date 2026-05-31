@@ -16,7 +16,7 @@ import { isAuditSubjectPath } from './subject-paths';
 import { buildExcludeMatcher, loadAuditConfig } from './audit-config';
 import { parsePrIntent, upgradeSeverity, type PrIntent } from './pr-intent';
 import { resolveDetectors, type DetectorSet } from './detector-sets';
-import { verifyFindings } from './verify-findings';
+import { verifyFindings, assignConfidence } from './verify-findings';
 import { confirmFindings } from './confirm-findings';
 
 // Re-exported for backwards compatibility with callers that pinned the
@@ -90,6 +90,10 @@ export async function runCheatDetectors(input: AuditInput): Promise<AuditResult>
     const confirmed = await confirmFindings(kept, confirmCtx);
     kept = confirmed.findings;
   }
+
+  // Confidence reflects the final severity and judge verdict, so it is
+  // assigned last.
+  assignConfidence(kept);
 
   const pass = kept.every((f) => f.severity !== 'block');
   const result: AuditResult = {
