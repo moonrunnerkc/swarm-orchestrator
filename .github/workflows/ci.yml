@@ -84,6 +84,13 @@ jobs:
         set -o pipefail
         npm run test:ci 2>&1 | tee test-output.txt
 
+    - name: Check detector promotion policy is fresh
+      if: matrix.node-version == 22
+      # The committed promotion policy must equal a fresh recompute from
+      # the scores snapshot, so a detector cannot be hand-promoted into
+      # the blocking gate without the measured precision to back it.
+      run: npm run promotions:check
+
     - name: Publish test summary
       if: always() && matrix.node-version == 22
       run: |
