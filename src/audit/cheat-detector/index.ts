@@ -16,6 +16,7 @@ import { isAuditSubjectPath } from './subject-paths';
 import { buildExcludeMatcher, loadAuditConfig } from './audit-config';
 import { parsePrIntent, upgradeSeverity, type PrIntent } from './pr-intent';
 import { resolveDetectors, type DetectorSet } from './detector-sets';
+import { verifyFindings } from './verify-findings';
 
 // Re-exported for backwards compatibility with callers that pinned the
 // flat list. New code should pass `detectorSet` on the AuditInput.
@@ -67,12 +68,18 @@ export async function runCheatDetectors(input: AuditInput): Promise<AuditResult>
   // Finding.intentUpgraded so the renderer can show one top-of-
   // comment line quoting the agent's claim.
   const intent = parsePrIntent(input.pr);
-  applyIntentSeverity(findings, intent, config.intentSeverityPolicy);
+  // Verification stage: refute candidate findings the diff itself shows
+  // to be legitimate, before the PR-intent layer escalates severity.
+  // Gating runs first so a fix-claim escalation only applies to a
+  // finding that survived refutation.
+  const verification = verifyFindings(findings, { files, intent });
+  const kept = verification.kept;
+  applyIntentSeverity(kept, intent, config.intentSeverityPolicy);
 
-  const pass = findings.every((f) => f.severity !== 'block');
+  const pass = kept.every((f) => f.severity !== 'block');
   const result: AuditResult = {
     pass,
-    findings,
+    findings: kept,
     generatedAt: new Date().toISOString(),
     detectorVersions,
     detectorSet,
