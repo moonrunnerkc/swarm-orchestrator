@@ -7,7 +7,14 @@
 
 import { getLogger } from '../../../logger';
 import type { JudgeLedgerSink } from '../../types';
-import { AnthropicJudge, buildJudgeUserPrompt, JUDGE_SYSTEM_PROMPT } from './anthropic-judge';
+import {
+  AnthropicJudge,
+  buildConfirmationPrompt,
+  buildJudgeUserPrompt,
+  CONFIRM_SYSTEM_PROMPT,
+  JUDGE_SYSTEM_PROMPT,
+  parseConfirmCategory,
+} from './anthropic-judge';
 import {
   computeJudgeCacheKey,
   readCachedAnswer,
@@ -41,6 +48,7 @@ export async function askJudge(opts: AskJudgeOptions): Promise<JudgeResult> {
     diff: opts.request.unifiedDiff,
     title: opts.request.prTitle,
     modelId,
+    detector: opts.request.detector,
   });
 
   const cached = readCachedAnswer(opts.repoRoot, cacheKey);
@@ -73,9 +81,13 @@ export async function askJudge(opts: AskJudgeOptions): Promise<JudgeResult> {
   const client: JudgeClient = opts.client ?? new AnthropicJudge();
   let raw: { answer: JudgeResult['answer']; reason?: string };
   try {
+    const confirm = parseConfirmCategory(opts.request.detector);
     raw = await client.ask({
-      system: JUDGE_SYSTEM_PROMPT,
-      user: buildJudgeUserPrompt(opts.request.prTitle, opts.request.unifiedDiff),
+      system: confirm === undefined ? JUDGE_SYSTEM_PROMPT : CONFIRM_SYSTEM_PROMPT,
+      user:
+        confirm === undefined
+          ? buildJudgeUserPrompt(opts.request.prTitle, opts.request.unifiedDiff)
+          : buildConfirmationPrompt(confirm, opts.request.prTitle, opts.request.unifiedDiff),
       modelId,
     });
   } catch (err) {

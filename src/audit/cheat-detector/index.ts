@@ -17,6 +17,7 @@ import { buildExcludeMatcher, loadAuditConfig } from './audit-config';
 import { parsePrIntent, upgradeSeverity, type PrIntent } from './pr-intent';
 import { resolveDetectors, type DetectorSet } from './detector-sets';
 import { verifyFindings } from './verify-findings';
+import { confirmFindings } from './confirm-findings';
 
 // Re-exported for backwards compatibility with callers that pinned the
 // flat list. New code should pass `detectorSet` on the AuditInput.
@@ -73,8 +74,22 @@ export async function runCheatDetectors(input: AuditInput): Promise<AuditResult>
   // Gating runs first so a fix-claim escalation only applies to a
   // finding that survived refutation.
   const verification = verifyFindings(findings, { files, intent });
-  const kept = verification.kept;
+  let kept = verification.kept;
   applyIntentSeverity(kept, intent, config.intentSeverityPolicy);
+
+  // Judge confirmation gate. When enabled, a block-severity finding must
+  // be confirmed by the judge to stay a block; a refuted finding drops to
+  // advisory. Off by default so the no-credentials path is unchanged.
+  if (input.judgeEnabled === true) {
+    const confirmCtx: import('./confirm-findings').ConfirmContext = {
+      unifiedDiff: input.unifiedDiff,
+      prTitle: input.pr?.title ?? '',
+      repoRoot: input.repoRoot,
+    };
+    if (input.judgeLedger !== undefined) confirmCtx.ledger = input.judgeLedger;
+    const confirmed = await confirmFindings(kept, confirmCtx);
+    kept = confirmed.findings;
+  }
 
   const pass = kept.every((f) => f.severity !== 'block');
   const result: AuditResult = {

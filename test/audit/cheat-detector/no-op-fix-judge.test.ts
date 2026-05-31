@@ -102,6 +102,7 @@ describe('cheat-detector / no-op-fix v2.0 with judge', () => {
       diff: DIFF_DOC_ONLY,
       title: PR_TITLE,
       modelId: PINNED_JUDGE_MODEL_ID,
+      detector: 'no-op-fix',
     };
     const { cacheKey, diffSha, titleSha } = computeJudgeCacheKey(cacheInput);
     writeCachedAnswer(repo, cacheKey, {
