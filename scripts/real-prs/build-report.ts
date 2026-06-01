@@ -48,6 +48,23 @@ function pct(numer: number, denom: number): string {
   return `${((numer / denom) * 100).toFixed(1)}%`;
 }
 
+// The honest comparison on a presumed-clean corpus is the false-alarm
+// burden per PR, in whichever direction the numbers actually fall.
+function burdenVerdict(postPerPr: number, prePerPr: number): string {
+  if (postPerPr <= prePerPr) {
+    return (
+      `On this unbiased corpus the post-upgrade auditor's false-alarm burden ` +
+      `(${postPerPr.toFixed(2)}/PR) is at or below the pre-upgrade auditor's ` +
+      `(${prePerPr.toFixed(2)}/PR): the post-upgrade changes do not make it noisier on real PRs.`
+    );
+  }
+  return (
+    `On this unbiased corpus the post-upgrade auditor's false-alarm burden rises from ` +
+    `${prePerPr.toFixed(2)}/PR to ${postPerPr.toFixed(2)}/PR: the post-upgrade changes add ` +
+    'noise on real PRs.'
+  );
+}
+
 function loadRecords(): AuditResultRecord[] {
   const dir = auditResultsDir();
   const out: AuditResultRecord[] = [];
@@ -207,7 +224,6 @@ function main(): void {
   }
   const preUnavailable = records.length - preAvailable;
 
-  const moreFindingsPct = preCount === 0 ? null : ((postCount - preCount) / preCount) * 100;
   // These are merged, reviewed PRs, so they are presumed clean: there is
   // little or nothing legitimate to catch, and almost every finding is a
   // false alarm by construction. The honest metric on this corpus is the
@@ -245,14 +261,8 @@ function main(): void {
         : `The pre-upgrade auditor raised **${preCount}** findings on the ${preAvailable} PRs ` +
           `where it ran (${preFalse} arbiter-labeled false-alarm, ` +
           `${preFalsePerPr.toFixed(2)}/PR). ` +
-          (moreFindingsPct === null
-            ? ''
-            : `The post-upgrade auditor raised ${moreFindingsPct >= 0 ? '+' : ''}` +
-              `${moreFindingsPct.toFixed(0)}% more findings, almost entirely additional false ` +
-              'alarms. ') +
-          'On this unbiased corpus the post-upgrade changes increase noise without surfacing ' +
-          'true cheats; recall against planted defects is a separate question (see the oracle ' +
-          'benchmarks).'),
+          burdenVerdict(postFalsePerPr, preFalsePerPr) +
+          ' Recall against planted defects is a separate question (see the oracle benchmarks).'),
   );
   lines.push('');
   lines.push('Regenerate: `npm run real-prs:full`. Inputs: sources.json, audit-results/, ' +
