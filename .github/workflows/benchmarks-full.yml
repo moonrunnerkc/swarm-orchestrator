@@ -1,0 +1,51 @@
+name: Benchmarks Full
+# Manual-dispatch run of the defect-injection oracle pipeline so the numbers
+# in benchmarks/results/AB-REPORT.md are reproducible by anyone with the
+# secrets. This is NOT gated on PRs: it makes judge calls and is slow and
+# metered. The regular pr-audit workflow runs the audit on every PR; this
+# regenerates the evaluation artifacts on demand. By default it runs
+# cache-only (replays the committed judge cache, no live calls); set
+# `live: true` to refresh the cache against the configured judge.
+
+on:
+  workflow_dispatch:
+    inputs:
+      live:
+        description: 'Make live judge calls (refresh the committed cache)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  benchmarks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm run build
+      - name: Run the full oracle pipeline
+        env:
+          # Secrets come from the environment only. With neither secret set
+          # and live=false, the run replays from the committed judge cache.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SWARM_JUDGE_BASE_URL: ${{ secrets.SWARM_JUDGE_BASE_URL }}
+        run: |
+          if [ "${{ inputs.live }}" = "true" ]; then
+            node dist/scripts/benchmarks/full.js
+          else
+            node dist/scripts/benchmarks/full.js --no-live
+          fi
+      - name: Upload regenerated reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-reports
+          path: |
+            benchmarks/oracle-corpus/*.md
+            benchmarks/oracle-corpus/*.csv
+            benchmarks/results/AB-REPORT.md
